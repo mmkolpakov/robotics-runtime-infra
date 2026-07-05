@@ -1,0 +1,141 @@
+---
+name: robotics-simulation-infra
+
+x-ros-environment: &ros-environment
+  ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-42}"
+  RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+  RCUTILS_COLORIZED_OUTPUT: "1"
+
+services:
+  simulation:
+    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+    build:
+      context: .
+      dockerfile: infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
+      network: "${DOCKER_BUILD_NETWORK:-host}"
+      args:
+        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
+        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
+        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
+        VCS_REF: "${VCS_REF:-local}"
+    environment:
+      <<: *ros-environment
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  autopilot-base:
+    image: ardupilot/ardupilot-dev-base:v0.2.0
+    profiles:
+      - autopilot
+      - ardupilot
+    command: bash -lc "python3 --version && git --version"
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  px4-sitl:
+    image: px4io/px4-sitl-gazebo:v1.18.0-alpha1-amd64
+    profiles:
+      - autopilot
+      - px4
+    command:
+      - -h
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  dds-agent:
+    image: "${DDS_AGENT_IMAGE_TAG:-robotics/dds-agent:2026-07-05}"
+    build:
+      context: .
+      dockerfile: infra/docker/dds-agent.Dockerfile
+      network: "${DOCKER_BUILD_NETWORK:-host}"
+      args:
+        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
+        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
+        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
+        VCS_REF: "${VCS_REF:-local}"
+    profiles:
+      - dds
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  comms-bridge:
+    image: eclipse/zenoh-bridge-ros2dds:1.9.0
+    profiles:
+      - comms
+    command:
+      - --help
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  media-runtime:
+    image: "${MEDIA_IMAGE_TAG:-robotics/media-runtime:2026-07-05}"
+    build:
+      context: .
+      dockerfile: infra/docker/media-runtime.Dockerfile
+      network: "${DOCKER_BUILD_NETWORK:-host}"
+      args:
+        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
+        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
+        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
+        VCS_REF: "${VCS_REF:-local}"
+        RUNTIME_BASE_IMAGE: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+    profiles:
+      - media
+    environment:
+      <<: *ros-environment
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  diagnostics-runtime:
+    image: "${DIAGNOSTICS_IMAGE_TAG:-robotics/diagnostics-runtime:2026-07-05}"
+    build:
+      context: .
+      dockerfile: infra/docker/diagnostics-runtime.Dockerfile
+      network: "${DOCKER_BUILD_NETWORK:-host}"
+      args:
+        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
+        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
+        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
+        VCS_REF: "${VCS_REF:-local}"
+        RUNTIME_BASE_IMAGE: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+    profiles:
+      - diagnostics
+    environment:
+      <<: *ros-environment
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  local-render:
+    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+    profiles:
+      - render
+    command: bash -lc "test -d /dev/dri && ls -1 /dev/dri"
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      <<: *ros-environment
+      LIBGL_ALWAYS_SOFTWARE: "${LIBGL_ALWAYS_SOFTWARE:-0}"
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+
+  nvidia-gpu:
+    image: nvidia/cuda:12.9.2-base-ubuntu24.04
+    profiles:
+      - nvidia
+    command: nvidia-smi
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
+  edge-nvidia-arm64:
+    image: nvcr.io/nvidia/l4t-jetpack:r36.4.0
+    profiles:
+      - edge
+    platform: linux/arm64
+    command: bash -lc "uname -m && cat /etc/nv_tegra_release || true"

@@ -1,10 +1,10 @@
-# droning-simulation-infra
+# robotics-simulation-infra
 
-Инфраструктурный контур для проверки симуляционного стека дронов в Docker.
+Инфраструктурный контур для проверки робототехнического симуляционного стека в Docker.
 
 ## Назначение
 
-Репозиторий фиксирует воспроизводимую базу для локальных и CI-проверок:
+Репозиторий фиксирует воспроизводимую базу для локальных и CI-проверок. В состав входят:
 
 - ROS 2 Jazzy на Ubuntu 24.04 Noble;
 - Gazebo Sim 8.11.0 через ROS-Gazebo;
@@ -12,9 +12,14 @@
 - MoveIt2 и ros2_control;
 - OpenCV для Python через системные пакеты Ubuntu;
 - rosbag2 с хранилищем MCAP;
-- базовый smoke-контроль ArduPilot SITL-образа.
+- Docker Compose профили для явных вариантов запуска;
+- дополнительные профили DDS, связи, медиа, диагностики и ARM64 edge;
+- базовый smoke-контроль образов для симуляции и SITL;
+- SBOM, SARIF, Dockerfile lint и GitHub Actions lint для ревью.
 
 GPU не является обязательным требованием для текущего контура.
+
+Репозиторий не содержит прикладную логику, сценарии продукта или модели восприятия. Внешние проекты должны подключаться через стандартные границы ROS 2, MAVLink/MAVROS, ros2_control, Docker и rosbag2/MCAP.
 
 ## Зафиксированный состав
 
@@ -23,13 +28,15 @@ GPU не является обязательным требованием для
 | Компонент | Версия или образ |
 | --- | --- |
 | Базовый ROS-образ | `osrf/ros:jazzy-simulation`, digest `sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d` |
-| Локальный образ проекта | `droning/ros-jazzy-mavros-gazebo:2026-07-05` |
+| Локальный образ проекта | `robotics/ros-jazzy-simulation:2026-07-05` |
 | Ubuntu | `24.04 Noble` |
 | ROS 2 | `Jazzy` |
 | Gazebo Sim | `8.11.0` |
 | ROS-Gazebo | `ros-jazzy-ros-gz` `1.0.22-1noble.20260616.074726` |
 | Gazebo bridge | `ros-jazzy-ros-gz-bridge` `1.0.22-1noble.20260615.142443` |
 | Gazebo sim | `ros-jazzy-ros-gz-sim` `1.0.22-1noble.20260615.173223` |
+| Sensor messages | `ros-jazzy-sensor-msgs` `5.3.8-1noble.20260615.112429` |
+| TF2 messages | `ros-jazzy-tf2-msgs` `0.36.21-1noble.20260615.112712` |
 | MAVROS | `ros-jazzy-mavros` `2.14.0-1noble.20260615.151804` |
 | MAVROS extras | `ros-jazzy-mavros-extras` `2.14.0-1noble.20260615.154428` |
 | MAVROS messages | `ros-jazzy-mavros-msgs` `2.14.0-1noble.20260615.130828` |
@@ -44,10 +51,85 @@ GPU не является обязательным требованием для
 | OpenCV для Python | `python3-opencv` `4.6.0+dfsg-13.1ubuntu1`; в контейнере `cv2` `4.6.0` |
 | cv_bridge | `ros-jazzy-cv-bridge` `4.1.0-1noble.20260615.144656` |
 | vision_opencv | `ros-jazzy-vision-opencv` `4.1.0-1noble.20260615.154006` |
+| image_transport | `ros-jazzy-image-transport` `5.1.8-1noble.20260615.144252` |
 | rosbag2 | `ros-jazzy-rosbag2` `0.26.11-1noble.20260616.084050` |
 | rosbag2 MCAP | `ros-jazzy-rosbag2-storage-mcap` `0.26.11-1noble.20260616.074830` |
 | ArduPilot base | `ardupilot/ardupilot-dev-base:v0.2.0` |
 | PX4 SITL, не блокирует релиз | `px4io/px4-sitl-gazebo:v1.18.0-alpha1-amd64` |
+| NVIDIA probe, опционально | `nvidia/cuda:12.9.2-base-ubuntu24.04` |
+| Zenoh bridge, опционально | `eclipse/zenoh-bridge-ros2dds:1.9.0` |
+| Jetson boundary, config-only | `nvcr.io/nvidia/l4t-jetpack:r36.4.0` |
+
+## Профили возможностей
+
+Источник профилей: `infra/stack/runtime-profiles.json`.
+
+| Профиль | Compose | Статус | Назначение |
+| --- | --- | --- | --- |
+| `core_simulation` | default | `ready` | Базовая контейнерная среда ROS 2/Gazebo |
+| `autopilot_sitl` | `autopilot` | `partial` | Готовность MAVLink/MAVROS и SITL-образов |
+| `px4_sitl_runtime` | `px4` | `optional` | Проверка доступности среды PX4 SITL |
+| `dds_bridge` | `dds` | `optional` | Micro XRCE-DDS Agent и граница DDS-моста |
+| `comms_bridge` | `comms` | `optional` | Мост Zenoh для ROS 2/DDS |
+| `manipulator_control` | default | `ready` | MoveIt2, ros2_control и контроллеры |
+| `perception_runtime` | default | `partial` | OpenCV/cv_bridge и заменяемая граница восприятия |
+| `sensor_simulation` | default, `render` | `partial` | Проверяемые интерфейсы камер, глубины, облаков точек и tf |
+| `media_sensor_runtime` | `media` | `optional` | Среда GStreamer для потоков камеры и видео |
+| `data_recording` | default | `ready` | rosbag2/MCAP, отчеты и артефакты проверки |
+| `diagnostics_tools` | `diagnostics` | `optional` | PlotJuggler и локальная диагностика |
+| `accelerated_runtime_optional` | `nvidia` | `optional` | Необязательная аппаратно ускоренная среда |
+| `edge_nvidia_arm64` | `edge` | `optional` | ARM64 NVIDIA edge boundary, config-only на amd64 |
+| `external_stack_extension` | default | `external` | Граница подключения внешних стеков поверх инфраструктуры |
+
+Статус `ready` означает, что профиль входит в текущие обязательные проверки и закрыт на уровне инфраструктуры.
+Статус `partial` означает, что проверяемая инфраструктурная граница есть, но прикладное поведение остается за внешним проектом.
+Статус `optional` означает, что профиль проверяется отдельной командой и не является обязательным для CPU/WSL2 маршрута.
+Статус `external` означает, что репозиторий фиксирует границу интеграции, но не владеет реализацией.
+
+## Развилки запуска
+
+Файл `compose.yaml` является стандартной точкой включения вариантов:
+
+| Вариант | Команда | Блокирует review |
+| --- | --- | --- |
+| Базовая CPU-среда | `make compose-smoke` | да |
+| Интерфейсы датчиков | `make compose-sensor-smoke` | да |
+| Автопилотная базовая проверка | `make compose-autopilot-smoke` | да |
+| ArduPilot среда сборки и SITL | `make compose-ardupilot-smoke` | да |
+| Среда PX4 SITL | `make compose-px4-smoke` | нет |
+| DDS-мост | `make compose-dds-smoke` | нет |
+| Мост связи Zenoh | `make compose-comms-smoke` | нет |
+| Среда GStreamer | `make compose-media-smoke` | нет |
+| Средства диагностики | `make compose-diagnostics-smoke` | нет |
+| Локальный рендер через `/dev/dri` | `make compose-render-smoke` | нет |
+| NVIDIA runtime | `make compose-gpu-smoke` | нет |
+| ARM64 edge config | `make compose-edge-config` | нет |
+
+NVIDIA не требуется для базовой проверки. Локальная графика Intel/AMD относится к профилю `render`, а CUDA/NVIDIA - к профилю `nvidia`.
+
+## Границы расширения
+
+Внешние проекты подключаются к инфраструктуре через:
+
+- ROS 2 topics, services, actions и parameters;
+- MAVLink и MAVROS;
+- ros2_control, controller_manager и joint_trajectory_controller;
+- image topics, camera_info и адаптер поставщика восприятия;
+- rosbag2/MCAP, logs, metrics, manifest и SARIF-отчеты.
+
+Инфраструктурный слой проверяет наличие runtime, пакетов, команд и артефактов. Выбор поведения, модели, маршрута, планировщика или прикладного сценария остается за внешним проектом.
+
+## Артефакты проверки
+
+Формат manifest для результатов прогона описан в `contracts/infra/evidence-manifest.schema.json`.
+Пример нейтрального manifest находится в `infra/stack/evidence-manifest.example.json`.
+
+Минимальный набор артефактов:
+
+- сведения о runtime и образе;
+- результаты проверок;
+- метрики;
+- ссылки на логи, MCAP/rosbag2 и отчеты безопасности.
 
 ## Инструменты проверки
 
@@ -55,7 +137,34 @@ GPU не является обязательным требованием для
 | --- | --- |
 | check-jsonschema | `0.37.4` |
 | yamllint | `1.38.0` |
+| Docker Compose | `v2.35.1` или новее |
+| Hadolint | `2.14.0` |
+| actionlint | `1.7.12` |
 | Образ Trivy | `aquasec/trivy:0.72.0` |
+| Micro XRCE-DDS Agent | `v3.0.1`, optional source build |
+| Zenoh bridge ROS2DDS | `1.9.0`, optional image |
+| GStreamer tools | `1.24.2-1ubuntu0.1`, optional image |
+| PlotJuggler | `3.17.2`, optional image |
+
+## Стандарты качества
+
+Репозиторий использует:
+
+- Docker Compose profiles для вариантов запуска;
+- Dev Container Specification для воспроизводимой рабочей среды;
+- OCI image labels для метаданных образа;
+- GitHub Actions с минимальными правами, pinned actions и `persist-credentials: false`;
+- Hadolint для Dockerfile;
+- actionlint для GitHub Actions;
+- Trivy SARIF для отчета безопасности;
+- CycloneDX SBOM для состава образа;
+- Dependabot для GitHub Actions, pip, Dockerfile и Compose-образов;
+- rosbag2/MCAP для машинно читаемых данных симуляций.
+
+APT-пакеты ROS не закрепляются в Dockerfile через `package=version`.
+Их версии фиксируются в `infra/stack/simulation-stack.json` и проверяются командой
+`make docker-update-check`. Это сохраняет сборку работоспособной на свежем ROS apt-срезе
+и одновременно делает дрейф версий видимым.
 
 ## Требования
 
@@ -77,23 +186,55 @@ python -m pip install -r requirements-dev.txt
 
 ```bash
 make validate
-make docker-build
-make docker-smoke
+make lint
+make profiles
+make review
+make compose-build
+make compose-smoke
+make compose-sensor-smoke
+make compose-autopilot-smoke
+make compose-ardupilot-smoke
+make compose-px4-smoke
+make compose-dds-smoke
+make compose-comms-smoke
+make compose-media-smoke
+make compose-diagnostics-smoke
+make compose-render-smoke
+make compose-gpu-smoke
+make compose-edge-config
+make optional-smoke
 make docker-update-check
 make security-scan
+make sbom
 make ci
 ```
 
 `make ci` выполняет полный локальный прогон: проверку контрактов, сборку образа, smoke-проверки,
 сверку зафиксированных пакетов и SARIF-отчет Trivy.
 
+`make review` выполняет локальный набор перед ревью:
+контракты, Compose config, линтеры, профили, сборку, smoke образа, автопилотную базу,
+метаданные образа и SBOM.
+
+`make optional-smoke` выполняет дополнительные проверки, которые не блокируют базовый CPU/WSL2
+маршрут: локальный рендер, среду PX4 SITL, DDS-мост, мост Zenoh, GStreamer, диагностику и
+конфигурацию ARM64 edge.
+
 ## Структура
 
 ```txt
 .devcontainer/                       Dev Container
 .github/                             CI, update-check, Dependabot
+compose.yaml                         Docker Compose профили запуска
+contracts/infra/evidence-manifest.schema.json  JSON Schema manifest артефактов
+contracts/infra/runtime-profiles.schema.json  JSON Schema профилей возможностей
 contracts/infra/stack.schema.json    JSON Schema контракта стека
 infra/docker/                        Dockerfile симуляционного образа
+infra/docker/dds-agent.Dockerfile    optional DDS bridge runtime
+infra/docker/media-runtime.Dockerfile  optional media runtime
+infra/docker/diagnostics-runtime.Dockerfile  optional diagnostics runtime
+infra/stack/evidence-manifest.example.json  пример manifest артефактов
+infra/stack/runtime-profiles.json     профили возможностей и границы расширения
 infra/stack/simulation-stack.json    зафиксированный состав стека
 Makefile                             единая точка входа для локальных и CI-проверок
 requirements-dev.txt                 инструменты валидации

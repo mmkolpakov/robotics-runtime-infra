@@ -1,12 +1,9 @@
 {
-  "name": "droning-simulation-infra",
-  "build": {
-    "dockerfile": "../infra/docker/ros-jazzy-mavros-gazebo.Dockerfile",
-    "context": "..",
-    "args": {
-      "IMAGE_VERSION": "devcontainer"
-    }
-  },
+  "name": "robotics-simulation-infra",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "simulation",
+  "workspaceFolder": "/workspaces/robotics-simulation-infra",
+  "overrideCommand": true,
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1.9.1": {}
   },

@@ -1,0 +1,6 @@
+---
+failure-threshold: error
+ignored:
+  - DL3008
+trustedRegistries:
+  - docker.io

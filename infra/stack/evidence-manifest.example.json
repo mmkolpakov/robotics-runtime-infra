@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.1",
+  "run_id": "example-run",
+  "profile_id": "core_simulation",
+  "created_at": "2026-07-05T00:00:00Z",
+  "result": "not_run",
+  "runtime": {
+    "os": "ubuntu_24_04",
+    "container_runtime": "docker",
+    "image": "robotics/ros-jazzy-simulation:2026-07-05",
+    "image_digest": null,
+    "source_ref": null
+  },
+  "checks": [
+    {
+      "id": "smoke_image",
+      "result": "not_run",
+      "duration_s": null,
+      "log": "artifacts/reports/compose-smoke.txt"
+    }
+  ],
+  "metrics": {},
+  "artifacts": [
+    {
+      "kind": "log",
+      "path": "artifacts/reports/compose-smoke.txt",
+      "media_type": "text/plain",
+      "required": true
+    },
+    {
+      "kind": "security_report",
+      "path": "artifacts/security/trivy-image.sarif",
+      "media_type": "application/sarif+json",
+      "required": false
+    }
+  ]
+}

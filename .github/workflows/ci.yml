@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -18,6 +22,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
@@ -37,6 +43,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Lint Dockerfile and workflows
+        run: make lint
       - name: Inspect upstream image manifests
         run: make docker-manifests
       - name: Build simulation image
@@ -45,12 +55,12 @@ jobs:
           IMAGE_SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
           IMAGE_VERSION="${GITHUB_SHA}" \
           VCS_REF="${GITHUB_SHA}" \
-          IMAGE_TAG="droning/ros-jazzy-mavros-gazebo:ci" \
-            make docker-build
+          IMAGE_TAG="robotics/ros-jazzy-simulation:ci" \
+            make compose-build
       - name: Smoke simulation image
-        run: IMAGE_TAG="droning/ros-jazzy-mavros-gazebo:ci" make docker-smoke
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make compose-smoke compose-autopilot-smoke
       - name: Inspect local image metadata
-        run: IMAGE_TAG="droning/ros-jazzy-mavros-gazebo:ci" make docker-metadata
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make docker-metadata
       - name: Check recorded package versions
         run: make docker-update-check
       - name: Prepare security reports
@@ -58,10 +68,12 @@ jobs:
       - name: Scan image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
-          image-ref: droning/ros-jazzy-mavros-gazebo:ci
+          image-ref: robotics/ros-jazzy-simulation:ci
           format: sarif
           output: artifacts/security/trivy-image.sarif
           exit-code: "0"
+      - name: Generate SBOM
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make sbom
       - name: Upload Docker reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
