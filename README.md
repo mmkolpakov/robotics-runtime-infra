@@ -6,14 +6,48 @@
 
 Репозиторий фиксирует воспроизводимую базу для локальных и CI-проверок:
 
-- ROS 2 Jazzy на Ubuntu 24.04;
-- Gazebo через ROS-Gazebo;
+- ROS 2 Jazzy на Ubuntu 24.04 Noble;
+- Gazebo Sim 8.11.0 через ROS-Gazebo;
 - MAVROS и MAVLink;
 - OpenCV для Python через системные пакеты Ubuntu;
 - rosbag2 с хранилищем MCAP;
 - базовый smoke-контроль ArduPilot SITL-образа.
 
 GPU не является обязательным требованием для текущего контура.
+
+## Зафиксированный состав
+
+Источник состава стека: `infra/stack/simulation-stack.json`.
+
+| Компонент | Версия или образ |
+| --- | --- |
+| Базовый ROS-образ | `osrf/ros:jazzy-simulation`, digest `sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d` |
+| Локальный образ проекта | `droning/ros-jazzy-mavros-gazebo:2026-07-05` |
+| Ubuntu | `24.04 Noble` |
+| ROS 2 | `Jazzy` |
+| Gazebo Sim | `8.11.0` |
+| ROS-Gazebo | `ros-jazzy-ros-gz` `1.0.22-1noble.20260616.074726` |
+| Gazebo bridge | `ros-jazzy-ros-gz-bridge` `1.0.22-1noble.20260615.142443` |
+| Gazebo sim | `ros-jazzy-ros-gz-sim` `1.0.22-1noble.20260615.173223` |
+| MAVROS | `ros-jazzy-mavros` `2.14.0-1noble.20260615.151804` |
+| MAVROS extras | `ros-jazzy-mavros-extras` `2.14.0-1noble.20260615.154428` |
+| MAVROS messages | `ros-jazzy-mavros-msgs` `2.14.0-1noble.20260615.130828` |
+| MAVLink | `ros-jazzy-mavlink` `2026.3.3-1noble.20260303.233645` |
+| OpenCV для Python | `python3-opencv` `4.6.0+dfsg-13.1ubuntu1`; в контейнере `cv2` `4.6.0` |
+| cv_bridge | `ros-jazzy-cv-bridge` `4.1.0-1noble.20260615.144656` |
+| vision_opencv | `ros-jazzy-vision-opencv` `4.1.0-1noble.20260615.154006` |
+| rosbag2 | `ros-jazzy-rosbag2` `0.26.11-1noble.20260616.084050` |
+| rosbag2 MCAP | `ros-jazzy-rosbag2-storage-mcap` `0.26.11-1noble.20260616.074830` |
+| ArduPilot base | `ardupilot/ardupilot-dev-base:v0.2.0` |
+| PX4 SITL, не блокирует релиз | `px4io/px4-sitl-gazebo:v1.18.0-alpha1-amd64` |
+
+## Инструменты проверки
+
+| Инструмент | Версия |
+| --- | --- |
+| check-jsonschema | `0.37.4` |
+| yamllint | `1.38.0` |
+| Образ Trivy | `aquasec/trivy:0.72.0` |
 
 ## Требования
 
