@@ -7,7 +7,7 @@ ARG IMAGE_VERSION=2026-07-05
 ARG VCS_REF=unknown
 
 LABEL org.opencontainers.image.title="droning ROS 2 Jazzy simulation stack" \
-      org.opencontainers.image.description="ROS 2 Jazzy, MAVROS, ROS-Gazebo, OpenCV, and rosbag2 MCAP tooling for local simulation checks." \
+      org.opencontainers.image.description="ROS 2 Jazzy, MAVROS, ROS-Gazebo, MoveIt2, ros2_control, OpenCV, and rosbag2 MCAP tooling for local simulation checks." \
       org.opencontainers.image.version="${IMAGE_VERSION}" \
       org.opencontainers.image.created="${IMAGE_CREATED}" \
       org.opencontainers.image.revision="${VCS_REF}" \
@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     ros-${ROS_DISTRO}-mavros \
     ros-${ROS_DISTRO}-mavros-extras \
     ros-${ROS_DISTRO}-mavros-msgs \
+    ros-${ROS_DISTRO}-moveit \
+    ros-${ROS_DISTRO}-ros2-control \
+    ros-${ROS_DISTRO}-ros2-controllers \
     ros-${ROS_DISTRO}-rosbag2 \
     ros-${ROS_DISTRO}-rosbag2-storage-mcap \
     ros-${ROS_DISTRO}-ros-gz \
@@ -50,4 +53,4 @@ RUN printf '%s\n' \
     'source /opt/ros/${ROS_DISTRO}/setup.bash' \
   > /etc/profile.d/droning_ros_setup.sh
 
-CMD ["bash", "-lc", "source /etc/profile.d/droning_ros_setup.sh && ros2 pkg list | grep -E '^mavros$|^mavros_extras$|^mavros_msgs$|^ros_gz_bridge$|^ros_gz_sim$|^rosbag2_storage_mcap$' && python3 -c 'import cv2; from cv_bridge import CvBridge; CvBridge(); print(cv2.__version__)' && gz sim --help >/tmp/gz_help.txt && ros2 bag record -s mcap --help >/tmp/rosbag_mcap_help.txt && test -s /tmp/gz_help.txt && test -s /tmp/rosbag_mcap_help.txt"]
+CMD ["bash", "-lc", "source /etc/profile.d/droning_ros_setup.sh && ros2 pkg list | grep -E '^mavros$|^mavros_extras$|^mavros_msgs$|^moveit_ros_move_group$|^controller_manager$|^ros2_control$|^joint_trajectory_controller$|^ros_gz_bridge$|^ros_gz_sim$|^rosbag2_storage_mcap$' && python3 -c 'import cv2; from cv_bridge import CvBridge; CvBridge(); print(cv2.__version__)' && gz sim --help >/tmp/gz_help.txt && ros2 bag record -s mcap --help >/tmp/rosbag_mcap_help.txt && ros2 control --help >/tmp/ros2_control_help.txt && test -s /tmp/gz_help.txt && test -s /tmp/rosbag_mcap_help.txt && test -s /tmp/ros2_control_help.txt"]

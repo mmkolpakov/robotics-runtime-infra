@@ -8,6 +8,8 @@ IMAGE_SOURCE ?= local
 IMAGE_VERSION ?= 2026-07-05
 VCS_REF ?= local
 IMAGE_CREATED ?= unknown
+DOCKER_BUILD_NETWORK ?= host
+DOCKER_RUN_NETWORK ?= host
 REPORT_DIR ?= artifacts/reports
 SECURITY_DIR ?= artifacts/security
 TRIVY_IMAGE ?= aquasec/trivy:0.72.0
@@ -41,6 +43,7 @@ docker-pull:
 docker-build:
 	mkdir -p "$(REPORT_DIR)"
 	docker build \
+		--network "$(DOCKER_BUILD_NETWORK)" \
 		-f "$(DOCKERFILE)" \
 		--build-arg IMAGE_CREATED="$(IMAGE_CREATED)" \
 		--build-arg IMAGE_SOURCE="$(IMAGE_SOURCE)" \
@@ -64,6 +67,7 @@ docker-update-check:
 	jq -r '.packages | to_entries[] | [.key, .value.package, .value.version] | @tsv' \
 		"$(STACK_MANIFEST)" > "$(REPORT_DIR)/package-refs.tsv"
 	docker run --rm \
+		--network "$(DOCKER_RUN_NETWORK)" \
 		-v "$(CURDIR)/$(REPORT_DIR)/package-refs.tsv:/tmp/package-refs.tsv:ro" \
 		osrf/ros:jazzy-simulation \
 		bash -lc 'set -euo pipefail; apt-get update >/dev/null; status=0; while IFS=$$'\''\t'\'' read -r key package expected; do candidate="$$(apt-cache policy "$${package}" | awk "/Candidate:/ {print \$$2}")"; if [[ -z "$${candidate}" || "$${candidate}" == "(none)" ]]; then echo "missing $${package}"; status=1; elif [[ "$${candidate}" != "$${expected}" ]]; then echo "changed $${key}: $${package} expected $${expected}, current $${candidate}"; status=1; else echo "$${key}: $${package} $${candidate}"; fi; done < /tmp/package-refs.tsv; exit "$${status}"' \
@@ -72,6 +76,7 @@ docker-update-check:
 security-scan:
 	mkdir -p "$(SECURITY_DIR)"
 	docker run --rm \
+		--network "$(DOCKER_RUN_NETWORK)" \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$(CURDIR)/$(SECURITY_DIR):/out" \
 		"$(TRIVY_IMAGE)" image \

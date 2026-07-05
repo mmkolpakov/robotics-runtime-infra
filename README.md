@@ -9,6 +9,7 @@
 - ROS 2 Jazzy на Ubuntu 24.04 Noble;
 - Gazebo Sim 8.11.0 через ROS-Gazebo;
 - MAVROS и MAVLink;
+- MoveIt2 и ros2_control;
 - OpenCV для Python через системные пакеты Ubuntu;
 - rosbag2 с хранилищем MCAP;
 - базовый smoke-контроль ArduPilot SITL-образа.
@@ -33,6 +34,13 @@ GPU не является обязательным требованием для
 | MAVROS extras | `ros-jazzy-mavros-extras` `2.14.0-1noble.20260615.154428` |
 | MAVROS messages | `ros-jazzy-mavros-msgs` `2.14.0-1noble.20260615.130828` |
 | MAVLink | `ros-jazzy-mavlink` `2026.3.3-1noble.20260303.233645` |
+| MoveIt2 | `ros-jazzy-moveit` `2.12.4-1noble.20260617.161956` |
+| MoveIt move_group | `ros-jazzy-moveit-ros-move-group` `2.12.4-1noble.20260617.150300` |
+| ros2_control | `ros-jazzy-ros2-control` `4.45.2-1noble.20260615.175135` |
+| ros2_controllers | `ros-jazzy-ros2-controllers` `4.40.1-1noble.20260616.074625` |
+| controller_manager | `ros-jazzy-controller-manager` `4.45.2-1noble.20260615.164916` |
+| joint_trajectory_controller | `ros-jazzy-joint-trajectory-controller` `4.40.1-1noble.20260615.171409` |
+| ros2controlcli | `ros-jazzy-ros2controlcli` `4.45.2-1noble.20260615.165650` |
 | OpenCV для Python | `python3-opencv` `4.6.0+dfsg-13.1ubuntu1`; в контейнере `cv2` `4.6.0` |
 | cv_bridge | `ros-jazzy-cv-bridge` `4.1.0-1noble.20260615.144656` |
 | vision_opencv | `ros-jazzy-vision-opencv` `4.1.0-1noble.20260615.154006` |

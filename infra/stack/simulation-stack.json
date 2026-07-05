@@ -21,7 +21,7 @@
     "ros_mavros_gazebo": {
       "image": "droning/ros-jazzy-mavros-gazebo:2026-07-05",
       "local_tag": "droning/ros-jazzy-mavros-gazebo:2026-07-05",
-      "role": "Local project image with ROS 2 Jazzy, MAVROS, ROS-Gazebo, OpenCV, and rosbag2 MCAP.",
+      "role": "Local project image with ROS 2 Jazzy, MAVROS, ROS-Gazebo, MoveIt2, ros2_control, OpenCV, and rosbag2 MCAP.",
       "source": "infra/docker/ros-jazzy-mavros-gazebo.Dockerfile",
       "release_gate": true
     },
@@ -65,6 +65,48 @@
     "mavlink": {
       "package": "ros-jazzy-mavlink",
       "version": "2026.3.3-1noble.20260303.233645",
+      "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
+      "observed_at": "2026-07-05"
+    },
+    "moveit": {
+      "package": "ros-jazzy-moveit",
+      "version": "2.12.4-1noble.20260617.161956",
+      "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
+      "observed_at": "2026-07-05"
+    },
+    "moveit_ros_move_group": {
+      "package": "ros-jazzy-moveit-ros-move-group",
+      "version": "2.12.4-1noble.20260617.150300",
+      "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
+      "observed_at": "2026-07-05"
+    },
+    "ros2_control": {
+      "package": "ros-jazzy-ros2-control",
+      "version": "4.45.2-1noble.20260615.175135",
+      "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
+      "observed_at": "2026-07-05"
+    },
+    "ros2_controllers": {
+      "package": "ros-jazzy-ros2-controllers",
+      "version": "4.40.1-1noble.20260616.074625",
+      "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
+      "observed_at": "2026-07-05"
+    },
+    "controller_manager": {
+      "package": "ros-jazzy-controller-manager",
+      "version": "4.45.2-1noble.20260615.164916",
+      "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
+      "observed_at": "2026-07-05"
+    },
+    "joint_trajectory_controller": {
+      "package": "ros-jazzy-joint-trajectory-controller",
+      "version": "4.40.1-1noble.20260615.171409",
+      "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
+      "observed_at": "2026-07-05"
+    },
+    "ros2controlcli": {
+      "package": "ros-jazzy-ros2controlcli",
+      "version": "4.45.2-1noble.20260615.165650",
       "source": "http://packages.ros.org/ros2/ubuntu noble/main amd64 Packages",
       "observed_at": "2026-07-05"
     },
@@ -145,6 +187,10 @@
       "mavros",
       "mavros_extras",
       "mavros_msgs",
+      "moveit_ros_move_group",
+      "controller_manager",
+      "ros2_control",
+      "joint_trajectory_controller",
       "ros_gz_bridge",
       "ros_gz_sim",
       "rosbag2_storage_mcap"
@@ -155,7 +201,8 @@
     ],
     "commands": [
       "gz sim --help",
-      "ros2 bag record -s mcap --help"
+      "ros2 bag record -s mcap --help",
+      "ros2 control --help"
     ]
   }
 }
