@@ -37,8 +37,7 @@ services:
     profiles:
       - autopilot
       - px4
-    command:
-      - -h
+    command: ["-h"]
     network_mode: "${COMPOSE_NETWORK_MODE:-host}"
     working_dir: /workspace
 
@@ -137,5 +136,6 @@ services:
     image: nvcr.io/nvidia/l4t-jetpack:r36.4.0
     profiles:
       - edge
+    # Config-check only on amd64 CI; this image is not built or run as a release gate.
     platform: linux/arm64
     command: bash -lc "uname -m && cat /etc/nv_tegra_release || true"

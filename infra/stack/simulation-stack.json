@@ -316,40 +316,84 @@
     }
   },
   "smoke_expectations": {
-    "ros_packages": [
-      "mavros",
-      "mavros_extras",
-      "mavros_msgs",
-      "moveit_ros_move_group",
-      "controller_manager",
-      "ros2_control",
-      "joint_trajectory_controller",
-      "ros_gz_bridge",
-      "ros_gz_sim",
-      "sensor_msgs",
-      "tf2_msgs",
-      "image_transport",
-      "rosbag2_storage_mcap"
-    ],
-    "python_imports": [
-      "cv2",
-      "cv_bridge"
-    ],
-    "commands": [
-      "gz sim --help",
-      "ros2 bag record -s mcap --help",
-      "ros2 control --help",
-      "ros2 interface show sensor_msgs/msg/Image",
-      "ros2 interface show sensor_msgs/msg/CameraInfo",
-      "ros2 interface show sensor_msgs/msg/PointCloud2",
-      "ros2 interface show tf2_msgs/msg/TFMessage",
-      "docker compose config",
-      "hadolint",
-      "actionlint",
-      "trivy image --format cyclonedx",
-      "gst-launch-1.0 --version",
-      "zenoh-bridge-ros2dds --help",
-      "MicroXRCEAgent --help"
-    ]
+    "profiles": {
+      "core_simulation": {
+        "service": "simulation",
+        "compose_profile": null,
+        "release_gate": true,
+        "ros_packages": [
+          "mavros",
+          "mavros_extras",
+          "mavros_msgs",
+          "moveit_ros_move_group",
+          "controller_manager",
+          "ros2_control",
+          "joint_trajectory_controller",
+          "ros_gz_bridge",
+          "ros_gz_sim",
+          "rosbag2_storage_mcap"
+        ],
+        "python_imports": [
+          "cv2",
+          "cv_bridge"
+        ],
+        "commands": [
+          "gz sim --help",
+          "ros2 bag record -s mcap --help",
+          "ros2 control --help"
+        ]
+      },
+      "sensor_simulation": {
+        "service": "simulation",
+        "compose_profile": null,
+        "release_gate": true,
+        "ros_packages": [
+          "sensor_msgs",
+          "tf2_msgs",
+          "image_transport"
+        ],
+        "commands": [
+          "ros2 interface show sensor_msgs/msg/Image",
+          "ros2 interface show sensor_msgs/msg/CameraInfo",
+          "ros2 interface show sensor_msgs/msg/PointCloud2",
+          "ros2 interface show tf2_msgs/msg/TFMessage"
+        ]
+      },
+      "host_tooling": {
+        "service": "host",
+        "compose_profile": null,
+        "release_gate": true,
+        "commands": [
+          "docker compose config",
+          "hadolint",
+          "actionlint",
+          "trivy image --format cyclonedx"
+        ]
+      },
+      "media_sensor_runtime": {
+        "service": "media-runtime",
+        "compose_profile": "media",
+        "release_gate": false,
+        "commands": [
+          "gst-launch-1.0 --version"
+        ]
+      },
+      "comms_bridge": {
+        "service": "comms-bridge",
+        "compose_profile": "comms",
+        "release_gate": false,
+        "commands": [
+          "zenoh-bridge-ros2dds --help"
+        ]
+      },
+      "dds_bridge": {
+        "service": "dds-agent",
+        "compose_profile": "dds",
+        "release_gate": false,
+        "commands": [
+          "MicroXRCEAgent --help"
+        ]
+      }
+    }
   }
 }

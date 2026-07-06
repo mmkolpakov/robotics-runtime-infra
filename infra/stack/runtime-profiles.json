@@ -632,6 +632,18 @@
             "ros2_control",
             "rosbag2_mcap"
           ]
+        },
+        {
+          "id": "external_odometry_slam",
+          "category": "algorithm",
+          "components": [
+            "odometry",
+            "slam",
+            "external_algorithm_stack"
+          ],
+          "notes": [
+            "Odometry and SLAM workloads are owned by upper projects unless a neutral benchmark explicitly adds them to this repository."
+          ]
         }
       ],
       "checks": [
@@ -769,7 +781,7 @@
     },
     {
       "id": "dds_bridge_runtime",
-      "default": "mavlink_mavros",
+      "default": "micro_xrce_dds_agent",
       "rationale": "DDS bridge runtime is useful for autopilot integrations, but it must remain optional until an upper stack owns message packages and topics.",
       "alternatives": [
         {
@@ -906,34 +918,6 @@
           "compose_profile": "edge",
           "release_gate": false,
           "gpu_required": true
-        }
-      ]
-    },
-    {
-      "id": "odometry_and_slam",
-      "default": "external_algorithm_stack",
-      "rationale": "Odometry and SLAM packages are algorithmic workloads and should be owned by upper projects unless a neutral benchmark requires them.",
-      "alternatives": [
-        {
-          "id": "external_algorithm_stack",
-          "status": "external",
-          "compose_profile": null,
-          "release_gate": false,
-          "gpu_required": false
-        }
-      ]
-    },
-    {
-      "id": "evidence_recording",
-      "default": "rosbag2_mcap",
-      "rationale": "Simulation results must be machine-readable and reviewable, not only visually observed.",
-      "alternatives": [
-        {
-          "id": "rosbag2_mcap",
-          "status": "ready",
-          "compose_profile": null,
-          "release_gate": true,
-          "gpu_required": false
         }
       ]
     }

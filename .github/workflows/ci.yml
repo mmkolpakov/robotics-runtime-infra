@@ -58,7 +58,9 @@ jobs:
           IMAGE_TAG="robotics/ros-jazzy-simulation:ci" \
             make compose-build
       - name: Smoke simulation image
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make compose-smoke compose-autopilot-smoke
+        run: |
+          IMAGE_TAG="robotics/ros-jazzy-simulation:ci" \
+            make compose-smoke compose-sensor-smoke compose-autopilot-smoke
       - name: Inspect local image metadata
         run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make docker-metadata
       - name: Check recorded package versions

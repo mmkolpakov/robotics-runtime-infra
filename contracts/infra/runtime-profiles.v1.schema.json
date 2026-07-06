@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "contracts/infra/runtime-profiles.schema.json",
+  "$id": "contracts/infra/runtime-profiles.v1.schema.json",
   "title": "RuntimeProfiles",
   "type": "object",
   "required": [
@@ -202,7 +202,7 @@
               },
               "additionalProperties": false
             },
-            "minItems": 1
+            "minItems": 2
           }
         },
         "additionalProperties": false

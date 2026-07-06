@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "contracts/infra/stack.schema.json",
+  "$id": "contracts/infra/stack.v1.schema.json",
   "title": "SimulationStack",
   "type": "object",
   "required": [
@@ -111,24 +111,46 @@
     "smoke_expectations": {
       "type": "object",
       "required": [
-        "ros_packages",
-        "python_imports",
-        "commands"
+        "profiles"
       ],
       "properties": {
-        "ros_packages": {
-          "type": "array",
-          "items": { "type": "string" },
-          "minItems": 1
-        },
-        "python_imports": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "commands": {
-          "type": "array",
-          "items": { "type": "string" },
-          "minItems": 1
+        "profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "service",
+              "release_gate"
+            ],
+            "properties": {
+              "service": { "type": "string" },
+              "compose_profile": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "release_gate": { "type": "boolean" },
+              "ros_packages": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "python_imports": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "commands": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "notes": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          },
+          "minProperties": 1
         }
       },
       "additionalProperties": false

@@ -13,19 +13,21 @@ VCS_REF ?= local
 IMAGE_CREATED ?= unknown
 DOCKER_BUILD_NETWORK ?= host
 DOCKER_RUN_NETWORK ?= host
+DOCKER_INSPECT_RETRIES ?= 3
 COMPOSE ?= docker compose
 COMPOSE_FILE := compose.yaml
 REPORT_DIR ?= artifacts/reports
 SECURITY_DIR ?= artifacts/security
 TRIVY_IMAGE ?= aquasec/trivy:0.72.0
+TRIVY_DB_REPOSITORY ?= ghcr.io/aquasecurity/trivy-db:2
 HADOLINT_IMAGE ?= hadolint/hadolint:v2.14.0
 ACTIONLINT_IMAGE ?= rhysd/actionlint:1.7.12
 STACK_MANIFEST := infra/stack/simulation-stack.json
-STACK_SCHEMA := contracts/infra/stack.schema.json
+STACK_SCHEMA := contracts/infra/stack.v1.schema.json
 RUNTIME_PROFILES := infra/stack/runtime-profiles.json
-RUNTIME_PROFILES_SCHEMA := contracts/infra/runtime-profiles.schema.json
+RUNTIME_PROFILES_SCHEMA := contracts/infra/runtime-profiles.v1.schema.json
 EVIDENCE_MANIFEST_EXAMPLE := infra/stack/evidence-manifest.example.json
-EVIDENCE_MANIFEST_SCHEMA := contracts/infra/evidence-manifest.schema.json
+EVIDENCE_MANIFEST_SCHEMA := contracts/infra/evidence-manifest.v1.schema.json
 DOCKERFILE := infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
 DOCKERFILES := $(DOCKERFILE) infra/docker/dds-agent.Dockerfile infra/docker/media-runtime.Dockerfile infra/docker/diagnostics-runtime.Dockerfile
 
@@ -44,11 +46,11 @@ validate-json:
 	check-jsonschema --schemafile "$(EVIDENCE_MANIFEST_SCHEMA)" "$(EVIDENCE_MANIFEST_EXAMPLE)"
 	python3 -m json.tool .devcontainer/devcontainer.json > "$(REPORT_DIR)/devcontainer.json"
 	python3 -m json.tool "$(STACK_MANIFEST)" > "$(REPORT_DIR)/simulation-stack.json"
-	python3 -m json.tool "$(STACK_SCHEMA)" > "$(REPORT_DIR)/stack.schema.json"
+	python3 -m json.tool "$(STACK_SCHEMA)" > "$(REPORT_DIR)/stack.v1.schema.json"
 	python3 -m json.tool "$(RUNTIME_PROFILES)" > "$(REPORT_DIR)/runtime-profiles.json"
-	python3 -m json.tool "$(RUNTIME_PROFILES_SCHEMA)" > "$(REPORT_DIR)/runtime-profiles.schema.json"
+	python3 -m json.tool "$(RUNTIME_PROFILES_SCHEMA)" > "$(REPORT_DIR)/runtime-profiles.v1.schema.json"
 	python3 -m json.tool "$(EVIDENCE_MANIFEST_EXAMPLE)" > "$(REPORT_DIR)/evidence-manifest.example.json"
-	python3 -m json.tool "$(EVIDENCE_MANIFEST_SCHEMA)" > "$(REPORT_DIR)/evidence-manifest.schema.json"
+	python3 -m json.tool "$(EVIDENCE_MANIFEST_SCHEMA)" > "$(REPORT_DIR)/evidence-manifest.v1.schema.json"
 
 validate-yaml:
 	yamllint .github .yamllint.yml "$(COMPOSE_FILE)"
@@ -94,8 +96,18 @@ review: validate lint profiles compose-build compose-smoke compose-sensor-smoke 
 
 docker-manifests:
 	mkdir -p "$(REPORT_DIR)"
-	docker buildx imagetools inspect osrf/ros:jazzy-simulation > "$(REPORT_DIR)/ros-base-image.txt"
-	docker buildx imagetools inspect ardupilot/ardupilot-dev-base:v0.2.0 > "$(REPORT_DIR)/ardupilot-base-image.txt"
+	n=0; \
+	until docker buildx imagetools inspect osrf/ros:jazzy-simulation > "$(REPORT_DIR)/ros-base-image.txt"; do \
+		n=$$((n + 1)); \
+		if [[ "$$n" -ge "$(DOCKER_INSPECT_RETRIES)" ]]; then exit 1; fi; \
+		sleep $$((5 * n)); \
+	done
+	n=0; \
+	until docker buildx imagetools inspect ardupilot/ardupilot-dev-base:v0.2.0 > "$(REPORT_DIR)/ardupilot-base-image.txt"; do \
+		n=$$((n + 1)); \
+		if [[ "$$n" -ge "$(DOCKER_INSPECT_RETRIES)" ]]; then exit 1; fi; \
+		sleep $$((5 * n)); \
+	done
 
 docker-pull:
 	docker pull osrf/ros:jazzy-simulation
@@ -246,6 +258,7 @@ security-scan:
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$(CURDIR)/$(SECURITY_DIR):/out" \
 		"$(TRIVY_IMAGE)" image \
+		--db-repository "$(TRIVY_DB_REPOSITORY)" \
 		--format sarif \
 		--output /out/trivy-image.sarif \
 		--exit-code 0 \

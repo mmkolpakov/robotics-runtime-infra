@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "contracts/infra/evidence-manifest.schema.json",
+  "$id": "contracts/infra/evidence-manifest.v1.schema.json",
   "title": "EvidenceManifest",
   "type": "object",
   "required": [
