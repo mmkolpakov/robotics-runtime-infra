@@ -1,0 +1,8 @@
+# Trivy ignore policy.
+#
+# Keep this file empty unless a finding is accepted deliberately.
+# Each ignored finding must include a short reason and an expiration date:
+#
+# CVE-YYYY-NNNN # reason: upstream base image; review: issue-123; exp:YYYY-MM-DD
+#
+# Expired entries must be removed or renewed with a fresh review decision.

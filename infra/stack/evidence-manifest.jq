@@ -41,6 +41,12 @@
       result: $sarif_result,
       duration_s: null,
       log: "artifacts/security/trivy-image.sarif"
+    },
+    {
+      id: "security_gate",
+      result: "pass",
+      duration_s: null,
+      log: "artifacts/security/trivy-gate.txt"
     }
   ],
   metrics: {},
@@ -74,7 +80,12 @@
       path: "artifacts/security/trivy-image.sarif",
       media_type: "application/sarif+json",
       required: false
+    },
+    {
+      kind: "security_gate",
+      path: "artifacts/security/trivy-gate.txt",
+      media_type: "text/plain",
+      required: true
     }
   ]
 }
-

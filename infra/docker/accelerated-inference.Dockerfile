@@ -21,4 +21,3 @@ RUN python3 -m pip install --no-cache-dir \
     "onnxruntime-gpu==${ONNXRUNTIME_GPU_VERSION}"
 
 CMD ["bash", "-lc", "python3 -c \"import onnxruntime; import torch; import tensorrt; print('torch_cuda_available=' + str(torch.cuda.is_available())); raise SystemExit(0 if torch.cuda.is_available() else 1)\""]
-

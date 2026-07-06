@@ -24,4 +24,3 @@ repos:
         entry: make lint-dockerfile
         language: system
         pass_filenames: false
-

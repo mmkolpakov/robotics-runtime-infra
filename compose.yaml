@@ -63,11 +63,6 @@ services:
     command: ["-h"]
     network_mode: "${COMPOSE_NETWORK_MODE:-host}"
     working_dir: /workspace
-    healthcheck:
-      test: ["CMD-SHELL", "test -x /bin/bash && true"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   dds-agent:
     image: "${DDS_AGENT_IMAGE_TAG:-robotics/dds-agent:2026-07-05}"
@@ -216,7 +211,6 @@ services:
         VCS_REF: "${VCS_REF:-local}"
     profiles:
       - inference
-      - nvidia
     command:
       - bash
       - -lc

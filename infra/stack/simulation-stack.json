@@ -396,7 +396,8 @@
           "docker compose config",
           "hadolint",
           "actionlint",
-          "trivy image --format cyclonedx"
+          "trivy image --format cyclonedx",
+          "trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1"
         ]
       },
       "media_sensor_runtime": {

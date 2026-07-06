@@ -24,6 +24,9 @@ REPORT_DIR ?= artifacts/reports
 SECURITY_DIR ?= artifacts/security
 TRIVY_IMAGE ?= aquasec/trivy:0.72.0
 TRIVY_DB_REPOSITORY ?= ghcr.io/aquasecurity/trivy-db:2
+TRIVY_GATE_SEVERITY ?= HIGH,CRITICAL
+TRIVY_IGNORE_FILE ?= .trivyignore
+TRIVY_CACHE_DIR ?= tmp/trivy-cache
 HADOLINT_IMAGE ?= hadolint/hadolint:v2.14.0
 ACTIONLINT_IMAGE ?= rhysd/actionlint:1.7.12
 STACK_MANIFEST := infra/stack/simulation-stack.json
@@ -42,7 +45,7 @@ DOCKERFILES := $(DOCKERFILE) infra/docker/accelerated-inference.Dockerfile infra
 	compose-px4-smoke compose-dds-smoke compose-comms-smoke compose-media-smoke compose-diagnostics-smoke \
 	compose-sensor-smoke integration-smoke compose-gpu-smoke compose-accelerated-inference-smoke \
 	compose-render-smoke compose-edge-config optional-smoke docker-metadata docker-update-check \
-	evidence-manifest sbom security-scan pre-commit ci clean
+	evidence-manifest sbom security-scan security-gate pre-commit ci clean
 
 validate: validate-json validate-yaml compose-config
 
@@ -101,7 +104,7 @@ profiles:
 		"$(RUNTIME_PROFILES)" | tee "$(REPORT_DIR)/runtime-profiles.tsv"
 
 review: validate lint profiles compose-build compose-smoke compose-sensor-smoke integration-smoke \
-	compose-autopilot-smoke docker-metadata security-scan sbom evidence-manifest
+	compose-autopilot-smoke docker-metadata security-scan security-gate sbom evidence-manifest
 
 docker-manifests:
 	mkdir -p "$(REPORT_DIR)"
@@ -309,6 +312,7 @@ evidence-manifest:
 	if [[ ! -s "$(REPORT_DIR)/integration-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/integration-smoke.txt" >&2; exit 1; fi
 	if [[ ! -s "$(REPORT_DIR)/compose-autopilot-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/compose-autopilot-smoke.txt" >&2; exit 1; fi
 	if [[ ! -s "$(REPORT_DIR)/docker-image-inspect.json" ]]; then echo "Missing $(REPORT_DIR)/docker-image-inspect.json" >&2; exit 1; fi
+	if [[ ! -s "$(SECURITY_DIR)/trivy-gate.txt" ]]; then echo "Missing $(SECURITY_DIR)/trivy-gate.txt" >&2; exit 1; fi
 	image_digest="$$(jq -r '.[0].RepoDigests[0] // empty' "$(REPORT_DIR)/docker-image-inspect.json")"; \
 	source_ref="$$(jq -r '.[0].Config.Labels["org.opencontainers.image.revision"] // empty' "$(REPORT_DIR)/docker-image-inspect.json")"; \
 	sarif_result="$$(if [[ -s "$(SECURITY_DIR)/trivy-image.sarif" ]]; then echo pass; else echo not_run; fi)"; \
@@ -334,11 +338,12 @@ docker-update-check:
 		| tee "$(REPORT_DIR)/package-update-check.txt"
 
 security-scan:
-	mkdir -p "$(SECURITY_DIR)"
+	mkdir -p "$(SECURITY_DIR)" "$(TRIVY_CACHE_DIR)"
 	docker run --rm \
 		--network "$(DOCKER_RUN_NETWORK)" \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$(CURDIR)/$(SECURITY_DIR):/out" \
+		-v "$(CURDIR)/$(TRIVY_CACHE_DIR):/root/.cache/trivy" \
 		"$(TRIVY_IMAGE)" image \
 		--db-repository "$(TRIVY_DB_REPOSITORY)" \
 		--format sarif \
@@ -346,19 +351,38 @@ security-scan:
 		--exit-code 0 \
 		"$(IMAGE_TAG)"
 
-sbom:
-	mkdir -p "$(SECURITY_DIR)"
+security-gate:
+	mkdir -p "$(SECURITY_DIR)" "$(TRIVY_CACHE_DIR)"
 	docker run --rm \
 		--network "$(DOCKER_RUN_NETWORK)" \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$(CURDIR)/$(SECURITY_DIR):/out" \
+		-v "$(CURDIR)/$(TRIVY_IGNORE_FILE):/trivyignore:ro" \
+		-v "$(CURDIR)/$(TRIVY_CACHE_DIR):/root/.cache/trivy" \
+		"$(TRIVY_IMAGE)" image \
+		--db-repository "$(TRIVY_DB_REPOSITORY)" \
+		--scanners vuln \
+		--ignorefile /trivyignore \
+		--ignore-unfixed \
+		--severity "$(TRIVY_GATE_SEVERITY)" \
+		--exit-code 1 \
+		"$(IMAGE_TAG)" \
+		2>&1 | tee "$(SECURITY_DIR)/trivy-gate.txt"
+
+sbom:
+	mkdir -p "$(SECURITY_DIR)" "$(TRIVY_CACHE_DIR)"
+	docker run --rm \
+		--network "$(DOCKER_RUN_NETWORK)" \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v "$(CURDIR)/$(SECURITY_DIR):/out" \
+		-v "$(CURDIR)/$(TRIVY_CACHE_DIR):/root/.cache/trivy" \
 		"$(TRIVY_IMAGE)" image \
 		--format cyclonedx \
 		--output /out/sbom.cdx.json \
 		"$(IMAGE_TAG)"
 
 ci: validate lint docker-manifests compose-build compose-smoke compose-sensor-smoke compose-autopilot-smoke docker-metadata \
-	integration-smoke docker-update-check security-scan sbom evidence-manifest
+	integration-smoke docker-update-check security-scan security-gate sbom evidence-manifest
 
 pre-commit:
 	pre-commit run --all-files

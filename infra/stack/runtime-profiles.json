@@ -488,6 +488,11 @@
           "required": true
         },
         {
+          "id": "security_gate",
+          "command": "make security-gate",
+          "required": true
+        },
+        {
           "id": "evidence_manifest",
           "command": "make evidence-manifest",
           "required": true
@@ -545,9 +550,9 @@
         "artifacts/reports/compose-diagnostics-smoke.txt"
       ]
     },
-    "accelerated_runtime_optional": {
+    "gpu_runtime_optional": {
       "status": "optional",
-      "purpose": "Optional hardware-accelerated runtime lane for workloads that need GPU or specialized inference providers.",
+      "purpose": "Optional NVIDIA container runtime probe for hosts with a compatible GPU stack.",
       "release_gate": false,
       "compose_profiles": [
         "nvidia"
@@ -566,13 +571,10 @@
           "category": "runtime",
           "components": [
             "cuda_runtime_optional",
-            "gpu_container_runtime_optional",
-            "onnxruntime_optional",
-            "pytorch_cuda_optional",
-            "tensorrt_optional"
+            "gpu_container_runtime_optional"
           ],
           "notes": [
-            "This profile is not required for the default local and CI gates."
+            "This profile validates container access to NVIDIA GPU runtime only."
           ]
         }
       ],
@@ -581,7 +583,42 @@
           "id": "gpu_runtime_probe",
           "command": "make compose-gpu-smoke",
           "required": false
-        },
+        }
+      ],
+      "artifacts": [
+        "artifacts/reports/compose-gpu-smoke.txt"
+      ]
+    },
+    "accelerated_inference_runtime_optional": {
+      "status": "optional",
+      "purpose": "Optional NVIDIA inference runtime lane for ONNX Runtime GPU, PyTorch CUDA, and TensorRT checks.",
+      "release_gate": false,
+      "compose_profiles": [
+        "inference"
+      ],
+      "host": {
+        "os": [
+          "linux",
+          "windows_11_wsl2"
+        ],
+        "container_runtime": "docker",
+        "gpu_required": true
+      },
+      "capabilities": [
+        {
+          "id": "accelerated_inference",
+          "category": "runtime",
+          "components": [
+            "onnxruntime_optional",
+            "pytorch_cuda_optional",
+            "tensorrt_optional"
+          ],
+          "notes": [
+            "This profile is not required for the default local and CI gates and is separate from the lightweight NVIDIA runtime probe."
+          ]
+        }
+      ],
+      "checks": [
         {
           "id": "accelerated_inference_probe",
           "command": "make compose-accelerated-inference-smoke",
@@ -589,7 +626,6 @@
         }
       ],
       "artifacts": [
-        "artifacts/reports/compose-gpu-smoke.txt",
         "artifacts/reports/compose-accelerated-inference-smoke.txt"
       ]
     },

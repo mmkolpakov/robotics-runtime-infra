@@ -54,4 +54,3 @@ pids+=("$!")
 wait_for_topic "${MAVROS_STATE_TOPIC}"
 
 ros2 topic list | sort
-
