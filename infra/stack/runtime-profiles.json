@@ -64,6 +64,51 @@
         "artifacts/reports/docker-image-inspect.json"
       ]
     },
+    "developer_workspace": {
+      "status": "optional",
+      "purpose": "Long-running interactive simulation container for local and server-side development work.",
+      "release_gate": false,
+      "compose_profiles": [
+        "dev"
+      ],
+      "host": {
+        "os": [
+          "windows_11_wsl2",
+          "linux"
+        ],
+        "container_runtime": "docker",
+        "gpu_required": false
+      },
+      "capabilities": [
+        {
+          "id": "interactive_workspace",
+          "category": "development",
+          "components": [
+            "ros2_shell",
+            "gazebo_cli",
+            "project_mount_boundary"
+          ],
+          "notes": [
+            "Use compose.override.yaml for project-specific source and data mounts."
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "dev_compose_config",
+          "command": "make compose-config",
+          "required": false
+        },
+        {
+          "id": "dev_container_up",
+          "command": "make dev-up",
+          "required": false
+        }
+      ],
+      "artifacts": [
+        "artifacts/reports/compose.dev.yaml"
+      ]
+    },
     "autopilot_sitl": {
       "status": "partial",
       "purpose": "Autopilot-oriented simulation readiness through standard MAVLink and ROS interfaces.",

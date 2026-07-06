@@ -372,6 +372,15 @@
           "ros2 control --help"
         ]
       },
+      "developer_workspace": {
+        "service": "simulation-dev",
+        "compose_profile": "dev",
+        "release_gate": false,
+        "commands": [
+          "ros2 pkg list",
+          "gz sim --help"
+        ]
+      },
       "sensor_simulation": {
         "service": "simulation",
         "compose_profile": null,

@@ -3,6 +3,11 @@ unexport BASH_ENV
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 IMAGE_TAG ?= robotics/ros-jazzy-simulation:2026-07-05
 DDS_AGENT_IMAGE_TAG ?= robotics/dds-agent:2026-07-05
 MEDIA_IMAGE_TAG ?= robotics/media-runtime:2026-07-05
@@ -20,6 +25,7 @@ DOCKER_BUILD_RETRIES ?= 3
 DOCKER_INSPECT_RETRIES ?= 6
 COMPOSE ?= docker compose
 COMPOSE_FILE := compose.yaml
+DEV_SERVICE ?= simulation-dev
 REPORT_DIR ?= artifacts/reports
 SECURITY_DIR ?= artifacts/security
 TRIVY_IMAGE ?= aquasec/trivy:0.72.0
@@ -41,6 +47,7 @@ DOCKERFILE := infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
 DOCKERFILES := $(DOCKERFILE) infra/docker/accelerated-inference.Dockerfile infra/docker/dds-agent.Dockerfile infra/docker/media-runtime.Dockerfile infra/docker/diagnostics-runtime.Dockerfile
 
 .PHONY: validate validate-json validate-yaml compose-config lint lint-dockerfile lint-actions profiles review \
+	dev-up dev-shell dev-logs dev-ps dev-down \
 	docker-manifests docker-pull compose-build compose-smoke compose-autopilot-smoke compose-ardupilot-smoke \
 	compose-px4-smoke compose-dds-smoke compose-comms-smoke compose-media-smoke compose-diagnostics-smoke \
 	compose-sensor-smoke integration-smoke compose-gpu-smoke compose-accelerated-inference-smoke \
@@ -75,6 +82,7 @@ compose-config:
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile comms config > "$(REPORT_DIR)/compose.comms.yaml"
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile media config > "$(REPORT_DIR)/compose.media.yaml"
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile diagnostics config > "$(REPORT_DIR)/compose.diagnostics.yaml"
+	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev config > "$(REPORT_DIR)/compose.dev.yaml"
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile render config > "$(REPORT_DIR)/compose.render.yaml"
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile nvidia config > "$(REPORT_DIR)/compose.nvidia.yaml"
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile inference config > "$(REPORT_DIR)/compose.inference.yaml"
@@ -139,6 +147,29 @@ compose-build:
 		if [[ "$$n" -ge "$(DOCKER_BUILD_RETRIES)" ]]; then exit 1; fi; \
 		sleep $$((5 * n)); \
 	done
+
+dev-up: compose-build
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev up --detach --wait --no-build "$(DEV_SERVICE)"
+
+dev-shell:
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev exec "$(DEV_SERVICE)" \
+		bash -lc 'source /etc/profile.d/robotics_ros_setup.sh && exec bash -i'
+
+dev-logs:
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev logs --follow "$(DEV_SERVICE)"
+
+dev-ps:
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev ps "$(DEV_SERVICE)"
+
+dev-down:
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev stop "$(DEV_SERVICE)" || true
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev rm --force "$(DEV_SERVICE)" || true
 
 compose-smoke:
 	mkdir -p "$(REPORT_DIR)"

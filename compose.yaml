@@ -19,26 +19,45 @@ x-ros-healthcheck: &ros-healthcheck
   retries: 3
   start_period: 10s
 
+x-simulation-build: &simulation-build
+  context: .
+  dockerfile: infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
+  network: "${DOCKER_BUILD_NETWORK:-host}"
+  args:
+    IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
+    IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
+    IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
+    VCS_REF: "${VCS_REF:-local}"
+
+x-simulation-volumes: &simulation-volumes
+  - ./config:/workspace/config:ro
+  - ./infra/smoke:/workspace/infra/smoke:ro
+  - ./launch:/workspace/launch:ro
+
 services:
   simulation:
     image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    build:
-      context: .
-      dockerfile: infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
-      network: "${DOCKER_BUILD_NETWORK:-host}"
-      args:
-        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
-        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
-        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
-        VCS_REF: "${VCS_REF:-local}"
+    build: *simulation-build
     environment:
       <<: *ros-environment
     network_mode: "${COMPOSE_NETWORK_MODE:-host}"
     working_dir: /workspace
-    volumes:
-      - ./config:/workspace/config:ro
-      - ./infra/smoke:/workspace/infra/smoke:ro
-      - ./launch:/workspace/launch:ro
+    volumes: *simulation-volumes
+    healthcheck: *ros-healthcheck
+
+  simulation-dev:
+    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+    build: *simulation-build
+    profiles:
+      - dev
+    command: ["bash", "-lc", "sleep infinity"]
+    environment:
+      <<: *ros-environment
+    network_mode: "${COMPOSE_NETWORK_MODE:-host}"
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    volumes: *simulation-volumes
     healthcheck: *ros-healthcheck
 
   autopilot-base:
