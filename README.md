@@ -56,6 +56,7 @@ GPU не является обязательным требованием для
 | image_transport | `ros-jazzy-image-transport` `5.1.8-1noble.20260615.144252` |
 | rosbag2 | `ros-jazzy-rosbag2` `0.26.11-1noble.20260616.084050` |
 | rosbag2 MCAP | `ros-jazzy-rosbag2-storage-mcap` `0.26.11-1noble.20260616.074830` |
+| Artifact storage CLI | AWS CLI `2.35.17` via official Linux installer |
 | ArduPilot base | `ardupilot/ardupilot-dev-base:v0.2.0` |
 | PX4 SITL, не блокирует релиз | `px4io/px4-sitl-gazebo:v1.18.0-alpha1-amd64` |
 | NVIDIA probe, опционально | `nvidia/cuda:12.9.2-base-ubuntu24.04` |
@@ -101,7 +102,9 @@ GPU не является обязательным требованием для
 | --- | --- | --- |
 | Базовая CPU-среда | `make compose-smoke` | да |
 | Интерфейсы датчиков | `make compose-sensor-smoke` | да |
+| Инструменты выгрузки артефактов | `make compose-artifact-tooling-smoke` | да |
 | Связка ROS 2 + Gazebo + MAVROS | `make integration-smoke` | да |
+| Движение сочленения в headless Gazebo | `make joint-motion-smoke` | да |
 | Автопилотная базовая проверка | `make compose-autopilot-smoke` | да |
 | ArduPilot среда сборки и SITL | `make compose-ardupilot-smoke` | да |
 | Среда PX4 SITL | `make compose-px4-smoke` | нет |
@@ -280,7 +283,9 @@ make review
 make compose-build
 make compose-smoke
 make compose-sensor-smoke
+make compose-artifact-tooling-smoke
 make integration-smoke
+make joint-motion-smoke
 make compose-autopilot-smoke
 make compose-ardupilot-smoke
 make compose-px4-smoke
@@ -303,13 +308,14 @@ make ci
 ```
 
 `make ci` выполняет полный локальный прогон: проверку контрактов, сборку образа, smoke-проверки,
-интеграционный smoke ROS 2/Gazebo/MAVROS, сверку зафиксированных пакетов, SARIF-отчет Trivy,
-security gate, SBOM и evidence manifest.
+интеграционный smoke ROS 2/Gazebo/MAVROS, smoke инструментов артефактов, headless-проверку
+движения сочленения Gazebo, сверку зафиксированных пакетов, SARIF-отчет Trivy, security gate,
+SBOM и evidence manifest.
 
 `make review` выполняет локальный набор перед ревью:
 контракты, Compose config, линтеры, профили, сборку, smoke образа, интерфейсы датчиков,
-интеграционный smoke, автопилотную базу, метаданные образа, SARIF, security gate, SBOM
-и evidence manifest.
+инструменты артефактов, интеграционный smoke, движение сочленения Gazebo, автопилотную базу,
+метаданные образа, SARIF, security gate, SBOM и evidence manifest.
 
 `make optional-smoke` выполняет дополнительные проверки, которые не блокируют базовый CPU/WSL2
 маршрут: локальный рендер, среду PX4 SITL, DDS-мост, мост Zenoh, GStreamer, диагностику и
@@ -328,6 +334,7 @@ compose.override.yaml.example        шаблон локального Compose o
 compose.yaml                         Docker Compose профили запуска
 config/headless_gazebo.yaml          минимальный headless-конфиг симуляции
 contracts/infra/evidence-manifest.v1.schema.json  JSON Schema manifest артефактов
+contracts/infra/infra-release.v1.schema.json  JSON Schema release manifest инфраструктуры
 contracts/infra/runtime-profiles.v1.schema.json  JSON Schema профилей возможностей
 contracts/infra/stack.v1.schema.json    JSON Schema контракта стека
 infra/docker/                        Dockerfile симуляционного образа
@@ -336,9 +343,12 @@ infra/docker/dds-agent.Dockerfile    optional DDS bridge runtime
 infra/docker/media-runtime.Dockerfile  optional media runtime
 infra/docker/diagnostics-runtime.Dockerfile  optional diagnostics runtime
 infra/smoke/simulation_integration_smoke.sh  интеграционный smoke ROS 2/Gazebo/MAVROS
+infra/smoke/joint_motion_smoke.sh     headless smoke движения сочленения Gazebo
 infra/smoke/worlds/empty.sdf         минимальный SDF-мир для smoke
+infra/smoke/worlds/joint_motion.sdf  минимальный SDF-мир для проверки JointController
 infra/stack/evidence-manifest.jq     генератор manifest через jq
 infra/stack/evidence-manifest.example.json  пример manifest артефактов
+infra/stack/infra-release.json        release manifest инфраструктуры
 infra/stack/runtime-profiles.json     профили возможностей и границы расширения
 infra/stack/simulation-stack.json    зафиксированный состав стека
 launch/simulation_smoke.launch.py    минимальный ROS 2 launch для smoke

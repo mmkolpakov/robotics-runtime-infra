@@ -43,6 +43,8 @@ EVIDENCE_MANIFEST_EXAMPLE := infra/stack/evidence-manifest.example.json
 EVIDENCE_MANIFEST_SCHEMA := contracts/infra/evidence-manifest.v1.schema.json
 EVIDENCE_MANIFEST_FILTER := infra/stack/evidence-manifest.jq
 EVIDENCE_MANIFEST := $(REPORT_DIR)/evidence-manifest.json
+INFRA_RELEASE := infra/stack/infra-release.json
+INFRA_RELEASE_SCHEMA := contracts/infra/infra-release.v1.schema.json
 DOCKERFILE := infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
 DOCKERFILES := $(DOCKERFILE) infra/docker/accelerated-inference.Dockerfile infra/docker/dds-agent.Dockerfile infra/docker/media-runtime.Dockerfile infra/docker/diagnostics-runtime.Dockerfile
 
@@ -50,7 +52,8 @@ DOCKERFILES := $(DOCKERFILE) infra/docker/accelerated-inference.Dockerfile infra
 	dev-up dev-shell dev-logs dev-ps dev-down \
 	docker-manifests docker-pull compose-build compose-smoke compose-autopilot-smoke compose-ardupilot-smoke \
 	compose-px4-smoke compose-dds-smoke compose-comms-smoke compose-media-smoke compose-diagnostics-smoke \
-	compose-sensor-smoke integration-smoke compose-gpu-smoke compose-accelerated-inference-smoke \
+	compose-sensor-smoke compose-artifact-tooling-smoke integration-smoke joint-motion-smoke \
+	compose-gpu-smoke compose-accelerated-inference-smoke \
 	compose-render-smoke compose-edge-config optional-smoke docker-metadata docker-update-check \
 	evidence-manifest sbom security-scan security-gate pre-commit ci clean
 
@@ -59,11 +62,14 @@ validate: validate-json validate-yaml compose-config
 validate-json:
 	mkdir -p "$(REPORT_DIR)"
 	check-jsonschema --schemafile "$(STACK_SCHEMA)" "$(STACK_MANIFEST)"
+	check-jsonschema --schemafile "$(INFRA_RELEASE_SCHEMA)" "$(INFRA_RELEASE)"
 	check-jsonschema --schemafile "$(RUNTIME_PROFILES_SCHEMA)" "$(RUNTIME_PROFILES)"
 	check-jsonschema --schemafile "$(EVIDENCE_MANIFEST_SCHEMA)" "$(EVIDENCE_MANIFEST_EXAMPLE)"
 	python3 -m json.tool .devcontainer/devcontainer.json > "$(REPORT_DIR)/devcontainer.json"
 	python3 -m json.tool "$(STACK_MANIFEST)" > "$(REPORT_DIR)/simulation-stack.json"
 	python3 -m json.tool "$(STACK_SCHEMA)" > "$(REPORT_DIR)/stack.v1.schema.json"
+	python3 -m json.tool "$(INFRA_RELEASE)" > "$(REPORT_DIR)/infra-release.json"
+	python3 -m json.tool "$(INFRA_RELEASE_SCHEMA)" > "$(REPORT_DIR)/infra-release.v1.schema.json"
 	python3 -m json.tool "$(RUNTIME_PROFILES)" > "$(REPORT_DIR)/runtime-profiles.json"
 	python3 -m json.tool "$(RUNTIME_PROFILES_SCHEMA)" > "$(REPORT_DIR)/runtime-profiles.v1.schema.json"
 	python3 -m json.tool "$(EVIDENCE_MANIFEST_EXAMPLE)" > "$(REPORT_DIR)/evidence-manifest.example.json"
@@ -111,7 +117,7 @@ profiles:
 	jq -r '.profiles | to_entries[] | [.key, .value.status, .value.release_gate, .value.purpose] | @tsv' \
 		"$(RUNTIME_PROFILES)" | tee "$(REPORT_DIR)/runtime-profiles.tsv"
 
-review: validate lint profiles compose-build compose-smoke compose-sensor-smoke integration-smoke \
+review: validate lint profiles compose-build compose-smoke compose-sensor-smoke compose-artifact-tooling-smoke integration-smoke joint-motion-smoke \
 	compose-autopilot-smoke docker-metadata security-scan security-gate sbom evidence-manifest
 
 docker-manifests:
@@ -276,6 +282,16 @@ compose-sensor-smoke:
 	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
 	exit $$rc
 
+compose-artifact-tooling-smoke:
+	mkdir -p "$(REPORT_DIR)"
+	rc=0; \
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
+		bash -lc 'aws --version | grep -E "^aws-cli/2\.35\.17 " && source /etc/profile.d/robotics_ros_setup.sh && ros2 pkg prefix ros_gz_sim >/dev/null' \
+		2>&1 | tee "$(REPORT_DIR)/compose-artifact-tooling-smoke.txt" || rc=$$?; \
+	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
+	exit $$rc
+
 integration-smoke:
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
@@ -283,6 +299,16 @@ integration-smoke:
 		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
 		bash /workspace/infra/smoke/simulation_integration_smoke.sh \
 		2>&1 | tee "$(REPORT_DIR)/integration-smoke.txt" || rc=$$?; \
+	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
+	exit $$rc
+
+joint-motion-smoke:
+	mkdir -p "$(REPORT_DIR)"
+	rc=0; \
+	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
+		bash /workspace/infra/smoke/joint_motion_smoke.sh \
+		2>&1 | tee "$(REPORT_DIR)/joint-motion-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
 	exit $$rc
 
@@ -341,7 +367,9 @@ evidence-manifest:
 	mkdir -p "$(REPORT_DIR)"
 	if [[ ! -s "$(REPORT_DIR)/compose-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/compose-smoke.txt" >&2; exit 1; fi
 	if [[ ! -s "$(REPORT_DIR)/compose-sensor-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/compose-sensor-smoke.txt" >&2; exit 1; fi
+	if [[ ! -s "$(REPORT_DIR)/compose-artifact-tooling-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/compose-artifact-tooling-smoke.txt" >&2; exit 1; fi
 	if [[ ! -s "$(REPORT_DIR)/integration-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/integration-smoke.txt" >&2; exit 1; fi
+	if [[ ! -s "$(REPORT_DIR)/joint-motion-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/joint-motion-smoke.txt" >&2; exit 1; fi
 	if [[ ! -s "$(REPORT_DIR)/compose-autopilot-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/compose-autopilot-smoke.txt" >&2; exit 1; fi
 	if [[ ! -s "$(REPORT_DIR)/docker-image-inspect.json" ]]; then echo "Missing $(REPORT_DIR)/docker-image-inspect.json" >&2; exit 1; fi
 	if [[ ! -s "$(SECURITY_DIR)/trivy-gate.txt" ]]; then echo "Missing $(SECURITY_DIR)/trivy-gate.txt" >&2; exit 1; fi
@@ -413,8 +441,8 @@ sbom:
 		--output /out/sbom.cdx.json \
 		"$(IMAGE_TAG)"
 
-ci: validate lint docker-manifests compose-build compose-smoke compose-sensor-smoke compose-autopilot-smoke docker-metadata \
-	integration-smoke docker-update-check security-scan security-gate sbom evidence-manifest
+ci: validate lint docker-manifests compose-build compose-smoke compose-sensor-smoke compose-artifact-tooling-smoke compose-autopilot-smoke docker-metadata \
+	integration-smoke joint-motion-smoke docker-update-check security-scan security-gate sbom evidence-manifest
 
 pre-commit:
 	pre-commit run --all-files

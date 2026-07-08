@@ -25,10 +25,22 @@
       log: "artifacts/reports/compose-sensor-smoke.txt"
     },
     {
+      id: "artifact_tooling_smoke",
+      result: "pass",
+      duration_s: null,
+      log: "artifacts/reports/compose-artifact-tooling-smoke.txt"
+    },
+    {
       id: "integration_smoke",
       result: "pass",
       duration_s: null,
       log: "artifacts/reports/integration-smoke.txt"
+    },
+    {
+      id: "joint_motion_smoke",
+      result: "pass",
+      duration_s: null,
+      log: "artifacts/reports/joint-motion-smoke.txt"
     },
     {
       id: "autopilot_smoke",
@@ -65,7 +77,19 @@
     },
     {
       kind: "log",
+      path: "artifacts/reports/compose-artifact-tooling-smoke.txt",
+      media_type: "text/plain",
+      required: true
+    },
+    {
+      kind: "log",
       path: "artifacts/reports/integration-smoke.txt",
+      media_type: "text/plain",
+      required: true
+    },
+    {
+      kind: "log",
+      path: "artifacts/reports/joint-motion-smoke.txt",
       media_type: "text/plain",
       required: true
     },

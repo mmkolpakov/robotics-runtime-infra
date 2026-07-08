@@ -369,7 +369,30 @@
         "commands": [
           "gz sim --help",
           "ros2 bag record -s mcap --help",
-          "ros2 control --help"
+          "ros2 control --help",
+          "aws --version | grep -E '^aws-cli/2\\.35\\.17 '"
+        ]
+      },
+      "artifact_tooling": {
+        "service": "simulation",
+        "compose_profile": null,
+        "release_gate": true,
+        "commands": [
+          "aws --version | grep -E '^aws-cli/2\\.35\\.17 '"
+        ],
+        "notes": [
+          "AWS CLI 2.35.17 command line is required by downstream artifact handoff checks."
+        ]
+      },
+      "joint_motion": {
+        "service": "simulation",
+        "compose_profile": null,
+        "release_gate": true,
+        "commands": [
+          "bash /workspace/infra/smoke/joint_motion_smoke.sh"
+        ],
+        "notes": [
+          "Neutral Gazebo joint motion smoke protects downstream domains from accepting a stack that only starts /clock."
         ]
       },
       "developer_workspace": {

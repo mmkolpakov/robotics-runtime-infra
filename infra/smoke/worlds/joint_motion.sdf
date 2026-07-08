@@ -1,0 +1,85 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <world name="joint_motion">
+    <physics name="default_physics" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <model name="joint_motion_probe">
+      <pose>0 0 0 0 0 0</pose>
+
+      <link name="base">
+        <inertial>
+          <mass>1.0</mass>
+          <inertia>
+            <ixx>0.01</ixx>
+            <iyy>0.01</iyy>
+            <izz>0.01</izz>
+          </inertia>
+        </inertial>
+        <collision name="base_collision">
+          <geometry>
+            <box>
+              <size>0.2 0.2 0.2</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="base_visual">
+          <geometry>
+            <box>
+              <size>0.2 0.2 0.2</size>
+            </box>
+          </geometry>
+        </visual>
+      </link>
+
+      <link name="slider">
+        <pose>0.05 0 0 0 0 0</pose>
+        <inertial>
+          <mass>0.25</mass>
+          <inertia>
+            <ixx>0.001</ixx>
+            <iyy>0.001</iyy>
+            <izz>0.001</izz>
+          </inertia>
+        </inertial>
+        <collision name="slider_collision">
+          <geometry>
+            <box>
+              <size>0.1 0.1 0.1</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="slider_visual">
+          <geometry>
+            <box>
+              <size>0.1 0.1 0.1</size>
+            </box>
+          </geometry>
+        </visual>
+      </link>
+
+      <joint name="slider_joint" type="prismatic">
+        <parent>base</parent>
+        <child>slider</child>
+        <axis>
+          <xyz>1 0 0</xyz>
+          <limit>
+            <lower>-2.0</lower>
+            <upper>2.0</upper>
+            <effort>10.0</effort>
+            <velocity>0.5</velocity>
+          </limit>
+        </axis>
+      </joint>
+
+      <plugin
+        filename="gz-sim-joint-controller-system"
+        name="gz::sim::systems::JointController">
+        <joint_name>slider_joint</joint_name>
+        <initial_velocity>0.2</initial_velocity>
+      </plugin>
+    </model>
+  </world>
+</sdf>

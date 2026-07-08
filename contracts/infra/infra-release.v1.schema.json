@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/infra/infra-release.v1.schema.json",
+  "title": "InfraRelease",
+  "type": "object",
+  "required": [
+    "release_id",
+    "schema_version",
+    "created_at",
+    "repository",
+    "stack",
+    "images",
+    "tooling",
+    "smoke"
+  ],
+  "properties": {
+    "release_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "schema_version": {
+      "const": "infra-release.v1"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repository": {
+      "type": "object",
+      "required": [
+        "name",
+        "visibility",
+        "default_branch"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "private"
+          ]
+        },
+        "default_branch": { "type": "string" },
+        "commit": {
+          "type": "string",
+          "pattern": "^(unknown|[a-f0-9]{40})$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stack": {
+      "type": "object",
+      "required": [
+        "ros_distro",
+        "ubuntu",
+        "gazebo",
+        "primary_physics_engine"
+      ],
+      "properties": {
+        "ros_distro": { "type": "string" },
+        "ubuntu": { "type": "string" },
+        "gazebo": { "type": "string" },
+        "primary_physics_engine": { "type": "string" },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "ref",
+          "role",
+          "release_gate"
+        ],
+        "properties": {
+          "ref": { "type": "string" },
+          "digest": {
+            "type": "string",
+            "pattern": "^(unknown|sha256:[a-f0-9]{64})$"
+          },
+          "role": { "type": "string" },
+          "release_gate": { "type": "boolean" },
+          "platforms": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "tooling": {
+      "type": "object",
+      "required": [
+        "aws_cli"
+      ],
+      "properties": {
+        "aws_cli": {
+          "type": "object",
+          "required": [
+            "required",
+            "version",
+            "command"
+          ],
+          "properties": {
+            "required": { "const": true },
+            "version": {
+              "type": "string",
+              "pattern": "^2\\.[0-9]+\\.[0-9]+$"
+            },
+            "command": { "const": "aws --version" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "smoke": {
+      "type": "object",
+      "required": [
+        "release_gates"
+      ],
+      "properties": {
+        "release_gates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

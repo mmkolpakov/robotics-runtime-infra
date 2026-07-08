@@ -1,0 +1,48 @@
+{
+  "release_id": "robotics-simulation-infra-0.1.0",
+  "schema_version": "infra-release.v1",
+  "created_at": "2026-07-08T00:00:00Z",
+  "repository": {
+    "name": "mmkolpakov/droning-simulation-infra",
+    "visibility": "private",
+    "default_branch": "main",
+    "commit": "unknown"
+  },
+  "stack": {
+    "ros_distro": "jazzy",
+    "ubuntu": "24.04",
+    "gazebo": "harmonic",
+    "primary_physics_engine": "gz-physics-dartsim-plugin",
+    "notes": [
+      "Generic release metadata for downstream stack locks.",
+      "Domain scenes must run their own motion acceptance benches."
+    ]
+  },
+  "images": {
+    "simulation": {
+      "ref": "robotics/ros-jazzy-simulation:2026-07-05",
+      "digest": "unknown",
+      "role": "ROS 2 Jazzy, Gazebo Harmonic, MAVROS, MoveIt2, ros2_control, OpenCV, MCAP, and artifact tooling.",
+      "release_gate": true,
+      "platforms": [
+        "linux/amd64"
+      ]
+    }
+  },
+  "tooling": {
+    "aws_cli": {
+      "required": true,
+      "version": "2.35.17",
+      "command": "aws --version"
+    }
+  },
+  "smoke": {
+    "release_gates": [
+      "compose-smoke",
+      "compose-sensor-smoke",
+      "compose-artifact-tooling-smoke",
+      "integration-smoke",
+      "joint-motion-smoke"
+    ]
+  }
+}
