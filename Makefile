@@ -554,8 +554,18 @@ sbom:
 
 parallel-isolation-smoke:
 	@if [[ -z "$(RUN_ID)" ]]; then echo "RUN_ID is required" >&2; exit 2; fi
-	$(MAKE) RUN_ID=$(RUN_ID)-a compose-smoke
-	$(MAKE) RUN_ID=$(RUN_ID)-b compose-smoke
+	mkdir -p "$(RUNS_ROOT)"
+	rc_a=0; rc_b=0; \
+	( $(MAKE) RUN_ID=$(RUN_ID)-a compose-smoke > "$(RUNS_ROOT)/$(RUN_ID)-a.parallel-smoke.log" 2>&1 ) & pid_a=$$!; \
+	( $(MAKE) RUN_ID=$(RUN_ID)-b compose-smoke > "$(RUNS_ROOT)/$(RUN_ID)-b.parallel-smoke.log" 2>&1 ) & pid_b=$$!; \
+	wait "$$pid_a" || rc_a=$$?; \
+	wait "$$pid_b" || rc_b=$$?; \
+	cat "$(RUNS_ROOT)/$(RUN_ID)-a.parallel-smoke.log"; \
+	cat "$(RUNS_ROOT)/$(RUN_ID)-b.parallel-smoke.log"; \
+	if [[ "$$rc_a" -ne 0 || "$$rc_b" -ne 0 ]]; then \
+		echo "parallel-isolation-smoke failed: rc_a=$$rc_a rc_b=$$rc_b" >&2; \
+		exit 1; \
+	fi
 	@test -d "$(RUNS_ROOT)/$(RUN_ID)-a/reports"
 	@test -d "$(RUNS_ROOT)/$(RUN_ID)-b/reports"
 	@test "$$(cat $(RUNS_ROOT)/$(RUN_ID)-a/ros_domain_id.txt)" != "$$(cat $(RUNS_ROOT)/$(RUN_ID)-b/ros_domain_id.txt)"
