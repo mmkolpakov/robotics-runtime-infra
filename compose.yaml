@@ -5,6 +5,7 @@ x-ros-environment: &ros-environment
   ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:?ROS_DOMAIN_ID must be allocated}"
   RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
   RCUTILS_COLORIZED_OUTPUT: "1"
+  RUN_ID: "${RUN_ID:-current}"
 
 x-ros-healthcheck: &ros-healthcheck
   test:
@@ -69,6 +70,60 @@ services:
     tty: true
     volumes: *simulation-volumes
     healthcheck: *ros-healthcheck
+
+  # `cross-repo-simulation` and `ros-observer` together make the cross-repo
+  # gate exercise a real, running simulation instead of a static
+  # `docker compose run` of the image's package-presence CMD. They are run
+  # via `docker compose up --exit-code-from ros-observer`: the simulation
+  # keeps `gz sim` and the ROS-Gazebo clock bridge running indefinitely,
+  # while `ros-observer` performs a live rclpy graph check on the same
+  # bridge network and determines the overall pass/fail outcome.
+  cross-repo-simulation:
+    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+    build: *simulation-build
+    command:
+      - bash
+      - -lc
+      - >-
+        source /etc/profile.d/robotics_ros_setup.sh &&
+        exec ros2 launch /workspace/launch/simulation_smoke.launch.py
+    environment:
+      <<: *ros-environment
+      FASTRTPS_DEFAULT_PROFILES_FILE: >-
+        ${FASTRTPS_DEFAULT_PROFILES_FILE:-/workspace/runs/current/dds/fastdds-profile.xml}
+    networks:
+      - robotics-sim
+    working_dir: /workspace
+    volumes: *simulation-volumes
+    deploy:
+      resources:
+        limits:
+          cpus: "${SIM_CPU_LIMIT:-2.0}"
+          memory: "${SIM_MEMORY_LIMIT:-8g}"
+
+  ros-observer:
+    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+    build: *simulation-build
+    depends_on:
+      - cross-repo-simulation
+    command:
+      - bash
+      - -lc
+      - >-
+        source /etc/profile.d/robotics_ros_setup.sh &&
+        exec python3 /workspace/infra/smoke/launch_testing/ros_graph_observer.py
+    environment:
+      <<: *ros-environment
+      FASTRTPS_DEFAULT_PROFILES_FILE: >-
+        ${FASTRTPS_DEFAULT_PROFILES_FILE:-/workspace/runs/current/dds/fastdds-profile.xml}
+      ROBOTICS_EXPECTED_GRAPH_PATH: >-
+        /workspace/runs/${RUN_ID:-current}/cross-repo/expected-graph.json
+      ROBOTICS_GRAPH_RESULT_PATH: >-
+        /workspace/runs/${RUN_ID:-current}/cross-repo/graph-observed.json
+    networks:
+      - robotics-sim
+    working_dir: /workspace
+    volumes: *simulation-volumes
 
   autopilot-base:
     image: ardupilot/ardupilot-dev-base:v0.2.0

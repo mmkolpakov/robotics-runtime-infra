@@ -133,7 +133,14 @@ jobs:
           FASTRTPS_DEFAULT_PROFILES_FILE: /workspace/runs/${{ steps.run.outputs.run_id }}/dds/fastdds-profile.xml
           ROBOTICS_RUNS_ROOT: ${{ github.workspace }}/runs
           ROBOTICS_STACK_LOCK_PATH: ${{ github.workspace }}/infra/cross-repo/stack-lock.json
-          ROBOTICS_SKIP_ROS_OBSERVER: "1"
+          # The compose launch plan itself enforces graph readiness live: a
+          # sibling `ros-observer` container performs a real `rclpy` check on
+          # the same bridge network, and `--exit-code-from ros-observer`
+          # makes the compose process's own exit code equal that outcome.
+          # This is intentionally NOT `ROBOTICS_SKIP_ROS_OBSERVER`, which
+          # would report `graph_ready` as skipped/failed instead of deriving
+          # it honestly from the embedded live check.
+          ROBOTICS_GRAPH_CHECK_EMBEDDED: "1"
           ROBOTICS_CONTRACTS_SCHEMA_DIR: ${{ github.workspace }}/deps/contracts/schemas
         run: |
           set -euo pipefail
@@ -142,6 +149,13 @@ jobs:
             --composition infra/cross-repo/composition.yaml \
             --output "runs/${RUN_ID}/cross-repo/resolved-scenario.json" \
             --trace "runs/${RUN_ID}/cross-repo/resolution-trace.json"
+          python3 -c "
+          import json
+          from pathlib import Path
+          resolved = json.loads(Path('runs/${RUN_ID}/cross-repo/resolved-scenario.json').read_text(encoding='utf-8'))
+          out = Path('runs/${RUN_ID}/cross-repo/expected-graph.json')
+          out.write_text(json.dumps(resolved['expected_ros_graph'], indent=2) + chr(10), encoding='utf-8')
+          "
           robotics-harness run \
             --scenario "runs/${RUN_ID}/cross-repo/resolved-scenario.json" \
             --evidence "runs/${RUN_ID}/evidence-manifest.json" \
@@ -167,7 +181,23 @@ jobs:
               for c in data["checks"]
           )
           assert executed, data["checks"]
+          graph_ready = any(
+              c.get("name") == "graph_ready" and c.get("result") == "pass"
+              for c in data["checks"]
+          )
+          assert graph_ready, data["checks"]
           print("evidence ok:", evidence_path)
+          PY
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          observed_path = Path(f"runs/{os.environ['RUN_ID']}/cross-repo/graph-observed.json")
+          observed = json.loads(observed_path.read_text(encoding="utf-8"))
+          assert observed["ok"] is True, observed
+          assert "/clock" in observed["observed"]["topics"], observed
+          assert observed["observed"]["topics"]["/clock"]["publishers"] >= 1, observed
+          print("live ros-observer result ok:", observed_path)
           PY
           python3 - <<'PY'
           import json

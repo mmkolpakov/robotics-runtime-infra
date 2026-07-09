@@ -259,8 +259,7 @@ gz sim --help
 Остановить рабочий контейнер:
 
 ```bash
-docker compose --profile dev stop simulation-dev
-docker compose --profile dev rm --force simulation-dev
+docker compose --profile dev down --remove-orphans simulation-dev
 ```
 
 Посмотреть состояние и логи:

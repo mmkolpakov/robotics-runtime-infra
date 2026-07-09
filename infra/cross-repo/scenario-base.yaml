@@ -4,32 +4,40 @@ scenario_id: foundation.cross_repo.core_simulation
 title: Cross-repo core simulation compose gate
 target_environment: simulation
 launch:
+  # Runs a real, live headless simulation (`gz sim` plus the ROS-Gazebo
+  # clock bridge, via `launch/simulation_smoke.launch.py`) and a sibling
+  # `ros-observer` container that performs a live `rclpy` graph check on the
+  # same bridge network. `--exit-code-from ros-observer` makes the overall
+  # command's exit code equal the *real* graph-readiness outcome, not a
+  # static image package-presence check.
   entrypoint: docker_compose
   package: docker
   file: compose.yaml
   arguments:
-    - run
-    - --rm
-    - --no-deps
-    - simulation
+    - up
+    - --abort-on-container-exit
+    - --exit-code-from
+    - ros-observer
+    - cross-repo-simulation
+    - ros-observer
 simulation:
-  duration_sec: 120
+  duration_sec: 60
   wall_timeout_sec: 600
   headless: true
   physics_engine: gz-physics-dartsim-plugin
 expected_ros_graph:
   schema_version: ros-graph-contract.v1
-  graph_ready_timeout_sec: 5
-  require_clock: false
+  graph_ready_timeout_sec: 60
+  require_clock: true
   topics:
     - name: /clock
       type: rosgraph_msgs/msg/Clock
       publisher_match:
-        min_count: 0
-        timeout_sec: 5
+        min_count: 1
+        timeout_sec: 60
       subscriber_match:
         min_count: 0
-        timeout_sec: 5
+        timeout_sec: 60
   services: []
   actions: []
 recording:

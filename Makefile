@@ -263,10 +263,11 @@ dev-ps: prepare-run
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev ps "$(DEV_SERVICE)"
 
 dev-down: prepare-run
+	# `down` (not `stop` + `rm`) so the per-run `robotics-sim` bridge network
+	# this run's dev container joined is also removed; `stop`+`rm` leaves it
+	# behind, which leaks resources across parallel/serial runs.
 	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
-		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev stop "$(DEV_SERVICE)" || true
-	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
-		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev rm --force "$(DEV_SERVICE)" || true
+		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev down --remove-orphans "$(DEV_SERVICE)" || true
 
 compose-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
@@ -490,8 +491,21 @@ docker-update-check: prepare-run
 	docker run --rm \
 		--network "$(DOCKER_RUN_NETWORK)" \
 		-v "$(CURDIR)/$(REPORT_DIR)/package-refs.tsv:/tmp/package-refs.tsv:ro" \
+		-v "$(CURDIR)/infra/scripts/check_apt_versions.py:/tmp/check_apt_versions.py:ro" \
 		osrf/ros:jazzy-simulation \
-		bash -lc 'set -euo pipefail; apt-get update >/dev/null; status=0; while IFS=$$'\''\t'\'' read -r key package expected; do policy="$$(apt-cache policy "$${package}")"; candidate=""; while IFS= read -r line; do case "$$line" in *"Candidate:"*) candidate="$${line#*: }"; candidate="$${candidate# }"; break;; esac; done <<< "$$policy"; if [[ -z "$${candidate}" || "$${candidate}" == "(none)" ]]; then echo "missing $${package}"; status=1; elif [[ "$${candidate}" != "$${expected}" ]]; then echo "changed $${key}: $${package} expected $${expected}, current $${candidate}"; status=1; else echo "$${key}: $${package} $${candidate}"; fi; done < /tmp/package-refs.tsv; exit "$${status}"' \
+		bash -lc 'set -euo pipefail; apt-get update >/dev/null; status=0; \
+			while IFS=$$'\''\t'\'' read -r key package expected; do \
+				apt-cache policy "$${package}" > /tmp/policy.txt; \
+				candidate="$$(python3 /tmp/check_apt_versions.py --policy-file /tmp/policy.txt)" || candidate=""; \
+				if [[ -z "$${candidate}" || "$${candidate}" == "(none)" ]]; then \
+					echo "missing $${package}"; status=1; \
+				elif [[ "$${candidate}" != "$${expected}" ]]; then \
+					echo "changed $${key}: $${package} expected $${expected}, current $${candidate}"; status=1; \
+				else \
+					echo "$${key}: $${package} $${candidate}"; \
+				fi; \
+			done < /tmp/package-refs.tsv; \
+			exit "$${status}"' \
 		| tee "$(REPORT_DIR)/package-update-check.txt"
 
 security-scan:

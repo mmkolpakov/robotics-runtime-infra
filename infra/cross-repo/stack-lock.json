@@ -15,7 +15,7 @@
     "harness": {
       "url": "https://github.com/mmkolpakov/robotics-simulation-harness",
       "ref": "foundation-ready-v0.2",
-      "commit": "5b812f2e05dab206a12eae521daa28d23c79b773"
+      "commit": "44f56f642db440f0e776a8c03f74266d3916e71f"
     }
   },
   "images": {

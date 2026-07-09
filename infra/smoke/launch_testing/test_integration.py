@@ -10,20 +10,30 @@ import time
 from pathlib import Path
 
 
-def wait_for_topic(topic: str, timeout_sec: int) -> None:
-    deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        completed = subprocess.run(
-            ["bash", "-lc", "source /etc/profile.d/robotics_ros_setup.sh && ros2 topic list"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        topics = {line.strip() for line in completed.stdout.splitlines() if line.strip()}
-        if topic in topics:
-            return
-        time.sleep(0.5)
-    raise TimeoutError(f"Timed out waiting for topic {topic}")
+def wait_for_topic(topic: str, timeout_sec: int, *, min_publishers: int = 1) -> None:
+    """Wait for a live publisher on `topic`, checked with `rclpy` node graph
+    introspection rather than parsing `ros2 topic list` CLI text output.
+    `ros2 topic list` only reflects topics *declared* in the graph, not
+    whether a matching publisher actually exists yet or ever will; counting
+    publishers directly is what makes this a readiness check instead of a
+    name-lookup.
+    """
+    import rclpy
+    from rclpy.node import Node
+
+    context = rclpy.Context()
+    rclpy.init(context=context)
+    node = Node("integration_smoke_topic_wait", context=context)
+    try:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if node.count_publishers(topic) >= min_publishers:
+                return
+            rclpy.spin_once(node, timeout_sec=0.2)
+        raise TimeoutError(f"Timed out waiting for a live publisher on {topic}")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown(context=context)
 
 
 def terminate_process_group(proc: subprocess.Popen[str]) -> None:
