@@ -53,8 +53,11 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # Jazzy binaries, matching the rest of the stack's rosdep-managed
 # versioning); pytest itself is pinned explicitly to match
 # `requirements-dev.txt` so container-side test runs use the same pytest
-# release as host-side CI.
-RUN python3 -m pip install --no-cache-dir --break-system-packages "pytest==9.0.2"
+# release as host-side CI. `--ignore-installed` avoids pip trying (and
+# failing) to uninstall the apt/debian-managed `pluggy`/`pytest` that
+# `ros-launch-testing` pulls in transitively, which has no RECORD file for
+# pip to work with.
+RUN python3 -m pip install --no-cache-dir --break-system-packages --ignore-installed "pytest==9.0.2"
 
 RUN curl --fail --location --show-error \
       "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${AWS_CLI_VERSION}.zip" \

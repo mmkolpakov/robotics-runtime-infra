@@ -113,7 +113,10 @@ jobs:
           # plugin loads cleanly alongside infra's pytest-docker fixtures,
           # not just in harness's own isolated test run above.
           .venv/bin/pip install --disable-pip-version-check --no-deps ./deps/harness
-          .venv/bin/python -c "from robotics_simulation_harness.guard import enforce_execution_guard; print('harness guard plugin importable:', enforce_execution_guard)"
+          .venv/bin/python -c "
+          from robotics_simulation_harness.guard import enforce_execution_guard
+          print('harness guard plugin importable:', enforce_execution_guard)
+          "
 
       - name: Allocate run identity
         id: run
