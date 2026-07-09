@@ -351,10 +351,10 @@ infra/docker/accelerated-inference.Dockerfile  optional NVIDIA inference runtime
 infra/docker/dds-agent.Dockerfile    optional DDS bridge runtime
 infra/docker/media-runtime.Dockerfile  optional media runtime
 infra/docker/diagnostics-runtime.Dockerfile  optional diagnostics runtime
-infra/smoke/simulation_integration_smoke.sh  интеграционный smoke ROS 2/Gazebo/MAVROS
-infra/smoke/joint_motion_smoke.sh     headless smoke движения сочленения Gazebo
+infra/smoke/launch_testing/          Python smoke: integration и joint-motion
 infra/smoke/worlds/empty.sdf         минимальный SDF-мир для smoke
 infra/smoke/worlds/joint_motion.sdf  минимальный SDF-мир для проверки JointController
+infra/cross-repo/                    stack-lock, composition и scenario для cross-repo gate
 infra/stack/evidence-manifest.jq     генератор manifest через jq
 infra/stack/evidence-manifest.example.json  пример manifest артефактов
 infra/stack/infra-release.json        release manifest инфраструктуры
@@ -367,4 +367,4 @@ requirements-dev.txt                 инструменты валидации
 
 ## Артефакты
 
-Локальные отчеты пишутся в `artifacts/` и не попадают в Git.
+Локальные отчеты пишутся в `runs/<run_id>/` и не попадают в Git.
