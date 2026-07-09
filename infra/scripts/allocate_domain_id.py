@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -14,6 +15,47 @@ from pathlib import Path
 
 DOMAIN_MIN = 1
 DOMAIN_MAX = 100
+
+# A bare `O_EXCL` lock file with no recovery path means one process that
+# dies (crash, OOM-kill, CI runner cancellation) between creating the lock
+# and removing it wedges every future allocation on this host until someone
+# manually deletes the file. The lock now records its owner PID and
+# creation time so a stale lock -- its owning PID is gone, or it has simply
+# been held far longer than any real allocation ever takes -- can be
+# reclaimed automatically instead of requiring manual recovery.
+_LOCK_TTL_SEC = 30.0
+_LOCK_WAIT_SEC = 30.0
+
+
+def _is_stale_lock(lock_path: Path, *, ttl_sec: float = _LOCK_TTL_SEC) -> bool:
+    try:
+        raw = lock_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        # Already gone (a concurrent racer reclaimed/removed it) or
+        # unreadable: either way it cannot be blocking anyone, so it is
+        # safe to treat as "not a lock we need to wait on".
+        return True
+    pid_str, _, created_str = raw.partition(":")
+    try:
+        pid = int(pid_str)
+        created = float(created_str)
+    except ValueError:
+        # Content from before this format existed (or corrupted): cannot
+        # prove it is live, so prefer availability over wedging forever.
+        return True
+    if time.time() - created > ttl_sec:
+        return True
+    if os.name != "posix":
+        # No portable liveness check on Windows; TTL above is the only
+        # recovery mechanism there.
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
 
 
 def preferred_domain_id(run_id: str) -> int:
@@ -68,11 +110,11 @@ def allocate(run_id: str, runs_root: Path) -> tuple[int, bool]:
     raise RuntimeError(f"no free ROS_DOMAIN_ID in [{DOMAIN_MIN}, {DOMAIN_MAX}]")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--runs-root", default="runs")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     run_id = args.run_id.strip()
     if not run_id:
@@ -91,19 +133,25 @@ def main() -> int:
     while True:
         try:
             fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            break
         except FileExistsError:
-            if time.time() - started > 30:
+            if _is_stale_lock(lock_path):
+                with contextlib.suppress(FileNotFoundError):
+                    lock_path.unlink()
+                continue
+            if time.time() - started > _LOCK_WAIT_SEC:
                 print("timed out waiting for domain-id lock", file=sys.stderr)
                 return 3
             time.sleep(0.05)
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{os.getpid()}:{time.time()}\n")
+        break
 
     try:
         domain_id, collided = allocate(run_id, runs_root)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(f"{run_id}:{domain_id}\n")
     finally:
-        os.remove(lock_path)
+        with contextlib.suppress(FileNotFoundError):
+            lock_path.unlink()
 
     payload = {
         "run_id": run_id,
