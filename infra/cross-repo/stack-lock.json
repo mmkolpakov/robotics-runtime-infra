@@ -1,11 +1,11 @@
-﻿{
+{
   "schema_version": "stack-lock.v1",
   "lock_id": "foundation.v0_2",
   "repositories": {
     "infra": {
       "url": "https://github.com/mmkolpakov/droning-simulation-infra",
       "ref": "foundation-ready-v0.2",
-      "commit": "1588123ff1653c30d289f0415ff81c2d507cebb6"
+      "commit": "9cd3f7145ba291c5d510d9f2f0aa72b5cac879aa"
     },
     "contracts": {
       "url": "https://github.com/mmkolpakov/robotics-runtime-contracts",
