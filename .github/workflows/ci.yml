@@ -63,6 +63,7 @@ jobs:
           IMAGE_VERSION="${GITHUB_SHA}" \
           VCS_REF="${GITHUB_SHA}" \
           IMAGE_TAG="robotics/ros-jazzy-simulation:ci" \
+          RUN_ID="ci-${GITHUB_RUN_ID}" \
             make compose-build
       - name: Smoke simulation image
         run: |

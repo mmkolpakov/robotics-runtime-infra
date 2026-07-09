@@ -41,7 +41,8 @@ services:
     build: *simulation-build
     environment:
       <<: *ros-environment
-      FASTRTPS_DEFAULT_PROFILES_FILE: "${FASTRTPS_DEFAULT_PROFILES_FILE:-/workspace/runs/current/dds/fastdds-profile.xml}"
+      FASTRTPS_DEFAULT_PROFILES_FILE: >-
+        ${FASTRTPS_DEFAULT_PROFILES_FILE:-/workspace/runs/current/dds/fastdds-profile.xml}
     networks:
       - robotics-sim
     working_dir: /workspace

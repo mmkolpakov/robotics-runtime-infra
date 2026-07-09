@@ -228,7 +228,7 @@ bake-build:
 		DOCKER_BUILD_NETWORK="$(DOCKER_BUILD_NETWORK)" \
 			$(BAKE) $(BAKE_ALLOW) simulation
 
-compose-build:
+compose-build: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
 	until IMAGE_TAG="$(IMAGE_TAG)" \
@@ -237,6 +237,8 @@ compose-build:
 		IMAGE_VERSION="$(IMAGE_VERSION)" \
 		VCS_REF="$(VCS_REF)" \
 		DOCKER_BUILD_NETWORK="$(DOCKER_BUILD_NETWORK)" \
+		ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" \
+		FASTRTPS_DEFAULT_PROFILES_FILE="$(RUNS_ROOT)/$(RUN_ID)/dds/fastdds-profile.xml" \
 			$(COMPOSE) -f "$(COMPOSE_FILE)" build simulation; do \
 		n=$$((n + 1)); \
 		if [[ "$$n" -ge "$(DOCKER_BUILD_RETRIES)" ]]; then exit 1; fi; \
