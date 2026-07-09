@@ -9,6 +9,7 @@
     "profile_id",
     "created_at",
     "result",
+    "ros_domain_id",
     "runtime",
     "artifacts"
   ],
@@ -37,6 +38,11 @@
         "blocked",
         "not_run"
       ]
+    },
+    "ros_domain_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
     },
     "runtime": {
       "type": "object",

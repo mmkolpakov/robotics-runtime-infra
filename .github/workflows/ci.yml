@@ -30,13 +30,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Validate contracts and YAML
-        run: make validate
+        run: make RUN_ID=ci-validate validate
       - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: validation-reports
-          path: artifacts/
+          path: runs/
 
   docker-smoke:
     runs-on: ubuntu-24.04
@@ -67,6 +67,7 @@ jobs:
       - name: Smoke simulation image
         run: |
           IMAGE_TAG="robotics/ros-jazzy-simulation:ci" \
+          RUN_ID="ci-${GITHUB_RUN_ID}" \
             make \
               compose-smoke \
               compose-sensor-smoke \
@@ -74,30 +75,30 @@ jobs:
               integration-smoke \
               joint-motion-smoke \
               compose-autopilot-smoke
+      - name: Parallel isolation smoke
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}-iso" make parallel-isolation-smoke
       - name: Inspect local image metadata
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make docker-metadata
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make docker-metadata
       - name: Check recorded package versions
-        run: make docker-update-check
-      - name: Prepare security reports
-        run: mkdir -p artifacts/security
+        run: RUN_ID="ci-${GITHUB_RUN_ID}" make docker-update-check
       - name: Generate image vulnerability report
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make security-scan
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make security-scan
       - name: Upload Trivy SARIF
         if: github.event_name == 'push' && vars.ENABLE_CODE_SCANNING == 'true'
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
         with:
-          sarif_file: artifacts/security/trivy-image.sarif
+          sarif_file: runs/ci-${{ github.run_id }}/security/trivy-image.sarif
           category: trivy-image
       - name: Apply vulnerability gate
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make security-gate
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make security-gate
       - name: Generate SBOM
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" make sbom
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make sbom
       - name: Generate evidence manifest
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="${GITHUB_RUN_ID}" make evidence-manifest
+        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make evidence-manifest
       - name: Upload Docker reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: docker-reports
-          path: artifacts/
+          path: runs/

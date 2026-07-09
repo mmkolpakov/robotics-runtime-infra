@@ -30,7 +30,7 @@ IMAGE_VERSION ?= 2026-07-05
 VCS_REF ?= local
 IMAGE_CREATED ?= unknown
 DOCKER_BUILD_NETWORK ?= host
-DOCKER_RUN_NETWORK ?= host
+DOCKER_RUN_NETWORK ?= bridge
 DOCKER_BUILD_RETRIES ?= 3
 DOCKER_INSPECT_RETRIES ?= 6
 COMPOSE ?= docker compose
@@ -38,8 +38,11 @@ BAKE ?= docker buildx bake
 BAKE_ALLOW ?= --allow=network.host
 COMPOSE_FILE := compose.yaml
 DEV_SERVICE ?= simulation-dev
-REPORT_DIR ?= artifacts/reports
-SECURITY_DIR ?= artifacts/security
+RUN_ID ?=
+RUNS_ROOT ?= runs
+REPORT_DIR ?= $(RUNS_ROOT)/$(RUN_ID)/reports
+SECURITY_DIR ?= $(RUNS_ROOT)/$(RUN_ID)/security
+ROS_DOMAIN_ID ?=
 TRIVY_IMAGE ?= aquasec/trivy:0.72.0
 TRIVY_DB_REPOSITORY ?= ghcr.io/aquasecurity/trivy-db:2
 TRIVY_GATE_SEVERITY ?= HIGH,CRITICAL
@@ -67,7 +70,22 @@ DOCKERFILES := $(DOCKERFILE) infra/docker/accelerated-inference.Dockerfile infra
 	compose-sensor-smoke compose-artifact-tooling-smoke integration-smoke joint-motion-smoke \
 	compose-gpu-smoke compose-accelerated-inference-smoke \
 	compose-render-smoke compose-edge-config optional-smoke docker-metadata docker-update-check \
-	evidence-manifest sbom security-scan security-gate pre-commit ci clean
+	evidence-manifest sbom security-scan security-gate pre-commit ci clean allocate-run prepare-run parallel-isolation-smoke unit-tests
+
+
+allocate-run:
+	@if [[ -z "$(RUN_ID)" ]]; then echo "RUN_ID is required" >&2; exit 2; fi
+	@mkdir -p "$(RUNS_ROOT)/$(RUN_ID)/dds" "$(REPORT_DIR)" "$(SECURITY_DIR)" "$(RUNS_ROOT)/$(RUN_ID)/smoke" "$(RUNS_ROOT)/$(RUN_ID)/data"
+	@cp infra/dds/fastdds-profile.template.xml "$(RUNS_ROOT)/$(RUN_ID)/dds/fastdds-profile.xml"
+	@ln -sfn "$(RUN_ID)" "$(RUNS_ROOT)/current"
+	@$(PYTHON) infra/scripts/allocate_domain_id.py --run-id "$(RUN_ID)" --runs-root "$(RUNS_ROOT)" > "$(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt"
+	@echo "Allocated ROS_DOMAIN_ID=$$(cat "$(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt") for RUN_ID=$(RUN_ID)"
+
+prepare-run: allocate-run
+	@test -s "$(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt"
+
+unit-tests:
+	"$(VENV_PYTHON)" -m pytest tests/test_check_apt_versions.py tests/test_allocate_domain_id.py -q
 
 help:
 	@printf '%s\n' \
@@ -94,10 +112,12 @@ $(BOOTSTRAP_STAMP): $(DEV_REQUIREMENTS)
 	"$(VENV_PYTHON)" -m pip install --disable-pip-version-check -r "$(DEV_REQUIREMENTS)"
 	touch "$(BOOTSTRAP_STAMP)"
 
-validate: bootstrap validate-json validate-yaml compose-config
+validate: bootstrap unit-tests validate-json validate-yaml compose-config
 
 validate-json: bootstrap
-	mkdir -p "$(REPORT_DIR)"
+	@if [[ -z "$(RUN_ID)" ]]; then $(MAKE) RUN_ID=validate allocate-run; fi
+	$(eval RUN_ID := $(if $(RUN_ID),$(RUN_ID),validate))
+	mkdir -p "$(RUNS_ROOT)/$(RUN_ID)/reports"
 	"$(CHECK_JSONSCHEMA)" --schemafile "$(STACK_SCHEMA)" "$(STACK_MANIFEST)"
 	"$(CHECK_JSONSCHEMA)" --schemafile "$(INFRA_RELEASE_SCHEMA)" "$(INFRA_RELEASE)"
 	"$(CHECK_JSONSCHEMA)" --schemafile "$(RUNTIME_PROFILES_SCHEMA)" "$(RUNTIME_PROFILES)"
@@ -116,25 +136,37 @@ validate-yaml: bootstrap
 	"$(YAMLLINT)" .github .yamllint.yml "$(COMPOSE_FILE)" compose.override.yaml.example config
 
 compose-config:
-	mkdir -p "$(REPORT_DIR)"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" config > "$(REPORT_DIR)/compose.default.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile autopilot config > "$(REPORT_DIR)/compose.autopilot.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile ardupilot config > "$(REPORT_DIR)/compose.ardupilot.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile px4 config > "$(REPORT_DIR)/compose.px4.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dds config > "$(REPORT_DIR)/compose.dds.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile comms config > "$(REPORT_DIR)/compose.comms.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile media config > "$(REPORT_DIR)/compose.media.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile diagnostics config > "$(REPORT_DIR)/compose.diagnostics.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev config > "$(REPORT_DIR)/compose.dev.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile render config > "$(REPORT_DIR)/compose.render.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile nvidia config > "$(REPORT_DIR)/compose.nvidia.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile inference config > "$(REPORT_DIR)/compose.inference.yaml"
-	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile edge config > "$(REPORT_DIR)/compose.edge.yaml"
+	@if [[ -z "$(RUN_ID)" ]]; then $(MAKE) RUN_ID=compose-config allocate-run; RUN_ID=compose-config; else $(MAKE) RUN_ID="$(RUN_ID)" allocate-run; fi
+	@run_id="$(if $(RUN_ID),$(RUN_ID),compose-config)"; \
+	ros_domain_id="$$(cat "$(RUNS_ROOT)/$${run_id}/ros_domain_id.txt")"; \
+	mkdir -p "$(RUNS_ROOT)/$${run_id}/reports"; \
+	for profile_args in \
+		"" \
+		"--profile autopilot" \
+		"--profile ardupilot" \
+		"--profile px4" \
+		"--profile dds" \
+		"--profile comms" \
+		"--profile media" \
+		"--profile diagnostics" \
+		"--profile dev" \
+		"--profile render" \
+		"--profile nvidia" \
+		"--profile inference" \
+		"--profile edge"; do \
+		name="default"; \
+		if [[ -n "$${profile_args}" ]]; then name="$${profile_args##* }"; fi; \
+		ROS_DOMAIN_ID="$${ros_domain_id}" FASTRTPS_DEFAULT_PROFILES_FILE="$(RUNS_ROOT)/$${run_id}/dds/fastdds-profile.xml" \
+			$(COMPOSE) -f "$(COMPOSE_FILE)" $${profile_args} config > "$(RUNS_ROOT)/$${run_id}/reports/compose.$${name}.yaml"; \
+	done; \
+	if grep -n 'network_mode:[[:space:]]*host' "$(RUNS_ROOT)/$${run_id}/reports/compose.default.yaml"; then exit 1; fi
 
 lint: lint-dockerfile lint-actions
 
 lint-dockerfile:
-	mkdir -p "$(REPORT_DIR)"
+	@if [[ -z "$(RUN_ID)" ]]; then $(MAKE) RUN_ID=lint allocate-run; fi
+	$(eval RUN_ID := $(if $(RUN_ID),$(RUN_ID),lint))
+	mkdir -p "$(RUNS_ROOT)/$(RUN_ID)/reports"
 	docker run --rm \
 		-v "$(CURDIR):/repo:ro" \
 		-w /repo \
@@ -142,7 +174,9 @@ lint-dockerfile:
 		hadolint $(DOCKERFILES) 2>&1 | tee "$(REPORT_DIR)/hadolint.txt"
 
 lint-actions:
-	mkdir -p "$(REPORT_DIR)"
+	@if [[ -z "$(RUN_ID)" ]]; then $(MAKE) RUN_ID=lint allocate-run; fi
+	$(eval RUN_ID := $(if $(RUN_ID),$(RUN_ID),lint))
+	mkdir -p "$(RUNS_ROOT)/$(RUN_ID)/reports"
 	docker run --rm \
 		-v "$(CURDIR):/repo:ro" \
 		-w /repo \
@@ -150,7 +184,9 @@ lint-actions:
 		-color=false .github/workflows/*.yml 2>&1 | tee "$(REPORT_DIR)/actionlint.txt"
 
 profiles:
-	mkdir -p "$(REPORT_DIR)"
+	@if [[ -z "$(RUN_ID)" ]]; then $(MAKE) RUN_ID=lint allocate-run; fi
+	$(eval RUN_ID := $(if $(RUN_ID),$(RUN_ID),lint))
+	mkdir -p "$(RUNS_ROOT)/$(RUN_ID)/reports"
 	jq -r '.profiles | to_entries[] | [.key, .value.status, .value.release_gate, .value.purpose] | @tsv' \
 		"$(RUNTIME_PROFILES)" | tee "$(REPORT_DIR)/runtime-profiles.tsv"
 
@@ -208,32 +244,32 @@ compose-build:
 	done
 
 dev-up: compose-build
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev up --detach --wait --no-build "$(DEV_SERVICE)"
 
-dev-shell:
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+dev-shell: prepare-run
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev exec "$(DEV_SERVICE)" \
 		bash -lc 'source /etc/profile.d/robotics_ros_setup.sh && exec bash -i'
 
-dev-logs:
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+dev-logs: prepare-run
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev logs --follow "$(DEV_SERVICE)"
 
-dev-ps:
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+dev-ps: prepare-run
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev ps "$(DEV_SERVICE)"
 
-dev-down:
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+dev-down: prepare-run
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev stop "$(DEV_SERVICE)" || true
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dev rm --force "$(DEV_SERVICE)" || true
 
-compose-smoke:
+compose-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
 		2>&1 | tee "$(REPORT_DIR)/compose-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
@@ -242,25 +278,25 @@ compose-smoke:
 compose-autopilot-smoke:
 	$(MAKE) compose-ardupilot-smoke
 
-compose-ardupilot-smoke:
+compose-ardupilot-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile ardupilot run --rm --no-deps autopilot-base \
 		2>&1 | tee "$(REPORT_DIR)/compose-autopilot-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile ardupilot down --remove-orphans || true; \
 	exit $$rc
 
-compose-px4-smoke:
+compose-px4-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile px4 run --rm --no-deps px4-sitl \
 		2>&1 | tee "$(REPORT_DIR)/compose-px4-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile px4 down --remove-orphans || true; \
 	exit $$rc
 
-compose-dds-smoke:
+compose-dds-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
 	until $(COMPOSE) -f "$(COMPOSE_FILE)" --profile dds build dds-agent; do \
@@ -269,22 +305,22 @@ compose-dds-smoke:
 		sleep $$((5 * n)); \
 	done
 	rc=0; \
-	COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dds run --rm --no-deps dds-agent \
 		2>&1 | tee "$(REPORT_DIR)/compose-dds-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile dds down --remove-orphans || true; \
 	exit $$rc
 
-compose-comms-smoke:
+compose-comms-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile comms run --rm --no-deps comms-bridge \
 		2>&1 | tee "$(REPORT_DIR)/compose-comms-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile comms down --remove-orphans || true; \
 	exit $$rc
 
-compose-media-smoke:
+compose-media-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
 	until $(COMPOSE) -f "$(COMPOSE_FILE)" --profile media build media-runtime; do \
@@ -293,13 +329,13 @@ compose-media-smoke:
 		sleep $$((5 * n)); \
 	done
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile media run --rm --no-deps media-runtime \
 		2>&1 | tee "$(REPORT_DIR)/compose-media-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile media down --remove-orphans || true; \
 	exit $$rc
 
-compose-diagnostics-smoke:
+compose-diagnostics-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
 	until $(COMPOSE) -f "$(COMPOSE_FILE)" --profile diagnostics build diagnostics-runtime; do \
@@ -308,16 +344,16 @@ compose-diagnostics-smoke:
 		sleep $$((5 * n)); \
 	done
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile diagnostics run --rm --no-deps diagnostics-runtime \
 		2>&1 | tee "$(REPORT_DIR)/compose-diagnostics-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile diagnostics down --remove-orphans || true; \
 	exit $$rc
 
-compose-sensor-smoke:
+compose-sensor-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
 		bash -lc 'source /etc/profile.d/robotics_ros_setup.sh \
 			&& ros2 interface show sensor_msgs/msg/Image >/dev/null \
@@ -335,46 +371,51 @@ compose-sensor-smoke:
 	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
 	exit $$rc
 
-compose-artifact-tooling-smoke:
+compose-artifact-tooling-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
 		bash -lc 'aws --version | grep -E "^aws-cli/2\.35\.17 " && source /etc/profile.d/robotics_ros_setup.sh && ros2 pkg prefix ros_gz_sim >/dev/null' \
 		2>&1 | tee "$(REPORT_DIR)/compose-artifact-tooling-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
 	exit $$rc
 
-integration-smoke:
+integration-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
-		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
-		bash /workspace/infra/smoke/simulation_integration_smoke.sh \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps \
+		-e SMOKE_LOG_DIR=/workspace/runs/$(RUN_ID)/smoke \
+		simulation \
+		python3 /workspace/infra/smoke/launch_testing/test_integration.py \
 		2>&1 | tee "$(REPORT_DIR)/integration-smoke.txt" || rc=$$?; \
-	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
+	$(COMPOSE) -f "$(COMPOSE_FILE)" -p "robotics-$(RUN_ID)" down --remove-orphans || true; \
 	exit $$rc
 
-joint-motion-smoke:
+joint-motion-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
-		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps simulation \
-		bash /workspace/infra/smoke/joint_motion_smoke.sh \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
+		$(COMPOSE) -f "$(COMPOSE_FILE)" run --rm --no-deps \
+		-e SMOKE_LOG_DIR=/workspace/runs/$(RUN_ID)/smoke \
+		-e SMOKE_JOINT_METRICS_PATH=/workspace/runs/$(RUN_ID)/reports/joint_motion_metrics.json \
+		simulation \
+		python3 /workspace/infra/smoke/launch_testing/test_joint_motion.py \
 		2>&1 | tee "$(REPORT_DIR)/joint-motion-smoke.txt" || rc=$$?; \
-	$(COMPOSE) -f "$(COMPOSE_FILE)" down --remove-orphans || true; \
+	$(COMPOSE) -f "$(COMPOSE_FILE)" -p "robotics-$(RUN_ID)" down --remove-orphans || true; \
 	exit $$rc
 
-compose-gpu-smoke:
+compose-gpu-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile nvidia run --rm --no-deps nvidia-gpu \
 		2>&1 | tee "$(REPORT_DIR)/compose-gpu-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile nvidia down --remove-orphans || true; \
 	exit $$rc
 
-compose-accelerated-inference-smoke:
+compose-accelerated-inference-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
 	until INFERENCE_IMAGE_TAG="$(INFERENCE_IMAGE_TAG)" \
@@ -391,16 +432,16 @@ compose-accelerated-inference-smoke:
 		sleep $$((5 * n)); \
 	done
 	rc=0; \
-	INFERENCE_IMAGE_TAG="$(INFERENCE_IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	INFERENCE_IMAGE_TAG="$(INFERENCE_IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile inference run --rm --no-deps accelerated-inference \
 		2>&1 | tee "$(REPORT_DIR)/compose-accelerated-inference-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile inference down --remove-orphans || true; \
 	exit $$rc
 
-compose-render-smoke:
+compose-render-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
-	IMAGE_TAG="$(IMAGE_TAG)" COMPOSE_NETWORK_MODE="$(DOCKER_RUN_NETWORK)" \
+	IMAGE_TAG="$(IMAGE_TAG)" ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" FASTRTPS_DEFAULT_PROFILES_FILE="/workspace/runs/$(RUN_ID)/dds/fastdds-profile.xml" \
 		$(COMPOSE) -f "$(COMPOSE_FILE)" --profile render run --rm --no-deps local-render \
 		2>&1 | tee "$(REPORT_DIR)/compose-render-smoke.txt" || rc=$$?; \
 	$(COMPOSE) -f "$(COMPOSE_FILE)" --profile render down --remove-orphans || true; \
@@ -416,7 +457,7 @@ docker-metadata:
 	mkdir -p "$(REPORT_DIR)"
 	docker image inspect "$(IMAGE_TAG)" > "$(REPORT_DIR)/docker-image-inspect.json"
 
-evidence-manifest: bootstrap
+evidence-manifest: bootstrap prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	if [[ ! -s "$(REPORT_DIR)/compose-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/compose-smoke.txt" >&2; exit 1; fi
 	if [[ ! -s "$(REPORT_DIR)/compose-sensor-smoke.txt" ]]; then echo "Missing $(REPORT_DIR)/compose-sensor-smoke.txt" >&2; exit 1; fi
@@ -431,7 +472,8 @@ evidence-manifest: bootstrap
 	sarif_result="$$(if [[ -s "$(SECURITY_DIR)/trivy-image.sarif" ]]; then echo pass; else echo not_run; fi)"; \
 	jq -n \
 		--arg created_at "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-		--arg run_id "$${RUN_ID:-local-review}" \
+		--arg run_id "$(RUN_ID)" \
+		--argjson ros_domain_id "$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" \
 		--arg image "$(IMAGE_TAG)" \
 		--arg image_digest "$${image_digest}" \
 		--arg source_ref "$${source_ref}" \
@@ -439,7 +481,7 @@ evidence-manifest: bootstrap
 		-f "$(EVIDENCE_MANIFEST_FILTER)" > "$(EVIDENCE_MANIFEST)"
 	"$(CHECK_JSONSCHEMA)" --schemafile "$(EVIDENCE_MANIFEST_SCHEMA)" "$(EVIDENCE_MANIFEST)"
 
-docker-update-check:
+docker-update-check: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	jq -r '.packages | to_entries[] | select((.value.package_manager // "apt") == "apt") | [.key, .value.package, .value.version] | @tsv' \
 		"$(STACK_MANIFEST)" > "$(REPORT_DIR)/package-refs.tsv"
@@ -447,7 +489,7 @@ docker-update-check:
 		--network "$(DOCKER_RUN_NETWORK)" \
 		-v "$(CURDIR)/$(REPORT_DIR)/package-refs.tsv:/tmp/package-refs.tsv:ro" \
 		osrf/ros:jazzy-simulation \
-		bash -lc 'set -euo pipefail; apt-get update >/dev/null; status=0; while IFS=$$'\''\t'\'' read -r key package expected; do candidate="$$(apt-cache policy "$${package}" | awk "/Candidate:/ {print \$$2}")"; if [[ -z "$${candidate}" || "$${candidate}" == "(none)" ]]; then echo "missing $${package}"; status=1; elif [[ "$${candidate}" != "$${expected}" ]]; then echo "changed $${key}: $${package} expected $${expected}, current $${candidate}"; status=1; else echo "$${key}: $${package} $${candidate}"; fi; done < /tmp/package-refs.tsv; exit "$${status}"' \
+		bash -lc 'set -euo pipefail; apt-get update >/dev/null; status=0; while IFS=$$'\''\t'\'' read -r key package expected; do policy="$$(apt-cache policy "$${package}")"; candidate=""; while IFS= read -r line; do case "$$line" in *"Candidate:"*) candidate="$${line#*: }"; candidate="$${candidate# }"; break;; esac; done <<< "$$policy"; if [[ -z "$${candidate}" || "$${candidate}" == "(none)" ]]; then echo "missing $${package}"; status=1; elif [[ "$${candidate}" != "$${expected}" ]]; then echo "changed $${key}: $${package} expected $${expected}, current $${candidate}"; status=1; else echo "$${key}: $${package} $${candidate}"; fi; done < /tmp/package-refs.tsv; exit "$${status}"' \
 		| tee "$(REPORT_DIR)/package-update-check.txt"
 
 security-scan:
@@ -494,6 +536,14 @@ sbom:
 		--output /out/sbom.cdx.json \
 		"$(IMAGE_TAG)"
 
+parallel-isolation-smoke:
+	@if [[ -z "$(RUN_ID)" ]]; then echo "RUN_ID is required" >&2; exit 2; fi
+	$(MAKE) RUN_ID=$(RUN_ID)-a compose-smoke
+	$(MAKE) RUN_ID=$(RUN_ID)-b compose-smoke
+	@test -d "$(RUNS_ROOT)/$(RUN_ID)-a/reports"
+	@test -d "$(RUNS_ROOT)/$(RUN_ID)-b/reports"
+	@test "$$(cat $(RUNS_ROOT)/$(RUN_ID)-a/ros_domain_id.txt)" != "$$(cat $(RUNS_ROOT)/$(RUN_ID)-b/ros_domain_id.txt)"
+
 ci: validate lint docker-manifests compose-build compose-smoke compose-sensor-smoke compose-artifact-tooling-smoke compose-autopilot-smoke docker-metadata \
 	integration-smoke joint-motion-smoke docker-update-check security-scan security-gate sbom evidence-manifest
 
@@ -501,4 +551,4 @@ pre-commit: bootstrap
 	"$(PRE_COMMIT)" run --all-files
 
 clean:
-	rm -rf artifacts
+	rm -rf artifacts runs

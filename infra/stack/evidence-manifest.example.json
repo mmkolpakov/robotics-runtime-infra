@@ -4,6 +4,7 @@
   "profile_id": "core_simulation",
   "created_at": "2026-07-05T00:00:00Z",
   "result": "not_run",
+  "ros_domain_id": 17,
   "runtime": {
     "os": "ubuntu_24_04",
     "container_runtime": "docker",
@@ -16,44 +17,46 @@
       "id": "smoke_image",
       "result": "not_run",
       "duration_s": null,
-      "log": "artifacts/reports/compose-smoke.txt"
+      "log": "runs/example-run/reports/compose-smoke.txt"
     },
     {
       "id": "integration_smoke",
       "result": "not_run",
       "duration_s": null,
-      "log": "artifacts/reports/integration-smoke.txt"
+      "log": "runs/example-run/reports/integration-smoke.txt"
     },
     {
       "id": "security_gate",
       "result": "not_run",
       "duration_s": null,
-      "log": "artifacts/security/trivy-gate.txt"
+      "log": "runs/example-run/security/trivy-gate.txt"
     }
   ],
-  "metrics": {},
+  "metrics": {
+    "ros_domain_id": 17
+  },
   "artifacts": [
     {
       "kind": "log",
-      "path": "artifacts/reports/compose-smoke.txt",
+      "path": "runs/example-run/reports/compose-smoke.txt",
       "media_type": "text/plain",
       "required": true
     },
     {
       "kind": "log",
-      "path": "artifacts/reports/integration-smoke.txt",
+      "path": "runs/example-run/reports/integration-smoke.txt",
       "media_type": "text/plain",
       "required": true
     },
     {
       "kind": "security_report",
-      "path": "artifacts/security/trivy-image.sarif",
+      "path": "runs/example-run/security/trivy-image.sarif",
       "media_type": "application/sarif+json",
       "required": false
     },
     {
       "kind": "security_gate",
-      "path": "artifacts/security/trivy-gate.txt",
+      "path": "runs/example-run/security/trivy-gate.txt",
       "media_type": "text/plain",
       "required": true
     }

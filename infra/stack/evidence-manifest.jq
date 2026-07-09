@@ -4,6 +4,7 @@
   profile_id: "core_simulation",
   created_at: $created_at,
   result: "pass",
+  ros_domain_id: $ros_domain_id,
   runtime: {
     os: "ubuntu_24_04",
     container_runtime: "docker",
@@ -16,98 +17,100 @@
       id: "compose_smoke",
       result: "pass",
       duration_s: null,
-      log: "artifacts/reports/compose-smoke.txt"
+      log: ("runs/" + $run_id + "/reports/compose-smoke.txt")
     },
     {
       id: "sensor_smoke",
       result: "pass",
       duration_s: null,
-      log: "artifacts/reports/compose-sensor-smoke.txt"
+      log: ("runs/" + $run_id + "/reports/compose-sensor-smoke.txt")
     },
     {
       id: "artifact_tooling_smoke",
       result: "pass",
       duration_s: null,
-      log: "artifacts/reports/compose-artifact-tooling-smoke.txt"
+      log: ("runs/" + $run_id + "/reports/compose-artifact-tooling-smoke.txt")
     },
     {
       id: "integration_smoke",
       result: "pass",
       duration_s: null,
-      log: "artifacts/reports/integration-smoke.txt"
+      log: ("runs/" + $run_id + "/reports/integration-smoke.txt")
     },
     {
       id: "joint_motion_smoke",
       result: "pass",
       duration_s: null,
-      log: "artifacts/reports/joint-motion-smoke.txt"
+      log: ("runs/" + $run_id + "/reports/joint-motion-smoke.txt")
     },
     {
       id: "autopilot_smoke",
       result: "pass",
       duration_s: null,
-      log: "artifacts/reports/compose-autopilot-smoke.txt"
+      log: ("runs/" + $run_id + "/reports/compose-autopilot-smoke.txt")
     },
     {
       id: "security_scan",
       result: $sarif_result,
       duration_s: null,
-      log: "artifacts/security/trivy-image.sarif"
+      log: ("runs/" + $run_id + "/security/trivy-image.sarif")
     },
     {
       id: "security_gate",
       result: "pass",
       duration_s: null,
-      log: "artifacts/security/trivy-gate.txt"
+      log: ("runs/" + $run_id + "/security/trivy-gate.txt")
     }
   ],
-  metrics: {},
+  metrics: {
+    ros_domain_id: $ros_domain_id
+  },
   artifacts: [
     {
       kind: "log",
-      path: "artifacts/reports/compose-smoke.txt",
+      path: ("runs/" + $run_id + "/reports/compose-smoke.txt"),
       media_type: "text/plain",
       required: true
     },
     {
       kind: "log",
-      path: "artifacts/reports/compose-sensor-smoke.txt",
+      path: ("runs/" + $run_id + "/reports/compose-sensor-smoke.txt"),
       media_type: "text/plain",
       required: true
     },
     {
       kind: "log",
-      path: "artifacts/reports/compose-artifact-tooling-smoke.txt",
+      path: ("runs/" + $run_id + "/reports/compose-artifact-tooling-smoke.txt"),
       media_type: "text/plain",
       required: true
     },
     {
       kind: "log",
-      path: "artifacts/reports/integration-smoke.txt",
+      path: ("runs/" + $run_id + "/reports/integration-smoke.txt"),
       media_type: "text/plain",
       required: true
     },
     {
       kind: "log",
-      path: "artifacts/reports/joint-motion-smoke.txt",
+      path: ("runs/" + $run_id + "/reports/joint-motion-smoke.txt"),
       media_type: "text/plain",
       required: true
     },
     {
       kind: "docker_metadata",
-      path: "artifacts/reports/docker-image-inspect.json",
+      path: ("runs/" + $run_id + "/reports/docker-image-inspect.json"),
       media_type: "application/json",
       required: true
     },
     {
       kind: "security_report",
-      path: "artifacts/security/trivy-image.sarif",
+      path: ("runs/" + $run_id + "/security/trivy-image.sarif"),
       media_type: "application/sarif+json",
       required: false
     },
     {
       kind: "security_gate",
-      path: "artifacts/security/trivy-gate.txt",
+      path: ("runs/" + $run_id + "/security/trivy-gate.txt"),
       media_type: "text/plain",
       required: true
     }
