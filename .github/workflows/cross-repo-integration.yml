@@ -175,6 +175,39 @@ jobs:
           check-jsonschema --schemafile deps/contracts/schemas/evidence-manifest.v1.schema.json \
             "runs/${RUN_ID}/evidence-manifest.json"
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22  # v4.1.0
+
+      - name: Sign evidence with Cosign keyless
+        env:
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          EVIDENCE="runs/${RUN_ID}/evidence-manifest.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(f"runs/{os.environ['RUN_ID']}/evidence-manifest.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          data["signed"] = True
+          data["signer_identity"] = (
+              f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/"
+              ".github/workflows/cross-repo-integration.yml"
+          )
+          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+          PY
+          cosign sign-blob --yes \
+            --bundle "runs/${RUN_ID}/evidence-manifest.sigstore.json" \
+            --output-signature "${EVIDENCE}.sig" \
+            --output-certificate "${EVIDENCE}.pem" \
+            "${EVIDENCE}"
+          cosign verify-blob \
+            --bundle "runs/${RUN_ID}/evidence-manifest.sigstore.json" \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/cross-repo-integration.yml@.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${EVIDENCE}"
+
       - name: Upload cross-repo artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
