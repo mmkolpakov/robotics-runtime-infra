@@ -1,300 +1,48 @@
 ---
-name: robotics-simulation-infra
-
-# Images are built with `docker-bake.hcl` (`make bake-build` and friends),
-# the single source of truth for build context/args/tags; this file only
-# runs already-built images, referenced by tag.
-
-x-ros-environment: &ros-environment
-  ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:?ROS_DOMAIN_ID must be allocated}"
-  RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
-  RCUTILS_COLORIZED_OUTPUT: "1"
-  RUN_ID: "${RUN_ID:-current}"
-
-x-ros-healthcheck: &ros-healthcheck
-  test:
-    - CMD-SHELL
-    - >-
-      bash -lc 'source /etc/profile.d/robotics_ros_setup.sh &&
-      ros2 pkg prefix ros_gz_sim >/dev/null &&
-      ros2 pkg prefix ros_gz_bridge >/dev/null &&
-      ros2 pkg prefix mavros >/dev/null'
-  interval: 10s
-  timeout: 5s
-  retries: 3
-  start_period: 10s
-
-x-simulation-volumes: &simulation-volumes
-  - ./config:/workspace/config:ro
-  - ./infra/smoke:/workspace/infra/smoke:ro
-  - ./infra/stack:/workspace/infra/stack:ro
-  - ./launch:/workspace/launch:ro
-  - ./runs:/workspace/runs:rw
+x-runtime: &runtime
+  image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/droning-simulation-infra:0.4.0}"
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
+      IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/droning-simulation-infra}"
+      IMAGE_VERSION: "${IMAGE_VERSION:-0.4.0}"
+      VCS_REF: "${VCS_REF:-unknown}"
+  init: true
+  environment: &runtime-environment
+    GZ_PARTITION: "${GZ_PARTITION:-robotics-simulation}"
+    LIBGL_ALWAYS_SOFTWARE: "${LIBGL_ALWAYS_SOFTWARE:-1}"
+    RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+    RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+    ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+  stop_grace_period: 20s
 
 services:
   simulation:
-    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    environment:
-      <<: *ros-environment
-      FASTRTPS_DEFAULT_PROFILES_FILE: >-
-        ${FASTRTPS_DEFAULT_PROFILES_FILE:-/workspace/runs/current/dds/fastdds-profile.xml}
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    volumes: *simulation-volumes
-    healthcheck: *ros-healthcheck
-    deploy:
-      resources:
-        limits:
-          cpus: "${SIM_CPU_LIMIT:-2.0}"
-          memory: "${SIM_MEMORY_LIMIT:-8g}"
+    <<: *runtime
 
-  simulation-dev:
-    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+  test:
+    <<: *runtime
     profiles:
-      - dev
-    command: ["bash", "-lc", "sleep infinity"]
-    environment:
-      <<: *ros-environment
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    stdin_open: true
-    tty: true
-    volumes: *simulation-volumes
-    healthcheck: *ros-healthcheck
-
-  # `cross-repo-simulation` and `ros-observer` run together via `docker
-  # compose up --exit-code-from ros-observer`: the simulation keeps `gz sim`
-  # and the ROS-Gazebo clock bridge running indefinitely, while
-  # `ros-observer` validates the expected ROS graph contract
-  # (`infra/smoke/launch_testing/test_cross_repo_graph_ready.py`, driven by
-  # `infra/stack/cross-repo-expected-graph.json`) against the same bridge
-  # network and determines the overall pass/fail outcome via pytest's exit
-  # code.
-  cross-repo-simulation:
-    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
+      - test
     command:
       - bash
       - -lc
-      - >-
-        source /etc/profile.d/robotics_ros_setup.sh &&
-        exec ros2 launch /workspace/launch/simulation_smoke.launch.py
+      - |
+        status=0
+        colcon test \
+          --merge-install \
+          --packages-select robotics_simulation_infra \
+          --event-handlers console_direct+ \
+          --return-code-on-test-failure || status=$?
+        colcon test-result --verbose || status=$?
+        exit "$${status}"
     environment:
-      <<: *ros-environment
-      FASTRTPS_DEFAULT_PROFILES_FILE: >-
-        ${FASTRTPS_DEFAULT_PROFILES_FILE:-/workspace/runs/current/dds/fastdds-profile.xml}
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    volumes: *simulation-volumes
-    deploy:
-      resources:
-        limits:
-          cpus: "${SIM_CPU_LIMIT:-2.0}"
-          memory: "${SIM_MEMORY_LIMIT:-8g}"
-
-  ros-observer:
-    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    depends_on:
-      - cross-repo-simulation
-    command:
-      - bash
-      - -lc
-      - >-
-        source /etc/profile.d/robotics_ros_setup.sh &&
-        exec python3 -m pytest
-        /workspace/infra/smoke/launch_testing/test_cross_repo_graph_ready.py
-        --junitxml=/workspace/runs/${RUN_ID:-current}/reports/cross-repo-graph-ready.xml
-    environment:
-      <<: *ros-environment
-      FASTRTPS_DEFAULT_PROFILES_FILE: >-
-        ${FASTRTPS_DEFAULT_PROFILES_FILE:-/workspace/runs/current/dds/fastdds-profile.xml}
-      SMOKE_TIMEOUT_SECONDS: "60"
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    volumes: *simulation-volumes
-
-  autopilot-base:
-    image: ardupilot/ardupilot-dev-base:v0.2.0
-    profiles:
-      - autopilot
-      - ardupilot
-    command: bash -lc "python3 --version && git --version"
-    networks:
-      - robotics-sim
-    working_dir: /workspace
+      <<: *runtime-environment
+      GZ_PARTITION: "${GZ_TEST_PARTITION:-robotics-simulation-test}"
     healthcheck:
-      test: ["CMD-SHELL", "python3 --version >/dev/null && git --version >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  px4-sitl:
-    image: px4io/px4-sitl-gazebo:v1.18.0-alpha1-amd64
-    profiles:
-      - autopilot
-      - px4
-    command: ["-h"]
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-
-  dds-agent:
-    image: "${DDS_AGENT_IMAGE_TAG:-robotics/dds-agent:2026-07-05}"
-    profiles:
-      - dds
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          MicroXRCEAgent --help >/dev/null 2>&1 || test "$$?" -eq 1
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  comms-bridge:
-    image: eclipse/zenoh-bridge-ros2dds:1.9.0
-    profiles:
-      - comms
-    command:
-      - --help
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          test -x /zenoh-bridge-ros2dds ||
-          command -v zenoh-bridge-ros2dds >/dev/null
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  media-runtime:
-    image: "${MEDIA_IMAGE_TAG:-robotics/media-runtime:2026-07-05}"
-    profiles:
-      - media
-    environment:
-      <<: *ros-environment
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    healthcheck:
-      test: ["CMD-SHELL", "gst-launch-1.0 --version >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  diagnostics-runtime:
-    image: "${DIAGNOSTICS_IMAGE_TAG:-robotics/diagnostics-runtime:2026-07-05}"
-    profiles:
-      - diagnostics
-    environment:
-      <<: *ros-environment
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          bash -lc 'source /etc/profile.d/robotics_ros_setup.sh &&
-          ros2 pkg prefix plotjuggler_ros >/dev/null'
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  local-render:
-    image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    profiles:
-      - render
-    command: bash -lc "test -d /dev/dri && ls -1 /dev/dri"
-    devices:
-      - /dev/dri:/dev/dri
-    environment:
-      <<: *ros-environment
-      LIBGL_ALWAYS_SOFTWARE: "${LIBGL_ALWAYS_SOFTWARE:-0}"
-    networks:
-      - robotics-sim
-    working_dir: /workspace
-    healthcheck:
-      test: ["CMD-SHELL", "test -d /dev/dri"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  nvidia-gpu:
-    image: nvidia/cuda:12.9.2-base-ubuntu24.04
-    profiles:
-      - nvidia
-    command: nvidia-smi
-    networks:
-      - robotics-sim
-    healthcheck:
-      test: ["CMD-SHELL", "nvidia-smi >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["${GPU_DEVICE_IDS:-0}"]
-              capabilities:
-                - gpu
-
-  accelerated-inference:
-    image: "${INFERENCE_IMAGE_TAG:-robotics/accelerated-inference:2026-07-05}"
-    profiles:
-      - inference
-    command:
-      - bash
-      - -lc
-      - >-
-        python3 -c "import onnxruntime; import torch; import tensorrt;
-        print('torch_cuda_available=' + str(torch.cuda.is_available()));
-        raise SystemExit(0 if torch.cuda.is_available() else 1)"
-    networks:
-      - robotics-sim
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          python3 -c "import onnxruntime; import torch; import tensorrt;
-          raise SystemExit(0 if torch.cuda.is_available() else 1)"
-      interval: 10s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["${GPU_DEVICE_IDS:-0}"]
-              capabilities:
-                - gpu
-
-  edge-nvidia-arm64:
-    image: nvcr.io/nvidia/l4t-jetpack:r36.4.0
-    profiles:
-      - edge
-    # Config-check only on amd64 CI; this image is not built or run as a release gate.
-    platform: linux/arm64
-    command: bash -lc "uname -m && cat /etc/nv_tegra_release || true"
-    healthcheck:
-      test: ["CMD-SHELL", "uname -m >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-networks:
-  robotics-sim:
-    driver: bridge
+      disable: true
+    volumes:
+      - ./artifacts/test-results:/opt/robotics_ws/build/robotics_simulation_infra/test_results
