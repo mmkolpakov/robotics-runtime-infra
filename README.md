@@ -71,7 +71,11 @@ GPU не является обязательным требованием для
 
 ## Профили возможностей
 
-Источник профилей: `infra/stack/runtime-profiles.json`.
+Источник профилей для правки: `infra/stack/runtime-profiles.yaml`
+(человекочитаемый YAML). `make sync-contracts` (часть `make validate`)
+генерирует из него `infra/stack/runtime-profiles.json`, который читают
+`check-jsonschema`, `jq` и остальные потребители -- см.
+`infra/scripts/sync_contracts.py`.
 
 | Профиль | Compose | Статус | Назначение |
 | --- | --- | --- | --- |
@@ -245,13 +249,17 @@ APT-пакеты ROS не закрепляются в Dockerfile через `pac
 make bootstrap
 ```
 
+Для первого запуска после клонирования репозитория используйте `./setup_dev_env.sh`:
+он создает `.env` и `compose.override.yaml` из шаблонов и выделяет dev `RUN_ID`/`ROS_DOMAIN_ID`,
+поэтому `docker compose up` работает сразу без ручного чтения Makefile.
+
 ## Быстрый старт для работы
 
 Основной путь запуска идет через Docker Compose. Для обычной разработки не нужно запускать весь набор проверок:
 
 ```bash
-cp .env.example .env
-docker compose build simulation
+./setup_dev_env.sh
+docker buildx bake -f docker-bake.hcl --allow=network.host simulation
 docker compose --profile dev up --detach --wait simulation-dev
 docker compose --profile dev exec simulation-dev bash
 ```
@@ -295,8 +303,12 @@ make dev-down
 Для декларативной сборки без Compose используйте Docker Buildx Bake:
 
 ```bash
-docker buildx bake --allow=network.host simulation
+docker buildx bake -f docker-bake.hcl --allow=network.host simulation
 ```
+
+Флаг `-f docker-bake.hcl` обязателен: без него Buildx Bake также подхватывает
+`compose.yaml` из той же директории и падает на обязательных переменных
+окружения (`${VAR:?...}`) сервисов.
 
 То же через Makefile:
 
@@ -353,6 +365,7 @@ docker-bake.hcl                      Docker Buildx Bake targets
 config/headless_gazebo.yaml          минимальный headless-конфиг симуляции
 contracts/infra/infra-release.v1.schema.json  JSON Schema release manifest инфраструктуры
 contracts/infra/runtime-profiles.v1.schema.json  JSON Schema профилей возможностей
+contracts/infra/ros-graph-contract.v1.schema.json  JSON Schema ожидаемого ROS graph
 contracts/infra/stack.v1.schema.json    JSON Schema контракта стека
 infra/docker/                        Dockerfile симуляционного образа
 infra/docker/accelerated-inference.Dockerfile  optional NVIDIA inference runtime
@@ -363,12 +376,20 @@ infra/smoke/launch_testing/          pytest + launch_testing_ros: integration, j
 infra/smoke/worlds/empty.sdf         минимальный SDF-мир для smoke
 infra/smoke/worlds/joint_motion.sdf  минимальный SDF-мир для проверки JointController
 infra/cross-repo/                    stack-lock для pinned contracts/harness SHA в cross-repo gate
+infra/stack/cross-repo-expected-graph.json  ожидаемый ROS graph для cross-repo gate
 infra/stack/infra-release.json        release manifest инфраструктуры
 infra/stack/runtime-profiles.json     профили возможностей и границы расширения
 infra/stack/simulation-stack.json    зафиксированный состав стека
 launch/simulation_smoke.launch.py    минимальный ROS 2 launch для smoke
 tests/test_compose_services.py       pytest-docker: жизненный цикл долгоживущих Compose-сервисов
+infra/scripts/check_packages.sh      apt-версии внутри осрф/ros:jazzy-simulation для docker-update-check
+infra/scripts/allocate_domain_id.py  выделение ROS_DOMAIN_ID на RUN_ID
+infra/scripts/sync_contracts.py      генерация *.json контрактов из человекочитаемых *.yaml
+infra/stack/runtime-profiles.yaml    источник профилей возможностей для правки людьми
+infra/docker/scripts/healthcheck.sh  проверка пакетов/инструментов образа, используется как CMD
 Makefile                             единая точка входа для локальных и CI-проверок
+setup_dev_env.sh                     one-click генерация .env/override и dev RUN_ID
+run_local_test.sh                    запуск make-таргетов под одноразовым самоочищающимся RUN_ID
 requirements-dev.txt                 инструменты валидации
 ```
 

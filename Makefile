@@ -34,7 +34,7 @@ DOCKER_RUN_NETWORK ?= bridge
 DOCKER_BUILD_RETRIES ?= 3
 DOCKER_INSPECT_RETRIES ?= 6
 COMPOSE ?= docker compose
-BAKE ?= docker buildx bake
+BAKE ?= docker buildx bake -f docker-bake.hcl
 BAKE_ALLOW ?= --allow=network.host
 COMPOSE_FILE := compose.yaml
 DEV_SERVICE ?= simulation-dev
@@ -56,17 +56,19 @@ RUNTIME_PROFILES := infra/stack/runtime-profiles.json
 RUNTIME_PROFILES_SCHEMA := contracts/infra/runtime-profiles.v1.schema.json
 INFRA_RELEASE := infra/stack/infra-release.json
 INFRA_RELEASE_SCHEMA := contracts/infra/infra-release.v1.schema.json
+EXPECTED_GRAPH := infra/stack/cross-repo-expected-graph.json
+EXPECTED_GRAPH_SCHEMA := contracts/infra/ros-graph-contract.v1.schema.json
 DOCKERFILE := infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
 DOCKERFILES := $(DOCKERFILE) infra/docker/accelerated-inference.Dockerfile infra/docker/dds-agent.Dockerfile infra/docker/media-runtime.Dockerfile infra/docker/diagnostics-runtime.Dockerfile
 
-.PHONY: help bootstrap validate validate-json validate-yaml compose-config lint lint-dockerfile lint-actions profiles review \
+.PHONY: help bootstrap validate sync-contracts sync-contracts-check validate-json validate-yaml compose-config lint lint-dockerfile lint-actions profiles review \
 	dev-up dev-shell dev-logs dev-ps dev-down \
 	docker-manifests docker-pull bake-build compose-build compose-smoke compose-autopilot-smoke compose-ardupilot-smoke \
 	compose-px4-smoke compose-dds-smoke compose-comms-smoke compose-media-smoke compose-diagnostics-smoke \
 	compose-sensor-smoke compose-artifact-tooling-smoke integration-smoke joint-motion-smoke cross-repo-graph-smoke \
 	compose-gpu-smoke compose-accelerated-inference-smoke \
 	compose-render-smoke compose-edge-config optional-smoke docker-metadata docker-update-check \
-	pytest-docker-smoke sbom security-scan security-gate pre-commit ci clean allocate-run prepare-run parallel-isolation-smoke unit-tests
+	pytest-docker-smoke sbom security-scan security-gate pre-commit ci clean clean-locks allocate-run prepare-run parallel-isolation-smoke unit-tests
 
 
 allocate-run:
@@ -97,19 +99,25 @@ pytest-docker-smoke: bootstrap prepare-run
 help:
 	@printf '%s\n' \
 		'Common commands:' \
-		'  docker compose build simulation' \
+		'  docker buildx bake -f docker-bake.hcl --allow=network.host simulation' \
 		'  docker compose --profile dev up --detach --wait simulation-dev' \
 		'  docker compose --profile dev exec simulation-dev bash' \
 		'' \
 		'Make shortcuts:' \
 		'  make bootstrap      Install local validation tools into .venv' \
+		'  make sync-contracts Regenerate *.json contracts from their *.yaml source' \
 		'  make validate       Validate schemas, YAML and Compose config' \
 		'  make bake-build     Build simulation image with Docker Buildx Bake' \
 		'  make dev-up         Build and start the background dev container' \
 		'  make dev-shell      Open a shell in the background dev container' \
 		'  make dev-down       Stop and remove the background dev container' \
 		'  make review         Run the review gate used before handoff' \
-		'  make ci             Run the full local CI gate'
+		'  make ci             Run the full local CI gate' \
+		'  make clean-locks    Remove stale runs/.locks entries' \
+		'' \
+		'One-shot scripts:' \
+		'  ./setup_dev_env.sh              One-click local onboarding (.env, override, RUN_ID)' \
+		'  ./run_local_test.sh <targets>    Run make targets under a throwaway, self-cleaning RUN_ID'
 
 bootstrap: $(BOOTSTRAP_STAMP)
 
@@ -119,7 +127,17 @@ $(BOOTSTRAP_STAMP): $(DEV_REQUIREMENTS)
 	"$(VENV_PYTHON)" -m pip install --disable-pip-version-check -r "$(DEV_REQUIREMENTS)"
 	touch "$(BOOTSTRAP_STAMP)"
 
-validate: bootstrap unit-tests validate-json validate-yaml compose-config
+validate: bootstrap unit-tests sync-contracts validate-json validate-yaml compose-config
+
+# Human-edited contract data lives as `*.yaml` (comments, easier diffs);
+# `check-jsonschema`, `jq`, and every other consumer keep reading the
+# generated `*.json` sibling this regenerates. See
+# `infra/scripts/sync_contracts.py` for the source/generated pairs.
+sync-contracts: bootstrap
+	"$(VENV_PYTHON)" infra/scripts/sync_contracts.py
+
+sync-contracts-check: bootstrap
+	"$(VENV_PYTHON)" infra/scripts/sync_contracts.py --check
 
 validate-json: bootstrap
 	@if [[ -z "$(RUN_ID)" ]]; then $(MAKE) RUN_ID=validate allocate-run; fi
@@ -128,6 +146,7 @@ validate-json: bootstrap
 	"$(CHECK_JSONSCHEMA)" --schemafile "$(STACK_SCHEMA)" "$(STACK_MANIFEST)"
 	"$(CHECK_JSONSCHEMA)" --schemafile "$(INFRA_RELEASE_SCHEMA)" "$(INFRA_RELEASE)"
 	"$(CHECK_JSONSCHEMA)" --schemafile "$(RUNTIME_PROFILES_SCHEMA)" "$(RUNTIME_PROFILES)"
+	"$(CHECK_JSONSCHEMA)" --schemafile "$(EXPECTED_GRAPH_SCHEMA)" "$(EXPECTED_GRAPH)"
 	"$(VENV_PYTHON)" -m json.tool .devcontainer/devcontainer.json > "$(REPORT_DIR)/devcontainer.json"
 	"$(VENV_PYTHON)" -m json.tool "$(STACK_MANIFEST)" > "$(REPORT_DIR)/simulation-stack.json"
 	"$(VENV_PYTHON)" -m json.tool "$(STACK_SCHEMA)" > "$(REPORT_DIR)/stack.v1.schema.json"
@@ -137,7 +156,7 @@ validate-json: bootstrap
 	"$(VENV_PYTHON)" -m json.tool "$(RUNTIME_PROFILES_SCHEMA)" > "$(REPORT_DIR)/runtime-profiles.v1.schema.json"
 
 validate-yaml: bootstrap
-	"$(YAMLLINT)" .github .yamllint.yml "$(COMPOSE_FILE)" compose.override.yaml.example config
+	"$(YAMLLINT)" .github .yamllint.yml "$(COMPOSE_FILE)" compose.override.yaml.example config infra/stack/runtime-profiles.yaml
 
 compose-config:
 	@if [[ -z "$(RUN_ID)" ]]; then $(MAKE) RUN_ID=compose-config allocate-run; RUN_ID=compose-config; else $(MAKE) RUN_ID="$(RUN_ID)" allocate-run; fi
@@ -216,34 +235,31 @@ docker-pull:
 	docker pull osrf/ros:jazzy-simulation
 	docker pull ardupilot/ardupilot-dev-base:v0.2.0
 
+# `docker-bake.hcl` is the single source of truth for how every image in
+# this repo is built (context, build args, tags); every target below that
+# needs an image built calls bake for it instead of `docker compose build`,
+# so compose.yaml only ever runs already-built images.
+BAKE_ENV = IMAGE_TAG="$(IMAGE_TAG)" \
+	DDS_AGENT_IMAGE_TAG="$(DDS_AGENT_IMAGE_TAG)" \
+	MEDIA_IMAGE_TAG="$(MEDIA_IMAGE_TAG)" \
+	DIAGNOSTICS_IMAGE_TAG="$(DIAGNOSTICS_IMAGE_TAG)" \
+	INFERENCE_IMAGE_TAG="$(INFERENCE_IMAGE_TAG)" \
+	NVIDIA_PYTORCH_BASE_IMAGE="$(NVIDIA_PYTORCH_BASE_IMAGE)" \
+	ONNXRUNTIME_GPU_VERSION="$(ONNXRUNTIME_GPU_VERSION)" \
+	IMAGE_CREATED="$(IMAGE_CREATED)" \
+	IMAGE_SOURCE="$(IMAGE_SOURCE)" \
+	IMAGE_VERSION="$(IMAGE_VERSION)" \
+	VCS_REF="$(VCS_REF)" \
+	DOCKER_BUILD_NETWORK="$(DOCKER_BUILD_NETWORK)"
+
 bake-build:
 	mkdir -p "$(REPORT_DIR)"
-	IMAGE_TAG="$(IMAGE_TAG)" \
-		DDS_AGENT_IMAGE_TAG="$(DDS_AGENT_IMAGE_TAG)" \
-		MEDIA_IMAGE_TAG="$(MEDIA_IMAGE_TAG)" \
-		DIAGNOSTICS_IMAGE_TAG="$(DIAGNOSTICS_IMAGE_TAG)" \
-		INFERENCE_IMAGE_TAG="$(INFERENCE_IMAGE_TAG)" \
-		NVIDIA_PYTORCH_BASE_IMAGE="$(NVIDIA_PYTORCH_BASE_IMAGE)" \
-		ONNXRUNTIME_GPU_VERSION="$(ONNXRUNTIME_GPU_VERSION)" \
-		IMAGE_CREATED="$(IMAGE_CREATED)" \
-		IMAGE_SOURCE="$(IMAGE_SOURCE)" \
-		IMAGE_VERSION="$(IMAGE_VERSION)" \
-		VCS_REF="$(VCS_REF)" \
-		DOCKER_BUILD_NETWORK="$(DOCKER_BUILD_NETWORK)" \
-			$(BAKE) $(BAKE_ALLOW) simulation
+	$(BAKE_ENV) $(BAKE) $(BAKE_ALLOW) simulation
 
 compose-build: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
-	until IMAGE_TAG="$(IMAGE_TAG)" \
-		IMAGE_CREATED="$(IMAGE_CREATED)" \
-		IMAGE_SOURCE="$(IMAGE_SOURCE)" \
-		IMAGE_VERSION="$(IMAGE_VERSION)" \
-		VCS_REF="$(VCS_REF)" \
-		DOCKER_BUILD_NETWORK="$(DOCKER_BUILD_NETWORK)" \
-		ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" \
-		FASTRTPS_DEFAULT_PROFILES_FILE="$(RUNS_ROOT)/$(RUN_ID)/dds/fastdds-profile.xml" \
-			$(COMPOSE) -f "$(COMPOSE_FILE)" build simulation; do \
+	until $(BAKE_ENV) $(BAKE) $(BAKE_ALLOW) simulation; do \
 		n=$$((n + 1)); \
 		if [[ "$$n" -ge "$(DOCKER_BUILD_RETRIES)" ]]; then exit 1; fi; \
 		sleep $$((5 * n)); \
@@ -306,7 +322,7 @@ compose-px4-smoke: prepare-run
 compose-dds-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
-	until $(COMPOSE) -f "$(COMPOSE_FILE)" --profile dds build dds-agent; do \
+	until $(BAKE_ENV) $(BAKE) $(BAKE_ALLOW) dds-agent; do \
 		n=$$((n + 1)); \
 		if [[ "$$n" -ge "$(DOCKER_BUILD_RETRIES)" ]]; then exit 1; fi; \
 		sleep $$((5 * n)); \
@@ -330,7 +346,7 @@ compose-comms-smoke: prepare-run
 compose-media-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
-	until $(COMPOSE) -f "$(COMPOSE_FILE)" --profile media build media-runtime; do \
+	until $(BAKE_ENV) $(BAKE) $(BAKE_ALLOW) media-runtime; do \
 		n=$$((n + 1)); \
 		if [[ "$$n" -ge "$(DOCKER_BUILD_RETRIES)" ]]; then exit 1; fi; \
 		sleep $$((5 * n)); \
@@ -345,7 +361,7 @@ compose-media-smoke: prepare-run
 compose-diagnostics-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
-	until $(COMPOSE) -f "$(COMPOSE_FILE)" --profile diagnostics build diagnostics-runtime; do \
+	until $(BAKE_ENV) $(BAKE) $(BAKE_ALLOW) diagnostics-runtime; do \
 		n=$$((n + 1)); \
 		if [[ "$$n" -ge "$(DOCKER_BUILD_RETRIES)" ]]; then exit 1; fi; \
 		sleep $$((5 * n)); \
@@ -410,13 +426,11 @@ joint-motion-smoke: prepare-run
 	ROS_DOMAIN_ID="$$(cat $(RUNS_ROOT)/$(RUN_ID)/ros_domain_id.txt)" COMPOSE_PROJECT_NAME="robotics-$(RUN_ID)" $(COMPOSE) -f "$(COMPOSE_FILE)" -p "robotics-$(RUN_ID)" down --remove-orphans || true; \
 	exit $$rc
 
-# Cross-repo graph readiness: the live rclpy check now lives in
-# `infra/smoke/launch_testing/test_cross_repo_graph_ready.py`
-# (`launch_testing_ros.WaitForTopics`), replacing the old bespoke
-# `ros_graph_observer.py` sidecar. `cross-repo-simulation` keeps `gz sim`
-# and the ROS-Gazebo clock bridge running; `ros-observer` performs the
-# live check on the same bridge network and its exit code (from pytest)
-# is what `--exit-code-from` propagates.
+# Cross-repo graph readiness: `cross-repo-simulation` keeps `gz sim` and the
+# ROS-Gazebo clock bridge running; `ros-observer` validates the expected ROS
+# graph contract (`infra/stack/cross-repo-expected-graph.json`) against the
+# same bridge network via `test_cross_repo_graph_ready.py`, and its exit
+# code (from pytest) is what `--exit-code-from` propagates.
 cross-repo-graph-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	rc=0; \
@@ -439,15 +453,7 @@ compose-gpu-smoke: prepare-run
 compose-accelerated-inference-smoke: prepare-run
 	mkdir -p "$(REPORT_DIR)"
 	n=0; \
-	until INFERENCE_IMAGE_TAG="$(INFERENCE_IMAGE_TAG)" \
-		NVIDIA_PYTORCH_BASE_IMAGE="$(NVIDIA_PYTORCH_BASE_IMAGE)" \
-		ONNXRUNTIME_GPU_VERSION="$(ONNXRUNTIME_GPU_VERSION)" \
-		IMAGE_CREATED="$(IMAGE_CREATED)" \
-		IMAGE_SOURCE="$(IMAGE_SOURCE)" \
-		IMAGE_VERSION="$(IMAGE_VERSION)" \
-		VCS_REF="$(VCS_REF)" \
-		DOCKER_BUILD_NETWORK="$(DOCKER_BUILD_NETWORK)" \
-			$(COMPOSE) -f "$(COMPOSE_FILE)" --profile inference build accelerated-inference; do \
+	until $(BAKE_ENV) $(BAKE) $(BAKE_ALLOW) accelerated-inference; do \
 		n=$$((n + 1)); \
 		if [[ "$$n" -ge "$(DOCKER_BUILD_RETRIES)" ]]; then exit 1; fi; \
 		sleep $$((5 * n)); \
@@ -485,21 +491,9 @@ docker-update-check: prepare-run
 	docker run --rm \
 		--network "$(DOCKER_RUN_NETWORK)" \
 		-v "$(CURDIR)/$(REPORT_DIR)/package-refs.tsv:/tmp/package-refs.tsv:ro" \
-		-v "$(CURDIR)/infra/scripts/check_apt_versions.py:/tmp/check_apt_versions.py:ro" \
+		-v "$(CURDIR)/infra/scripts:/tmp/infra-scripts:ro" \
 		osrf/ros:jazzy-simulation \
-		bash -lc 'set -euo pipefail; apt-get update >/dev/null; status=0; \
-			while IFS=$$'\''\t'\'' read -r key package expected; do \
-				apt-cache policy "$${package}" > /tmp/policy.txt; \
-				candidate="$$(python3 /tmp/check_apt_versions.py --policy-file /tmp/policy.txt)" || candidate=""; \
-				if [[ -z "$${candidate}" || "$${candidate}" == "(none)" ]]; then \
-					echo "missing $${package}"; status=1; \
-				elif [[ "$${candidate}" != "$${expected}" ]]; then \
-					echo "changed $${key}: $${package} expected $${expected}, current $${candidate}"; status=1; \
-				else \
-					echo "$${key}: $${package} $${candidate}"; \
-				fi; \
-			done < /tmp/package-refs.tsv; \
-			exit "$${status}"' \
+		bash /tmp/infra-scripts/check_packages.sh /tmp/package-refs.tsv \
 		| tee "$(REPORT_DIR)/package-update-check.txt"
 
 security-scan:
@@ -572,3 +566,11 @@ pre-commit: bootstrap
 
 clean:
 	rm -rf artifacts runs
+
+# Stale `runs/.locks/*` entries (left behind by a cancelled or crashed
+# `make allocate-run`) block every future domain-id allocation on this host
+# until the TTL in `infra/scripts/allocate_domain_id.py` expires. This
+# forces the issue for a developer who does not want to wait.
+clean-locks:
+	rm -rf runs/.locks
+	@echo "removed runs/.locks"

@@ -1,15 +1,11 @@
-"""`pytest-docker` owns the Docker Compose service lifecycle here (build,
-`up --wait` respecting the service's own `HEALTHCHECK`, and `down` on
-teardown), replacing what used to be a hand-rolled `docker compose ...`
-sequence with manual polling for this kind of "just needs to be healthy"
-service smoke check.
+"""`pytest-docker` owns the Docker Compose service lifecycle for the one
+long-running, health-checked service in the stack (build, `up --wait`
+respecting the service's own `HEALTHCHECK`, and `down` on teardown).
 
 The per-scenario, per-`RUN_ID` `ROS_DOMAIN_ID`-isolated `docker compose run
 --rm` smokes (compose-smoke, integration-smoke, ...) stay Makefile-driven:
-that isolation script is genuine infrastructure business value, not
-DevOps self-rolled orchestration, and `pytest-docker`'s session-scoped
-compose-file model does not fit one-shot `run --rm` containers with a
-freshly allocated domain id per invocation.
+`pytest-docker`'s session-scoped compose-file model does not fit one-shot
+`run --rm` containers with a freshly allocated domain id per invocation.
 """
 
 from __future__ import annotations

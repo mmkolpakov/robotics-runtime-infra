@@ -1,6 +1,10 @@
 ---
 name: robotics-simulation-infra
 
+# Images are built with `docker-bake.hcl` (`make bake-build` and friends),
+# the single source of truth for build context/args/tags; this file only
+# runs already-built images, referenced by tag.
+
 x-ros-environment: &ros-environment
   ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:?ROS_DOMAIN_ID must be allocated}"
   RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
@@ -20,26 +24,16 @@ x-ros-healthcheck: &ros-healthcheck
   retries: 3
   start_period: 10s
 
-x-simulation-build: &simulation-build
-  context: .
-  dockerfile: infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
-  network: "${DOCKER_BUILD_NETWORK:-host}"
-  args:
-    IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
-    IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
-    IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
-    VCS_REF: "${VCS_REF:-local}"
-
 x-simulation-volumes: &simulation-volumes
   - ./config:/workspace/config:ro
   - ./infra/smoke:/workspace/infra/smoke:ro
+  - ./infra/stack:/workspace/infra/stack:ro
   - ./launch:/workspace/launch:ro
   - ./runs:/workspace/runs:rw
 
 services:
   simulation:
     image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    build: *simulation-build
     environment:
       <<: *ros-environment
       FASTRTPS_DEFAULT_PROFILES_FILE: >-
@@ -57,7 +51,6 @@ services:
 
   simulation-dev:
     image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    build: *simulation-build
     profiles:
       - dev
     command: ["bash", "-lc", "sleep infinity"]
@@ -71,18 +64,16 @@ services:
     volumes: *simulation-volumes
     healthcheck: *ros-healthcheck
 
-  # `cross-repo-simulation` and `ros-observer` together make the cross-repo
-  # gate exercise a real, running simulation instead of a static
-  # `docker compose run` of the image's package-presence CMD. They are run
-  # via `docker compose up --exit-code-from ros-observer`: the simulation
-  # keeps `gz sim` and the ROS-Gazebo clock bridge running indefinitely,
-  # while `ros-observer` runs `launch_testing_ros.WaitForTopics`
-  # (`infra/smoke/launch_testing/test_cross_repo_graph_ready.py`) against
-  # the same bridge network and determines the overall pass/fail outcome
-  # via pytest's exit code.
+  # `cross-repo-simulation` and `ros-observer` run together via `docker
+  # compose up --exit-code-from ros-observer`: the simulation keeps `gz sim`
+  # and the ROS-Gazebo clock bridge running indefinitely, while
+  # `ros-observer` validates the expected ROS graph contract
+  # (`infra/smoke/launch_testing/test_cross_repo_graph_ready.py`, driven by
+  # `infra/stack/cross-repo-expected-graph.json`) against the same bridge
+  # network and determines the overall pass/fail outcome via pytest's exit
+  # code.
   cross-repo-simulation:
     image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    build: *simulation-build
     command:
       - bash
       - -lc
@@ -105,7 +96,6 @@ services:
 
   ros-observer:
     image: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
-    build: *simulation-build
     depends_on:
       - cross-repo-simulation
     command:
@@ -153,15 +143,6 @@ services:
 
   dds-agent:
     image: "${DDS_AGENT_IMAGE_TAG:-robotics/dds-agent:2026-07-05}"
-    build:
-      context: .
-      dockerfile: infra/docker/dds-agent.Dockerfile
-      network: "${DOCKER_BUILD_NETWORK:-host}"
-      args:
-        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
-        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
-        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
-        VCS_REF: "${VCS_REF:-local}"
     profiles:
       - dds
     networks:
@@ -197,16 +178,6 @@ services:
 
   media-runtime:
     image: "${MEDIA_IMAGE_TAG:-robotics/media-runtime:2026-07-05}"
-    build:
-      context: .
-      dockerfile: infra/docker/media-runtime.Dockerfile
-      network: "${DOCKER_BUILD_NETWORK:-host}"
-      args:
-        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
-        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
-        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
-        VCS_REF: "${VCS_REF:-local}"
-        RUNTIME_BASE_IMAGE: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
     profiles:
       - media
     environment:
@@ -222,16 +193,6 @@ services:
 
   diagnostics-runtime:
     image: "${DIAGNOSTICS_IMAGE_TAG:-robotics/diagnostics-runtime:2026-07-05}"
-    build:
-      context: .
-      dockerfile: infra/docker/diagnostics-runtime.Dockerfile
-      network: "${DOCKER_BUILD_NETWORK:-host}"
-      args:
-        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
-        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
-        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
-        VCS_REF: "${VCS_REF:-local}"
-        RUNTIME_BASE_IMAGE: "${IMAGE_TAG:-robotics/ros-jazzy-simulation:2026-07-05}"
     profiles:
       - diagnostics
     environment:
@@ -291,17 +252,6 @@ services:
 
   accelerated-inference:
     image: "${INFERENCE_IMAGE_TAG:-robotics/accelerated-inference:2026-07-05}"
-    build:
-      context: .
-      dockerfile: infra/docker/accelerated-inference.Dockerfile
-      network: "${DOCKER_BUILD_NETWORK:-host}"
-      args:
-        NVIDIA_PYTORCH_BASE_IMAGE: "${NVIDIA_PYTORCH_BASE_IMAGE:-nvcr.io/nvidia/pytorch:26.06-py3}"
-        ONNXRUNTIME_GPU_VERSION: "${ONNXRUNTIME_GPU_VERSION:-1.27.0}"
-        IMAGE_CREATED: "${IMAGE_CREATED:-unknown}"
-        IMAGE_SOURCE: "${IMAGE_SOURCE:-local}"
-        IMAGE_VERSION: "${IMAGE_VERSION:-2026-07-05}"
-        VCS_REF: "${VCS_REF:-local}"
     profiles:
       - inference
     command:

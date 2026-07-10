@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 
@@ -73,27 +72,16 @@ def test_allocate_skips_multiple_colliding_ids(tmp_path: Path) -> None:
     assert domain_id == (preferred - DOMAIN_MIN + 3) % span + DOMAIN_MIN
 
 
-def test_lock_from_dead_pid_is_stale(tmp_path: Path) -> None:
+def test_lock_within_ttl_is_not_stale(tmp_path: Path) -> None:
     lock_path = tmp_path / "domain-id.lock"
-    # PID 1 is (almost) never our own process and, when it is not, a
-    # non-existent-but-plausible high PID reliably fails os.kill(pid, 0)
-    # with ProcessLookupError. Use an implausibly large PID instead to
-    # avoid any chance of colliding with a real running process.
-    dead_pid = 2**30
-    lock_path.write_text(f"{dead_pid}:{time.time()}\n", encoding="utf-8")
-    assert _is_stale_lock(lock_path) is True
-
-
-def test_lock_from_live_pid_within_ttl_is_not_stale(tmp_path: Path) -> None:
-    lock_path = tmp_path / "domain-id.lock"
-    lock_path.write_text(f"{os.getpid()}:{time.time()}\n", encoding="utf-8")
+    lock_path.write_text(f"{time.time()}\n", encoding="utf-8")
     assert _is_stale_lock(lock_path) is False
 
 
-def test_lock_past_ttl_is_stale_even_for_a_live_pid(tmp_path: Path) -> None:
+def test_lock_past_ttl_is_stale(tmp_path: Path) -> None:
     lock_path = tmp_path / "domain-id.lock"
     ancient = time.time() - 3600
-    lock_path.write_text(f"{os.getpid()}:{ancient}\n", encoding="utf-8")
+    lock_path.write_text(f"{ancient}\n", encoding="utf-8")
     assert _is_stale_lock(lock_path, ttl_sec=30.0) is True
 
 
@@ -109,10 +97,7 @@ def test_allocate_run_recovers_from_a_stale_lock(tmp_path: Path) -> None:
     runs_root = tmp_path / "runs"
     lock_dir = runs_root / ".locks"
     lock_dir.mkdir(parents=True)
-    dead_pid = 2**30
-    (lock_dir / "domain-id.lock").write_text(
-        f"{dead_pid}:{time.time() - 3600}\n", encoding="utf-8"
-    )
+    (lock_dir / "domain-id.lock").write_text(f"{time.time() - 3600}\n", encoding="utf-8")
 
     exit_code = main(["--run-id", "recovered-run", "--runs-root", str(runs_root)])
     assert exit_code == 0

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG ROS_BASE_IMAGE=osrf/ros:jazzy-simulation
 FROM ${ROS_BASE_IMAGE}
 
@@ -80,4 +81,6 @@ RUN printf '%s\n' \
     "source /opt/ros/${ROS_DISTRO}/setup.bash" \
   > /etc/profile.d/robotics_ros_setup.sh
 
-CMD ["bash", "-lc", "source /etc/profile.d/robotics_ros_setup.sh && ros2 pkg list | grep -E '^mavros$|^mavros_extras$|^mavros_msgs$|^moveit_ros_move_group$|^controller_manager$|^ros2_control$|^joint_trajectory_controller$|^ros_gz_bridge$|^ros_gz_sim$|^rosbag2_storage_mcap$' && python3 -c 'import cv2; from cv_bridge import CvBridge; CvBridge(); print(cv2.__version__)' && gz sim --help >/tmp/gz_help.txt && ros2 bag record -s mcap --help >/tmp/rosbag_mcap_help.txt && ros2 control --help >/tmp/ros2_control_help.txt && aws --version | grep -E '^aws-cli/2\\.35\\.17 ' >/tmp/aws_cli_version.txt && test -s /tmp/gz_help.txt && test -s /tmp/rosbag_mcap_help.txt && test -s /tmp/ros2_control_help.txt && test -s /tmp/aws_cli_version.txt"]
+COPY --chmod=755 infra/docker/scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
+
+CMD ["/usr/local/bin/healthcheck.sh"]

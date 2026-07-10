@@ -1,0 +1,796 @@
+---
+matrix_id: robotics_simulation_runtime_profiles
+version_date: '2026-07-06'
+policy:
+  public_scope: Reusable infrastructure for robotics simulation, runtime checks, data capture,
+    and integration boundaries.
+  product_logic: out_of_scope
+  version_line: ubuntu_24_04_ros2_jazzy_gazebo_harmonic
+  default_gpu_required: false
+profiles:
+  core_simulation:
+    status: ready
+    purpose: Base containerized simulation runtime for local and CI checks.
+    release_gate: true
+    compose_profiles: []
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: ros2_runtime
+        category: middleware
+        components:
+          - ubuntu_24_04_noble
+          - ros2_jazzy
+      - id: gazebo_runtime
+        category: simulation
+        components:
+          - gazebo_harmonic
+          - ros_gz
+          - ros_gz_bridge
+          - ros_gz_sim
+    checks:
+      - id: build_image
+        command: make compose-build
+        required: true
+      - id: smoke_image
+        command: make compose-smoke
+        required: true
+      - id: integration_smoke
+        command: make integration-smoke
+        required: true
+    artifacts:
+      - artifacts/reports/compose-smoke.txt
+      - artifacts/reports/integration-smoke.txt
+      - artifacts/reports/docker-image-inspect.json
+  developer_workspace:
+    status: optional
+    purpose: Long-running interactive simulation container for local and server-side development
+      work.
+    release_gate: false
+    compose_profiles:
+      - dev
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: interactive_workspace
+        category: development
+        components:
+          - ros2_shell
+          - gazebo_cli
+          - project_mount_boundary
+        notes:
+          - Use compose.override.yaml for project-specific source and data mounts.
+    checks:
+      - id: dev_compose_config
+        command: make compose-config
+        required: false
+      - id: dev_container_up
+        command: make dev-up
+        required: false
+    artifacts:
+      - artifacts/reports/compose.dev.yaml
+  autopilot_sitl:
+    status: partial
+    purpose: Autopilot-oriented simulation readiness through standard MAVLink and ROS interfaces.
+    release_gate: true
+    compose_profiles:
+      - autopilot
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: mavlink_bridge
+        category: autopilot
+        components:
+          - mavlink
+          - mavros
+          - mavros_extras
+          - mavros_msgs
+      - id: sitl_base
+        category: autopilot
+        components:
+          - ardupilot_dev_base
+        notes:
+          - The default release gate covers package and base image readiness; full vehicle
+            behavior checks and concrete vehicle scenarios belong to higher-level test suites.
+    checks:
+      - id: mavros_packages
+        command: make compose-smoke
+        required: true
+      - id: upstream_image_manifests
+        command: make docker-manifests
+        required: true
+      - id: ardupilot_base_smoke
+        command: make compose-ardupilot-smoke
+        required: true
+      - id: mavros_state_topic
+        command: make integration-smoke
+        required: true
+    artifacts:
+      - artifacts/reports/compose-autopilot-smoke.txt
+      - artifacts/reports/integration-smoke.txt
+      - artifacts/reports/ardupilot-base-image.txt
+  px4_sitl_runtime:
+    status: optional
+    purpose: Optional PX4 SITL runtime probe kept outside release gates while the selected
+      image tag is not a stable release line.
+    release_gate: false
+    compose_profiles:
+      - px4
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: px4_sitl_runtime
+        category: autopilot
+        components:
+          - px4_sitl_gazebo
+        notes:
+          - This repository validates runtime availability only; vehicle models, missions,
+            and behavior checks belong to upper projects.
+    checks:
+      - id: px4_runtime_smoke
+        command: make compose-px4-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-px4-smoke.txt
+  dds_bridge:
+    status: optional
+    purpose: Optional DDS bridge runtime for autopilot and ROS 2 integration checks.
+    release_gate: false
+    compose_profiles:
+      - dds
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: micro_xrce_dds_agent
+        category: communication
+        components:
+          - micro_xrce_dds_agent
+      - id: dds_interface_package_boundary
+        category: communication
+        components:
+          - external_message_packages
+          - dds_topics
+        notes:
+          - Message package ownership remains with the upper project.
+    checks:
+      - id: dds_agent_help
+        command: make compose-dds-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-dds-smoke.txt
+  comms_bridge:
+    status: optional
+    purpose: Optional ROS 2 communication bridge runtime for distributed simulation checks.
+    release_gate: false
+    compose_profiles:
+      - comms
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: zenoh_ros2_bridge
+        category: communication
+        components:
+          - zenoh_bridge_ros2dds
+    checks:
+      - id: zenoh_bridge_help
+        command: make compose-comms-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-comms-smoke.txt
+  manipulator_control:
+    status: ready
+    purpose: Generic planning and controller readiness for robotic manipulators and actuated
+      mechanisms.
+    release_gate: true
+    compose_profiles: []
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: motion_planning
+        category: control
+        components:
+          - moveit
+          - moveit_ros_move_group
+      - id: controller_framework
+        category: control
+        components:
+          - ros2_control
+          - ros2_controllers
+          - controller_manager
+          - joint_trajectory_controller
+          - ros2controlcli
+    checks:
+      - id: control_packages
+        command: make compose-smoke
+        required: true
+    artifacts:
+      - artifacts/reports/compose-smoke.txt
+  perception_runtime:
+    status: partial
+    purpose: Replaceable machine perception runtime boundary without embedding application-specific
+      models.
+    release_gate: true
+    compose_profiles: []
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: opencv_bridge
+        category: perception
+        components:
+          - python3_opencv
+          - cv_bridge
+          - vision_opencv
+          - image_transport
+      - id: replaceable_provider
+        category: perception
+        components:
+          - ros_topics
+          - model_artifact_manifest
+          - runtime_specific_adapter
+        notes:
+          - Provider implementation and model quality are outside the infrastructure repository.
+    checks:
+      - id: opencv_import
+        command: make compose-smoke
+        required: true
+    artifacts:
+      - artifacts/reports/compose-smoke.txt
+  sensor_simulation:
+    status: partial
+    purpose: Standard ROS sensor interface readiness for camera, depth, point cloud, and frame
+      streams.
+    release_gate: true
+    compose_profiles: []
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: camera_streams
+        category: sensors
+        components:
+          - sensor_msgs_image
+          - camera_info
+          - image_transport
+        notes:
+          - The infrastructure validates message and transport interfaces, not product-specific
+            camera scenes.
+      - id: range_streams
+        category: sensors
+        components:
+          - sensor_msgs_pointcloud2
+          - depth_image
+          - tf_frames
+        notes:
+          - Concrete sensor models, world files, and perception scenarios remain owned by
+            upper projects.
+    checks:
+      - id: sensor_interfaces
+        command: make compose-sensor-smoke
+        required: true
+      - id: gazebo_available
+        command: make compose-smoke
+        required: true
+      - id: direct_render_device
+        command: make compose-render-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-smoke.txt
+      - artifacts/reports/compose-sensor-smoke.txt
+      - artifacts/reports/compose-render-smoke.txt
+  media_sensor_runtime:
+    status: optional
+    purpose: Optional media pipeline runtime for camera and video stream checks.
+    release_gate: false
+    compose_profiles:
+      - media
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: gstreamer_pipeline
+        category: media
+        components:
+          - gstreamer_tools
+          - gstreamer_plugins_good
+          - gstreamer_plugins_bad
+          - gstreamer_plugins_ugly
+          - gstreamer_libav
+    checks:
+      - id: gstreamer_videotestsrc
+        command: make compose-media-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-media-smoke.txt
+  data_recording:
+    status: ready
+    purpose: Machine-readable recording and evidence capture for repeatable simulation checks.
+    release_gate: true
+    compose_profiles: []
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: rosbag_mcap
+        category: recording
+        components:
+          - rosbag2
+          - rosbag2_storage_mcap
+          - junit_xml
+      - id: machine_reports
+        category: evidence
+        components:
+          - junit_xml
+          - junit_properties
+          - logs
+          - sarif
+          - slsa_provenance
+        notes:
+          - Numeric/categorical run metrics are recorded as <property> tags on the JUnit XML
+            report (pytest record_property), not a separate metrics JSON file.
+          - The signed evidence attestation is a SLSA Provenance document produced by
+            slsa-framework/slsa-github-generator over the JUnit report and image digest,
+            generated in CI (not a `make` target).
+    checks:
+      - id: rosbag_mcap_help
+        command: make compose-smoke
+        required: true
+      - id: security_report
+        command: make security-scan
+        required: true
+      - id: security_gate
+        command: make security-gate
+        required: true
+      - id: junit_report
+        command: make integration-smoke joint-motion-smoke
+        required: true
+        notes:
+          - Writes JUnit XML under artifacts/reports/; CI hashes it and calls slsa-framework/slsa-github-generator
+            for the signed provenance attestation.
+    artifacts:
+      - artifacts/reports/integration-smoke.xml
+      - artifacts/reports/joint-motion-smoke.xml
+      - artifacts/reports/package-update-check.txt
+      - artifacts/security/trivy-image.sarif
+  diagnostics_tools:
+    status: optional
+    purpose: Optional local diagnostics runtime for simulation analysis tools.
+    release_gate: false
+    compose_profiles:
+      - diagnostics
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: plotjuggler_runtime
+        category: diagnostics
+        components:
+          - plotjuggler
+          - plotjuggler_ros
+      - id: ground_control_boundary
+        category: diagnostics
+        components:
+          - external_ground_control_station
+        notes:
+          - GUI ground control tooling is treated as an operator workstation concern, not
+            a CI release gate.
+    checks:
+      - id: diagnostics_packages
+        command: make compose-diagnostics-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-diagnostics-smoke.txt
+  gpu_runtime_optional:
+    status: optional
+    purpose: Optional NVIDIA container runtime probe for hosts with a compatible GPU stack.
+    release_gate: false
+    compose_profiles:
+      - nvidia
+    host:
+      os:
+        - linux
+        - windows_11_wsl2
+      container_runtime: docker
+      gpu_required: true
+    capabilities:
+      - id: hardware_acceleration
+        category: runtime
+        components:
+          - cuda_runtime_optional
+          - gpu_container_runtime_optional
+        notes:
+          - This profile validates container access to NVIDIA GPU runtime only.
+    checks:
+      - id: gpu_runtime_probe
+        command: make compose-gpu-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-gpu-smoke.txt
+  accelerated_inference_runtime_optional:
+    status: optional
+    purpose: Optional NVIDIA inference runtime lane for ONNX Runtime GPU, PyTorch CUDA, and
+      TensorRT checks.
+    release_gate: false
+    compose_profiles:
+      - inference
+    host:
+      os:
+        - linux
+        - windows_11_wsl2
+      container_runtime: docker
+      gpu_required: true
+    capabilities:
+      - id: accelerated_inference
+        category: runtime
+        components:
+          - onnxruntime_optional
+          - pytorch_cuda_optional
+          - tensorrt_optional
+        notes:
+          - This profile is not required for the default local and CI gates and is separate
+            from the lightweight NVIDIA runtime probe.
+    checks:
+      - id: accelerated_inference_probe
+        command: make compose-accelerated-inference-smoke
+        required: false
+    artifacts:
+      - artifacts/reports/compose-accelerated-inference-smoke.txt
+  edge_nvidia_arm64:
+    status: optional
+    purpose: Optional ARM64 edge deployment boundary for NVIDIA Jetson-class targets.
+    release_gate: false
+    compose_profiles:
+      - edge
+    host:
+      os:
+        - linux
+      container_runtime: docker
+      gpu_required: true
+    capabilities:
+      - id: jetson_runtime_boundary
+        category: runtime
+        components:
+          - l4t_jetpack
+          - arm64_container
+          - deepstream_external
+        notes:
+          - This profile is config-checked only on non-ARM64 hosts.
+    checks:
+      - id: edge_compose_config
+        command: make compose-edge-config
+        required: false
+    artifacts:
+      - artifacts/reports/compose.edge.yaml
+  external_stack_extension:
+    status: external
+    purpose: Neutral extension boundary for application-owned stacks built on top of the infrastructure
+      layer.
+    release_gate: false
+    compose_profiles: []
+    host:
+      os:
+        - windows_11_wsl2
+        - linux
+      container_runtime: docker
+      gpu_required: false
+    capabilities:
+      - id: standard_boundaries
+        category: integration
+        components:
+          - ros_topics
+          - ros_services
+          - ros_actions
+          - mavlink
+          - mavros
+          - ros2_control
+          - rosbag2_mcap
+      - id: external_odometry_slam
+        category: algorithm
+        components:
+          - odometry
+          - slam
+          - external_algorithm_stack
+        notes:
+          - Odometry and SLAM workloads are owned by upper projects unless a neutral benchmark
+            explicitly adds them to this repository.
+    checks:
+      - id: boundary_manifest
+        command: make profiles
+        required: false
+    artifacts:
+      - artifacts/reports/runtime-profiles.json
+decision_points:
+  - id: compute_acceleration
+    default: cpu_container_runtime
+    rationale: The base release path must run on ordinary Linux or Windows WSL2 hosts without
+      a dedicated GPU.
+    alternatives:
+      - id: cpu_container_runtime
+        status: ready
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: nvidia_container_runtime
+        status: optional
+        compose_profile: nvidia
+        release_gate: false
+        gpu_required: true
+        notes:
+          - Validated by make compose-gpu-smoke only on hosts with NVIDIA container runtime.
+      - id: nvidia_inference_runtime
+        status: optional
+        compose_profile: inference
+        release_gate: false
+        gpu_required: true
+        notes:
+          - Validated by make compose-accelerated-inference-smoke on hosts with NVIDIA container
+            runtime.
+  - id: local_rendering
+    default: headless
+    rationale: Headless CI and WSL2 smoke checks are the default; local rendering is a host
+      capability, not a product assumption.
+    alternatives:
+      - id: headless
+        status: ready
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: direct_render_device
+        status: optional
+        compose_profile: render
+        release_gate: false
+        gpu_required: false
+        notes:
+          - Uses /dev/dri when the host exposes it, including Intel or AMD integrated graphics
+            on Linux/WSL2.
+  - id: ros_gazebo_line
+    default: ubuntu_24_04_ros2_jazzy_gazebo_harmonic
+    rationale: This is the recommended ROS 2 Jazzy line for July 2026 and avoids non-default
+      ROS/Gazebo pairings.
+    alternatives:
+      - id: ubuntu_24_04_ros2_jazzy_gazebo_harmonic
+        status: ready
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: external_ros_line
+        status: external
+        compose_profile: null
+        release_gate: false
+        gpu_required: false
+        notes:
+          - External projects may adapt older ROS 2 lines above this repository, but this
+            repository does not carry them as a default.
+  - id: autopilot_bridge
+    default: mavlink_mavros
+    rationale: MAVLink/MAVROS is the release-gated bridge currently present in the neutral
+      image.
+    alternatives:
+      - id: mavlink_mavros
+        status: partial
+        compose_profile: autopilot
+        release_gate: true
+        gpu_required: false
+      - id: dds_bridge
+        status: optional
+        compose_profile: dds
+        release_gate: false
+        gpu_required: false
+        notes:
+          - Available as a separate neutral bridge profile; message packages and topic contracts
+            remain owned by upper projects.
+  - id: sitl_runtime_family
+    default: ardupilot_base_probe
+    rationale: The release gate checks a stable base SITL environment; more specific simulator
+      runtimes remain explicit optional profiles until their scenario contracts are owned
+      by upper projects.
+    alternatives:
+      - id: ardupilot_base_probe
+        status: partial
+        compose_profile: ardupilot
+        release_gate: true
+        gpu_required: false
+      - id: px4_sitl_runtime
+        status: optional
+        compose_profile: px4
+        release_gate: false
+        gpu_required: false
+        notes:
+          - The currently selected image tag is kept outside release gates because it is an
+            alpha line.
+  - id: dds_bridge_runtime
+    default: micro_xrce_dds_agent
+    rationale: DDS bridge runtime is useful for autopilot integrations, but it must remain
+      optional until an upper stack owns message packages and topics.
+    alternatives:
+      - id: micro_xrce_dds_agent
+        status: optional
+        compose_profile: dds
+        release_gate: false
+        gpu_required: false
+      - id: external_message_packages
+        status: external
+        compose_profile: null
+        release_gate: false
+        gpu_required: false
+        notes:
+          - Message packages are intentionally owned by upper projects.
+  - id: distributed_comms_bridge
+    default: local_dds
+    rationale: Local DDS remains the default; distributed bridge runtime is optional for larger
+      or remote simulations.
+    alternatives:
+      - id: local_dds
+        status: ready
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: zenoh_ros2_bridge
+        status: optional
+        compose_profile: comms
+        release_gate: false
+        gpu_required: false
+  - id: media_pipeline_runtime
+    default: ros_image_contract
+    rationale: ROS image topics are enough for the default gate; media streaming is optional
+      infrastructure for camera-heavy scenarios.
+    alternatives:
+      - id: ros_image_contract
+        status: partial
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: gstreamer_pipeline
+        status: optional
+        compose_profile: media
+        release_gate: false
+        gpu_required: false
+  - id: perception_provider
+    default: ros_image_contract
+    rationale: The infrastructure owns transport and contracts, while model selection and
+      model quality belong to upper projects.
+    alternatives:
+      - id: ros_image_contract
+        status: partial
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: accelerated_inference_provider
+        status: optional
+        compose_profile: inference
+        release_gate: false
+        gpu_required: true
+        notes:
+          - The repository validates provider runtime availability, not application model
+            correctness.
+  - id: diagnostics_runtime
+    default: machine_readable_reports
+    rationale: CI must rely on machine-readable reports; GUI diagnostics are useful locally
+      but not a release gate.
+    alternatives:
+      - id: machine_readable_reports
+        status: ready
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: plotjuggler_runtime
+        status: optional
+        compose_profile: diagnostics
+        release_gate: false
+        gpu_required: false
+      - id: ground_control_station
+        status: external
+        compose_profile: null
+        release_gate: false
+        gpu_required: false
+        notes:
+          - Ground control UI is kept outside CI and can be supplied by the operator workstation
+            or an upper project.
+  - id: edge_deployment
+    default: amd64_wsl2_linux
+    rationale: The default infrastructure target is amd64 Linux/WSL2; ARM64 edge deployment
+      requires a separate optional lane.
+    alternatives:
+      - id: amd64_wsl2_linux
+        status: ready
+        compose_profile: null
+        release_gate: true
+        gpu_required: false
+      - id: jetson_arm64
+        status: optional
+        compose_profile: edge
+        release_gate: false
+        gpu_required: true
+extension_contracts:
+  - id: ros_interfaces
+    boundary:
+      - topics
+      - services
+      - actions
+      - parameters
+    owner: external_project
+  - id: autopilot_interfaces
+    boundary:
+      - mavlink
+      - mavros
+      - sitl_process
+      - dds_agent
+    owner: external_project
+  - id: communication_interfaces
+    boundary:
+      - dds
+      - zenoh_bridge
+      - ros_domain_id
+    owner: infrastructure
+  - id: control_interfaces
+    boundary:
+      - ros2_control
+      - controller_manager
+      - joint_trajectory_controller
+    owner: external_project
+  - id: perception_interfaces
+    boundary:
+      - image_topics
+      - camera_info
+      - media_stream
+      - model_artifact_manifest
+      - provider_adapter
+    owner: external_project
+  - id: diagnostics_interfaces
+    boundary:
+      - rosbag2_mcap
+      - plotjuggler_layout
+      - ground_control_station
+    owner: external_project
+  - id: evidence_interfaces
+    boundary:
+      - rosbag2_mcap
+      - logs
+      - junit_xml
+      - junit_properties
+      - slsa_provenance
+      - sarif
+    owner: infrastructure

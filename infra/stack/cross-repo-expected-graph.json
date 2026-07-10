@@ -1,0 +1,21 @@
+{
+  "schema_version": "ros-graph-contract.v1",
+  "graph_ready_timeout_sec": 60,
+  "require_clock": true,
+  "topics": [
+    {
+      "name": "/clock",
+      "type": "rosgraph_msgs/msg/Clock",
+      "publisher_match": {
+        "min_count": 1,
+        "timeout_sec": 60
+      },
+      "subscriber_match": {
+        "min_count": 0,
+        "timeout_sec": 60
+      }
+    }
+  ],
+  "services": [],
+  "actions": []
+}

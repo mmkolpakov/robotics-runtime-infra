@@ -51,7 +51,11 @@ group "default" {
 }
 
 group "optional" {
-  targets = ["dds-agent", "media-runtime", "diagnostics-runtime"]
+  targets = ["dds-agent", "media-runtime", "diagnostics-runtime", "accelerated-inference"]
+}
+
+group "all" {
+  targets = ["simulation", "dds-agent", "media-runtime", "diagnostics-runtime", "accelerated-inference"]
 }
 
 target "simulation" {
