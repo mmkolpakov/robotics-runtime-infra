@@ -73,12 +73,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compose-version:
-          - v2.35.1
-          - v5.2.0
-          - v5.3.1
+        include:
+          - compose-version: v2.35.1
+            project-suffix: v2351
+          - compose-version: v5.2.0
+            project-suffix: v520
+          - compose-version: v5.3.1
+            project-suffix: v531
     env:
-      COMPOSE_PROJECT_NAME: compose-${{ matrix.compose-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+      COMPOSE_PROJECT_NAME: compose-${{ matrix.project-suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
       SIMULATION_IMAGE: ghcr.io/${{ github.repository_owner }}/droning-simulation-infra:0.4.0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
