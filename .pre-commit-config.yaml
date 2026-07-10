@@ -7,20 +7,15 @@ repos:
       - id: end-of-file-fixer
       - id: check-json
       - id: check-yaml
-  - repo: local
+      - id: check-xml
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+      - id: detect-private-key
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.38.0
     hooks:
-      - id: check-jsonschema-infra
-        name: Validate JSON schemas and manifests
-        entry: make validate-json
-        language: system
-        pass_filenames: false
       - id: yamllint
-        name: Validate YAML
-        entry: make validate-yaml
-        language: system
-        pass_filenames: false
-      - id: hadolint
-        name: Lint Dockerfiles
-        entry: make lint-dockerfile
-        language: system
-        pass_filenames: false
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint

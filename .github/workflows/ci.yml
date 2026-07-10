@@ -2,126 +2,159 @@
 name: ci
 
 on:
-  workflow_dispatch:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
-  security-events: write
 
 defaults:
   run:
     shell: bash
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  COMPOSE_PROJECT_NAME: infra-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
+  RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
+  SIMULATION_IMAGE: robotics-simulation-infra:ci
+  TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+
 jobs:
-  validate:
+  static-analysis:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
-          python-version: "3.12"
-      - name: Validate contracts and YAML
-        run: make RUN_ID=ci-validate validate
-      - name: Upload validation reports
+          version: "0.11.28"
+          enable-cache: true
+      - name: Run repository hooks
+        run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
+      - name: Validate Compose model
+        run: docker compose config --quiet
+      - name: Lint Dockerfile
+        run: >-
+          docker run --rm
+          --volume "$PWD:/work:ro"
+          --workdir /work
+          "$HADOLINT_IMAGE"
+          /bin/hadolint --config .hadolint.yaml Dockerfile
+      - name: Validate Renovate configuration
+        run: >-
+          docker run --rm
+          --volume "$PWD:/work:ro"
+          --workdir /work
+          "$RENOVATE_IMAGE"
+          renovate-config-validator --strict renovate.json
+      - name: Audit GitHub Actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          uvx --from zizmor==1.26.1 zizmor
+          --pedantic
+          --min-severity medium
+          --format github
+          .github/workflows
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+      - name: Build executable simulation image
+        run: |
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker buildx build \
+            --build-arg "IMAGE_CREATED=${created}" \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_VERSION=ci-${GITHUB_SHA}" \
+            --build-arg "VCS_REF=${GITHUB_SHA}" \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            --provenance=false \
+            --tag "${SIMULATION_IMAGE}" \
+            .
+      - name: Start and verify the runtime
+        run: |
+          docker compose up --detach --no-build --wait --wait-timeout 120
+          docker compose ps
+          docker compose exec -T simulation \
+            robotics-entrypoint timeout 10 ros2 topic echo /clock --once
+      - name: Run ROS and Gazebo acceptance tests
+        run: docker compose --profile test run --rm --no-deps test
+      - name: Capture runtime evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/runtime
+          docker compose logs --no-color > artifacts/runtime/compose.log 2>&1 || true
+          docker image inspect "${SIMULATION_IMAGE}" > artifacts/runtime/image-inspect.json || true
+      - name: Stop the runtime
+        if: always()
+        run: docker compose --profile test down --volumes --remove-orphans
+      - name: Generate complete vulnerability report
+        run: |
+          mkdir -p artifacts/security .trivy-cache
+          docker run --rm \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            --volume "$PWD:/work:ro" \
+            --volume "$PWD/.trivy-cache:/root/.cache/trivy" \
+            --volume "$PWD/artifacts/security:/reports" \
+            "$TRIVY_IMAGE" image \
+            --config /work/trivy.yaml \
+            --ignorefile /work/.trivyignore \
+            --format sarif \
+            --output /reports/trivy-image.sarif \
+            "${SIMULATION_IMAGE}"
+      - name: Reject fixable high and critical vulnerabilities
+        run: |
+          docker run --rm \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            --volume "$PWD:/work:ro" \
+            --volume "$PWD/.trivy-cache:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --config /work/trivy.yaml \
+            --ignorefile /work/.trivyignore \
+            --skip-db-update \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            "${SIMULATION_IMAGE}"
+      - name: Upload test and security reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: validation-reports
-          path: runs/
+          name: infra-reports-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
 
-  docker-smoke:
+  publish-sarif:
+    if: github.event_name == 'push' && needs.integration.result == 'success'
+    needs: integration
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: read
       security-events: write
-    outputs:
-      hashes: ${{ steps.hash.outputs.hashes }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+          name: infra-reports-${{ github.sha }}
+          path: artifacts
+      - uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
         with:
-          python-version: "3.12"
-      - name: Lint Dockerfile and workflows
-        run: make lint
-      - name: Inspect upstream image manifests
-        run: make docker-manifests
-      - name: Build simulation image
-        run: |
-          IMAGE_CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-          IMAGE_SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-          IMAGE_VERSION="${GITHUB_SHA}" \
-          VCS_REF="${GITHUB_SHA}" \
-          IMAGE_TAG="robotics/ros-jazzy-simulation:ci" \
-          RUN_ID="ci-${GITHUB_RUN_ID}" \
-            make compose-build
-      - name: Smoke simulation image (pytest + JUnit XML)
-        run: |
-          IMAGE_TAG="robotics/ros-jazzy-simulation:ci" \
-          RUN_ID="ci-${GITHUB_RUN_ID}" \
-            make \
-              compose-smoke \
-              compose-sensor-smoke \
-              compose-artifact-tooling-smoke \
-              integration-smoke \
-              joint-motion-smoke \
-              compose-autopilot-smoke
-      - name: Parallel isolation smoke
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}-iso" make parallel-isolation-smoke
-      - name: pytest-docker service lifecycle smoke
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make pytest-docker-smoke
-      - name: Inspect local image metadata
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make docker-metadata
-      - name: Check recorded package versions
-        run: RUN_ID="ci-${GITHUB_RUN_ID}" make docker-update-check
-      - name: Generate image vulnerability report
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make security-scan
-      - name: Upload Trivy SARIF
-        if: github.event_name == 'push' && vars.ENABLE_CODE_SCANNING == 'true'
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
-        with:
-          sarif_file: runs/ci-${{ github.run_id }}/security/trivy-image.sarif
-          category: trivy-image
-      - name: Apply vulnerability gate
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make security-gate
-      - name: Generate SBOM
-        run: IMAGE_TAG="robotics/ros-jazzy-simulation:ci" RUN_ID="ci-${GITHUB_RUN_ID}" make sbom
-      - name: Hash JUnit reports for SLSA provenance
-        id: hash
-        run: |
-          set -euo pipefail
-          report_dir="runs/ci-${GITHUB_RUN_ID}/reports"
-          cd "${report_dir}"
-          echo "hashes=$(sha256sum integration-smoke.xml joint-motion-smoke.xml pytest-docker-smoke.xml | base64 -w0)" \
-            >> "${GITHUB_OUTPUT}"
-      - name: Upload Docker reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: docker-reports
-          path: runs/
-
-  provenance:
-    needs: [docker-smoke]
-    permissions:
-      actions: read  # Needed for detection of GitHub Actions environment.
-      id-token: write  # Needed for provenance signing.
-      contents: write  # Needed to upload provenance to a release, if any.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: "${{ needs.docker-smoke.outputs.hashes }}"
-      provenance-name: ci.intoto.jsonl
+          sarif_file: artifacts/security/trivy-image.sarif
+          category: simulation-image

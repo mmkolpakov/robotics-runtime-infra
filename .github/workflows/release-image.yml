@@ -2,97 +2,132 @@
 name: release-image
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - "v*"
 
 permissions:
   contents: read
-  id-token: write
-  packages: write
 
 defaults:
   run:
     shell: bash
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/robotics-ros-jazzy-simulation
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/droning-simulation-infra
+  TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
 
 jobs:
   publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+      security-events: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-
-      - name: Set build timestamp
-        id: timestamp
-        run: echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22  # v4.1.0
-
-      - name: Log in to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+          password: ${{ github.token }}
       - name: Extract image metadata
-        id: meta
+        id: metadata
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
+            type=semver,pattern={{version}}
             type=sha,prefix=sha-
-
+      - name: Record build timestamp
+        id: timestamp
+        run: echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Build and publish image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
-          file: infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
+          file: Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
           build-args: |
             IMAGE_CREATED=${{ steps.timestamp.outputs.created }}
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
-            IMAGE_VERSION=${{ steps.meta.outputs.version }}
+            IMAGE_VERSION=${{ steps.metadata.outputs.version }}
             VCS_REF=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
-
-      - name: Sign image digest with Cosign keyless
+      - name: Scan published image
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          set -euo pipefail
-          if [[ -z "${DIGEST}" ]]; then
-            echo "missing image digest from build-push" >&2
-            exit 1
-          fi
-          cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
-
-      - name: Verify Cosign signature
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          cosign verify \
-            --certificate-identity-regexp \
-              "https://github.com/${{ github.repository }}/.github/workflows/release-image.yml@.*" \
-            --certificate-oidc-issuer \
-              "https://token.actions.githubusercontent.com" \
+          mkdir -p artifacts/security .trivy-cache
+          docker run --rm \
+            --volume "$HOME/.docker:/root/.docker:ro" \
+            --volume "$PWD:/work:ro" \
+            --volume "$PWD/.trivy-cache:/root/.cache/trivy" \
+            --volume "$PWD/artifacts/security:/reports" \
+            "$TRIVY_IMAGE" image \
+            --config /work/trivy.yaml \
+            --ignorefile /work/.trivyignore \
+            --format sarif \
+            --output /reports/trivy-image.sarif \
             "${IMAGE_NAME}@${DIGEST}"
+          docker run --rm \
+            --volume "$HOME/.docker:/root/.docker:ro" \
+            --volume "$PWD:/work:ro" \
+            --volume "$PWD/.trivy-cache:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --config /work/trivy.yaml \
+            --ignorefile /work/.trivyignore \
+            --skip-db-update \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            "${IMAGE_NAME}@${DIGEST}"
+      - name: Attest published image
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763  # v4.1.1
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Verify image attestation
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh attestation verify
+          "oci://${IMAGE_NAME}@${DIGEST}"
+          --repo "${GITHUB_REPOSITORY}"
+      - uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
+        with:
+          sarif_file: artifacts/security/trivy-image.sarif
+          category: released-simulation-image
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-security-${{ github.ref_name }}
+          path: artifacts/security/
+          retention-days: 7
+      - name: Publish release notes
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "droning-simulation-infra ${GITHUB_REF_NAME}" \
+            --notes "OCI image: ${IMAGE_NAME}@${DIGEST}"
