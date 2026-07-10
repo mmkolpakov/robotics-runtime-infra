@@ -1,0 +1,19 @@
+---
+schema_version: acceptance-scenario.v1
+scenario_id: foundation.headless-clock
+target_environment: simulation
+seed: 1
+timeouts:
+  startup_sec: 120
+  graph_ready_sec: 20
+  execution_sec: 300
+  shutdown_sec: 20
+expected_ros_graph:
+  stable_for_sec: 2
+  topics:
+    - name: /clock
+      type: rosgraph_msgs/msg/Clock
+      min_publishers: 1
+      min_subscribers: 0
+  services: []
+  actions: []

@@ -1,0 +1,136 @@
+---
+name: foundation-integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/foundation-integration.yml"
+      - "Dockerfile"
+      - "compose.yaml"
+      - "foundation.repos"
+      - "foundation/**"
+      - "ros_ws/**"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: foundation-integration
+  cancel-in-progress: false
+
+env:
+  SIMULATION_IMAGE: robotics-simulation-infra:foundation
+
+jobs:
+  foundation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+        with:
+          version: "0.11.28"
+          enable-cache: true
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+      - name: Import exact foundation sources
+        run: |
+          mkdir -p artifacts dependencies
+          uvx --from vcs2l==1.1.7 vcs validate --input foundation.repos
+          uvx --from vcs2l==1.1.7 vcs import --input foundation.repos dependencies
+          uvx --from vcs2l==1.1.7 vcs export --exact --lint dependencies \
+            > artifacts/foundation.resolved.repos
+      - name: Validate contracts and simulation guard together
+        run: |
+          uv sync --project dependencies/contracts --locked --all-groups
+          uv sync --project dependencies/harness --locked --all-groups
+          (
+            cd dependencies/contracts
+            uv run --no-sync pytest \
+              --junitxml "$GITHUB_WORKSPACE/artifacts/contracts.xml"
+          )
+          uv pip install \
+            --python dependencies/harness/.venv/bin/python \
+            --reinstall \
+            ./dependencies/contracts
+          (
+            cd dependencies/harness
+            .venv/bin/pytest \
+              tests \
+              --robotics-scenario "$GITHUB_WORKSPACE/foundation/acceptance-scenario.yaml" \
+              --junitxml "$GITHUB_WORKSPACE/artifacts/harness.xml"
+          )
+      - name: Build foundation runtime
+        run: |
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker buildx build \
+            --build-arg "IMAGE_CREATED=${created}" \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_VERSION=foundation-${GITHUB_SHA}" \
+            --build-arg "VCS_REF=${GITHUB_SHA}" \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            --provenance=false \
+            --tag "${SIMULATION_IMAGE}" \
+            .
+      - name: Run scenario against the real ROS graph
+        run: |
+          project="foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker compose -p "$project" --profile test down --volumes --remove-orphans || true
+          }
+          trap cleanup EXIT
+          docker compose -p "$project" up --detach --no-build --wait --wait-timeout 120
+          docker compose -p "$project" exec -T simulation \
+            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+          docker compose -p "$project" --profile test run --rm --no-deps test
+      - name: Verify two isolated projects in parallel
+        run: |
+          project_a="foundation-a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          project_b="foundation-b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker compose -p "$project_a" down --volumes --remove-orphans || true
+            docker compose -p "$project_b" down --volumes --remove-orphans || true
+          }
+          trap cleanup EXIT
+          ROS_DOMAIN_ID=41 GZ_PARTITION="${project_a}" \
+            docker compose -p "$project_a" up --detach --no-build --wait --wait-timeout 120
+          ROS_DOMAIN_ID=42 GZ_PARTITION="${project_b}" \
+            docker compose -p "$project_b" up --detach --no-build --wait --wait-timeout 120
+          docker compose -p "$project_a" exec -T simulation \
+            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+          docker compose -p "$project_b" exec -T simulation \
+            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+      - name: Verify complete Compose cleanup
+        run: |
+          for project in \
+            "foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "foundation-a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "foundation-b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"; do
+            test -z "$(docker ps --all --quiet --filter "label=com.docker.compose.project=${project}")"
+            test -z "$(docker network ls --quiet --filter "label=com.docker.compose.project=${project}")"
+          done
+      - name: Capture foundation logs
+        if: always()
+        run: |
+          docker ps --all --no-trunc > artifacts/docker-containers.txt
+          docker network ls --no-trunc > artifacts/docker-networks.txt
+      - name: Upload foundation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: foundation-reports-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
