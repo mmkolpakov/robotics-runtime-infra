@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .venv/
+.trivy-cache/
 venv/
 env/
 
@@ -18,10 +19,17 @@ env/
 
 # Runtime outputs
 logs/
+/build/
+/install/
+/log/
+/dependencies/
 runs/
 artifacts/
 tmp/
+.ros/
 *.log
+*.mcap
+*.db3
 *.sqlite
 *.db
 

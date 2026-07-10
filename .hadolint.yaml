@@ -1,6 +1,7 @@
 ---
 failure-threshold: error
 ignored:
+  # rosdep resolves the current ROS repository versions during the image build.
   - DL3008
 trustedRegistries:
   - docker.io

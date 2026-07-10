@@ -2,10 +2,10 @@
 ARG ROS_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 FROM ${ROS_BASE_IMAGE}
 
-ARG IMAGE_CREATED=unknown
+ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/droning-simulation-infra
 ARG IMAGE_VERSION=0.4.0
-ARG VCS_REF=unknown
+ARG VCS_REF=local
 
 LABEL org.opencontainers.image.title="Robotics simulation infrastructure" \
       org.opencontainers.image.description="ROS 2 Jazzy and Gazebo Harmonic runtime with domain-neutral acceptance tests." \
@@ -44,6 +44,9 @@ RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
       --cmake-args -DBUILD_TESTING=ON
 
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
+
+ENV HOME=/home/ubuntu
+USER ubuntu
 
 ENTRYPOINT ["/usr/local/bin/robotics-entrypoint"]
 CMD ["ros2", "launch", "robotics_simulation_infra", "headless.launch.py"]
