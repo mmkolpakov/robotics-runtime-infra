@@ -1,8 +1,8 @@
 **
-!infra/
-!infra/docker/
-!infra/docker/ros-jazzy-mavros-gazebo.Dockerfile
-!infra/docker/accelerated-inference.Dockerfile
-!infra/docker/dds-agent.Dockerfile
-!infra/docker/media-runtime.Dockerfile
-!infra/docker/diagnostics-runtime.Dockerfile
+!Dockerfile
+!docker/
+!docker/entrypoint.sh
+!ros_ws/
+!ros_ws/src/
+!ros_ws/src/robotics_simulation_infra/
+!ros_ws/src/robotics_simulation_infra/**
