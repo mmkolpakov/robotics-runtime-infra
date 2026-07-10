@@ -66,6 +66,53 @@ jobs:
           --format github
           .github/workflows
 
+  compose-version:
+    name: compose-${{ matrix.compose-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compose-version:
+          - v2.35.1
+          - v5.2.0
+          - v5.3.1
+    env:
+      COMPOSE_PROJECT_NAME: compose-${{ matrix.compose-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SIMULATION_IMAGE: ghcr.io/${{ github.repository_owner }}/droning-simulation-infra:0.4.0
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2  # v2.3.0
+        with:
+          version: ${{ matrix.compose-version }}
+      - name: Validate the Compose model and version
+        run: |
+          actual="v$(docker compose version --short | sed 's/^v//')"
+          test "$actual" = "${{ matrix.compose-version }}"
+          docker compose config --quiet
+      - name: Run the released product
+        run: |
+          trap 'docker compose --profile test down --volumes --remove-orphans || true' EXIT
+          docker compose pull simulation
+          docker compose up --detach --no-build --wait --wait-timeout 120
+          docker compose exec -T simulation \
+            robotics-entrypoint timeout 10 ros2 topic echo /clock --once
+          docker compose run --rm --no-deps test
+
+  compose-compatibility:
+    name: compose-compatibility
+    if: always()
+    needs: compose-version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require the complete Compose matrix
+        env:
+          MATRIX_RESULT: ${{ needs.compose-version.result }}
+        run: test "$MATRIX_RESULT" = success
+
   integration:
     runs-on: ubuntu-24.04
     timeout-minutes: 60

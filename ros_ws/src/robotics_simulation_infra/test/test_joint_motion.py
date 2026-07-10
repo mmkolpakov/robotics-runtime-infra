@@ -12,6 +12,7 @@ import launch_testing.actions
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from control_msgs.action import FollowJointTrajectory
+from controller_manager_msgs.srv import ListControllers
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from sensor_msgs.msg import JointState
@@ -53,7 +54,29 @@ class TestJointMotion(unittest.TestCase):
             FollowJointTrajectory,
             "/joint_trajectory_controller/follow_joint_trajectory",
         )
+        controller_client = node.create_client(
+            ListControllers,
+            "/controller_manager/list_controllers",
+        )
         try:
+            self.assertTrue(controller_client.wait_for_service(timeout_sec=90))
+            deadline = time.monotonic() + 90
+            controller_active = False
+            while not controller_active and time.monotonic() < deadline:
+                future = controller_client.call_async(ListControllers.Request())
+                rclpy.spin_until_future_complete(node, future, timeout_sec=5)
+                if not future.done():
+                    future.cancel()
+                    continue
+                response = future.result()
+                controller_active = response is not None and any(
+                    controller.name == "joint_trajectory_controller"
+                    and controller.state == "active"
+                    for controller in response.controller
+                )
+                if not controller_active:
+                    time.sleep(0.5)
+            self.assertTrue(controller_active)
             self.assertTrue(client.wait_for_server(timeout_sec=90))
             deadline = time.monotonic() + 30
             while not positions and time.monotonic() < deadline:
@@ -82,6 +105,7 @@ class TestJointMotion(unittest.TestCase):
                 rclpy.spin_once(node, timeout_sec=0.5)
             self.assertGreater(abs(positions[-1] - initial), 0.1)
         finally:
+            node.destroy_client(controller_client)
             client.destroy()
             node.destroy_subscription(subscription)
             node.destroy_node()

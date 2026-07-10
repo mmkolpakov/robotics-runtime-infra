@@ -4,7 +4,7 @@ FROM ${ROS_BASE_IMAGE}
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/droning-simulation-infra
-ARG IMAGE_VERSION=0.4.0
+ARG IMAGE_VERSION=0.4.1
 ARG VCS_REF=local
 
 LABEL org.opencontainers.image.title="Robotics simulation infrastructure" \

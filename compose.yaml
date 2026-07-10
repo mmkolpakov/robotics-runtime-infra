@@ -1,13 +1,13 @@
 ---
 x-runtime: &runtime
-  image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/droning-simulation-infra:0.4.0}"
+  image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/droning-simulation-infra:0.4.1}"
   build:
     context: .
     dockerfile: Dockerfile
     args:
       IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
       IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/droning-simulation-infra}"
-      IMAGE_VERSION: "${IMAGE_VERSION:-0.4.0}"
+      IMAGE_VERSION: "${IMAGE_VERSION:-0.4.1}"
       VCS_REF: "${VCS_REF:-local}"
   init: true
   environment: &runtime-environment
