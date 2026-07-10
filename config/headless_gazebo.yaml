@@ -1,7 +1,0 @@
----
-simulation:
-  ros__parameters:
-    use_sim_time: true
-    headless: true
-    world: /workspace/infra/smoke/worlds/empty.sdf
-    clock_topic: /clock

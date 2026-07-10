@@ -1,7 +1,6 @@
 * text=auto eol=lf
 
 *.Dockerfile text eol=lf
-Makefile text eol=lf
 *.json text eol=lf
 *.jq text eol=lf
 *.md text eol=lf

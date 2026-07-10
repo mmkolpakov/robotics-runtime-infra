@@ -12,7 +12,6 @@ env/
 # Environment files
 .env
 .env.*
-!.env.example
 *.pem
 *.key
 *.crt
@@ -25,8 +24,6 @@ tmp/
 *.log
 *.sqlite
 *.db
-compose.override.yaml
-!compose.override.yaml.example
 
 # Editor files
 .idea/
