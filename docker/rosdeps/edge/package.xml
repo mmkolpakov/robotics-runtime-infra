@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>robotics_edge_runtime_dependencies</name>
+  <version>0.5.0</version>
+  <description>Runtime-only dependencies for a domain-neutral ROS 2 edge image.</description>
+  <maintainer email="184955981+mmkolpakov@users.noreply.github.com">mmkolpakov</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>jq</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>mavlink</exec_depend>
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>mavros_extras</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rmw_fastrtps_cpp</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+</package>

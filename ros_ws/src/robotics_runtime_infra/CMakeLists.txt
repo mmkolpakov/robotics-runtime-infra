@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(robotics_simulation_infra)
+project(robotics_runtime_infra)
 
 find_package(ament_cmake REQUIRED)
 

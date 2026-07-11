@@ -14,6 +14,7 @@ import launch_testing.actions
 import launch_testing.markers
 import rclpy
 from rclpy.duration import Duration
+from rosbag2_interfaces.srv import Resume
 from std_msgs.msg import String
 
 
@@ -63,6 +64,7 @@ class TestMcap(unittest.TestCase):
                     self.assertGreater(publisher.get_subscription_count(), 0)
                     for _ in range(20):
                         publisher.publish(String(data="probe"))
+                        rclpy.spin_once(publisher_node, timeout_sec=0.05)
                     self.assertTrue(publisher.wait_for_all_acked(Duration(seconds=5)))
                 finally:
                     stop_process(recorder)
@@ -87,28 +89,39 @@ class TestMcap(unittest.TestCase):
                     received.append,
                     10,
                 )
+                resume = replay_node.create_client(Resume, "/rosbag2_player/resume")
                 playback = subprocess.Popen(
                     [
                         "ros2",
                         "bag",
                         "play",
                         str(bag),
-                        "--delay",
-                        "2",
+                        "--start-paused",
+                        "--disable-keyboard-controls",
                         "--wait-for-all-acked",
-                        "5",
+                        "5000",
                     ],
                     text=True,
                     start_new_session=True,
                 )
                 deadline = time.monotonic() + 30
                 try:
+                    self.assertTrue(resume.wait_for_service(timeout_sec=15))
+                    while (
+                        replay_node.count_publishers("/mcap_probe") == 0
+                        and time.monotonic() < deadline
+                    ):
+                        rclpy.spin_once(replay_node, timeout_sec=0.1)
+                    self.assertGreater(replay_node.count_publishers("/mcap_probe"), 0)
+
+                    resume.call_async(Resume.Request())
                     while not received and time.monotonic() < deadline:
                         rclpy.spin_once(replay_node, timeout_sec=0.5)
                     self.assertTrue(received)
                     self.assertEqual(received[-1].data, "probe")
                 finally:
                     stop_process(playback)
+                    replay_node.destroy_client(resume)
                     replay_node.destroy_subscription(subscription)
                     replay_node.destroy_node()
         finally:

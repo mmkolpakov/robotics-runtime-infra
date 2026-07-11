@@ -1,32 +1,48 @@
 ---
+x-build-args: &build-args
+  IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
+  IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
+  IMAGE_VERSION: "${IMAGE_VERSION:-0.5.0}"
+  VCS_REF: "${VCS_REF:-local}"
+
+x-ros-environment: &ros-environment
+  GZ_PARTITION: "${GZ_PARTITION:-robotics-runtime}"
+  RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+  RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+  ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+  ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+
 x-runtime: &runtime
-  image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/droning-simulation-infra:0.4.1}"
-  build:
-    context: .
-    dockerfile: Dockerfile
-    args:
-      IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
-      IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/droning-simulation-infra}"
-      IMAGE_VERSION: "${IMAGE_VERSION:-0.4.1}"
-      VCS_REF: "${VCS_REF:-local}"
   init: true
-  environment: &runtime-environment
-    GZ_PARTITION: "${GZ_PARTITION:-robotics-simulation}"
-    LIBGL_ALWAYS_SOFTWARE: "${LIBGL_ALWAYS_SOFTWARE:-1}"
-    RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
-    RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
-    ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
-    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
   stop_grace_period: 20s
 
 services:
   simulation:
     <<: *runtime
+    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: simulation
+      args: *build-args
+    environment:
+      <<: *ros-environment
+      LIBGL_ALWAYS_SOFTWARE: "${LIBGL_ALWAYS_SOFTWARE:-1}"
+      QT_QPA_PLATFORM: "${QT_QPA_PLATFORM:-offscreen}"
 
   test:
     <<: *runtime
-    profiles:
-      - test
+    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: simulation
+      args: *build-args
+    profiles: [test]
     command:
       - bash
       - -lc
@@ -34,13 +50,140 @@ services:
         status=0
         colcon test \
           --merge-install \
-          --packages-select robotics_simulation_infra \
+          --packages-select robotics_runtime_infra \
           --event-handlers console_direct+ \
           --return-code-on-test-failure || status=$?
         colcon test-result --verbose || status=$?
         exit "$${status}"
     environment:
-      <<: *runtime-environment
-      GZ_PARTITION: "${GZ_TEST_PARTITION:-robotics-simulation-test}"
+      <<: *ros-environment
+      GZ_PARTITION: "${GZ_TEST_PARTITION:-robotics-runtime-test}"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      QT_QPA_PLATFORM: "offscreen"
+      ROS_DOMAIN_ID: "${ROS_TEST_DOMAIN_ID:-91}"
+    healthcheck:
+      disable: true
+
+  edge-smoke:
+    <<: *runtime
+    image: "${EDGE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/edge:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: edge-runtime
+      args: *build-args
+    profiles: [test]
+    command: [ros2, pkg, prefix, mavros]
+    environment: *ros-environment
+    healthcheck:
+      disable: true
+
+  sensor-smoke:
+    <<: *runtime
+    image: "${SENSOR_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/sensor:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: sensor-runtime
+      args: *build-args
+    profiles: [test]
+    command:
+      - bash
+      - -lc
+      - >-
+        ros2 pkg prefix cv_bridge &&
+        gst-launch-1.0 -q videotestsrc num-buffers=3 !
+        video/x-raw,width=320,height=240,framerate=10/1 ! fakesink
+    environment: *ros-environment
+    healthcheck:
+      disable: true
+
+  inference-cpu-smoke:
+    <<: *runtime
+    image: "${INFERENCE_CPU_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/inference-cpu:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: inference-cpu
+      args: *build-args
+    profiles: [test]
+    command:
+      - python3
+      - -c
+      - >-
+        import onnxruntime as ort;
+        from onnxruntime.datasets import get_example;
+        session = ort.InferenceSession(get_example('sigmoid.onnx'),
+        providers=['CPUExecutionProvider']);
+        assert session.get_providers()[0] == 'CPUExecutionProvider'
+    environment: *ros-environment
+    healthcheck:
+      disable: true
+
+  acceptance-observer:
+    <<: *runtime
+    image: "${OBSERVER_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/acceptance-observer:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: acceptance-observer
+      args: *build-args
+    profiles: [acceptance]
+    depends_on:
+      runtime-manifest:
+        condition: service_completed_successfully
+    command:
+      - robotics-acceptance
+      - verify
+      - --scenario
+      - /run/robotics/scenario.yaml
+      - --runtime
+      - /run/robotics/runtime-manifest.json
+      - --evidence-index
+      - /run/robotics/evidence/evidence-index.json
+      - --output
+      - /run/robotics/results
+    environment: *ros-environment
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_RUN_DIR:-./runs/current}"
+        target: /run/robotics
+      - type: bind
+        source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
+        target: /spool
+        read_only: true
+    healthcheck:
+      disable: true
+
+  runtime-manifest:
+    <<: *runtime
+    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: simulation
+      args: *build-args
+    profiles: [acceptance]
+    command:
+      - emit-runtime-manifest
+      - /run/robotics/runtime-manifest.json
+    environment:
+      <<: *ros-environment
+      ROBOTICS_DATA_PLANE_PROFILE: "${ROBOTICS_DATA_PLANE_PROFILE:-standard_isolated}"
+      ROBOTICS_DATA_SOURCE: "${ROBOTICS_DATA_SOURCE:-gazebo}"
+      ROBOTICS_HOST_OS: "${ROBOTICS_HOST_OS:-}"
+      ROBOTICS_HOST_OS_VERSION: "${ROBOTICS_HOST_OS_VERSION:-}"
+      ROBOTICS_OCI_DIGEST: "${ROBOTICS_SIMULATION_OCI_DIGEST:-}"
+      ROBOTICS_OCI_REFERENCE: "${ROBOTICS_SIMULATION_OCI_REFERENCE:-}"
+      ROBOTICS_PLANT_BACKEND: "${ROBOTICS_PLANT_BACKEND:-gazebo_physics}"
+      ROBOTICS_RENDER_MODE: "${ROBOTICS_RENDER_MODE:-software}"
+      ROBOTICS_RENDERER: "${ROBOTICS_RENDERER:-software-forced}"
+      ROBOTICS_RUNTIME_ID: "${ROBOTICS_RUNTIME_ID:-org.example.local-runtime}"
+      ROBOTICS_TARGET_ENVIRONMENT: "${ROBOTICS_TARGET_ENVIRONMENT:-simulation}"
+      ROBOTICS_TIME_MODE: "${ROBOTICS_TIME_MODE:-simulation_realtime}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_RUN_DIR:-./runs/current}"
+        target: /run/robotics
     healthcheck:
       disable: true

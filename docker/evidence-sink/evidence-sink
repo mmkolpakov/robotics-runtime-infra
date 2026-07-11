@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+readonly spool_dir="${EVIDENCE_SPOOL_DIR:-/spool}"
+readonly receipt_dir="${EVIDENCE_RECEIPT_DIR:-/evidence/receipts}"
+readonly index_path="${EVIDENCE_INDEX_PATH:-/evidence/evidence-index.json}"
+readonly run_id="${ROBOTICS_RUN_ID:-local}"
+readonly retention_class="${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
+readonly evidence_mode="${EVIDENCE_MODE:-local}"
+
+fail() {
+  printf 'evidence-sink: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "required command is unavailable: $1"
+}
+
+aws_cli() {
+  if [[ -n "${AWS_ENDPOINT_URL:-}" ]]; then
+    aws --endpoint-url "${AWS_ENDPOINT_URL}" "$@"
+  else
+    aws "$@"
+  fi
+}
+
+segment_index() {
+  local stem index
+  stem="$(basename "$1" .mcap)"
+  index="${stem##*_}"
+  [[ "$index" =~ ^[0-9]+$ ]] || fail "MCAP filename must end in _<index>.mcap: $1"
+  printf '%s\n' "$index"
+}
+
+write_receipt() {
+  local file="$1" index="$2" sha256="$3" size_bytes="$4"
+  local uri="$5" upload_status="$6" version_id="${7:-}"
+  local target temporary
+
+  target="${receipt_dir}/${index}-${sha256}.json"
+  if [[ -e "$target" ]]; then
+    return 0
+  fi
+  if compgen -G "${receipt_dir}/${index}-*.json" >/dev/null; then
+    fail "segment index ${index} already has a different receipt"
+  fi
+
+  temporary="$(mktemp "${receipt_dir}/.receipt.XXXXXX")" || fail 'cannot create receipt temporary file'
+  jq -n \
+    --arg uri "$uri" \
+    --arg local_path "$file" \
+    --arg media_type application/mcap \
+    --arg sha256 "$sha256" \
+    --arg retention_class "$retention_class" \
+    --arg upload_status "$upload_status" \
+    --arg version_id "$version_id" \
+    --argjson size_bytes "$size_bytes" \
+    --argjson segment_index "$index" \
+    '{
+      uri: $uri,
+      media_type: $media_type,
+      sha256: $sha256,
+      size_bytes: $size_bytes,
+      retention_class: $retention_class,
+      segment_index: $segment_index,
+      upload_status: $upload_status,
+      checksum_verified: true
+    }
+    + if $upload_status == "local" then {local_path: $local_path}
+      else {version_id: $version_id} end' >"$temporary" || fail 'cannot write segment receipt'
+  chmod 0444 "$temporary" || fail 'cannot make segment receipt read-only'
+  mv "$temporary" "$target" || fail 'cannot publish segment receipt atomically'
+}
+
+verify_remote_versioning() {
+  local status
+  [[ -n "${EVIDENCE_BUCKET:-}" ]] || fail 'EVIDENCE_BUCKET is required for S3 mode'
+  status="$(aws_cli s3api get-bucket-versioning \
+    --bucket "${EVIDENCE_BUCKET}" --query Status --output text)" || \
+    fail 'cannot query bucket versioning'
+  [[ "$status" == Enabled ]] || fail "bucket versioning is not enabled"
+}
+
+upload_segment() {
+  local file="$1" index="$2" sha256="$3" size_bytes="$4"
+  local key remote remote_dir file_name check_list
+  local head_json remote_size remote_sha content_type version_id
+
+  verify_remote_versioning
+  file_name="$(basename "$file")"
+  remote_dir="${RCLONE_REMOTE:-evidence}:${EVIDENCE_BUCKET}/${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${sha256}/"
+  key="${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${sha256}/${file_name}"
+  remote="${RCLONE_REMOTE:-evidence}:${EVIDENCE_BUCKET}/${key}"
+
+  rclone copyto "$file" "$remote" \
+    --immutable \
+    --metadata \
+    --metadata-set content-type=application/mcap \
+    --metadata-set "sha256=${sha256}" \
+    --metadata-set "run-id=${run_id}" \
+    --metadata-set "segment-index=${index}" || fail "rclone upload failed for $key"
+
+  check_list="$(mktemp)" || fail 'cannot create rclone check list'
+  printf '%s\n' "$file_name" >"$check_list" || fail 'cannot write rclone check list'
+  rclone check "$(dirname "$file")" "$remote_dir" \
+    --files-from-raw "$check_list" \
+    --one-way || fail "rclone verification failed for $key"
+  rm -f "$check_list"
+
+  head_json="$(aws_cli s3api head-object \
+    --bucket "${EVIDENCE_BUCKET}" \
+    --key "$key" \
+    --checksum-mode ENABLED \
+    --output json)" || fail "cannot read remote object metadata for $key"
+  remote_size="$(jq -er '.ContentLength' <<<"$head_json")" || fail 'remote size is absent'
+  remote_sha="$(jq -er '.Metadata.sha256' <<<"$head_json")" || fail 'remote SHA-256 is absent'
+  content_type="$(jq -er '.ContentType' <<<"$head_json")" || fail 'remote media type is absent'
+  version_id="$(jq -er '.VersionId | select(length > 0)' <<<"$head_json")" || \
+    fail 'remote version ID is absent'
+
+  [[ "$remote_size" == "$size_bytes" ]] || fail "remote size differs for $key"
+  [[ "$remote_sha" == "$sha256" ]] || fail "remote SHA-256 differs for $key"
+  [[ "$content_type" == application/mcap ]] || fail "remote media type differs for $key"
+
+  write_receipt "$file" "$index" "$sha256" "$size_bytes" \
+    "s3://${EVIDENCE_BUCKET}/${key}" confirmed "$version_id"
+
+  if [[ "${EVIDENCE_DELETE_CONFIRMED_LOCAL:-false}" == true ]]; then
+    rm -- "$file"
+  fi
+}
+
+process_segment() {
+  local file="$1" index sha256 size_bytes metadata_json serialized_metadata
+  local duration_ns max_duration_ns
+  [[ -f "$file" ]] || fail "segment does not exist: $file"
+
+  if ! mcap --color never doctor "$file" >/dev/null; then
+    return 75
+  fi
+  index="$(segment_index "$file")" || fail "cannot derive segment index for $file"
+  sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
+  size_bytes="$(stat -c '%s' "$file")" || fail "cannot stat $file"
+
+  if (( size_bytes > ${EVIDENCE_MAX_SEGMENT_SIZE_BYTES:-1073741824} )); then
+    fail "segment exceeds EVIDENCE_MAX_SEGMENT_SIZE_BYTES: $file"
+  fi
+
+  metadata_json="$(mcap --color never get metadata "$file" --name rosbag2)" || \
+    fail "rosbag2 metadata is absent from $file"
+  serialized_metadata="$(jq -er '.serialized_metadata' <<<"$metadata_json")" || \
+    fail "serialized rosbag2 metadata is absent from $file"
+  duration_ns="$(yq -er '.duration.nanoseconds' <<<"$serialized_metadata")" || \
+    fail "segment duration is absent from $file"
+  max_duration_ns=$(( ${EVIDENCE_MAX_SEGMENT_DURATION_SEC:-60} * 1000000000 ))
+  if (( duration_ns > max_duration_ns )); then
+    fail "segment exceeds EVIDENCE_MAX_SEGMENT_DURATION_SEC: $file"
+  fi
+
+  mkdir -p "$receipt_dir" || fail 'cannot create receipt directory'
+  if [[ -e "${receipt_dir}/${index}-${sha256}.json" ]]; then
+    return 0
+  fi
+  if [[ "$evidence_mode" == local ]]; then
+    write_receipt "$file" "$index" "$sha256" "$size_bytes" \
+      "file://${file}" local
+  elif [[ "$evidence_mode" == s3 ]]; then
+    upload_segment "$file" "$index" "$sha256" "$size_bytes"
+  else
+    fail "unsupported EVIDENCE_MODE: $evidence_mode"
+  fi
+}
+
+scan_segments() {
+  local file status=0
+  while IFS= read -r -d '' file; do
+    process_segment "$file" || status=$?
+    if (( status != 0 && status != 75 )); then
+      return "$status"
+    fi
+    status=0
+  done < <(find "$spool_dir" -type f -name '*.mcap' -print0 | sort -z)
+}
+
+finalize_index() {
+  local segments temporary
+  scan_segments
+  if find "$spool_dir" -type f -name '*.mcap' -print -quit | grep -q .; then
+    while IFS= read -r file; do
+      process_segment "$file" || fail "unclosed or invalid segment: $file"
+    done < <(find "$spool_dir" -type f -name '*.mcap' | sort)
+  fi
+  compgen -G "${receipt_dir}/*.json" >/dev/null || fail 'no segment receipts exist'
+
+  segments="$(jq -s \
+    'sort_by(.segment_index)
+     | if (map(.segment_index) | unique | length) == length then .
+       else error("duplicate segment_index") end' \
+    "${receipt_dir}"/*.json)"
+  mkdir -p "$(dirname "$index_path")"
+  temporary="$(mktemp "$(dirname "$index_path")/.evidence-index.XXXXXX")" || \
+    fail 'cannot create evidence-index temporary file'
+  jq -n \
+    --arg run_id "$run_id" \
+    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson segments "$segments" \
+    '{
+      schema_version: "evidence-index.v1",
+      run_id: $run_id,
+      generated_at: $generated_at,
+      finalized: true,
+      segments: $segments
+    }' >"$temporary" || fail 'cannot write evidence index'
+  chmod 0444 "$temporary" || fail 'cannot make evidence index read-only'
+  mv "$temporary" "$index_path" || fail 'cannot publish evidence index atomically'
+}
+
+watch_segments() {
+  local status
+  while true; do
+    scan_segments
+    status=0
+    inotifywait --quiet \
+      --timeout "${EVIDENCE_RESCAN_INTERVAL_SEC:-2}" \
+      --event close_write,moved_to "$spool_dir" >/dev/null || status=$?
+    if (( status != 0 && status != 2 )); then
+      fail "cannot watch evidence spool: $spool_dir"
+    fi
+  done
+}
+
+for command in mcap rclone aws jq yq sha256sum inotifywait; do
+  require_command "$command"
+done
+
+case "${1:-watch}" in
+  watch)
+    watch_segments
+    ;;
+  segment)
+    [[ $# -eq 2 ]] || fail 'usage: evidence-sink segment FILE'
+    process_segment "$2"
+    ;;
+  finalize)
+    finalize_index
+    ;;
+  versions)
+    mcap --version
+    rclone version | head -n 1
+    aws --version
+    yq --version
+    ;;
+  *)
+    fail "unknown command: $1"
+    ;;
+esac
