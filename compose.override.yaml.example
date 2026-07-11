@@ -1,0 +1,11 @@
+---
+services:
+  simulation:
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_PROJECT_DIR:?set ROBOTICS_PROJECT_DIR}"
+        target: /workspace/project
+    working_dir: /workspace/project
+    environment:
+      GZ_PARTITION: "${GZ_PARTITION:-robotics-product-dev}"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-31}"
