@@ -1,0 +1,316 @@
+---
+x-security-environment: &security-environment
+  FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/secure-shm.xml
+  RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+  ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-92}"
+  ROS_SECURITY_ENABLE: "true"
+  ROS_SECURITY_KEYSTORE: /security
+  ROS_SECURITY_STRATEGY: Enforce
+
+x-security-runtime: &security-runtime
+  image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+  profiles: [security]
+  init: true
+  ipc: service:data-plane
+  network_mode: service:data-plane
+  environment: *security-environment
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  healthcheck:
+    disable: true
+
+services:
+  security-artifacts:
+    image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+    profiles: [security-init]
+    init: true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-92}"
+    command:
+      - bash
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        test ! -e /run/security/keystore
+        ros2 security create_keystore /run/security/keystore
+        ros2 security create_enclave /run/security/keystore /talker
+        ros2 security create_enclave /run/security/keystore /listener
+        ros2 security create_permission \
+          /run/security/keystore /talker /config/smoke.policy.xml
+        ros2 security create_permission \
+          /run/security/keystore /listener /config/smoke.policy.xml
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}"
+        target: /run/security
+      - type: bind
+        source: ./config/sros2
+        target: /config
+        read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  security-signature-check:
+    image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+    profiles: [security-verify]
+    init: true
+    command:
+      - bash
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        openssl smime -verify \
+          -in /security/enclaves/governance.p7s \
+          -CAfile /security/public/permissions_ca.cert.pem \
+          -out /tmp/governance.xml
+        openssl smime -verify \
+          -in /security/enclaves/talker/permissions.p7s \
+          -CAfile /security/public/permissions_ca.cert.pem \
+          -out /tmp/talker-permissions.xml
+        openssl smime -verify \
+          -in /security/enclaves/listener/permissions.p7s \
+          -CAfile /security/public/permissions_ca.cert.pem \
+          -out /tmp/listener-permissions.xml
+        grep -q '<allow_unauthenticated_participants>false' /tmp/governance.xml
+        grep -q '<discovery_protection_kind>ENCRYPT' /tmp/governance.xml
+        grep -q '<rtps_protection_kind>SIGN' /tmp/governance.xml
+        grep -q '<metadata_protection_kind>ENCRYPT' /tmp/governance.xml
+        grep -q '<data_protection_kind>ENCRYPT' /tmp/governance.xml
+        grep -q '<topic>rt/chatter</topic>' /tmp/talker-permissions.xml
+        grep -q '<topic>rt/chatter</topic>' /tmp/listener-permissions.xml
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves"
+        target: /security/enclaves
+        read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  data-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [security, security-negative]
+    ipc: shareable
+    shm_size: "${ROBOTICS_SHM_SIZE:-2gb}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  secure-listener:
+    <<: *security-runtime
+    command:
+      - bash
+      - -c
+      - >-
+        timeout 20 ros2 run demo_nodes_cpp listener
+        --ros-args --enclave /listener 2>&1 |
+        grep --max-count=1 'I heard:'
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/listener"
+        target: /security/enclaves/listener
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  secure-talker:
+    <<: *security-runtime
+    command:
+      - ros2
+      - run
+      - demo_nodes_cpp
+      - talker
+      - --ros-args
+      - --enclave
+      - /talker
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/talker"
+        target: /security/enclaves/talker
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  secure-denied-remap:
+    <<: *security-runtime
+    profiles: [security-negative]
+    command:
+      - bash
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        set +e
+        output="$(timeout 10 ros2 run demo_nodes_cpp talker \
+          --ros-args --enclave /talker --remap chatter:=forbidden 2>&1)"
+        status="$?"
+        set -e
+        printf '%s\n' "$${output}"
+        test "$${status}" -ne 0
+        grep -Eqi 'permission|not allowed|denied|create publisher' <<<"$${output}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/talker"
+        target: /security/enclaves/talker
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  secure-missing-enclave:
+    <<: *security-runtime
+    profiles: [security-negative]
+    command:
+      - bash
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        set +e
+        output="$(timeout 10 ros2 run demo_nodes_cpp talker \
+          --ros-args --enclave /missing 2>&1)"
+        status="$?"
+        set -e
+        printf '%s\n' "$${output}"
+        test "$${status}" -ne 0
+        grep -Eqi 'security directory|security files|enclave' <<<"$${output}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  secure-reject-unsecured-listener:
+    <<: *security-runtime
+    profiles: [security-negative]
+    command:
+      - bash
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        set +e
+        output="$(timeout 8 ros2 run demo_nodes_cpp listener \
+          --ros-args --enclave /listener 2>&1)"
+        status="$?"
+        set -e
+        printf '%s\n' "$${output}"
+        test "$${status}" -eq 124
+        ! grep -q 'I heard:' <<<"$${output}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/listener"
+        target: /security/enclaves/listener
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  unsecured-talker:
+    image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+    profiles: [security-negative]
+    init: true
+    ipc: service:data-plane
+    network_mode: service:data-plane
+    command: [ros2, run, demo_nodes_cpp, talker]
+    environment:
+      FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/secure-shm.xml
+      RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-92}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+    depends_on:
+      data-plane:
+        condition: service_started

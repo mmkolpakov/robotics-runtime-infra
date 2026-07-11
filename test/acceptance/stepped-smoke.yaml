@@ -1,0 +1,50 @@
+schema_version: acceptance-scenario.v2
+scenario_id: org.example.runtime-infra.stepped-smoke
+execution:
+  target_environment: simulation
+  hardware_scope: []
+  physical_effect: none
+  test_intent: interface_smoke
+  data_source: gazebo
+  plant_backend: gazebo_physics
+  time_mode: simulation_stepped
+  data_plane_profile: standard_isolated
+  security_profile: none
+seed: 42
+timeouts:
+  startup_sec: 60
+  graph_ready_sec: 30
+  stable_for_sec: 1
+  execution_sec: 5
+  shutdown_sec: 30
+expected_ros_graph:
+  topics:
+    - name: /clock
+      type: rosgraph_msgs/msg/Clock
+      min_publishers: 1
+      min_subscribers: 0
+      first_message_timeout_sec: 10
+  services: []
+  actions: []
+  lifecycle_nodes: []
+assertions: []
+time_policy:
+  step_size_sec: 0.001
+data_plane_policy:
+  max_message_age_ms: 100
+  max_loss_ratio: 0
+  shm_transport: false
+  data_sharing: false
+  private_ipc: false
+evidence_policy:
+  topics: [/clock]
+  recording_mode: bounded
+  compression: zstd
+  max_segment_size_bytes: 1048576
+  max_segment_duration_sec: 30
+  max_spool_size_bytes: 10485760
+  spool_high_watermark_ratio: 0.8
+  max_upload_lag_sec: 0
+  upload_mode: local_only
+  retention_class: pull-request-7d
+  remote_sink_allowed: false

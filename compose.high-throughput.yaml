@@ -1,0 +1,77 @@
+---
+x-high-throughput: &high-throughput
+  ipc: service:data-plane
+  network_mode: service:data-plane
+  environment:
+    FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/high-throughput.xml
+    RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+  volumes:
+    - type: bind
+      source: ./config/fastdds
+      target: /etc/robotics/fastdds
+      read_only: true
+
+services:
+  data-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    ipc: shareable
+    shm_size: "${ROBOTICS_SHM_SIZE:-2gb}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  simulation:
+    <<: *high-throughput
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  acceptance-observer:
+    <<: *high-throughput
+    depends_on:
+      data-plane:
+        condition: service_started
+      runtime-manifest:
+        condition: service_completed_successfully
+
+  runtime-manifest:
+    <<: *high-throughput
+    environment:
+      ROBOTICS_DATA_PLANE_PROFILE: local_high_throughput
+      ROBOTICS_DATA_SHARING: "false"
+      ROBOTICS_IPC_NAMESPACE: compose:data-plane
+      ROBOTICS_NETWORK_NAMESPACE: compose:data-plane
+      ROBOTICS_PRIVATE_IPC: "true"
+      ROBOTICS_SHM_TRANSPORT: "true"
+
+  data-plane-probe:
+    <<: *high-throughput
+    image: "${EDGE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/edge:0.5.0}"
+    profiles: [test]
+    init: true
+    command:
+      - timeout
+      - "15"
+      - ros2
+      - topic
+      - echo
+      - /clock
+      - rosgraph_msgs/msg/Clock
+      - --once
+    depends_on:
+      data-plane:
+        condition: service_started
+      simulation:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
