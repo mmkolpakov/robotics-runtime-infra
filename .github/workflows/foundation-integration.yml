@@ -9,20 +9,30 @@ on:
     paths:
       - ".github/workflows/foundation-integration.yml"
       - "Dockerfile"
+      - "docker-bake.hcl"
+      - "docker/**"
       - "compose.yaml"
+      - "compose.*.yaml"
+      - "config/**"
       - "foundation.repos"
       - "foundation/**"
       - "ros_ws/**"
+      - "test/acceptance/**"
   push:
     branches:
       - main
     paths:
       - ".github/workflows/foundation-integration.yml"
       - "Dockerfile"
+      - "docker-bake.hcl"
+      - "docker/**"
       - "compose.yaml"
+      - "compose.*.yaml"
+      - "config/**"
       - "foundation.repos"
       - "foundation/**"
       - "ros_ws/**"
+      - "test/acceptance/**"
 
 permissions:
   contents: read
@@ -36,12 +46,16 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SIMULATION_IMAGE: robotics-simulation-infra:foundation
+  REGISTRY: local
+  VERSION: foundation
+  SIMULATION_IMAGE: local/robotics-runtime-infra/simulation:foundation
+  OBSERVER_IMAGE: local/robotics-runtime-infra/acceptance-observer:foundation
+  EVIDENCE_IMAGE: local/robotics-runtime-infra/evidence-sink:foundation
 
 jobs:
   foundation:
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -51,6 +65,11 @@ jobs:
           version: "0.11.28"
           enable-cache: false
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+      - name: Set reproducible build metadata
+        run: |
+          echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)" >> "$GITHUB_ENV"
+          echo "VCS_REF=${GITHUB_SHA}" >> "$GITHUB_ENV"
       - name: Import exact foundation sources
         run: |
           mkdir -p artifacts dependencies
@@ -78,24 +97,24 @@ jobs:
               --robotics-scenario "$GITHUB_WORKSPACE/foundation/acceptance-scenario.yaml" \
               --junitxml "$GITHUB_WORKSPACE/artifacts/harness.xml"
           )
-      - name: Build foundation runtime
+      - name: Build foundation runtime images
         run: |
-          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          docker buildx build \
-            --build-arg "IMAGE_CREATED=${created}" \
-            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-            --build-arg "IMAGE_VERSION=foundation-${GITHUB_SHA}" \
-            --build-arg "VCS_REF=${GITHUB_SHA}" \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
+          docker buildx bake \
+            simulation acceptance-observer evidence-sink \
             --load \
-            --provenance=false \
-            --tag "${SIMULATION_IMAGE}" \
-            .
+            --set '*.platform=linux/amd64' \
+            --set '*.cache-from=type=gha,scope=foundation-amd64' \
+            --set '*.cache-to=type=gha,mode=max,scope=foundation-amd64'
       - name: Run scenario against the real ROS graph
         run: |
           project="foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          trap 'docker compose -p "$project" --profile test down --volumes --remove-orphans || true' EXIT
+          cleanup() {
+            docker compose -p "$project" --profile test logs --no-color \
+              > artifacts/foundation-runtime.log 2>&1 || true
+            docker compose -p "$project" --profile test \
+              down --volumes --remove-orphans || true
+          }
+          trap cleanup EXIT
           docker compose -p "$project" up --detach --no-build --wait --wait-timeout 120
           docker compose -p "$project" exec -T simulation \
             robotics-entrypoint timeout 20 ros2 topic echo /clock --once
@@ -106,7 +125,7 @@ jobs:
           set -e
           mkdir -p artifacts/test-results
           docker cp \
-            "${test_container}:/opt/robotics_ws/build/robotics_simulation_infra/test_results/." \
+            "${test_container}:/opt/robotics_ws/build/robotics_runtime_infra/test_results/." \
             artifacts/test-results/
           docker rm "$test_container"
           exit "$status"
@@ -114,10 +133,15 @@ jobs:
         run: |
           project_a="foundation-a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           project_b="foundation-b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          trap '
+          cleanup() {
+            docker compose -p "$project_a" logs --no-color \
+              > artifacts/foundation-a.log 2>&1 || true
+            docker compose -p "$project_b" logs --no-color \
+              > artifacts/foundation-b.log 2>&1 || true
             docker compose -p "$project_a" down --volumes --remove-orphans || true
             docker compose -p "$project_b" down --volumes --remove-orphans || true
-          ' EXIT
+          }
+          trap cleanup EXIT
           ROS_DOMAIN_ID=41 GZ_PARTITION="${project_a}" \
             docker compose -p "$project_a" up --detach --no-build --wait --wait-timeout 120
           ROS_DOMAIN_ID=42 GZ_PARTITION="${project_b}" \
@@ -126,12 +150,81 @@ jobs:
             robotics-entrypoint timeout 20 ros2 topic echo /clock --once
           docker compose -p "$project_b" exec -T simulation \
             robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+      - name: Run the three-repository acceptance path
+        run: |
+          project="foundation-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          run_dir="${GITHUB_WORKSPACE}/runs/foundation-e2e"
+          rm -rf "${run_dir}"
+          mkdir -p \
+            "${run_dir}/bags" \
+            "${run_dir}/evidence" \
+            "${run_dir}/results"
+          cp test/acceptance/stepped-smoke.yaml "${run_dir}/scenario.yaml"
+          sudo chown -R 1000:1000 "${run_dir}"
+          sudo chown -R 10001:10001 "${run_dir}/evidence"
+
+          export ROBOTICS_RUN_DIR="${run_dir}"
+          export ROBOTICS_BAG_DIR="${run_dir}/bags"
+          export ROBOTICS_EVIDENCE_DIR="${run_dir}/evidence"
+          export ROBOTICS_RUN_ID=org.example.runtime-infra.stepped-smoke
+          export ROBOTICS_SIMULATION_OCI_DIGEST
+          export ROBOTICS_SIMULATION_OCI_REFERENCE
+          ROBOTICS_SIMULATION_OCI_DIGEST="$(
+            docker image inspect "${SIMULATION_IMAGE}" --format '{{.Id}}'
+          )"
+          ROBOTICS_SIMULATION_OCI_REFERENCE="${SIMULATION_IMAGE}@${ROBOTICS_SIMULATION_OCI_DIGEST}"
+
+          compose=(
+            docker compose -p "${project}"
+            -f compose.yaml
+            -f compose.stepped.yaml
+            -f compose.record.yaml
+            -f compose.evidence.yaml
+          )
+          observer=""
+          cleanup() {
+            "${compose[@]}" \
+              --profile stepped --profile record \
+              --profile acceptance --profile evidence \
+              logs --no-color > artifacts/foundation-e2e.log 2>&1 || true
+            if [[ -n "${observer}" ]]; then
+              docker logs "${observer}" \
+                > artifacts/foundation-observer.log 2>&1 || true
+            fi
+            "${compose[@]}" \
+              --profile stepped --profile record \
+              --profile acceptance --profile evidence \
+              down --volumes --remove-orphans || true
+          }
+          trap cleanup EXIT
+
+          "${compose[@]}" --profile stepped --profile record \
+            up --detach --no-build --wait --wait-timeout 120 \
+            simulation simulation-stepper recorder
+          "${compose[@]}" --profile acceptance run --rm runtime-manifest
+
+          observer="$(
+            "${compose[@]}" --profile acceptance run --detach \
+              --name "${project}-observer" --no-deps acceptance-observer
+          )"
+          sleep 10
+          "${compose[@]}" --profile record stop recorder
+          "${compose[@]}" --profile evidence run --rm evidence-finalize
+          docker wait "${observer}"
+          test "$(docker inspect "${observer}" --format '{{.State.ExitCode}}')" -eq 0
+          jq -e '.status == "passed"' \
+            "${run_dir}/results/acceptance-result.json"
+          test -s "${run_dir}/results/junit.xml"
+          cp -r "${run_dir}/results" artifacts/acceptance-results
+          cp "${run_dir}/runtime-manifest.json" artifacts/
+          cp "${run_dir}/evidence/evidence-index.json" artifacts/
       - name: Verify complete Compose cleanup
         run: |
           for project in \
             "foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             "foundation-a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            "foundation-b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"; do
+            "foundation-b-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "foundation-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"; do
             test -z "$(docker ps --all --quiet --filter "label=com.docker.compose.project=${project}")"
             test -z "$(docker network ls --quiet --filter "label=com.docker.compose.project=${project}")"
           done
