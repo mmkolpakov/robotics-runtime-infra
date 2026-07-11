@@ -6,6 +6,21 @@
   ],
   "dependencyDashboard": true,
   "minimumReleaseAge": "3 days",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the source-built yq release and commit together",
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG YQ_REVISION=(?<currentDigest>[a-f0-9]{40})\\nARG YQ_VERSION=(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "mikefarah/yq",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
+    }
+  ],
   "packageRules": [
     {
       "description": "Keep runtime and CI dependencies reproducible",

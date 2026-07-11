@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+fail() {
+  printf 'emit-runtime-manifest: %s\n' "$*" >&2
+  exit 1
+}
+
+required() {
+  [[ -n "${!1:-}" ]] || fail "$1 is required"
+}
+
+boolean() {
+  case "$1" in
+    true | false) printf '%s\n' "$1" ;;
+    *) fail "expected true or false, received: $1" ;;
+  esac
+}
+
+for variable in \
+  ROBOTICS_RUNTIME_ID \
+  ROBOTICS_OCI_REFERENCE \
+  ROBOTICS_OCI_DIGEST \
+  ROBOTICS_CONTRACTS_REVISION \
+  ROBOTICS_HARNESS_REVISION \
+  ROBOTICS_INFRA_REVISION; do
+  required "$variable"
+done
+
+[[ "${ROBOTICS_OCI_REFERENCE}" == *@"${ROBOTICS_OCI_DIGEST}" ]] || \
+  fail 'ROBOTICS_OCI_REFERENCE must end with ROBOTICS_OCI_DIGEST'
+[[ "${ROBOTICS_WORKLOAD_KIND:-none}" == none ]] || \
+  fail 'this emitter supports the domain-neutral no-inference runtime only'
+
+architecture="$(uname -m)"
+case "$architecture" in
+  x86_64 | aarch64 | arm64) ;;
+  *) fail "unsupported runtime architecture: $architecture" ;;
+esac
+
+kernel="$(uname -r)"
+if [[ -n "${ROBOTICS_HOST_OS:-}" ]]; then
+  host_os="${ROBOTICS_HOST_OS}"
+  host_os_version="${ROBOTICS_HOST_OS_VERSION:-unknown}"
+elif [[ "${kernel,,}" == *microsoft* ]]; then
+  host_os=windows-wsl2
+  host_os_version=WSL2
+else
+  # shellcheck source=/dev/null
+  source /etc/os-release
+  host_os=ubuntu
+  host_os_version="${VERSION_ID}"
+fi
+
+shm_transport="$(boolean "${ROBOTICS_SHM_TRANSPORT:-false}")"
+data_sharing="$(boolean "${ROBOTICS_DATA_SHARING:-false}")"
+private_ipc="$(boolean "${ROBOTICS_PRIVATE_IPC:-false}")"
+
+fastdds_profile_sha256=''
+if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" && -f "${FASTRTPS_DEFAULT_PROFILES_FILE}" ]]; then
+  fastdds_profile_sha256="$(sha256sum "${FASTRTPS_DEFAULT_PROFILES_FILE}" | cut -d' ' -f1)"
+fi
+
+security_enclaves="$(jq -Rc 'split(",") | map(select(length > 0))' \
+  <<<"${ROBOTICS_SECURITY_ENCLAVES:-}")"
+security_policy_digests="$(jq -Rc 'split(",") | map(select(length > 0))' \
+  <<<"${ROBOTICS_SECURITY_POLICY_DIGESTS:-}")"
+
+gazebo='null'
+if [[ "${ROBOTICS_DATA_SOURCE:-gazebo}" == gazebo ]]; then
+  gazebo_version="$(gz sim --versions | head -n 1)"
+  gazebo="$(jq -n --arg version "$gazebo_version" '{
+    collection: "harmonic",
+    version: $version,
+    libraries: {"gz-sim": $version}
+  }')"
+fi
+
+output="${1:-/run/robotics/runtime-manifest.json}"
+mkdir -p "$(dirname "$output")"
+temporary="$(mktemp "$(dirname "$output")/.runtime-manifest.XXXXXX")"
+
+jq -n \
+  --arg runtime_id "${ROBOTICS_RUNTIME_ID}" \
+  --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --arg image_reference "${ROBOTICS_OCI_REFERENCE}" \
+  --arg image_digest "${ROBOTICS_OCI_DIGEST}" \
+  --arg contracts_revision "${ROBOTICS_CONTRACTS_REVISION}" \
+  --arg harness_revision "${ROBOTICS_HARNESS_REVISION}" \
+  --arg infra_revision "${ROBOTICS_INFRA_REVISION}" \
+  --arg host_os "$host_os" \
+  --arg host_os_version "$host_os_version" \
+  --arg architecture "$architecture" \
+  --arg kernel "$kernel" \
+  --arg rmw "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}" \
+  --arg render_mode "${ROBOTICS_RENDER_MODE:-software}" \
+  --arg renderer "${ROBOTICS_RENDERER:-software-forced}" \
+  --arg target_environment "${ROBOTICS_TARGET_ENVIRONMENT:-simulation}" \
+  --arg data_source "${ROBOTICS_DATA_SOURCE:-gazebo}" \
+  --arg plant_backend "${ROBOTICS_PLANT_BACKEND:-gazebo_physics}" \
+  --arg time_mode "${ROBOTICS_TIME_MODE:-simulation_realtime}" \
+  --arg data_plane_profile "${ROBOTICS_DATA_PLANE_PROFILE:-standard_isolated}" \
+  --arg ipc_namespace "${ROBOTICS_IPC_NAMESPACE:-container-isolated}" \
+  --arg network_namespace "${ROBOTICS_NETWORK_NAMESPACE:-compose-private}" \
+  --arg fastdds_profile_sha256 "$fastdds_profile_sha256" \
+  --arg security_profile "${ROBOTICS_SECURITY_PROFILE:-none}" \
+  --arg security_strategy "${ROBOTICS_SECURITY_STRATEGY:-none}" \
+  --arg clock_basis "${ROBOTICS_CLOCK_BASIS:-ros_time}" \
+  --arg clock_protocol "${ROBOTICS_CLOCK_PROTOCOL:-sim_clock}" \
+  --argjson gazebo "$gazebo" \
+  --argjson shm_transport "$shm_transport" \
+  --argjson data_sharing "$data_sharing" \
+  --argjson private_ipc "$private_ipc" \
+  --argjson security_enclaves "$security_enclaves" \
+  --argjson security_policy_digests "$security_policy_digests" \
+  '{
+    schema_version: "runtime-manifest.v2",
+    runtime_id: $runtime_id,
+    generated_at: $generated_at,
+    oci_image: {reference: $image_reference, digest: $image_digest},
+    components: {
+      contracts_revision: $contracts_revision,
+      harness_revision: $harness_revision,
+      infra_revision: $infra_revision
+    },
+    host: {
+      os: $host_os,
+      os_version: $host_os_version,
+      architecture: $architecture,
+      kernel: $kernel
+    },
+    ros: {distribution: "jazzy", rmw_implementation: $rmw},
+    render: {mode: $render_mode, renderer: $renderer},
+    workload: {kind: "none"},
+    execution: {
+      target_environment: $target_environment,
+      data_source: $data_source,
+      plant_backend: $plant_backend,
+      time_mode: $time_mode,
+      data_plane_profile: $data_plane_profile
+    },
+    data_plane: ({
+      rmw_implementation: $rmw,
+      ipc_namespace: $ipc_namespace,
+      network_namespace: $network_namespace,
+      shm_transport: $shm_transport,
+      data_sharing: $data_sharing,
+      private_ipc: $private_ipc
+    }
+    + if $fastdds_profile_sha256 == "" then {}
+      else {fastdds_profile_sha256: $fastdds_profile_sha256} end),
+    security: {
+      profile: $security_profile,
+      strategy: $security_strategy,
+      enclaves: $security_enclaves,
+      policy_digests: $security_policy_digests
+    },
+    lifecycle_states: [],
+    physical_targets: [],
+    clock: {
+      basis: $clock_basis,
+      sync_protocol: $clock_protocol,
+      offset_ms: 0,
+      drift_ppm: 0
+    }
+  }
+  + if $gazebo == null then {} else {gazebo: $gazebo} end' >"$temporary"
+
+chmod 0444 "$temporary"
+mv "$temporary" "$output"

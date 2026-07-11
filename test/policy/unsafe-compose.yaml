@@ -1,0 +1,12 @@
+services:
+  unsafe:
+    image: example.invalid/runtime:latest
+    privileged: true
+    network_mode: host
+    ipc: host
+    pid: host
+    cap_add: [SYS_ADMIN]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    devices:
+      - /dev:/dev

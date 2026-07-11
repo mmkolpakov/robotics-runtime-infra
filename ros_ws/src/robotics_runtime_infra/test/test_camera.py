@@ -20,7 +20,7 @@ from sensor_msgs.msg import CameraInfo, Image
 
 def generate_test_description() -> launch.LaunchDescription:
     world = (
-        Path(get_package_share_directory("robotics_simulation_infra"))
+        Path(get_package_share_directory("robotics_runtime_infra"))
         / "worlds"
         / "camera.sdf"
     )

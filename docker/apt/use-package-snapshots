@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ ${EUID} -ne 0 ]]; then
+  printf 'use-package-snapshots must run as root\n' >&2
+  exit 1
+fi
+
+: "${UBUNTU_SNAPSHOT:?UBUNTU_SNAPSHOT is required}"
+
+ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
+if [[ ! -f ${ubuntu_sources} ]]; then
+  printf 'Ubuntu apt source not found: %s\n' "${ubuntu_sources}" >&2
+  exit 1
+fi
+
+snapshot_uri="https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/"
+sed -i -E \
+  -e "s#https?://archive.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
+  -e "s#https?://security.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
+  -e "s#https?://ports.ubuntu.com/ubuntu-ports/#${snapshot_uri}#g" \
+  "${ubuntu_sources}"
+test "$(grep -Fc "${snapshot_uri}" "${ubuntu_sources}")" -eq 2
+
+if [[ -z ${ROS_SNAPSHOT:-} ]]; then
+  exit 0
+fi
+
+: "${ROS_DISTRO:?ROS_DISTRO is required when ROS_SNAPSHOT is set}"
+: "${ROSDISTRO_INDEX_REVISION:?ROSDISTRO_INDEX_REVISION is required when ROS_SNAPSHOT is set}"
+
+snapshot_key=/usr/share/keyrings/ros-snapshot-key.gpg
+if [[ ! -f ${snapshot_key} ]]; then
+  printf 'ROS snapshot key not found: %s\n' "${snapshot_key}" >&2
+  exit 1
+fi
+
+printf '%s  %s\n' \
+  2917845bafcabbf651ed70e967beb61ee467ae29292288c7ccd5d7d76e5f2a2f \
+  "${snapshot_key}" | sha256sum --check --status
+
+rm -f /etc/apt/sources.list.d/ros2.sources
+cat > /etc/apt/sources.list.d/ros2-snapshot.sources <<EOF
+Types: deb
+URIs: http://snapshots.ros.org/${ROS_DISTRO}/${ROS_SNAPSHOT}/ubuntu
+Suites: noble
+Components: main
+Signed-By: ${snapshot_key}
+EOF
+
+rosdep_sources=/etc/ros/rosdep/sources.list.d/20-default.list
+if [[ ! -f ${rosdep_sources} ]]; then
+  printf 'rosdep source list not found: %s\n' "${rosdep_sources}" >&2
+  exit 1
+fi
+
+sed -i \
+  "s#ros/rosdistro/master#ros/rosdistro/${ROSDISTRO_INDEX_REVISION}#g" \
+  "${rosdep_sources}"
+grep -Fq "ros/rosdistro/${ROSDISTRO_INDEX_REVISION}" "${rosdep_sources}"

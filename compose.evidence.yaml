@@ -1,0 +1,47 @@
+---
+x-evidence: &evidence
+  image: "${EVIDENCE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/evidence-sink:0.5.0}"
+  init: true
+  read_only: true
+  environment:
+    AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+    AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-us-east-1}"
+    AWS_ENDPOINT_URL: "${AWS_ENDPOINT_URL:-}"
+    AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+    EVIDENCE_BUCKET: "${EVIDENCE_BUCKET:-}"
+    EVIDENCE_DELETE_CONFIRMED_LOCAL: "${EVIDENCE_DELETE_CONFIRMED_LOCAL:-false}"
+    EVIDENCE_MAX_SEGMENT_DURATION_SEC: "${ROBOTICS_MAX_BAG_DURATION:-60}"
+    EVIDENCE_MAX_SEGMENT_SIZE_BYTES: "${ROBOTICS_MAX_BAG_SIZE:-1073741824}"
+    EVIDENCE_MODE: "${EVIDENCE_MODE:-local}"
+    EVIDENCE_PREFIX: "${EVIDENCE_PREFIX:-}"
+    RCLONE_CONFIG: /dev/null
+    RCLONE_REMOTE: "${RCLONE_REMOTE:-evidence}"
+    ROBOTICS_RETENTION_CLASS: "${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
+    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:-local}"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m
+  volumes:
+    - type: bind
+      source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
+      target: /spool
+      read_only: true
+    - type: bind
+      source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
+      target: /evidence
+
+services:
+  evidence-sink:
+    <<: *evidence
+    profiles: [evidence]
+    command: [watch]
+
+  evidence-finalize:
+    <<: *evidence
+    profiles: [evidence]
+    command: [finalize]
+    healthcheck:
+      disable: true

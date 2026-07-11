@@ -1,14 +1,25 @@
 {
-  "name": "robotics-simulation-infra",
-  "image": "ghcr.io/mmkolpakov/droning-simulation-infra:0.4.0",
+  "name": "robotics-runtime-infra",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "..",
+    "target": "simulation",
+    "args": {
+      "IMAGE_VERSION": "devcontainer",
+      "VCS_REF": "local"
+    }
+  },
   "overrideCommand": true,
   "remoteUser": "ubuntu",
   "runArgs": [
-    "--init"
+    "--init",
+    "--shm-size=2g"
   ],
   "containerEnv": {
     "GZ_PARTITION": "robotics-devcontainer",
     "LIBGL_ALWAYS_SOFTWARE": "1",
-    "ROS_AUTOMATIC_DISCOVERY_RANGE": "SUBNET"
+    "QT_QPA_PLATFORM": "offscreen",
+    "ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST",
+    "ROS_DOMAIN_ID": "77"
   }
 }

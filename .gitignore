@@ -29,6 +29,7 @@ tmp/
 .ros/
 *.log
 *.mcap
+!test/fixtures/playback/golden/*.mcap
 *.db3
 *.sqlite
 *.db

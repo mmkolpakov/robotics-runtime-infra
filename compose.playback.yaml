@@ -1,0 +1,125 @@
+---
+services:
+  runtime-manifest:
+    environment:
+      ROBOTICS_CLOCK_PROTOCOL: playback_clock
+      ROBOTICS_DATA_SOURCE: mcap_playback
+      ROBOTICS_PLANT_BACKEND: recorded_data
+      ROBOTICS_TIME_MODE: playback_clocked
+
+  playback:
+    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    profiles: [playback]
+    init: true
+    command:
+      - ros2
+      - bag
+      - play
+      - --input
+      - "${ROBOTICS_PLAYBACK_BAG:-/datasets/golden}"
+      - mcap
+      - --clock
+      - "${ROBOTICS_PLAYBACK_CLOCK_HZ:-100}"
+      - --rate
+      - "${ROBOTICS_PLAYBACK_RATE:-1.0}"
+      - --read-ahead-queue-size
+      - "${ROBOTICS_PLAYBACK_READ_AHEAD:-8}"
+      - --start-paused
+      - --qos-profile-overrides-path
+      - /etc/robotics/playback/qos-overrides.yaml
+      - --wait-for-all-acked
+      - "${ROBOTICS_PLAYBACK_ACK_TIMEOUT_MS:-5000}"
+      - --disable-keyboard-controls
+    environment:
+      GZ_PARTITION: "${GZ_PARTITION:-robotics-runtime}"
+      RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+      ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 20s
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_DATASET_DIR:-./test/fixtures/playback}"
+        target: /datasets
+        read_only: true
+      - type: bind
+        source: ./config/playback
+        target: /etc/robotics/playback
+        read_only: true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /usr/local/bin/robotics-entrypoint timeout 5 ros2 service call
+          /rosbag2_player/is_paused rosbag2_interfaces/srv/IsPaused '{}' |
+          grep -Eq 'paused[=: ]+[Tt]rue'
+      interval: 2s
+      timeout: 6s
+      start_period: 10s
+      retries: 10
+
+  playback-gate:
+    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    profiles: [playback]
+    init: true
+    command:
+      - bash
+      - -c
+      - |
+        set -eu
+        while ! ros2 topic info "${ROBOTICS_PLAYBACK_READINESS_TOPIC:-/playback_probe}" |
+          grep -Eq 'Subscription count: [1-9][0-9]*'; do
+          if [ "$${SECONDS}" -ge "${ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC:-30}" ]; then
+            exit 1
+          fi
+          sleep 0.2
+        done
+        ros2 service call \
+          /rosbag2_player/resume \
+          rosbag2_interfaces/srv/Resume '{}'
+    depends_on:
+      playback:
+        condition: service_healthy
+    environment:
+      RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+      ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  playback-probe:
+    image: "${EDGE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/edge:0.5.0}"
+    profiles: [test]
+    init: true
+    command:
+      - timeout
+      - "15"
+      - ros2
+      - topic
+      - echo
+      - /playback_probe
+      - std_msgs/msg/Int32
+      - --once
+    depends_on:
+      playback:
+        condition: service_healthy
+    environment:
+      RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+      ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true

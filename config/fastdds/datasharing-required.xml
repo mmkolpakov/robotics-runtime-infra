@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>robotics_shm</transport_id>
+        <type>SHM</type>
+        <maxMessageSize>16777216</maxMessageSize>
+        <segment_size>134217728</segment_size>
+        <port_queue_capacity>1024</port_queue_capacity>
+        <healthy_check_timeout_ms>1000</healthy_check_timeout_ms>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="robotics_datasharing_participant" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>robotics_shm</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+    <data_writer profile_name="robotics_default_writer" is_default_profile="true">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+        <publishMode>
+          <kind>SYNCHRONOUS</kind>
+        </publishMode>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_writer>
+    <data_reader profile_name="robotics_default_reader" is_default_profile="true">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_reader>
+    <data_writer profile_name="/test_topic">
+      <qos>
+        <data_sharing>
+          <kind>ON</kind>
+          <shared_dir>/dev/shm</shared_dir>
+        </data_sharing>
+        <publishMode>
+          <kind>SYNCHRONOUS</kind>
+        </publishMode>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_writer>
+    <data_reader profile_name="/test_topic">
+      <qos>
+        <data_sharing>
+          <kind>ON</kind>
+          <shared_dir>/dev/shm</shared_dir>
+        </data_sharing>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_reader>
+  </profiles>
+</dds>

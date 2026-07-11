@@ -12,7 +12,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description() -> LaunchDescription:
-    share = Path(get_package_share_directory("robotics_simulation_infra"))
+    share = Path(get_package_share_directory("robotics_runtime_infra"))
     world = share / "worlds" / "empty.sdf"
     description = share / "description" / "joint_motion.urdf.xacro"
     controllers = share / "config" / "joint_controllers.yaml"

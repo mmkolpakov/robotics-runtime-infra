@@ -1,0 +1,96 @@
+---
+x-recorder: &recorder
+  image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+  init: true
+  stop_signal: SIGINT
+  stop_grace_period: 30s
+  depends_on:
+    simulation:
+      condition: service_healthy
+  environment:
+    RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+    RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+    ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  volumes:
+    - type: bind
+      source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
+      target: /run/bags
+    - type: bind
+      source: ./config/recording
+      target: /etc/robotics/recording
+      read_only: true
+  healthcheck:
+    test:
+      - CMD
+      - /usr/local/bin/robotics-entrypoint
+      - timeout
+      - "5"
+      - ros2
+      - service
+      - type
+      - /rosbag2_recorder/stop
+    interval: 2s
+    timeout: 6s
+    start_period: 10s
+    retries: 10
+
+services:
+  recorder:
+    <<: *recorder
+    profiles: [record]
+    command:
+      - ros2
+      - bag
+      - record
+      - --storage
+      - mcap
+      - --output
+      - "${ROBOTICS_BAG_OUTPUT:-/run/bags/recording}"
+      - --regex
+      - "${ROBOTICS_RECORD_REGEX:-^/clock$}"
+      - --qos-profile-overrides-path
+      - /etc/robotics/recording/qos-overrides.yaml
+      - --storage-config-file
+      - /etc/robotics/recording/mcap-writer.yaml
+      - --max-bag-size
+      - "${ROBOTICS_MAX_BAG_SIZE:-1073741824}"
+      - --max-bag-duration
+      - "${ROBOTICS_MAX_BAG_DURATION:-60}"
+      - --max-cache-size
+      - "${ROBOTICS_MAX_CACHE_SIZE:-67108864}"
+      - --use-sim-time
+      - --disable-keyboard-controls
+      - --custom-data
+      - "run_id=${ROBOTICS_RUN_ID:-local}"
+      - "retention_class=${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
+
+  recorder-snapshot:
+    <<: *recorder
+    profiles: [snapshot]
+    command:
+      - ros2
+      - bag
+      - record
+      - --storage
+      - mcap
+      - --output
+      - "${ROBOTICS_BAG_OUTPUT:-/run/bags/snapshot}"
+      - --regex
+      - "${ROBOTICS_RECORD_REGEX:-^/clock$}"
+      - --qos-profile-overrides-path
+      - /etc/robotics/recording/qos-overrides.yaml
+      - --storage-config-file
+      - /etc/robotics/recording/mcap-writer.yaml
+      - --max-cache-size
+      - "${ROBOTICS_SNAPSHOT_CACHE_SIZE:-536870912}"
+      - --snapshot-mode
+      - --use-sim-time
+      - --disable-keyboard-controls
+      - --custom-data
+      - "run_id=${ROBOTICS_RUN_ID:-local}"
+      - "retention_class=${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"

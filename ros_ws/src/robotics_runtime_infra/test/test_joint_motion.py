@@ -21,7 +21,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 
 def generate_test_description() -> launch.LaunchDescription:
     launch_file = (
-        Path(get_package_share_directory("robotics_simulation_infra"))
+        Path(get_package_share_directory("robotics_runtime_infra"))
         / "launch"
         / "joint_motion.launch.py"
     )

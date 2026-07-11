@@ -16,7 +16,7 @@ from rosgraph_msgs.msg import Clock
 
 def generate_test_description() -> launch.LaunchDescription:
     launch_file = (
-        Path(get_package_share_directory("robotics_simulation_infra"))
+        Path(get_package_share_directory("robotics_runtime_infra"))
         / "launch"
         / "headless.launch.py"
     )

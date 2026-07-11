@@ -1,0 +1,105 @@
+---
+x-benchmark: &benchmark
+  image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+  profiles: [benchmark]
+  init: true
+  ipc: service:data-plane
+  network_mode: service:data-plane
+  environment:
+    FASTRTPS_DEFAULT_PROFILES_FILE: "/etc/robotics/fastdds/${ROBOTICS_BENCHMARK_PROFILE:-udp-only.xml}"
+    RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-89}"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  volumes:
+    - type: bind
+      source: ./config/fastdds
+      target: /etc/robotics/fastdds
+      read_only: true
+    - type: bind
+      source: "${ROBOTICS_BENCHMARK_DIR:-./runs/benchmarks}"
+      target: /results
+  healthcheck:
+    disable: true
+
+services:
+  data-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [benchmark]
+    ipc: shareable
+    shm_size: "${ROBOTICS_SHM_SIZE:-2gb}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  benchmark-subscriber:
+    <<: *benchmark
+    command:
+      - /opt/ros/jazzy/lib/performance_test/perf_test
+      - --communicator
+      - rclcpp-single-threaded-executor
+      - --msg
+      - "${ROBOTICS_BENCHMARK_MESSAGE:-Array1m}"
+      - --topic
+      - "${ROBOTICS_BENCHMARK_TOPIC:-/test_topic}"
+      - --num-pub-threads
+      - "0"
+      - --num-sub-threads
+      - "1"
+      - --expected-num-pubs
+      - "1"
+      - --rate
+      - "${ROBOTICS_BENCHMARK_RATE:-30}"
+      - --reliability
+      - RELIABLE
+      - --ignore
+      - "${ROBOTICS_BENCHMARK_WARMUP_SEC:-2}"
+      - --max-runtime
+      - "${ROBOTICS_BENCHMARK_DURATION_SEC:-10}"
+      - --wait-for-matched-timeout
+      - "30"
+      - --logfile
+      - /results/subscriber.json
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  benchmark-publisher:
+    <<: *benchmark
+    command:
+      - /opt/ros/jazzy/lib/performance_test/perf_test
+      - --loaned-samples
+      - --communicator
+      - rclcpp-single-threaded-executor
+      - --msg
+      - "${ROBOTICS_BENCHMARK_MESSAGE:-Array1m}"
+      - --topic
+      - "${ROBOTICS_BENCHMARK_TOPIC:-/test_topic}"
+      - --num-pub-threads
+      - "1"
+      - --num-sub-threads
+      - "0"
+      - --expected-num-subs
+      - "1"
+      - --rate
+      - "${ROBOTICS_BENCHMARK_RATE:-30}"
+      - --reliability
+      - RELIABLE
+      - --ignore
+      - "${ROBOTICS_BENCHMARK_WARMUP_SEC:-2}"
+      - --max-runtime
+      - "${ROBOTICS_BENCHMARK_DURATION_SEC:-10}"
+      - --wait-for-matched-timeout
+      - "30"
+      - --logfile
+      - /results/publisher.json
+    depends_on:
+      benchmark-subscriber:
+        condition: service_started
