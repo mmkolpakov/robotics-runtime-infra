@@ -179,10 +179,18 @@ jobs:
           mkdir -p artifacts/digests
           printf '%s@%s\n' "${IMAGE_NAME}" "${DIGEST}" \
             > "artifacts/digests/${{ matrix.id }}.txt"
-      - uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
+      - name: Upload amd64 scan results
+        if: contains(matrix.platforms, 'linux/amd64')
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
         with:
-          sarif_file: artifacts/security
-          category: released-${{ matrix.id }}-image
+          sarif_file: artifacts/security/${{ matrix.id }}-linux-amd64.sarif
+          category: released-${{ matrix.id }}-linux-amd64
+      - name: Upload arm64 scan results
+        if: contains(matrix.platforms, 'linux/arm64')
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
+        with:
+          sarif_file: artifacts/security/${{ matrix.id }}-linux-arm64.sarif
+          category: released-${{ matrix.id }}-linux-arm64
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: release-${{ matrix.id }}-${{ github.ref_name }}
