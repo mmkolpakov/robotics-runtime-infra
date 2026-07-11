@@ -81,10 +81,16 @@ jobs:
             --namespace compose tmp/compose.json
           "${conftest[@]}" test --policy policy/scenario.rego \
             --namespace scenario test/acceptance/stepped-smoke.yaml
-          ! "${conftest[@]}" test --policy policy/compose.rego \
-            --namespace compose test/policy/unsafe-compose.yaml
-          ! "${conftest[@]}" test --policy policy/scenario.rego \
-            --namespace scenario test/policy/mock-physical-verdict.yaml
+          if "${conftest[@]}" test --policy policy/compose.rego \
+            --namespace compose test/policy/unsafe-compose.yaml; then
+            printf 'unsafe Compose fixture was accepted\n' >&2
+            exit 1
+          fi
+          if "${conftest[@]}" test --policy policy/scenario.rego \
+            --namespace scenario test/policy/mock-physical-verdict.yaml; then
+            printf 'mock physical verdict fixture was accepted\n' >&2
+            exit 1
+          fi
       - name: Lint shell entrypoints
         run: |
           docker run --rm --volume "${PWD}:/work:ro" --workdir /work \
@@ -183,9 +189,11 @@ jobs:
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
       - name: Set reproducible build metadata
         run: |
-          echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)" >> "$GITHUB_ENV"
-          echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)" >> "$GITHUB_ENV"
-          echo "VCS_REF=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          {
+            echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)"
+            echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)"
+            echo "VCS_REF=${GITHUB_SHA}"
+          } >> "$GITHUB_ENV"
       - name: Build the amd64 CPU product
         run: |
           docker buildx bake cpu \
@@ -258,7 +266,6 @@ jobs:
         run: |
           result_root="${PWD}/artifacts/benchmarks"
           mkdir -p "${result_root}"
-          sudo chown -R 1000:1000 "${result_root}"
           for profile in \
             udp-only.xml \
             shm-only.xml \
@@ -267,6 +274,7 @@ jobs:
             result_dir="${result_root}/${name}"
             project="benchmark-${name}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             mkdir -p "${result_dir}"
+            sudo chown -R 1000:1000 "${result_dir}"
             compose=(
               docker compose -p "${project}"
               -f compose.yaml
@@ -418,9 +426,11 @@ jobs:
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
       - name: Set reproducible build metadata
         run: |
-          echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)" >> "$GITHUB_ENV"
-          echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)" >> "$GITHUB_ENV"
-          echo "VCS_REF=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          {
+            echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)"
+            echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)"
+            echo "VCS_REF=${GITHUB_SHA}"
+          } >> "$GITHUB_ENV"
       - name: Build every portable target for ARM64
         run: |
           docker buildx bake multiarch \

@@ -92,8 +92,10 @@ jobs:
       - name: Set reproducible build metadata
         id: build-metadata
         run: |
-          echo "created=$(git show --no-patch --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
-          echo "epoch=$(git show --no-patch --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            echo "created=$(git show --no-patch --format=%cI HEAD)"
+            echo "epoch=$(git show --no-patch --format=%ct HEAD)"
+          } >> "$GITHUB_OUTPUT"
       - name: Build and publish image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -211,7 +213,7 @@ jobs:
             echo "## OCI images"
             echo
             for record in release-artifacts/digests/*.txt; do
-              printf -- '- `%s`\n' "$(cat "${record}")"
+              printf -- '- \x60%s\x60\n' "$(cat "${record}")"
             done
             echo
             echo "Each image includes BuildKit provenance and an SBOM and has a GitHub artifact attestation."

@@ -67,9 +67,11 @@ jobs:
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
       - name: Set reproducible build metadata
         run: |
-          echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)" >> "$GITHUB_ENV"
-          echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)" >> "$GITHUB_ENV"
-          echo "VCS_REF=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          {
+            echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)"
+            echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)"
+            echo "VCS_REF=${GITHUB_SHA}"
+          } >> "$GITHUB_ENV"
       - name: Import exact foundation sources
         run: |
           mkdir -p artifacts dependencies
@@ -128,6 +130,8 @@ jobs:
             "${test_container}:/opt/robotics_ws/build/robotics_runtime_infra/test_results/." \
             artifacts/test-results/
           docker rm "$test_container"
+          cleanup
+          trap - EXIT
           exit "$status"
       - name: Verify two isolated projects in parallel
         run: |
@@ -212,6 +216,7 @@ jobs:
           "${compose[@]}" --profile evidence run --rm evidence-finalize
           docker wait "${observer}"
           test "$(docker inspect "${observer}" --format '{{.State.ExitCode}}')" -eq 0
+          sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
           jq -e '.status == "passed"' \
             "${run_dir}/results/acceptance-result.json"
           test -s "${run_dir}/results/junit.xml"

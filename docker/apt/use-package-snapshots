@@ -14,11 +14,13 @@ if [[ ! -f ${ubuntu_sources} ]]; then
   exit 1
 fi
 
-sed -i \
-  -e "s#http://archive.ubuntu.com/ubuntu/#https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/#" \
-  -e "s#http://security.ubuntu.com/ubuntu/#https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/#" \
+snapshot_uri="https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/"
+sed -i -E \
+  -e "s#https?://archive.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
+  -e "s#https?://security.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
+  -e "s#https?://ports.ubuntu.com/ubuntu-ports/#${snapshot_uri}#g" \
   "${ubuntu_sources}"
-test "$(grep -Fc "https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/" "${ubuntu_sources}")" -eq 2
+test "$(grep -Fc "${snapshot_uri}" "${ubuntu_sources}")" -eq 2
 
 if [[ -z ${ROS_SNAPSHOT:-} ]]; then
   exit 0
