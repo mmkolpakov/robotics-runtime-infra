@@ -212,7 +212,8 @@ jobs:
         run: |
           docker compose up --detach --no-build --wait --wait-timeout 120 simulation
           docker compose exec -T simulation \
-            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+            robotics-entrypoint timeout 20 ros2 topic echo \
+            /clock rosgraph_msgs/msg/Clock --once
           test_container="${COMPOSE_PROJECT_NAME}-test"
           set +e
           docker compose --profile test run \
@@ -238,11 +239,46 @@ jobs:
               down --volumes --remove-orphans || true
           }
           trap cleanup EXIT
+          export ROS_DOMAIN_ID=87
           "${compose[@]}" \
             --profile playback --profile test \
-            up --no-build --abort-on-container-exit \
-            --exit-code-from playback-probe \
+            up --no-build --detach \
             playback playback-gate playback-probe
+          "${compose[@]}" \
+            --profile playback --profile test \
+            wait playback-gate playback-probe
+      - name: Verify playback readiness fails closed
+        run: |
+          project="playback-negative-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          compose=(
+            docker compose -p "${project}"
+            -f compose.yaml
+            -f compose.playback.yaml
+          )
+          cleanup() {
+            "${compose[@]}" --profile playback --profile test \
+              down --volumes --remove-orphans || true
+          }
+          trap cleanup EXIT
+          export ROS_DOMAIN_ID=86
+          export ROBOTICS_PLAYBACK_READINESS_TOPIC=/never_present
+          export ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC=2
+          export ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC=4
+          "${compose[@]}" \
+            --profile playback --profile test \
+            up --no-build --detach \
+            playback playback-gate playback-probe
+          set +e
+          "${compose[@]}" \
+            --profile playback --profile test \
+            wait playback-gate playback-probe
+          status=$?
+          set -e
+          if (( status == 0 )); then
+            printf 'playback timeout fixture unexpectedly passed\n' >&2
+            exit 1
+          fi
+          printf 'playback timeout fixture failed closed: %s\n' "${status}"
       - name: Verify the local high-throughput profile
         run: |
           project="high-throughput-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

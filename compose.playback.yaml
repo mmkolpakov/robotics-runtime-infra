@@ -73,7 +73,7 @@ services:
         set -eu
         while ! ros2 topic info "${ROBOTICS_PLAYBACK_READINESS_TOPIC:-/playback_probe}" |
           grep -Eq 'Subscription count: [1-9][0-9]*'; do
-          if [ "$${SECONDS}" -ge "${ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC:-30}" ]; then
+          if [ "$${SECONDS}" -ge "${ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC:-60}" ]; then
             exit 1
           fi
           sleep 0.2
@@ -102,7 +102,7 @@ services:
     init: true
     command:
       - timeout
-      - "15"
+      - "${ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC:-75}"
       - ros2
       - topic
       - echo

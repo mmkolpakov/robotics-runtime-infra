@@ -89,19 +89,28 @@ behavior being tested:
 For example, verify the packaged golden MCAP without starting Gazebo:
 
 ```bash
+export ROS_DOMAIN_ID=87
 docker compose \
   -f compose.yaml \
   -f compose.playback.yaml \
   --profile playback --profile test \
-  up --abort-on-container-exit \
-  --exit-code-from playback-probe \
+  up --detach \
   playback playback-gate playback-probe
+docker compose \
+  -f compose.yaml \
+  -f compose.playback.yaml \
+  --profile playback --profile test \
+  wait playback-gate playback-probe
 docker compose \
   -f compose.yaml \
   -f compose.playback.yaml \
   --profile playback --profile test \
   down --volumes --remove-orphans
 ```
+
+Use a free `ROS_DOMAIN_ID` for each concurrent run. Slow executors can override
+`ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC` and
+`ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC`.
 
 ## Run artifacts
 
