@@ -1,0 +1,58 @@
+---
+x-build-args: &build-args
+  IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
+  IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
+  IMAGE_VERSION: "${IMAGE_VERSION:-0.5.0}"
+  VCS_REF: "${VCS_REF:-local}"
+
+x-amd-runtime: &amd-runtime
+  init: true
+  network_mode: none
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  devices:
+    - "amd.com/gpu=${ROBOTICS_AMD_GPU:-all}"
+
+services:
+  inference-amd-smoke:
+    <<: *amd-runtime
+    image: "${INFERENCE_AMD_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/inference-amd:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: inference-amd
+      args: *build-args
+    profiles: [amd]
+    command:
+      - python3
+      - -c
+      - >-
+        import onnxruntime as ort;
+        assert 'MIGraphXExecutionProvider' in ort.get_available_providers()
+    healthcheck:
+      disable: true
+
+  provider-conformance-amd:
+    <<: *amd-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_AMD_CONFORMANCE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/provider-conformance-amd:0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: provider-conformance-amd
+      args: *build-args
+    profiles: [conformance-amd]
+    environment:
+      ROBOTICS_EXPECTED_PROVIDER: MIGraphXExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_OPTIONS: '{"device_id":"${ROBOTICS_AMD_DEVICE_ID:-0}"}'
+      ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/amd}"
+        target: /reports
+    healthcheck:
+      disable: true

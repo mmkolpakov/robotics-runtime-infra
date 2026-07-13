@@ -45,6 +45,7 @@ jobs:
         run: |
           docker buildx bake --print cpu >/dev/null
           docker buildx bake --print conformance >/dev/null
+          docker buildx bake --print amd >/dev/null
           docker buildx bake --print intel >/dev/null
           docker buildx bake --print nvidia >/dev/null
       - name: Validate Compose models
@@ -54,12 +55,13 @@ jobs:
             compose.playback.yaml compose.record.yaml compose.evidence.yaml
             compose.high-throughput.yaml compose.benchmark.yaml
             compose.security.yaml compose.stepped.yaml
-            compose.intel.yaml compose.nvidia.yaml
+            compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
           )
           profiles=(
             --profile test --profile acceptance --profile playback
             --profile record --profile evidence --profile benchmark
             --profile conformance
+            --profile amd --profile conformance-amd
             --profile intel-cpu --profile conformance-intel-cpu
             --profile conformance-intel-gpu-linux
             --profile conformance-intel-gpu-wsl
@@ -158,6 +160,7 @@ jobs:
             --profile test --profile acceptance --profile playback
             --profile record --profile snapshot --profile evidence
             --profile benchmark --profile conformance
+            --profile amd --profile conformance-amd
             --profile intel-cpu --profile conformance-intel-cpu
             --profile conformance-intel-gpu-linux
             --profile conformance-intel-gpu-wsl
@@ -170,7 +173,7 @@ jobs:
             compose.playback.yaml compose.record.yaml compose.evidence.yaml
             compose.high-throughput.yaml compose.benchmark.yaml
             compose.security.yaml compose.stepped.yaml
-            compose.intel.yaml compose.nvidia.yaml
+            compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
           )
           docker compose "${profiles[@]}" config --quiet
           for overlay in "${overlays[@]}"; do
@@ -531,6 +534,54 @@ jobs:
           assert "CUDAExecutionProvider" in providers, providers
           PY
 
+  amd-supply-chain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+        with:
+          version: "0.11.28"
+          enable-cache: false
+      - name: Verify the signed ROCm package channel
+        run: |
+          docker run --rm \
+            ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90 \
+            bash -euo pipefail -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update >/dev/null
+            apt-get install -y --no-install-recommends \
+              ca-certificates curl gnupg >/dev/null
+            install -d -m 0755 /etc/apt/keyrings
+            curl --fail --location --silent --show-error \
+              https://repo.radeon.com/rocm/rocm.gpg.key \
+              --output /tmp/rocm.asc
+            echo \
+              "2de99e2354646a90d9903e2a669fc4e36b02c1bbff7075c481e12d7edab2c88b  /tmp/rocm.asc" \
+              | sha256sum --check --strict
+            cp /tmp/rocm.asc /etc/apt/keyrings/rocm.asc
+            rocm_repo=https://repo.radeon.com/rocm/apt/7.2.4
+            printf \
+              "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.asc] %s noble main\n" \
+              "$rocm_repo" \
+              > /etc/apt/sources.list.d/rocm.list
+            apt-get update >/dev/null
+            test "$(apt-cache policy migraphx | awk "/Candidate:/ {print \$2}")" \
+              = "2.15.0.70204-93~24.04"
+          '
+      - name: Verify the locked AMD wheel
+        run: |
+          uv pip compile docker/python/inference-amd.in \
+            --python-version 3.12 \
+            --python-platform x86_64-unknown-linux-gnu \
+            --generate-hashes \
+            --output-file docker/python/inference-amd.lock
+          git diff --exit-code -- docker/python/inference-amd.lock
+      - name: Validate the AMD build graph
+        run: docker buildx bake --print amd >/dev/null
+
   intel-image:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -646,6 +697,7 @@ jobs:
       - static-analysis
       - compose-version
       - integration
+      - amd-supply-chain
       - intel-image
       - nvidia-image
       - portable-arm64
@@ -658,6 +710,7 @@ jobs:
           STATIC_RESULT: ${{ needs.static-analysis.result }}
           COMPOSE_RESULT: ${{ needs.compose-version.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
+          AMD_RESULT: ${{ needs.amd-supply-chain.result }}
           INTEL_RESULT: ${{ needs.intel-image.result }}
           NVIDIA_RESULT: ${{ needs.nvidia-image.result }}
           ARM64_RESULT: ${{ needs.portable-arm64.result }}
@@ -666,6 +719,7 @@ jobs:
           test "${STATIC_RESULT}" = success
           test "${COMPOSE_RESULT}" = success
           test "${INTEGRATION_RESULT}" = success
+          test "${AMD_RESULT}" = success
           test "${INTEL_RESULT}" = success
           test "${NVIDIA_RESULT}" = success
           test "${ARM64_RESULT}" = success

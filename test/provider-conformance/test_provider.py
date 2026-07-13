@@ -34,6 +34,22 @@ def _write_report(**facts: Any) -> None:
     )
 
 
+def _exception_chain(error: BaseException) -> list[dict[str, str]]:
+    chain: list[dict[str, str]] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(
+            {
+                "type": type(current).__name__,
+                "message": str(current),
+            }
+        )
+        current = current.__cause__ or current.__context__
+    return chain
+
+
 def _profiled_providers(profile_path: Path) -> list[str]:
     events = json.loads(profile_path.read_text(encoding="utf-8"))
     return sorted(
@@ -48,7 +64,10 @@ def _profiled_providers(profile_path: Path) -> list[str]:
 
 
 def test_provider_executes_canonical_tensor_without_fallback() -> None:
-    if hasattr(ort, "preload_dlls"):
+    if hasattr(ort, "preload_dlls") and EXPECTED_PROVIDER in {
+        "CUDAExecutionProvider",
+        "TensorrtExecutionProvider",
+    }:
         ort.preload_dlls(directory="")
     available = ort.get_available_providers()
     if EXPECTED_PROVIDER not in available:
@@ -86,6 +105,7 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
             provider_options=provider_options,
             fallback_count=0,
             error=f"{type(error).__name__}: {error}",
+            error_chain=_exception_chain(error),
         )
         raise
     session_providers = session.get_providers()

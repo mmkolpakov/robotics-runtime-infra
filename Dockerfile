@@ -17,6 +17,11 @@ FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
 
+FROM ${UBUNTU_BASE_IMAGE} AS rocm-signing-key
+ADD --checksum=sha256:2de99e2354646a90d9903e2a669fc4e36b02c1bbff7075c481e12d7edab2c88b \
+  https://repo.radeon.com/rocm/rocm.gpg.key \
+  /rocm.asc
+
 FROM ${UBUNTU_BASE_IMAGE} AS intel-gpu-packages
 ADD --checksum=sha256:6c1fff18f5ea7ef23d3e5532750822363bf4688d342d09af31470329f54a83d6 \
   https://github.com/intel/intel-graphics-compiler/releases/download/v2.2.3/intel-igc-core-2_2.2.3%2B18220_amd64.deb \
@@ -449,6 +454,98 @@ ENV ROBOTICS_EXPECTED_PROVIDER=OpenVINOExecutionProvider \
 
 LABEL org.opencontainers.image.title="Robotics Intel provider conformance" \
       org.opencontainers.image.description="Hardware gate for explicit OpenVINO device identity, fallback, and tensor parity."
+
+USER ubuntu
+WORKDIR /opt/provider-conformance
+
+ENTRYPOINT ["python3", "-m", "pytest"]
+CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
+
+HEALTHCHECK NONE
+
+FROM edge-runtime AS inference-amd
+
+ARG MIGRAPHX_DEB_VERSION=2.15.0.70204-93~24.04
+ARG ROCM_VERSION=7.2.4
+
+USER root
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY --from=rocm-signing-key /rocm.asc /tmp/rocm.asc
+COPY docker/python/inference-amd.lock /tmp/python/inference-amd.lock
+
+RUN install -D -m 0644 /tmp/rocm.asc /etc/apt/keyrings/rocm.asc \
+    && printf '%s\n' \
+      "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.asc] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main" \
+      > /etc/apt/sources.list.d/rocm.list \
+    && printf '%s\n' \
+      'Package: *' \
+      'Pin: release o=repo.radeon.com' \
+      'Pin-Priority: 600' \
+      > /etc/apt/preferences.d/rocm-pin-600 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+      "migraphx=${MIGRAPHX_DEB_VERSION}" \
+    && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+    && uv pip install \
+      --python /opt/venv/bin/python \
+      --require-hashes \
+      --no-cache \
+      --no-deps \
+      --requirement /tmp/python/inference-amd.lock \
+    && uv pip freeze --python /opt/venv/bin/python \
+      > /usr/share/robotics-runtime/python-packages.txt \
+    && dpkg-query --show --showformat='${binary:Package}=${Version}\n' \
+      > /tmp/debian-packages.txt \
+    && sort --output=/usr/share/robotics-runtime/debian-packages.txt \
+      /tmp/debian-packages.txt \
+    && rm -rf \
+      /etc/apt/keyrings/rocm.asc \
+      /etc/apt/preferences.d/rocm-pin-600 \
+      /etc/apt/sources.list.d/rocm.list \
+      /tmp/debian-packages.txt \
+      /tmp/python \
+      /tmp/rocm.asc \
+      /var/cache/ldconfig/aux-cache \
+      /var/lib/apt/lists/* \
+      /var/log/apt/* \
+      /var/log/alternatives.log \
+      /var/log/dpkg.log
+
+ENV LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib64 \
+    PATH="/opt/venv/bin:/opt/rocm/bin:${PATH}" \
+    ROCM_PATH=/opt/rocm \
+    ROCM_VERSION=7.2.4
+
+LABEL org.opencontainers.image.title="Robotics AMD inference runtime" \
+      org.opencontainers.image.description="ONNX Runtime MIGraphX provider with ROCm 7.2.4 on ROS 2 Jazzy."
+
+USER ubuntu
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD ["python3", "-c", "import onnxruntime as ort; assert 'MIGraphXExecutionProvider' in ort.get_available_providers()"]
+
+FROM inference-amd AS provider-conformance-amd
+
+USER root
+COPY docker/python/provider-conformance.lock /tmp/python/provider-conformance.lock
+
+RUN uv pip install \
+      --python /opt/venv/bin/python \
+      --require-hashes \
+      --no-cache \
+      --no-deps \
+      --requirement /tmp/python/provider-conformance.lock \
+    && install -d -o ubuntu -g ubuntu /reports \
+    && install -d -o root -g root -m 0555 /opt/provider-conformance \
+    && rm -rf /tmp/python
+
+COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
+
+ENV ROBOTICS_EXPECTED_PROVIDER=MIGraphXExecutionProvider \
+    ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
+
+LABEL org.opencontainers.image.title="Robotics AMD provider conformance" \
+      org.opencontainers.image.description="Hardware gate for MIGraphX provider identity, fallback, and tensor parity."
 
 USER ubuntu
 WORKDIR /opt/provider-conformance
