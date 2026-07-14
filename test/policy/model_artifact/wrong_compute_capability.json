@@ -1,0 +1,9 @@
+{
+  "model_artifact_wrong_compute_capability": {
+    "observations": {
+      "hardware": {
+        "compute_capability": "9.0"
+      }
+    }
+  }
+}

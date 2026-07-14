@@ -26,7 +26,14 @@ env:
   # yamllint disable-line rule:line-length
   CONFTEST_IMAGE: openpolicyagent/conftest:v0.68.2@sha256:5fd81e332d7e4bc01daf3ef35371800a9a9720a30c0c37a78de0c5fbe4b6d622
   HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
+  # yamllint disable-line rule:line-length
+  OPA_IMAGE: openpolicyagent/opa:1.17.0-static@sha256:94830e998dd9df8e49a61826f1ad03d8a68d3ecd52f105e06a2adb93b459ad46
+  # yamllint disable-line rule:line-length
+  ORAS_IMAGE: ghcr.io/oras-project/oras:v1.3.3@sha256:a4c54befd87d0366e0ba3ac3a9536a5288c8a3735acd3b635cdace59a2c559c8
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
+  ROBOTICS_CONTRACTS_REQUIREMENT: >-
+    robotics-runtime-contracts @
+    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.5.0/robotics_runtime_contracts-0.5.0-py3-none-any.whl#sha256=c56ee51c8f29558573dc8bfe7cba429176521492663d168b44c30c8043a6aba0
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -108,6 +115,12 @@ jobs:
             docker run --rm --volume "${PWD}:/project:ro" --workdir /project
             "${CONFTEST_IMAGE}"
           )
+          opa=(
+            docker run --rm --volume "${PWD}:/project:ro" --workdir /project
+            "${OPA_IMAGE}"
+          )
+          "${opa[@]}" fmt --list --fail policy
+          "${opa[@]}" test policy test/policy/model_artifact --fail-on-empty
           "${conftest[@]}" verify --policy policy
           "${conftest[@]}" test --policy policy/compose.rego \
             --namespace compose tmp/compose.json
@@ -123,6 +136,95 @@ jobs:
             printf 'mock physical verdict fixture was accepted\n' >&2
             exit 1
           fi
+          jq '.model_artifact_valid' \
+            test/policy/model_artifact/valid.json \
+            > tmp/model-artifact-valid.json
+          jq '.model_artifact_tensorrt' \
+            test/policy/model_artifact/tensorrt.json \
+            > tmp/model-artifact-tensorrt.json
+          uv run --isolated --with "${ROBOTICS_CONTRACTS_REQUIREMENT}" \
+            python - \
+            tmp/model-artifact-valid.json \
+            tmp/model-artifact-tensorrt.json <<'PY'
+          import json
+          import sys
+
+          from robotics_runtime_contracts import validate_document
+
+          for path in sys.argv[1:]:
+              with open(path, encoding="utf-8") as source:
+                  validate_document(json.load(source)["manifest"])
+          PY
+          for candidate in \
+            tmp/model-artifact-valid.json \
+            tmp/model-artifact-tensorrt.json; do
+            "${conftest[@]}" test --policy policy/model-artifact.rego \
+              --namespace model_artifact "${candidate}"
+          done
+          for fixture in \
+            tampered_target tampered_report wrong_hardware failed_parity; do
+            key="model_artifact_${fixture}"
+            candidate="tmp/model-artifact-${fixture}.json"
+            jq -s --arg key "${key}" \
+              '.[0].model_artifact_valid * .[1][$key]' \
+              test/policy/model_artifact/valid.json \
+              "test/policy/model_artifact/${fixture}.json" \
+              > "${candidate}"
+            if "${conftest[@]}" test --policy policy/model-artifact.rego \
+              --namespace model_artifact "${candidate}"; then
+              printf 'model artifact fixture %s was accepted\n' "${fixture}" >&2
+              exit 1
+            fi
+          done
+          jq -s '
+            .[0].model_artifact_tensorrt *
+            .[1].model_artifact_wrong_compute_capability
+          ' \
+            test/policy/model_artifact/tensorrt.json \
+            test/policy/model_artifact/wrong_compute_capability.json \
+            > tmp/model-artifact-wrong-compute-capability.json
+          if "${conftest[@]}" test --policy policy/model-artifact.rego \
+            --namespace model_artifact \
+            tmp/model-artifact-wrong-compute-capability.json; then
+            printf 'wrong TensorRT compute capability was accepted\n' >&2
+            exit 1
+          fi
+      - name: Verify OCI model artifact linkage
+        run: |
+          rm -rf tmp/model-artifact-layout
+          jq '.manifest' tmp/model-artifact-valid.json \
+            > tmp/model-artifact-manifest.json
+          jq '.observations.conformance_report' tmp/model-artifact-valid.json \
+            > tmp/model-conformance-report.json
+          oras=(
+            docker run --rm --volume "${PWD}:/work" --workdir /work
+            "${ORAS_IMAGE}"
+          )
+          "${oras[@]}" push --oci-layout \
+            --artifact-type application/vnd.robotics.model.fixture.v1 \
+            --annotation org.opencontainers.image.title=model-fixture \
+            tmp/model-artifact-layout:model
+          subject_digest="$(
+            "${oras[@]}" resolve --oci-layout tmp/model-artifact-layout:model
+          )"
+          "${oras[@]}" attach --oci-layout \
+            --artifact-type application/vnd.robotics.model-artifact-manifest.v1 \
+            tmp/model-artifact-layout:model \
+            tmp/model-artifact-manifest.json:application/vnd.robotics.model-artifact-manifest.v1
+          "${oras[@]}" attach --oci-layout \
+            --artifact-type application/vnd.robotics.model-conformance-report.v1 \
+            tmp/model-artifact-layout:model \
+            tmp/model-conformance-report.json:application/vnd.robotics.model-conformance-report.v1
+          "${oras[@]}" discover --no-tty --oci-layout \
+            --format json --depth 1 tmp/model-artifact-layout:model \
+            > tmp/model-artifact-referrers.json
+          jq -e --arg digest "${subject_digest}" '
+            .digest == $digest and
+            ([.referrers[].artifactType] | sort) == [
+              "application/vnd.robotics.model-artifact-manifest.v1",
+              "application/vnd.robotics.model-conformance-report.v1"
+            ]
+          ' tmp/model-artifact-referrers.json
       - name: Lint shell entrypoints
         run: |
           docker run --rm --volume "${PWD}:/work:ro" --workdir /work \
