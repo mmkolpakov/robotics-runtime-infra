@@ -22,6 +22,7 @@ env:
   BUILDX_VERSION: v0.35.0
   # yamllint disable-line rule:line-length
   BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a
+  ROBOTICS_RKNN_RENDER_GID: "65534"
   # yamllint disable-line rule:line-length
   CONFTEST_IMAGE: openpolicyagent/conftest:v0.68.2@sha256:5fd81e332d7e4bc01daf3ef35371800a9a9720a30c0c37a78de0c5fbe4b6d622
   HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
@@ -59,6 +60,7 @@ jobs:
           docker buildx bake --print inference-nvidia-verification >/dev/null
           docker buildx bake --print nvidia-jetson >/dev/null
           docker buildx bake --print onnxruntime-jetson-source-verification >/dev/null
+          docker buildx bake --print rknn >/dev/null
       - name: Validate Compose models
         run: |
           docker compose --profile test --profile acceptance config --quiet
@@ -68,6 +70,7 @@ jobs:
             compose.security.yaml compose.stepped.yaml
             compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
             compose.nvidia-jetson.yaml
+            compose.rknn.yaml
           )
           profiles=(
             --profile test --profile acceptance --profile playback
@@ -82,6 +85,7 @@ jobs:
             --profile conformance-nvidia-jetson-orin
             --profile nvidia-jetson-thor
             --profile conformance-nvidia-jetson-thor
+            --profile rknn-rk3588
             --profile security --profile security-init
             --profile security-verify --profile security-negative
             --profile stepped
@@ -133,7 +137,8 @@ jobs:
           --volume "${PWD}:/work:ro"
           --workdir /work
           "${HADOLINT_IMAGE}"
-          /bin/hadolint --config .hadolint.yaml Dockerfile
+          /bin/hadolint --config .hadolint.yaml
+          Dockerfile docker/rknn.Dockerfile
       - name: Validate Renovate configuration
         run: >-
           docker run --rm
@@ -185,6 +190,7 @@ jobs:
             --profile conformance-nvidia-jetson-orin
             --profile nvidia-jetson-thor
             --profile conformance-nvidia-jetson-thor
+            --profile rknn-rk3588
             --profile security --profile security-init
             --profile security-verify --profile security-negative
             --profile stepped
@@ -195,6 +201,7 @@ jobs:
             compose.security.yaml compose.stepped.yaml
             compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
             compose.nvidia-jetson.yaml
+            compose.rknn.yaml
           )
           docker compose "${profiles[@]}" config --quiet
           for overlay in "${overlays[@]}"; do
@@ -624,6 +631,57 @@ jobs:
       - name: Validate the Jetson build graph
         run: docker buildx bake --print nvidia-jetson >/dev/null
 
+  rknn-supply-chain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: |
+            image=${{ env.BUILDKIT_IMAGE }}
+      - name: Verify the RKNN source and dependency policy
+        run: |
+          revision="$(git ls-remote \
+            https://github.com/airockchip/rknn-toolkit2.git \
+            refs/tags/v2.3.2 | awk '{print $1}')"
+          test "${revision}" = \
+            42aa1d426c0a9e0869b6374edba009f7208a1926
+          ! grep -Eq '^(nvidia-|triton==)' \
+            docker/python/rknn-converter.lock
+          ! grep -Eq '^(nvidia-|triton==)' \
+            docker/python/rknn-runtime.lock
+          docker buildx bake rknn-source-verification \
+            --set '*.output=type=cacheonly'
+      - name: Run the official RKNN conversion fixture
+        run: |
+          docker buildx bake rknn-converter-verification \
+            --set '*.output=type=cacheonly'
+
+  rknn-arm64-image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: |
+            image=${{ env.BUILDKIT_IMAGE }}
+      - name: Require the native ARM64 runner
+        run: test "$(uname -m)" = aarch64
+      - name: Build the RK3588 runtime without publishing vendor artifacts
+        run: |
+          docker buildx bake \
+            inference-rknn-rk3588 \
+            provider-conformance-rknn-rk3588 \
+            --set '*.output=type=cacheonly'
+
   amd-supply-chain:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -803,6 +861,8 @@ jobs:
       - intel-image
       - nvidia-image
       - nvidia-jetson-supply-chain
+      - rknn-supply-chain
+      - rknn-arm64-image
       - portable-arm64
       - reproducibility
     runs-on: ubuntu-24.04
@@ -817,6 +877,8 @@ jobs:
           INTEL_RESULT: ${{ needs.intel-image.result }}
           NVIDIA_RESULT: ${{ needs.nvidia-image.result }}
           NVIDIA_JETSON_RESULT: ${{ needs.nvidia-jetson-supply-chain.result }}
+          RKNN_RESULT: ${{ needs.rknn-supply-chain.result }}
+          RKNN_ARM64_RESULT: ${{ needs.rknn-arm64-image.result }}
           ARM64_RESULT: ${{ needs.portable-arm64.result }}
           REPRO_RESULT: ${{ needs.reproducibility.result }}
         run: |
@@ -827,5 +889,7 @@ jobs:
           test "${INTEL_RESULT}" = success
           test "${NVIDIA_RESULT}" = success
           test "${NVIDIA_JETSON_RESULT}" = success
+          test "${RKNN_RESULT}" = success
+          test "${RKNN_ARM64_RESULT}" = success
           test "${ARM64_RESULT}" = success
           test "${REPRO_RESULT}" = success

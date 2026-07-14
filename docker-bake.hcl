@@ -42,6 +42,10 @@ variable "ONNXRUNTIME_SOURCE_DATE_EPOCH" {
   default = "1781277122"
 }
 
+variable "RKNN_SOURCE" {
+  default = "https://github.com/airockchip/rknn-toolkit2.git?tag=v2.3.2&checksum=42aa1d426c0a9e0869b6374edba009f7208a1926"
+}
+
 group "default" {
   targets = ["simulation"]
 }
@@ -107,6 +111,16 @@ group "nvidia-jetson" {
     "inference-nvidia-jetson-thor",
     "provider-conformance-nvidia-jetson-orin",
     "provider-conformance-nvidia-jetson-thor",
+  ]
+}
+
+group "rknn" {
+  targets = [
+    "rknn-source-verification",
+    "rknn-converter-verification",
+    "rknn-benchmark-builder",
+    "inference-rknn-rk3588",
+    "provider-conformance-rknn-rk3588",
   ]
 }
 
@@ -268,6 +282,89 @@ target "provider-conformance-nvidia-jetson-thor" {
   inherits = ["_nvidia-jetson"]
   target   = "provider-conformance-nvidia-jetson-thor"
   tags     = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-nvidia-jetson-thor:${VERSION}"]
+}
+
+target "_rknn" {
+  context    = "."
+  dockerfile = "docker/rknn.Dockerfile"
+  args = {
+    UBUNTU_SNAPSHOT = UBUNTU_SNAPSHOT
+  }
+  contexts = {
+    "rknn-source" = RKNN_SOURCE
+  }
+  labels = {
+    "org.opencontainers.image.created"  = IMAGE_CREATED
+    "org.opencontainers.image.revision" = VCS_REF
+    "org.opencontainers.image.source"   = IMAGE_SOURCE
+    "org.opencontainers.image.version"  = VERSION
+  }
+}
+
+target "_rknn-runtime" {
+  inherits = ["_rknn"]
+  contexts = {
+    "edge-runtime" = "target:_edge-runtime-arm64"
+    "ubuntu-ca"    = "target:_ubuntu-ca-arm64"
+  }
+}
+
+target "_rknn-benchmark" {
+  inherits = ["_rknn"]
+  contexts = {
+    "ubuntu-ca" = "target:_ubuntu-ca-arm64"
+  }
+}
+
+target "_ubuntu-ca-arm64" {
+  inherits  = ["_common"]
+  target    = "ubuntu-ca"
+  platforms = ["linux/arm64"]
+}
+
+target "_edge-runtime-arm64" {
+  inherits  = ["_common"]
+  target    = "edge-runtime"
+  platforms = ["linux/arm64"]
+}
+
+target "rknn-source-verification" {
+  inherits  = ["_rknn"]
+  target    = "rknn-source-verification"
+  platforms = ["linux/amd64"]
+}
+
+target "rknn-converter" {
+  inherits  = ["_rknn"]
+  target    = "rknn-converter"
+  platforms = ["linux/amd64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/rknn-converter:${VERSION}"]
+}
+
+target "rknn-converter-verification" {
+  inherits  = ["_rknn"]
+  target    = "rknn-converter-verification"
+  platforms = ["linux/amd64"]
+}
+
+target "rknn-benchmark-builder" {
+  inherits  = ["_rknn-benchmark"]
+  target    = "rknn-benchmark-builder"
+  platforms = ["linux/arm64"]
+}
+
+target "inference-rknn-rk3588" {
+  inherits  = ["_rknn-runtime"]
+  target    = "inference-rknn-rk3588"
+  platforms = ["linux/arm64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/inference-rknn-rk3588:${VERSION}"]
+}
+
+target "provider-conformance-rknn-rk3588" {
+  inherits  = ["_rknn-runtime"]
+  target    = "provider-conformance-rknn-rk3588"
+  platforms = ["linux/arm64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-rknn-rk3588:${VERSION}"]
 }
 
 target "acceptance-observer" {

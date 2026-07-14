@@ -221,54 +221,16 @@ RUN dpkg --install /packages/openssl.deb /packages/ca-certificates.deb \
       /var/log/alternatives.log \
       /var/log/dpkg.log
 
-FROM ubuntu-ca AS geographiclib-datasets
-
-ARG UBUNTU_SNAPSHOT
-
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
-RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
-      /usr/local/sbin/use-package-snapshots \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && mkdir -p /datasets \
-    && download() { \
-      curl \
-        --fail \
-        --location \
-        --show-error \
-        --silent \
-        --connect-timeout 30 \
-        --max-time 300 \
-        --retry 8 \
-        --retry-all-errors \
-        --retry-delay 2 \
-        --output "$2" \
-        "$1"; \
-    } \
-    && download \
-      https://downloads.sourceforge.net/project/geographiclib/geoids-distrib/egm96-5.tar.bz2 \
-      /datasets/egm96-5.tar.bz2 \
-    && download \
-      https://downloads.sourceforge.net/project/geographiclib/gravity-distrib/egm96.tar.bz2 \
-      /datasets/egm96.tar.bz2 \
-    && download \
-      https://downloads.sourceforge.net/project/geographiclib/magnetic-distrib/emm2015.tar.bz2 \
-      /datasets/emm2015.tar.bz2 \
-    && printf '%s  %s\n' \
-      c46224f8f723dc915d97179f4e1580a98d6c742fe2b82cd8fef0ecaaad13e614 \
-      /datasets/egm96-5.tar.bz2 \
-      6fea4c6bd56ff8ac53dbdad8d5dd505c855471d0354c4abc5c5fe048bf8350c1 \
-      /datasets/egm96.tar.bz2 \
-      8e71a9704c5f2714bb65581df68e30f0d84d0ad17286d00efb782e7232334c3f \
-      /datasets/emm2015.tar.bz2 \
-      | sha256sum --check --strict \
-    && rm -rf \
-      /var/cache/ldconfig/aux-cache \
-      /var/lib/apt/lists/* \
-      /var/log/apt/* \
-      /var/log/alternatives.log \
-      /var/log/dpkg.log
+FROM scratch AS geographiclib-datasets
+ADD --checksum=sha256:c46224f8f723dc915d97179f4e1580a98d6c742fe2b82cd8fef0ecaaad13e614 \
+  https://sourceforge.net/projects/geographiclib/files/geoids-distrib/egm96-5.tar.bz2/download \
+  /datasets/egm96-5.tar.bz2
+ADD --checksum=sha256:6fea4c6bd56ff8ac53dbdad8d5dd505c855471d0354c4abc5c5fe048bf8350c1 \
+  https://sourceforge.net/projects/geographiclib/files/gravity-distrib/egm96.tar.bz2/download \
+  /datasets/egm96.tar.bz2
+ADD --checksum=sha256:8e71a9704c5f2714bb65581df68e30f0d84d0ad17286d00efb782e7232334c3f \
+  https://sourceforge.net/projects/geographiclib/files/magnetic-distrib/emm2015.tar.bz2/download \
+  /datasets/emm2015.tar.bz2
 
 FROM ${UBUNTU_BASE_IMAGE} AS mcap-amd64
 ADD --checksum=sha256:53274b6ca922e2078daa02ae32aed75da046f78d6c3da9dc19065254be24b483 \
