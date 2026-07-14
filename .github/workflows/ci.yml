@@ -136,6 +136,12 @@ jobs:
             printf 'mock physical verdict fixture was accepted\n' >&2
             exit 1
           fi
+          for workflow in \
+            .github/workflows/hardware-qualification.yml \
+            .github/workflows/rk3588-qualification.yml; do
+            "${conftest[@]}" test --policy policy/hardware-workflow.rego \
+              --namespace hardware_workflow "${workflow}"
+          done
           jq '.model_artifact_valid' \
             test/policy/model_artifact/valid.json \
             > tmp/model-artifact-valid.json
@@ -786,11 +792,16 @@ jobs:
 
   amd-supply-chain:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: |
+            image=${{ env.BUILDKIT_IMAGE }}
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
           version: "0.11.28"
@@ -831,6 +842,13 @@ jobs:
           git diff --exit-code -- docker/python/inference-amd.lock
       - name: Validate the AMD build graph
         run: docker buildx bake --print amd >/dev/null
+      - name: Build the AMD runtime and conformance images
+        run: |
+          docker buildx bake amd \
+            --set '*.platform=linux/amd64' \
+            --set '*.output=type=cacheonly' \
+            --set '*.cache-from=type=gha,scope=runtime-infra-amd-amd64' \
+            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-amd-amd64'
 
   intel-image:
     runs-on: ubuntu-24.04

@@ -13,7 +13,7 @@ x-amd-runtime: &amd-runtime
   cap_drop:
     - ALL
   devices:
-    - "amd.com/gpu=${ROBOTICS_AMD_GPU:-all}"
+    - "amd.com/gpu=${ROBOTICS_AMD_GPU:-0}"
 
 services:
   inference-amd-smoke:

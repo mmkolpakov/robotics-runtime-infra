@@ -1,0 +1,311 @@
+---
+name: hardware-qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Qualified hardware target
+        required: true
+        type: choice
+        options:
+          - nvidia-x86
+          - intel-native
+          - intel-wsl
+          - amd-native
+          - jetson-orin
+          - jetson-thor
+      image_ref:
+        description: Immutable private conformance image reference
+        required: true
+        type: string
+      source_sha:
+        description: Full commit SHA from main used to build the image
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardware-${{ inputs.target }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      environment: ${{ steps.route.outputs.environment }}
+      expected_arch: ${{ steps.route.outputs.expected_arch }}
+      expected_provider: ${{ steps.route.outputs.expected_provider }}
+      image_env: ${{ steps.route.outputs.image_env }}
+      overlay: ${{ steps.route.outputs.overlay }}
+      profile: ${{ steps.route.outputs.profile }}
+      report_kind: ${{ steps.route.outputs.report_kind }}
+      runner_label: ${{ steps.route.outputs.runner_label }}
+      service: ${{ steps.route.outputs.service }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate immutable inputs and route the target
+        id: route
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          case "${TARGET}" in
+            nvidia-x86)
+              runner_label=robotics-nvidia-gpu
+              environment=accelerator-nvidia
+              expected_arch=amd64
+              expected_provider=CUDAExecutionProvider
+              image_env=INFERENCE_NVIDIA_CONFORMANCE_IMAGE
+              overlay=compose.nvidia.yaml
+              profile=conformance-nvidia
+              report_kind=onnxruntime
+              service=provider-conformance-nvidia
+              ;;
+            intel-native)
+              runner_label=robotics-intel-gpu
+              environment=accelerator-intel-native
+              expected_arch=amd64
+              expected_provider=OpenVINOExecutionProvider
+              image_env=INFERENCE_INTEL_CONFORMANCE_IMAGE
+              overlay=compose.intel.yaml
+              profile=conformance-intel-gpu-linux
+              report_kind=onnxruntime
+              service=provider-conformance-intel-gpu-linux
+              ;;
+            intel-wsl)
+              runner_label=robotics-intel-gpu-wsl
+              environment=accelerator-intel-wsl
+              expected_arch=amd64
+              expected_provider=OpenVINOExecutionProvider
+              image_env=INFERENCE_INTEL_CONFORMANCE_IMAGE
+              overlay=compose.intel.yaml
+              profile=conformance-intel-gpu-wsl
+              report_kind=onnxruntime
+              service=provider-conformance-intel-gpu-wsl
+              ;;
+            amd-native)
+              runner_label=robotics-amd-gpu
+              environment=accelerator-amd
+              expected_arch=amd64
+              expected_provider=MIGraphXExecutionProvider
+              image_env=INFERENCE_AMD_CONFORMANCE_IMAGE
+              overlay=compose.amd.yaml
+              profile=conformance-amd
+              report_kind=onnxruntime
+              service=provider-conformance-amd
+              ;;
+            jetson-orin)
+              runner_label=robotics-jetson-orin
+              environment=accelerator-jetson-orin
+              expected_arch=arm64
+              expected_provider=TensorrtExecutionProvider
+              image_env=INFERENCE_NVIDIA_JETSON_ORIN_CONFORMANCE_IMAGE
+              overlay=compose.nvidia-jetson.yaml
+              profile=conformance-nvidia-jetson-orin
+              report_kind=onnxruntime
+              service=provider-conformance-nvidia-jetson-orin
+              ;;
+            jetson-thor)
+              runner_label=robotics-jetson-thor
+              environment=accelerator-jetson-thor
+              expected_arch=arm64
+              expected_provider=TensorrtExecutionProvider
+              image_env=INFERENCE_NVIDIA_JETSON_THOR_CONFORMANCE_IMAGE
+              overlay=compose.nvidia-jetson.yaml
+              profile=conformance-nvidia-jetson-thor
+              report_kind=onnxruntime
+              service=provider-conformance-nvidia-jetson-thor
+              ;;
+          esac
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image_pattern="^ghcr\\.io/${owner}/.+@sha256:[0-9a-f]{64}$"
+          [[ "${IMAGE_REF}" =~ ${image_pattern} ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "${SOURCE_SHA}" origin/main
+          {
+            echo "environment=${environment}"
+            echo "expected_arch=${expected_arch}"
+            echo "expected_provider=${expected_provider}"
+            echo "image_env=${image_env}"
+            echo "overlay=${overlay}"
+            echo "profile=${profile}"
+            echo "report_kind=${report_kind}"
+            echo "runner_label=${runner_label}"
+            echo "service=${service}"
+          } >> "${GITHUB_OUTPUT}"
+
+  qualify:
+    needs: prepare
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.prepare.result == 'success'
+    runs-on:
+      - self-hosted
+      - linux
+      - ${{ needs.prepare.outputs.runner_label }}
+    environment:
+      name: ${{ needs.prepare.outputs.environment }}
+    timeout-minutes: 45
+    permissions:
+      attestations: read
+      contents: read
+      packages: read
+    env:
+      COMPOSE_PROJECT_NAME: hardware-${{ github.run_id }}-${{ github.run_attempt }}
+      EXPECTED_ARCH: ${{ needs.prepare.outputs.expected_arch }}
+      EXPECTED_PROVIDER: ${{ needs.prepare.outputs.expected_provider }}
+      IMAGE_ENV: ${{ needs.prepare.outputs.image_env }}
+      IMAGE_REF: ${{ inputs.image_ref }}
+      OVERLAY: ${{ needs.prepare.outputs.overlay }}
+      PROFILE: ${{ needs.prepare.outputs.profile }}
+      REPORT_KIND: ${{ needs.prepare.outputs.report_kind }}
+      ROBOTICS_AMD_GPU: ${{ vars.ROBOTICS_AMD_GPU }}
+      ROBOTICS_INTEL_RENDER_DEVICE: ${{ vars.ROBOTICS_INTEL_RENDER_DEVICE }}
+      SERVICE: ${{ needs.prepare.outputs.service }}
+      SIGNER_WORKFLOW: ${{ vars.ROBOTICS_ATTESTATION_SIGNER_WORKFLOW }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      TARGET: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Verify provenance before pulling image layers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -n "${SIGNER_WORKFLOW}"
+          test "$(gh --version | awk 'NR == 1 {print $3}')" = 2.96.0
+          mkdir -p artifacts/hardware
+          gh attestation verify "oci://${IMAGE_REF}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${SIGNER_WORKFLOW}" \
+            --source-digest "${SOURCE_SHA}" \
+            --source-ref refs/heads/main \
+            --format json \
+            > artifacts/hardware/attestation-verification.json
+      - name: Record and validate host hardware
+        run: |
+          {
+            uname -a
+            docker version --format '{{.Server.Version}}'
+            docker compose version --short
+          } > artifacts/hardware/host.txt
+          case "${TARGET}" in
+            nvidia-x86)
+              test "$(uname -m)" = x86_64
+              nvidia-smi \
+                --query-gpu=name,driver_version,compute_cap \
+                --format=csv,noheader \
+                > artifacts/hardware/device.txt
+              ;;
+            intel-native)
+              test "$(uname -m)" = x86_64
+              ROBOTICS_INTEL_RENDER_DEVICE="${ROBOTICS_INTEL_RENDER_DEVICE:-/dev/dri/renderD128}"
+              test -c "${ROBOTICS_INTEL_RENDER_DEVICE}"
+              ROBOTICS_RENDER_GID="$(stat -c '%g' "${ROBOTICS_INTEL_RENDER_DEVICE}")"
+              export ROBOTICS_INTEL_RENDER_DEVICE ROBOTICS_RENDER_GID
+              {
+                echo "render_device=${ROBOTICS_INTEL_RENDER_DEVICE}"
+                echo "render_gid=${ROBOTICS_RENDER_GID}"
+                lspci -nn -d 8086:
+              } > artifacts/hardware/device.txt
+              {
+                echo "ROBOTICS_INTEL_RENDER_DEVICE=${ROBOTICS_INTEL_RENDER_DEVICE}"
+                echo "ROBOTICS_RENDER_GID=${ROBOTICS_RENDER_GID}"
+              } >> "${GITHUB_ENV}"
+              ;;
+            intel-wsl)
+              test "$(uname -m)" = x86_64
+              grep -qi microsoft /proc/version
+              test -c /dev/dxg
+              test -d /usr/lib/wsl
+              printf 'device=/dev/dxg\n' > artifacts/hardware/device.txt
+              ;;
+            amd-native)
+              test "$(uname -m)" = x86_64
+              ROBOTICS_AMD_GPU="${ROBOTICS_AMD_GPU:-0}"
+              export ROBOTICS_AMD_GPU
+              command -v rocminfo
+              rocminfo \
+                | grep -E '^[[:space:]]*(Name|Marketing Name|Vendor Name):' \
+                > artifacts/hardware/device.txt
+              echo "ROBOTICS_AMD_GPU=${ROBOTICS_AMD_GPU}" >> "${GITHUB_ENV}"
+              ;;
+            jetson-orin|jetson-thor)
+              test "$(uname -m)" = aarch64
+              test -r /proc/device-tree/model
+              tr -d '\0' < /proc/device-tree/model \
+                > artifacts/hardware/device.txt
+              dpkg-query -W nvidia-l4t-core \
+                >> artifacts/hardware/device.txt
+              nvidia-smi \
+                --query-gpu=name,driver_version,compute_cap \
+                --format=csv,noheader \
+                >> artifacts/hardware/device.txt
+              if [[ "${TARGET}" == jetson-orin ]]; then
+                grep -qi orin artifacts/hardware/device.txt
+              else
+                grep -qi thor artifacts/hardware/device.txt
+              fi
+              ;;
+          esac
+      - name: Pull and run provider conformance
+        run: |
+          docker pull "${IMAGE_REF}"
+          test "$(docker image inspect "${IMAGE_REF}" --format '{{.Architecture}}')" \
+            = "${EXPECTED_ARCH}"
+          docker image inspect "${IMAGE_REF}" \
+            > artifacts/hardware/image-inspect.json
+          export "${IMAGE_ENV}=${IMAGE_REF}"
+          export ROBOTICS_PROVIDER_REPORT_DIR="${PWD}/artifacts/hardware"
+          compose=(
+            docker compose
+            -f compose.yaml
+            -f "${OVERLAY}"
+            --profile "${PROFILE}"
+          )
+          "${compose[@]}" pull "${SERVICE}"
+          "${compose[@]}" run --rm --no-deps --no-build "${SERVICE}" \
+            2>&1 | tee artifacts/hardware/conformance.log
+          test "${REPORT_KIND}" = onnxruntime
+          jq -e --arg provider "${EXPECTED_PROVIDER}" '
+            .status == "passed" and
+            .executed_providers == [$provider] and
+            .fallback_count == 0
+          ' artifacts/hardware/provider-conformance.json
+      - name: Remove runtime resources
+        if: always()
+        run: |
+          docker compose \
+            -f compose.yaml \
+            -f "${OVERLAY}" \
+            --profile "${PROFILE}" \
+            down --volumes --remove-orphans || true
+          docker image rm "${IMAGE_REF}" || true
+      - name: Upload qualification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: hardware-${{ inputs.target }}-${{ inputs.source_sha }}
+          path: artifacts/hardware/
+          if-no-files-found: warn
+          retention-days: 14

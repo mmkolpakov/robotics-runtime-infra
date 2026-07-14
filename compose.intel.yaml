@@ -69,7 +69,8 @@ services:
     <<: *intel-conformance
     profiles: [conformance-intel-gpu-linux]
     devices:
-      - /dev/dri:/dev/dri
+      # yamllint disable-line rule:line-length
+      - "${ROBOTICS_INTEL_RENDER_DEVICE:-/dev/dri/renderD128}:${ROBOTICS_INTEL_RENDER_DEVICE:-/dev/dri/renderD128}:rw"
     group_add:
       - "${ROBOTICS_RENDER_GID:-109}"
     environment:

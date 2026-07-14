@@ -81,6 +81,7 @@ jobs:
           platforms: arm64
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
         with:
+          cache-binary: false
           version: ${{ env.BUILDX_VERSION }}
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
@@ -124,8 +125,6 @@ jobs:
             IMAGE_VERSION=${{ steps.metadata.outputs.version }}
             SOURCE_DATE_EPOCH=${{ steps.build-metadata.outputs.epoch }}
             VCS_REF=${{ github.sha }}
-          cache-from: type=gha,scope=release-${{ matrix.id }}
-          cache-to: type=gha,mode=max,scope=release-${{ matrix.id }}
           provenance: mode=max
           sbom: true
       - name: Verify the published simulation image
