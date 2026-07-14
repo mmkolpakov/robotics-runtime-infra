@@ -7,7 +7,9 @@ ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0a
 ARG RCLONE_IMAGE=rclone/rclone:1.74.4@sha256:c61954aaa32328a5486715dd063a81c7879f5195ad3505cd362deddd509dc4a1
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
-ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04@sha256:14d94b039cb94bbd5da559f303b46bc4b0d5d6c24ab1a9d7b186e566ed3400dc
+ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
+ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
+ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
 ARG UBUNTU_SNAPSHOT=20260701T000000Z
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
@@ -16,6 +18,128 @@ FROM ${UV_IMAGE} AS uv
 FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
+FROM ${NVIDIA_CUDA_RUNTIME_IMAGE} AS nvidia-cuda-runtime-minimal
+
+FROM ${UBUNTU_BASE_IMAGE} AS onnxruntime-jetson-source-verification
+
+# hadolint ignore=DL3022
+COPY --from=onnxruntime-source VERSION_NUMBER /verification/VERSION_NUMBER
+# hadolint ignore=DL3022
+COPY --from=onnxruntime-source cmake/external/onnx/CMakeLists.txt /verification/onnx-CMakeLists.txt
+
+RUN test "$(cat /verification/VERSION_NUMBER)" = "1.27.0" \
+    && test -s /verification/onnx-CMakeLists.txt
+
+FROM ${NVIDIA_INFERENCE_DEVEL_IMAGE} AS onnxruntime-jetson-build-dependencies
+
+ARG UBUNTU_SNAPSHOT
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
+
+RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+    && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+      /usr/local/sbin/use-package-snapshots \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+      cmake \
+      libopenblas-dev \
+      ninja-build \
+      python3-dev \
+      python3-numpy \
+      python3-packaging \
+      python3-pip \
+      python3-setuptools \
+      python3-wheel \
+    && for binary in cmake g++ gcc ninja nvcc python3; do \
+      command -v "${binary}"; \
+    done \
+    && rm -rf \
+      /var/cache/ldconfig/aux-cache \
+      /var/lib/apt/lists/* \
+      /var/log/apt/* \
+      /var/log/alternatives.log \
+      /var/log/dpkg.log
+
+ADD --checksum=sha256:21198380bfe97a868cf22448790e91ca17ba3a851b12772f5b8936ee7321bfb3 \
+    https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/sbsa/libcufft-13-3_12.3.0.29-1_arm64.deb \
+    /tmp/cuda-packages/
+ADD --checksum=sha256:7279508aa787cf9c95bc6ab82df7850da7ba0b8edba2efeb151993dd0d32bfd2 \
+    https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/sbsa/libcufft-dev-13-3_12.3.0.29-1_arm64.deb \
+    /tmp/cuda-packages/
+
+RUN dpkg --install /tmp/cuda-packages/*.deb \
+    && for spec in \
+      cuda-culibos-dev-13-3=13.3.33-1 \
+      cuda-toolkit-13-3-config-common=13.3.29-1 \
+      cuda-toolkit-13-config-common=13.3.29-1 \
+      cuda-toolkit-config-common=13.3.29-1 \
+      libcufft-13-3=12.3.0.29-1 \
+      libcufft-dev-13-3=12.3.0.29-1; do \
+      package="${spec%%=*}"; \
+      expected="${spec#*=}"; \
+      actual="$(dpkg-query --show --showformat='${Version}' "${package}")"; \
+      printf '%s=%s\n' "${package}" "${actual}"; \
+      test "${actual}" = "${expected}"; \
+    done \
+    && test -f /usr/local/cuda/targets/sbsa-linux/include/cufft.h \
+    && test -e /usr/local/cuda/targets/sbsa-linux/lib/libcufft.so \
+    && rm -rf /tmp/cuda-packages
+
+FROM onnxruntime-jetson-build-dependencies AS onnxruntime-jetson-wheel-build
+
+ARG ONNXRUNTIME_SOURCE_REVISION=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5
+ARG ONNXRUNTIME_SOURCE_DATE_EPOCH=1781277122
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3022
+COPY --from=onnxruntime-source / /src/onnxruntime
+WORKDIR /src/onnxruntime
+
+RUN --mount=type=cache,id=onnxruntime-1.27.0-cuda13.3-trt11-arm64-build,target=/src/onnxruntime/build/Linux,sharing=locked \
+    --mount=type=cache,id=onnxruntime-1.27.0-arm64-pip,target=/root/.cache/pip,sharing=locked \
+    test "$(cat /src/onnxruntime/VERSION_NUMBER)" = "1.27.0" \
+    && test -f /src/onnxruntime/cmake/external/onnx/CMakeLists.txt \
+    && test "${ONNXRUNTIME_SOURCE_REVISION}" = \
+      "8f0278c77bf44b0cc83c098c6c722b92a36ac4b5" \
+    && SOURCE_DATE_EPOCH="${ONNXRUNTIME_SOURCE_DATE_EPOCH}" \
+      ./build.sh \
+        --config Release \
+        --update \
+        --build \
+        --parallel 2 \
+        --build_wheel \
+        --use_cuda \
+        --use_tensorrt \
+        --cuda_home /usr/local/cuda \
+        --cudnn_home /usr/lib/aarch64-linux-gnu \
+        --tensorrt_home /usr/lib/aarch64-linux-gnu \
+        --nvcc_threads 1 \
+        --allow_running_as_root \
+        --skip_tests \
+        --skip_submodule_sync \
+        --cmake_extra_defines \
+          "CMAKE_CUDA_ARCHITECTURES=87-real;110-real" \
+          onnxruntime_BUILD_UNIT_TESTS=OFF \
+          onnxruntime_USE_FLASH_ATTENTION=OFF \
+          onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF \
+    && mapfile -t wheels < <(find build/Linux/Release/dist -maxdepth 1 \
+      -type f -name '*.whl' -print) \
+    && test "${#wheels[@]}" -eq 1 \
+    && install -D -m 0444 "${wheels[0]}" "/out/$(basename "${wheels[0]}")" \
+    && install -m 0444 LICENSE /out/LICENSE \
+    && printf '%s\n' \
+      "onnxruntime=v1.27.0" \
+      "revision=${ONNXRUNTIME_SOURCE_REVISION}" \
+      "cuda_architectures=87-real;110-real" \
+      > /out/source.txt \
+    && sha256sum /out/*.whl \
+      | sed 's#  /out/#  #' > /out/SHA256SUMS
+
+FROM scratch AS onnxruntime-jetson-wheel
+
+COPY --from=onnxruntime-jetson-wheel-build /out /
 
 FROM ${UBUNTU_BASE_IMAGE} AS rocm-signing-key
 ADD --checksum=sha256:2de99e2354646a90d9903e2a669fc4e36b02c1bbff7075c481e12d7edab2c88b \
@@ -559,11 +683,14 @@ FROM edge-runtime AS inference-nvidia
 
 USER root
 COPY --from=uv /uv /uvx /usr/local/bin/
-COPY --from=nvidia-cuda-runtime /usr/local/cuda-13.0 /usr/local/cuda-13.0
+COPY --from=nvidia-cuda-runtime /usr/local/cuda-13.3 /usr/local/cuda-13.3
 COPY --from=nvidia-cuda-runtime /usr/lib/x86_64-linux-gnu/libcudnn*.so* /usr/lib/x86_64-linux-gnu/
+COPY --from=nvidia-cuda-runtime \
+    /NGC-DL-CONTAINER-LICENSE \
+    /usr/share/licenses/nvidia/NGC-DL-CONTAINER-LICENSE
 COPY docker/python/inference-nvidia.lock /tmp/python/inference-nvidia.lock
 
-RUN ln -s /usr/local/cuda-13.0 /usr/local/cuda \
+RUN ln -s /usr/local/cuda-13.3 /usr/local/cuda \
     && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
@@ -576,19 +703,35 @@ RUN ln -s /usr/local/cuda-13.0 /usr/local/cuda \
     && rm -rf /tmp/python
 
 ENV CUDA_HOME=/usr/local/cuda \
-    CUDA_VERSION=13.0.2 \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu \
+    CUDA_MODULE_LOADING=LAZY \
+    CUDA_VERSION=13.3.0 \
+    LD_LIBRARY_PATH=/usr/local/cuda/targets/x86_64-linux/lib:/usr/lib/x86_64-linux-gnu \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    NVIDIA_REQUIRE_CUDA="cuda>=13.0" \
+    NVIDIA_REQUIRE_CUDA="cuda>=13.3" \
     PATH="/opt/venv/bin:/usr/local/cuda/bin:${PATH}"
 
 LABEL org.opencontainers.image.title="Robotics NVIDIA inference runtime" \
-      org.opencontainers.image.description="ONNX Runtime CUDA provider with CUDA 13 and cuDNN 9 on ROS 2 Jazzy."
+      org.opencontainers.image.description="ONNX Runtime CUDA provider with CUDA 13.3 and cuDNN 9 on ROS 2 Jazzy."
 
 USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["python3", "-c", "import onnxruntime as ort; assert 'CUDAExecutionProvider' in ort.get_available_providers()"]
+
+FROM inference-nvidia AS inference-nvidia-verification
+
+USER root
+
+RUN test -s /usr/share/licenses/nvidia/NGC-DL-CONTAINER-LICENSE \
+    && python3 -c \
+      "import onnxruntime as ort; providers = ort.get_available_providers(); assert 'CUDAExecutionProvider' in providers, providers" \
+    && ! command -v nvcc \
+    && test ! -e /usr/local/cuda/include/cuda.h \
+    && test -z "$(find /usr/include -name 'NvInfer*.h' -print -quit)"
+
+USER ubuntu
+
+HEALTHCHECK NONE
 
 FROM inference-nvidia AS provider-conformance-nvidia
 
@@ -620,6 +763,126 @@ ENTRYPOINT ["python3", "-m", "pytest"]
 CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
 
 HEALTHCHECK NONE
+
+FROM edge-runtime AS inference-nvidia-jetson-base
+
+USER root
+COPY --from=nvidia-cuda-runtime-minimal /usr/local/cuda-13.3 /usr/local/cuda-13.3
+COPY --from=nvidia-cuda-runtime-minimal \
+    /NGC-DL-CONTAINER-LICENSE \
+    /usr/share/licenses/nvidia/NGC-DL-CONTAINER-LICENSE
+COPY --from=onnxruntime-jetson-wheel-build /out /tmp/onnxruntime
+COPY docker/python/inference-nvidia-jetson.lock /tmp/python/inference-nvidia-jetson.lock
+WORKDIR /tmp/onnxruntime
+
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
+    ln -s /usr/local/cuda-13.3 /usr/local/cuda \
+    && sha256sum --check --strict SHA256SUMS \
+    && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+    && uv pip install \
+      --python /opt/venv/bin/python \
+      --require-hashes \
+      --no-cache \
+      --no-deps \
+      --requirement /tmp/python/inference-nvidia-jetson.lock \
+    && uv pip install \
+      --python /opt/venv/bin/python \
+      --no-cache \
+      --no-deps \
+      /tmp/onnxruntime/*.whl \
+    && uv pip check --python /opt/venv/bin/python \
+    && uv pip freeze --python /opt/venv/bin/python \
+      > /usr/share/robotics-runtime/python-packages.txt \
+    && cp /tmp/onnxruntime/source.txt \
+      /usr/share/robotics-runtime/onnxruntime-source.txt \
+    && install -D -m 0444 /tmp/onnxruntime/LICENSE \
+      /usr/share/licenses/onnxruntime/LICENSE \
+    && ! command -v nvcc \
+    && test ! -d /usr/local/cuda/include \
+    && test -z "$(find /usr/include -name 'NvInfer*.h' -print -quit)" \
+    && test ! -e /src/onnxruntime \
+    && rm -rf /tmp/onnxruntime /tmp/python
+
+WORKDIR /workspace
+
+ENV CUDA_HOME=/usr/local/cuda \
+    CUDA_MODULE_LOADING=LAZY \
+    CUDA_VERSION=13.3.0 \
+    LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/tensorrt_libs:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/cuda/targets/sbsa-linux/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    NVIDIA_REQUIRE_CUDA="cuda>=13.2" \
+    NVIDIA_VISIBLE_DEVICES=all \
+    PATH="/opt/venv/bin:/usr/local/cuda/bin:${PATH}"
+
+LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson inference runtime" \
+      org.opencontainers.image.description="ONNX Runtime TensorRT provider for JetPack 7.2 on ROS 2 Jazzy."
+
+USER ubuntu
+
+FROM inference-nvidia-jetson-base AS inference-nvidia-jetson-orin
+
+ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat_orin:${LD_LIBRARY_PATH}" \
+    ROBOTICS_NVIDIA_JETSON_FAMILY=orin
+
+LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Orin inference runtime"
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD ["python3", "-c", "import onnxruntime as ort; assert 'TensorrtExecutionProvider' in ort.get_available_providers()"]
+
+FROM inference-nvidia-jetson-base AS inference-nvidia-jetson-thor
+
+ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat:${LD_LIBRARY_PATH}" \
+    ROBOTICS_NVIDIA_JETSON_FAMILY=thor
+
+LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Thor inference runtime"
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD ["python3", "-c", "import onnxruntime as ort; assert 'TensorrtExecutionProvider' in ort.get_available_providers()"]
+
+FROM inference-nvidia-jetson-base AS provider-conformance-nvidia-jetson-base
+
+USER root
+COPY docker/python/provider-conformance.lock /tmp/python/provider-conformance.lock
+
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
+    uv pip install \
+      --python /opt/venv/bin/python \
+      --require-hashes \
+      --no-cache \
+      --no-deps \
+      --requirement /tmp/python/provider-conformance.lock \
+    && install -d -o ubuntu -g ubuntu /reports \
+    && install -d -o root -g root -m 0555 /opt/provider-conformance \
+    && rm -rf /tmp/python
+
+COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
+
+ENV ROBOTICS_EXPECTED_PROVIDER=TensorrtExecutionProvider \
+    ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
+
+LABEL org.opencontainers.image.description="Jetson hardware gate for TensorRT provider identity, fallback, and tensor parity."
+
+USER ubuntu
+WORKDIR /opt/provider-conformance
+
+ENTRYPOINT ["python3", "-m", "pytest"]
+CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
+
+HEALTHCHECK NONE
+
+FROM provider-conformance-nvidia-jetson-base AS provider-conformance-nvidia-jetson-orin
+
+ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat_orin:${LD_LIBRARY_PATH}" \
+    ROBOTICS_NVIDIA_JETSON_FAMILY=orin
+
+LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Orin provider conformance"
+
+FROM provider-conformance-nvidia-jetson-base AS provider-conformance-nvidia-jetson-thor
+
+ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat:${LD_LIBRARY_PATH}" \
+    ROBOTICS_NVIDIA_JETSON_FAMILY=thor
+
+LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Thor provider conformance"
 
 FROM edge-runtime AS acceptance-observer
 

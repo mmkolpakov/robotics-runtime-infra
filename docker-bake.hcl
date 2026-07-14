@@ -34,6 +34,14 @@ variable "ROSDISTRO_INDEX_REVISION" {
   default = "9f76014b84955f757306270d6860fa3bc1c30b57"
 }
 
+variable "ONNXRUNTIME_SOURCE" {
+  default = "https://github.com/microsoft/onnxruntime.git?tag=v1.27.0&checksum=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5"
+}
+
+variable "ONNXRUNTIME_SOURCE_DATE_EPOCH" {
+  default = "1781277122"
+}
+
 group "default" {
   targets = ["simulation"]
 }
@@ -67,6 +75,8 @@ group "conformance" {
     "provider-conformance-amd",
     "provider-conformance-intel",
     "provider-conformance-nvidia",
+    "provider-conformance-nvidia-jetson-orin",
+    "provider-conformance-nvidia-jetson-thor",
   ]
 }
 
@@ -88,6 +98,15 @@ group "nvidia" {
   targets = [
     "inference-nvidia",
     "provider-conformance-nvidia",
+  ]
+}
+
+group "nvidia-jetson" {
+  targets = [
+    "inference-nvidia-jetson-orin",
+    "inference-nvidia-jetson-thor",
+    "provider-conformance-nvidia-jetson-orin",
+    "provider-conformance-nvidia-jetson-thor",
   ]
 }
 
@@ -182,11 +201,73 @@ target "inference-nvidia" {
   tags      = ["${REGISTRY}/robotics-runtime-infra/inference-nvidia:${VERSION}"]
 }
 
+target "inference-nvidia-verification" {
+  inherits  = ["_common"]
+  target    = "inference-nvidia-verification"
+  platforms = ["linux/amd64"]
+}
+
 target "provider-conformance-nvidia" {
   inherits  = ["_common"]
   target    = "provider-conformance-nvidia"
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-nvidia:${VERSION}"]
+}
+
+target "_onnxruntime-jetson-source" {
+  inherits  = ["_common"]
+  contexts = {
+    "onnxruntime-source" = ONNXRUNTIME_SOURCE
+  }
+}
+
+target "onnxruntime-jetson-source-verification" {
+  inherits  = ["_onnxruntime-jetson-source"]
+  target    = "onnxruntime-jetson-source-verification"
+  platforms = ["linux/amd64"]
+}
+
+target "onnxruntime-jetson-build-dependencies" {
+  inherits  = ["_common"]
+  target    = "onnxruntime-jetson-build-dependencies"
+  platforms = ["linux/arm64"]
+}
+
+target "_nvidia-jetson" {
+  inherits  = ["_onnxruntime-jetson-source"]
+  platforms = ["linux/arm64"]
+  args = {
+    ONNXRUNTIME_SOURCE_DATE_EPOCH = ONNXRUNTIME_SOURCE_DATE_EPOCH
+  }
+}
+
+target "onnxruntime-jetson-wheel" {
+  inherits = ["_nvidia-jetson"]
+  target   = "onnxruntime-jetson-wheel"
+}
+
+target "inference-nvidia-jetson-orin" {
+  inherits = ["_nvidia-jetson"]
+  target   = "inference-nvidia-jetson-orin"
+  tags     = ["${REGISTRY}/robotics-runtime-infra/inference-nvidia-jetson-orin:${VERSION}"]
+}
+
+target "inference-nvidia-jetson-thor" {
+  inherits = ["_nvidia-jetson"]
+  target   = "inference-nvidia-jetson-thor"
+  tags     = ["${REGISTRY}/robotics-runtime-infra/inference-nvidia-jetson-thor:${VERSION}"]
+}
+
+target "provider-conformance-nvidia-jetson-orin" {
+  inherits = ["_nvidia-jetson"]
+  target   = "provider-conformance-nvidia-jetson-orin"
+  tags     = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-nvidia-jetson-orin:${VERSION}"]
+}
+
+target "provider-conformance-nvidia-jetson-thor" {
+  inherits = ["_nvidia-jetson"]
+  target   = "provider-conformance-nvidia-jetson-thor"
+  tags     = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-nvidia-jetson-thor:${VERSION}"]
 }
 
 target "acceptance-observer" {

@@ -24,7 +24,7 @@ services:
   inference-nvidia-smoke:
     <<: *nvidia-runtime
     # yamllint disable-line rule:line-length
-    image: "${INFERENCE_NVIDIA_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/inference-nvidia:0.5.0}"
+    image: "${INFERENCE_NVIDIA_IMAGE:-local/robotics-runtime-infra/inference-nvidia:dev}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -43,7 +43,7 @@ services:
   provider-conformance-nvidia:
     <<: *nvidia-runtime
     # yamllint disable-line rule:line-length
-    image: "${INFERENCE_NVIDIA_CONFORMANCE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/provider-conformance-nvidia:0.5.0}"
+    image: "${INFERENCE_NVIDIA_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-nvidia:dev}"
     build:
       context: .
       dockerfile: Dockerfile

@@ -1,0 +1,109 @@
+---
+x-build-args: &build-args
+  IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
+  IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
+  IMAGE_VERSION: "${IMAGE_VERSION:-0.5.0}"
+  VCS_REF: "${VCS_REF:-local}"
+
+x-jetson-build: &jetson-build
+  context: .
+  dockerfile: Dockerfile
+  additional_contexts:
+    # yamllint disable-line rule:line-length
+    onnxruntime-source: "https://github.com/microsoft/onnxruntime.git?tag=v1.27.0&checksum=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5"
+  args: *build-args
+
+x-jetson-runtime: &jetson-runtime
+  init: true
+  platform: linux/arm64
+  network_mode: none
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  inference-nvidia-jetson-orin-smoke:
+    <<: *jetson-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_NVIDIA_JETSON_ORIN_IMAGE:-local/robotics-runtime-infra/inference-nvidia-jetson-orin:dev}"
+    build:
+      <<: *jetson-build
+      target: inference-nvidia-jetson-orin
+    profiles: [nvidia-jetson-orin]
+    command:
+      - python3
+      - -c
+      - >-
+        import onnxruntime as ort;
+        ort.preload_dlls(directory='');
+        assert 'TensorrtExecutionProvider' in ort.get_available_providers()
+    healthcheck:
+      disable: true
+
+  provider-conformance-nvidia-jetson-orin:
+    <<: *jetson-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_NVIDIA_JETSON_ORIN_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-nvidia-jetson-orin:dev}"
+    build:
+      <<: *jetson-build
+      target: provider-conformance-nvidia-jetson-orin
+    profiles: [conformance-nvidia-jetson-orin]
+    environment:
+      ROBOTICS_EXPECTED_PROVIDER: TensorrtExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_OPTIONS: "${ROBOTICS_PROVIDER_OPTIONS:-}"
+      ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/nvidia-jetson-orin}"
+        target: /reports
+    healthcheck:
+      disable: true
+
+  inference-nvidia-jetson-thor-smoke:
+    <<: *jetson-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_NVIDIA_JETSON_THOR_IMAGE:-local/robotics-runtime-infra/inference-nvidia-jetson-thor:dev}"
+    build:
+      <<: *jetson-build
+      target: inference-nvidia-jetson-thor
+    profiles: [nvidia-jetson-thor]
+    command:
+      - python3
+      - -c
+      - >-
+        import onnxruntime as ort;
+        ort.preload_dlls(directory='');
+        assert 'TensorrtExecutionProvider' in ort.get_available_providers()
+    healthcheck:
+      disable: true
+
+  provider-conformance-nvidia-jetson-thor:
+    <<: *jetson-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_NVIDIA_JETSON_THOR_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-nvidia-jetson-thor:dev}"
+    build:
+      <<: *jetson-build
+      target: provider-conformance-nvidia-jetson-thor
+    profiles: [conformance-nvidia-jetson-thor]
+    environment:
+      ROBOTICS_EXPECTED_PROVIDER: TensorrtExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_OPTIONS: "${ROBOTICS_PROVIDER_OPTIONS:-}"
+      ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/nvidia-jetson-thor}"
+        target: /reports
+    healthcheck:
+      disable: true
