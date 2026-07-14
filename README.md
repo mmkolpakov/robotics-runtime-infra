@@ -60,7 +60,12 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | OS | Ubuntu 24.04 packages from snapshot `20260701T000000Z` |
 | ROS | ROS 2 Jazzy packages from snapshot `2026-06-18` |
 | Simulator | Gazebo Harmonic from the pinned Jazzy simulation image |
-| CPU inference | ONNX Runtime 1.26.0 |
+| CPU inference | ONNX Runtime 1.27.0 |
+| Intel inference candidate | ONNX Runtime OpenVINO 1.24.1 with OpenVINO 2025.4.1 |
+| NVIDIA inference candidate | ONNX Runtime GPU 1.27.0, CUDA 13.3.0 and cuDNN 9 |
+| AMD inference candidate | ONNX Runtime MIGraphX 1.23.2 with ROCm 7.2.4 |
+| Jetson inference candidate | JetPack 7.2 host; source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11 |
+| RK3588 inference candidate | RKNN Toolkit2 and RKNN Runtime 2.3.2 |
 | Evidence format | rosbag2 MCAP and MCAP CLI 0.2.0 |
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
@@ -74,6 +79,68 @@ Every released image contains exact Debian and Python package manifests under
 `/usr/share/robotics-runtime/`. GitHub Releases record the image digests; each
 image is published with an SBOM, BuildKit provenance, and an artifact
 attestation.
+
+Candidate versions are reproducible build inputs, not hardware support claims.
+
+## Support status
+
+Support is scoped to an immutable source revision and image digest. The status
+terms are normative:
+
+- **Released**: an artifact was published from a Git tag after the standard CI
+  gates passed. This does not imply validation on every compatible device.
+- **CI-verified**: the artifact builds and its software-only checks pass on a
+  GitHub-hosted runner; target hardware was not exercised.
+- **Qualification-gated**: the implementation exists, but support requires a
+  passing protected workflow on the named hardware and retained evidence.
+- **Qualified**: a named device passed the protected workflow for the exact
+  source revision and image digest, and the qualification record is published.
+- **Unsupported**: the repository intentionally makes no runtime or safety
+  claim for that target.
+
+### Compute matrix
+
+| Target | Runtime path | Current evidence | Status |
+| --- | --- | --- | --- |
+| amd64 CPU | `simulation`, `inference-cpu` | Native integration and provider-conformance CI; images in `v0.5.0` | Released |
+| arm64 CPU | Portable runtime images | Multi-platform BuildKit gate; images in `v0.5.0`; no native board claim | Released |
+| Intel CPU on amd64 Linux | `inference-intel` | Image build and OpenVINO CPU provider conformance in hosted CI | CI-verified |
+| Intel GPU on native Linux | `compose.intel.yaml` | Device-specific provider, no-fallback and tensor-parity gate defined | Qualification-gated |
+| Intel GPU through WSL2 | `compose.intel.yaml` | `/dev/dxg` route and a separate protected runner gate defined | Qualification-gated |
+| NVIDIA GPU on amd64 Linux | `compose.nvidia.yaml` | CUDA image builds; protected CDI/provider/parity gate defined | Qualification-gated |
+| NVIDIA Jetson Orin or Thor | `compose.nvidia-jetson.yaml` | Pinned source and ARM64 build graph; protected device gate defined | Qualification-gated |
+| AMD GPU on native Linux | `compose.amd.yaml` | ROCm/MIGraphX image builds; protected provider/parity gate defined | Qualification-gated |
+| RK3588, including Orange Pi 5 Plus | `compose.rknn.yaml` | Converter and ARM64 runtime build; dedicated RKNN device gate defined | Qualification-gated |
+| Apple silicon acceleration | Portable CPU image in a Linux VM only | No macOS-native, Metal, CoreML, or device qualification path | Unsupported |
+
+No accelerated target is qualified by the current revision. The generic
+hardware workflow covers NVIDIA, Intel, AMD, and Jetson; RK3588 uses its own
+workflow. A successful image build or provider import cannot promote a row to
+Qualified.
+
+### Physical execution matrix
+
+| Environment | Allowed physical effect | Current evidence | Status |
+| --- | --- | --- | --- |
+| Gazebo simulation | Simulated actuation | ROS/Gazebo integration and acceptance CI; images in `v0.5.0` | Released |
+| MCAP playback | None | Clocked playback, readiness, evidence, and acceptance CI | Released |
+| HIL attach | None | Signed permit, target identity, SROS2, time, serial, and CAN software gates | Qualification-gated |
+| Real target observation | Observation only | Permit policy and live SROS2 telemetry/command-denial CI | Qualification-gated |
+| Real target actuation | Actuation | Rejected by contracts, OPA policy, and the observer enclave | Unsupported |
+
+HIL and real-observation qualification additionally requires an isolated lab,
+named controller or sensor, operator and safety approvals, interlock evidence,
+and target-specific timing limits. Synthetic devices, `vcan`, and software DDS
+tests prove the boundary but do not qualify physical equipment.
+
+The compatibility basis is ROS 2 Jazzy on Ubuntu 24.04
+([REP-2000](https://docs.ros.org/independent/api/rep/html/rep-2000.html)), the
+[ONNX Runtime execution-provider model](https://onnxruntime.ai/docs/execution-providers/),
+[OpenVINO EP 1.24.1](https://onnxruntime.ai/docs/execution-providers/OpenVINO-ExecutionProvider.html),
+[ROCm 7.2.4](https://rocm.docs.amd.com/en/docs-7.2.4/compatibility/compatibility-matrix.html),
+[JetPack 7.2](https://developer.nvidia.com/embedded/jetpack/downloads),
+[CUDA 13 minor-version compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html),
+and [RKNN Toolkit2 2.3.2](https://github.com/airockchip/rknn-toolkit2/releases/tag/v2.3.2).
 
 ## Compose profiles
 
