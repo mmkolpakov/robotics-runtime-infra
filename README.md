@@ -46,6 +46,7 @@ Release tags publish immutable digests for these images under
 | `acceptance-observer` | amd64, arm64 | Attach-only acceptance verification and JSON/JUnit results |
 | `benchmark` | amd64, arm64 | Apex.AI `performance_test` for ROS 2 transport measurements |
 | `evidence-sink` | amd64, arm64 | MCAP validation, checksums, S3-compatible upload and evidence finalization |
+| `time-fixture` | amd64, arm64 | CI-only validation of Ubuntu host time, systemd, and udev assets |
 
 The simulation image is tested by running Gazebo and ROS 2 tests on amd64. The
 portable images are built for amd64 and arm64; hardware-specific accelerators
@@ -60,9 +61,10 @@ and device drivers are not qualified by the 0.5 release.
 | Simulator | Gazebo Harmonic from the pinned Jazzy simulation image |
 | CPU inference | ONNX Runtime 1.26.0 |
 | Evidence format | rosbag2 MCAP and MCAP CLI 0.2.0 |
+| Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.4.3 |
-| Acceptance harness | `robotics-acceptance-harness` 0.5.1 |
+| Contracts | `robotics-runtime-contracts` 0.5.0 |
+| Acceptance harness | `robotics-acceptance-harness` 0.6.0 |
 
 Base images, package snapshots, Python hashes, and foundation revisions are
 pinned in `Dockerfile`, `docker-bake.hcl`, lock files, and `foundation.repos`.
@@ -86,6 +88,11 @@ behavior being tested:
 | `compose.security.yaml` | `security*` | SROS2 Enforce, observer-only enclave, positive and denial checks |
 | `compose.stepped.yaml` | `stepped` | Run Gazebo paused and advance it through `WorldControl` |
 | `compose.edge-attach.yaml` | `edge-attach`, `hil` | Attach-only observation through an external Docker network; HIL is permit-gated and SROS2-enforced |
+| `compose.time.yaml` | `time-chrony`, `time-ptp` | Export host-owned clock observations as contract-aligned OTLP JSON |
+| `compose.serial.yaml` | `serial-preflight` | Verify one exact stable serial device mapping without starting product code |
+
+Containers only observe host time and serial services; they cannot configure
+the host clock, udev, PTP interface, or physical bus.
 
 For example, verify the packaged golden MCAP without starting Gazebo:
 
@@ -130,6 +137,81 @@ Override it with `ROBOTICS_RUN_DIR`, `ROBOTICS_BAG_DIR`, and
 `ROBOTICS_EVIDENCE_DIR`. On Linux, pre-create bind-mounted directories writable
 by UID 1000; the evidence directory must be writable by UID 10001. Named
 volumes avoid host ownership concerns for interactive development.
+The host time profiles are the exception: their evidence directory is owned by
+the host `_chrony` UID/GID.
+
+## Physical host preflight
+
+The canonical physical host is Ubuntu 24.04 with systemd 255 or newer. The CI
+fixture qualifies Chrony 4.5, linuxptp 4.0, and systemd/udev 255.4 from the
+pinned Ubuntu snapshot. Time-source selection, interfaces, PTP domain, and
+acceptance thresholds remain site configuration.
+
+Install `config/time/chrony-command-socket.conf` as
+`/etc/chrony/conf.d/robotics-command-socket.conf` and
+`tmpfiles.d/robotics-time.conf` as `/etc/tmpfiles.d/robotics-time.conf`. Run
+`systemd-tmpfiles --create`, restart Chrony, and start the evidence collector:
+
+```bash
+export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
+install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
+  -m 0770 runs/current/evidence
+docker compose -f compose.yaml -f compose.time.yaml \
+  --profile time-chrony up -d time-evidence-chrony
+```
+
+For PTP, install `config/time/ptp4l.conf` through host configuration
+management and install both `systemd/robotics-ptp-sample.*` units under
+`/etc/systemd/system`. The timer only queries the read-only `ptp4lro` socket:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now robotics-ptp-sample.timer
+export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
+docker compose -f compose.yaml -f compose.time.yaml \
+  --profile time-ptp up -d time-evidence-ptp
+```
+
+Both profiles write `runs/current/evidence/hardware-time.otlp.json` with clock
+offset in milliseconds, drift in ppm, message age in milliseconds, and a
+monotonic-clock flag. `ptp4l` and `phc2sys` remain host services; the collectors
+receive no network device, PHC device, or Linux capability.
+
+For a serial controller, prefer `/dev/serial/by-id/...`. Sites that need a
+contract name may install a reviewed copy of
+`config/udev/99-robotics-serial.rules` after replacing every example USB
+identifier. Validate and reload it before use:
+
+```bash
+sudo udevadm verify config/udev/99-robotics-serial.rules
+sudo udevadm control --reload
+sudo udevadm trigger --subsystem-match=tty --settle
+export ROBOTICS_SERIAL_DEVICE=/dev/robotics/controller-alpha
+docker compose -f compose.yaml -f compose.serial.yaml \
+  --profile serial-preflight run --rm serial-device-preflight
+```
+
+Capture the stable identity and structured udev observation before issuing a
+physical execution permit:
+
+```bash
+device=/dev/robotics/controller-alpha
+udevadm info --query=property \
+  --property=DEVLINKS,ID_BUS,ID_MODEL_ID,ID_SERIAL,ID_SERIAL_SHORT,ID_VENDOR_ID \
+  --json=short --name="${device}" | jq --sort-keys --compact-output \
+  > runs/current/authorization-output/serial-preflight.json
+udevadm info --query=property --property=ID_SERIAL --value \
+  --name="${device}" > runs/current/authorization-output/serial-identity.txt
+sha256sum runs/current/authorization-output/serial-identity.txt
+sha256sum runs/current/authorization-output/serial-preflight.json
+```
+
+Use the first digest as `identity_sha256` and the second as
+`preflight_evidence_sha256`.
+
+The Compose policy rejects `/dev/ttyUSB*`, `/dev/ttyACM*`, wildcards, and a
+complete `/dev` mapping. Runtime manifests carry the reviewed stable identity
+and preflight evidence digests.
 
 ## Add a product repository
 

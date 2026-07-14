@@ -11,6 +11,9 @@
 !docker/rosdeps/**
 !docker/python/
 !docker/python/**
+!config/
+!config/time/
+!config/time/chrony-fixture.conf
 !docker/evidence-sink/
 !docker/evidence-sink/**
 !docker/permit-preflight/

@@ -1,6 +1,6 @@
 ---
 x-edge-attach-observer: &edge-attach-observer
-  image: "${OBSERVER_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/acceptance-observer:0.5.0}"
+  image: "${OBSERVER_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/acceptance-observer:0.6.0}"
   init: true
   network_mode: service:edge-attach-data-plane
   read_only: true
@@ -21,6 +21,7 @@ x-edge-attach-observer: &edge-attach-observer
     disable: true
 
 x-permit-runtime: &permit-runtime
+  # yamllint disable-line rule:line-length
   image: "${PERMIT_PREFLIGHT_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight:0.5.0}"
   init: true
   network_mode: none
@@ -91,6 +92,7 @@ services:
       - /authorization/execution-request.json
       - /nonces
       - /output/execution-verification.json
+      # yamllint disable-line rule:line-length
       - "${ROBOTICS_COSIGN_IMAGE_DIGEST:?set ROBOTICS_COSIGN_IMAGE_DIGEST to the immutable permit-preflight image digest}"
     volumes:
       - type: bind
@@ -145,7 +147,9 @@ services:
       - --verification
       - /authorization-output/execution-verification.json
       - --evidence-index
-      - /input/evidence-index.json
+      - /evidence/evidence-index.json
+      - --otel-metrics
+      - /evidence/hardware-time.otlp.json
       - --output
       - /results
     environment:
@@ -172,6 +176,10 @@ services:
       - type: bind
         source: "${ROBOTICS_AUTHORIZATION_OUTPUT_DIR:-./runs/current/authorization-output}"
         target: /authorization-output
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
+        target: /evidence
         read_only: true
       - type: bind
         source: "${ROBOTICS_RESULTS_DIR:-./runs/current/results}"

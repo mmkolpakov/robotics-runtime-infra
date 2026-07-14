@@ -1,0 +1,2 @@
+# Replace the three exact identifiers with values from udevadm info.
+SUBSYSTEM=="tty", ENV{ID_BUS}=="usb", ENV{ID_VENDOR_ID}=="1234", ENV{ID_MODEL_ID}=="5678", ENV{ID_SERIAL_SHORT}=="EXACT_SERIAL", SYMLINK+="robotics/controller-alpha", TAG+="systemd"

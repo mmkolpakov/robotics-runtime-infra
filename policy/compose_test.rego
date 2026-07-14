@@ -39,3 +39,33 @@ test_docker_socket_is_denied if {
 	}}}
 	count(violations) == 1
 }
+
+test_kernel_enumeration_serial_path_is_denied if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+		"devices": [{"source": "/dev/ttyUSB0", "target": "/dev/robotics/target"}],
+	}}}
+	count(violations) == 1
+}
+
+test_stable_serial_preflight_path_is_allowed if {
+	violations := compose.deny with input as {"services": {"serial-device-preflight": {
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+		"devices": [{
+			"source": "/dev/serial/by-id/usb-controller",
+			"target": "/dev/robotics/target",
+		}],
+	}}}
+	count(violations) == 0
+}
+
+test_arbitrary_serial_preflight_path_is_denied if {
+	violations := compose.deny with input as {"services": {"serial-device-preflight": {
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+		"devices": [{"source": "/tmp/controller", "target": "/dev/robotics/target"}],
+	}}}
+	count(violations) == 1
+}

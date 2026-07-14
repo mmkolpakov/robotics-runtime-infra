@@ -59,6 +59,20 @@ deny contains message if {
 	message := sprintf("service %q exposes a broad device mapping", [name])
 }
 
+deny contains message if {
+	some name, service in input.services
+	some device in object.get(service, "devices", [])
+	unstable_serial_device(device_source(device))
+	message := sprintf("service %q exposes an unstable serial device path", [name])
+}
+
+deny contains message if {
+	service := input.services["serial-device-preflight"]
+	some device in object.get(service, "devices", [])
+	not stable_serial_device(device_source(device))
+	message := "service \"serial-device-preflight\" requires /dev/serial/by-id or /dev/robotics"
+}
+
 volume_source(volume) := source if {
 	is_object(volume)
 	source := object.get(volume, "source", "")
@@ -85,4 +99,34 @@ broad_device(device) if {
 broad_device(device) if {
 	is_object(device)
 	object.get(device, "source", "") == "/dev"
+}
+
+device_source(device) := source if {
+	is_object(device)
+	source := object.get(device, "source", "")
+}
+
+device_source(device) := source if {
+	is_string(device)
+	source := split(device, ":")[0]
+}
+
+unstable_serial_device(source) if {
+	startswith(source, "/dev/ttyUSB")
+}
+
+unstable_serial_device(source) if {
+	startswith(source, "/dev/ttyACM")
+}
+
+unstable_serial_device(source) if {
+	contains(source, "*")
+}
+
+stable_serial_device(source) if {
+	startswith(source, "/dev/serial/by-id/")
+}
+
+stable_serial_device(source) if {
+	startswith(source, "/dev/robotics/")
 }

@@ -317,6 +317,45 @@ RUN dpkg --install /packages/openssl.deb /packages/ca-certificates.deb \
       /var/log/alternatives.log \
       /var/log/dpkg.log
 
+FROM ubuntu-ca AS time-fixture
+
+ARG UBUNTU_SNAPSHOT
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
+COPY --chmod=0444 config/time/chrony-fixture.conf /etc/chrony/chrony.conf
+
+RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+    && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+      /usr/local/sbin/use-package-snapshots \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+      chrony \
+      linuxptp \
+      systemd \
+      udev \
+    && chronyd -v \
+    && pmc -v \
+    && udevadm --version \
+    && install -d -m 0755 /usr/share/robotics-runtime \
+    && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
+      chrony linuxptp systemd udev \
+      | sort > /usr/share/robotics-runtime/time-fixture-packages.tsv \
+    && rm -rf \
+      /var/cache/ldconfig/aux-cache \
+      /var/lib/apt/lists/* \
+      /var/log/apt/* \
+      /var/log/alternatives.log \
+      /var/log/dpkg.log
+
+RUN truncate --size 0 /etc/machine-id
+
+LABEL org.opencontainers.image.title="Host time qualification fixture" \
+      org.opencontainers.image.description="Ubuntu 24.04 Chrony, LinuxPTP, systemd, and udev validation fixture."
+
+STOPSIGNAL SIGTERM
+CMD ["chronyd", "-d", "-x", "-f", "/etc/chrony/chrony.conf"]
+
 FROM scratch AS geographiclib-datasets
 ADD --checksum=sha256:c46224f8f723dc915d97179f4e1580a98d6c742fe2b82cd8fef0ecaaad13e614 \
   https://sourceforge.net/projects/geographiclib/files/geoids-distrib/egm96-5.tar.bz2/download \

@@ -1,0 +1,65 @@
+---
+x-time-evidence: &time-evidence
+  # yamllint disable-line rule:line-length
+  image: otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+  init: true
+  network_mode: none
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 15s
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=16m
+  healthcheck:
+    disable: true
+  volumes:
+    - type: bind
+      source: "${ROBOTICS_TIME_EVIDENCE_DIR:-./runs/current/evidence}"
+      target: /evidence
+
+services:
+  simulation:
+    profiles: [simulation]
+
+  time-evidence-chrony:
+    <<: *time-evidence
+    profiles: [time-chrony]
+    user: "${ROBOTICS_CHRONY_IDENTITY:?set host _chrony UID:GID}"
+    command: [--config=/etc/robotics/time/otel-chrony.yaml]
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_TIME_EVIDENCE_DIR:-./runs/current/evidence}"
+        target: /evidence
+      - type: bind
+        source: "${ROBOTICS_TIME_SOCKET_DIR:-/run/robotics-time}"
+        target: /run/robotics-time
+      - type: bind
+        source: ./config/time/otel-chrony.yaml
+        target: /etc/robotics/time/otel-chrony.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+
+  time-evidence-ptp:
+    <<: *time-evidence
+    profiles: [time-ptp]
+    user: "${ROBOTICS_CHRONY_IDENTITY:?set host _chrony UID:GID}"
+    command: [--config=/etc/robotics/time/otel-ptp.yaml]
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_TIME_EVIDENCE_DIR:-./runs/current/evidence}"
+        target: /evidence
+      - type: bind
+        source: "${ROBOTICS_PTP_SAMPLE_FILE:-/run/robotics-time/pmc.log}"
+        target: /input/pmc.log
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/time/otel-ptp.yaml
+        target: /etc/robotics/time/otel-ptp.yaml
+        read_only: true
+        bind:
+          create_host_path: false

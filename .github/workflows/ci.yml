@@ -65,10 +65,14 @@ jobs:
           docker buildx bake --print onnxruntime-jetson-source-verification >/dev/null
           docker buildx bake --print rknn >/dev/null
           docker buildx bake --print policy-tooling >/dev/null
+          docker buildx bake --print time-test >/dev/null
       - name: Validate Compose models
         env:
           # Configuration-only fixture; production must use the published image digest.
           ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
+          ROBOTICS_CHRONY_IDENTITY: "100:101"
+          ROBOTICS_PTP_SAMPLE_FILE: ./test/time/pmc.fixture
+          ROBOTICS_SERIAL_DEVICE: /dev/robotics/controller-alpha
         run: |
           docker compose --profile test --profile acceptance config --quiet
           overlays=(
@@ -78,6 +82,7 @@ jobs:
             compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
             compose.nvidia-jetson.yaml
             compose.rknn.yaml
+            compose.serial.yaml compose.time.yaml
           )
           profiles=(
             --profile test --profile acceptance --profile playback
@@ -98,6 +103,7 @@ jobs:
             --profile security-observer --profile security-observer-negative
             --profile stepped --profile simulation
             --profile edge-attach --profile hil
+            --profile serial-preflight --profile time-chrony --profile time-ptp
           )
           for overlay in "${overlays[@]}"; do
             docker compose -f compose.yaml -f "${overlay}" \
@@ -122,6 +128,9 @@ jobs:
         env:
           # Configuration-only fixture; production must use the published image digest.
           ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
+          ROBOTICS_CHRONY_IDENTITY: "100:101"
+          ROBOTICS_PTP_SAMPLE_FILE: ./test/time/pmc.fixture
+          ROBOTICS_SERIAL_DEVICE: /dev/robotics/controller-alpha
         run: |
           mkdir -p tmp
           docker compose --profile test --profile acceptance \
@@ -186,6 +195,17 @@ jobs:
             -f compose.edge-attach.yaml \
             --profile hil \
             config --format json --output tmp/hil-compose.json
+          docker compose \
+            -f compose.yaml \
+            -f compose.serial.yaml \
+            --profile serial-preflight \
+            config --format json --output tmp/serial-compose.json
+          docker compose \
+            -f compose.yaml \
+            -f compose.time.yaml \
+            --profile time-chrony \
+            --profile time-ptp \
+            config --format json --output tmp/time-compose.json
           jq -e '
             (.services | keys | sort) == [
               "edge-attach-data-plane",
@@ -193,7 +213,9 @@ jobs:
             ] and
             .networks["robotics-attach"].external == true and
             .services["edge-attach-observer"].network_mode ==
-              "service:edge-attach-data-plane"
+              "service:edge-attach-data-plane" and
+            (.services["edge-attach-observer"].command |
+              index("--otel-metrics")) == null
           ' tmp/edge-attach-compose.json >/dev/null
           jq -e '
             (.services | keys | sort) == [
@@ -209,6 +231,13 @@ jobs:
               "service:edge-attach-data-plane" and
             .services["hil-observer"].environment.ROS_SECURITY_STRATEGY ==
               "Enforce" and
+            (.services["hil-observer"].command |
+              index("--otel-metrics")) != null and
+            (.services["hil-observer"].command |
+              index("/evidence/hardware-time.otlp.json")) != null and
+            any(.services["hil-observer"].volumes[];
+              .target == "/evidence" and .read_only == true
+            ) and
             .services["hil-observer"].depends_on["hil-permit-preflight"].condition ==
               "service_completed_successfully" and
             .services["hil-observer"].depends_on["hil-runtime-manifest"].condition ==
@@ -220,12 +249,40 @@ jobs:
               .network_mode != "host"
             )
           ' tmp/hil-compose.json >/dev/null
+          jq -e '
+            (.services | keys) == ["serial-device-preflight"] and
+            .services["serial-device-preflight"].network_mode == "none" and
+            .services["serial-device-preflight"].devices == [{
+              "source": "/dev/robotics/controller-alpha",
+              "target": "/dev/robotics/target",
+              "permissions": "r"
+            }]
+          ' tmp/serial-compose.json >/dev/null
+          jq -e '
+            (.services | keys | sort) == [
+              "time-evidence-chrony",
+              "time-evidence-ptp"
+            ] and
+            all(.services[];
+              .network_mode == "none" and
+              .read_only == true and
+              .cap_drop == ["ALL"] and
+              (.cap_add // []) == [] and
+              .security_opt == ["no-new-privileges:true"]
+            )
+          ' tmp/time-compose.json >/dev/null
           test "$(
             policy_deny_count \
               policy/compose.rego compose tmp/edge-attach-compose.json
           )" -eq 0
           test "$(
             policy_deny_count policy/compose.rego compose tmp/hil-compose.json
+          )" -eq 0
+          test "$(
+            policy_deny_count policy/compose.rego compose tmp/serial-compose.json
+          )" -eq 0
+          test "$(
+            policy_deny_count policy/compose.rego compose tmp/time-compose.json
           )" -eq 0
           "${yq[@]}" -o=json test/acceptance/stepped-smoke.yaml \
             > tmp/stepped-smoke.json
@@ -399,6 +456,9 @@ jobs:
         env:
           # Configuration-only fixture; production must use the published image digest.
           ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
+          ROBOTICS_CHRONY_IDENTITY: "100:101"
+          ROBOTICS_PTP_SAMPLE_FILE: ./test/time/pmc.fixture
+          ROBOTICS_SERIAL_DEVICE: /dev/robotics/controller-alpha
         run: |
           profiles=(
             --profile test --profile acceptance --profile playback
@@ -419,6 +479,7 @@ jobs:
             --profile security-observer --profile security-observer-negative
             --profile stepped --profile simulation
             --profile edge-attach --profile hil
+            --profile serial-preflight --profile time-chrony --profile time-ptp
           )
           overlays=(
             compose.playback.yaml compose.record.yaml compose.evidence.yaml
@@ -427,6 +488,7 @@ jobs:
             compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
             compose.nvidia-jetson.yaml
             compose.rknn.yaml
+            compose.serial.yaml compose.time.yaml
           )
           docker compose "${profiles[@]}" config --quiet
           for overlay in "${overlays[@]}"; do
@@ -458,6 +520,7 @@ jobs:
       EVIDENCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/evidence-sink:ci
       # yamllint disable-line rule:line-length
       PERMIT_PREFLIGHT_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/permit-preflight:ci
+      TIME_FIXTURE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/time-fixture:ci
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -489,6 +552,194 @@ jobs:
           docker run --rm "${OBSERVER_IMAGE}" robotics-acceptance --version
           docker run --rm "${EVIDENCE_IMAGE}" versions
           docker run --rm "${PERMIT_PREFLIGHT_IMAGE}" versions
+          docker run --rm --entrypoint cat "${TIME_FIXTURE_IMAGE}" \
+            /usr/share/robotics-runtime/time-fixture-packages.tsv \
+            > "${RUNNER_TEMP}/time-fixture-packages.tsv"
+          grep -Fxq $'chrony\t4.5-1ubuntu4.2\tamd64' \
+            "${RUNNER_TEMP}/time-fixture-packages.tsv"
+          grep -Fxq $'linuxptp\t4.0-1ubuntu1.1\tamd64' \
+            "${RUNNER_TEMP}/time-fixture-packages.tsv"
+          grep -Fxq $'systemd\t255.4-1ubuntu8.16\tamd64' \
+            "${RUNNER_TEMP}/time-fixture-packages.tsv"
+          grep -Fxq $'udev\t255.4-1ubuntu8.16\tamd64' \
+            "${RUNNER_TEMP}/time-fixture-packages.tsv"
+          docker run --rm --entrypoint test "${TIME_FIXTURE_IMAGE}" \
+            ! -s /etc/machine-id
+      - name: Verify host time evidence and stable serial mapping
+        run: |
+          otel_repository=otel/opentelemetry-collector-contrib:0.153.0
+          otel_digest=sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+          otel_image="${otel_repository}@${otel_digest}"
+          work="${RUNNER_TEMP}/host-preflight"
+          socket_dir="${work}/socket"
+          unsync_socket_dir="${work}/unsync-socket"
+          chrony_evidence="${work}/chrony"
+          chrony_unsync_evidence="${work}/chrony-unsync"
+          ptp_evidence="${work}/ptp"
+          ptp_unsync_evidence="${work}/ptp-unsync"
+          serial_device=/dev/robotics/controller-ci
+          sudo rm -rf "${work}"
+          mkdir -p \
+            "${socket_dir}" "${unsync_socket_dir}" \
+            "${chrony_evidence}" "${chrony_unsync_evidence}" \
+            "${ptp_evidence}" "${ptp_unsync_evidence}"
+          sudo chown 100:101 \
+            "${socket_dir}" "${unsync_socket_dir}" \
+            "${chrony_evidence}" "${chrony_unsync_evidence}" \
+            "${ptp_evidence}" "${ptp_unsync_evidence}"
+          cleanup() {
+            docker rm --force \
+              host-chronyd host-chrony-otel host-ptp-otel \
+              host-chronyd-unsync host-chrony-otel-unsync \
+              host-ptp-otel-unsync \
+              >/dev/null 2>&1 || true
+            sudo rm -f "${serial_device}"
+            sudo rmdir /dev/robotics >/dev/null 2>&1 || true
+            sudo rm -rf "${work}"
+          }
+          trap cleanup EXIT
+
+          docker run --rm \
+            --volume "${PWD}:/project:ro" \
+            --entrypoint bash "${TIME_FIXTURE_IMAGE}" -euo pipefail -c '
+              udevadm verify /project/config/udev/99-robotics-serial.rules
+              systemd-analyze verify \
+                /project/systemd/robotics-ptp-sample.service \
+                /project/systemd/robotics-ptp-sample.timer
+              systemd-tmpfiles --create \
+                /project/tmpfiles.d/robotics-time.conf
+              test -f /run/robotics-time/pmc.log
+            '
+          docker run --rm \
+            --volume "${PWD}/config/time:/config:ro" \
+            "${otel_image}" validate --config=/config/otel-ptp.yaml
+
+          docker run --detach --name host-chronyd \
+            --network none \
+            --volume "${socket_dir}:/run/robotics-time" \
+            "${TIME_FIXTURE_IMAGE}" >/dev/null
+          docker run --detach --name host-chrony-otel \
+            --network none \
+            --user 100:101 \
+            --volume "${socket_dir}:/run/robotics-time" \
+            --volume "${chrony_evidence}:/evidence" \
+            --volume "${PWD}/config/time/otel-chrony.yaml:/config.yaml:ro" \
+            "${otel_image}" --config=/config.yaml >/dev/null
+          for _ in {1..30}; do
+            test -s "${chrony_evidence}/hardware-time.otlp.json" && break
+            sleep 1
+          done
+          test -s "${chrony_evidence}/hardware-time.otlp.json"
+          docker stop --time 10 host-chrony-otel host-chronyd >/dev/null
+          docker logs host-chrony-otel > "${work}/chrony-collector.log" 2>&1
+          ! grep -Eiq 'deprecated|(^|[[:space:]])error([[:space:]]|$)' \
+            "${work}/chrony-collector.log"
+
+          docker run --detach --name host-ptp-otel \
+            --network none \
+            --user 100:101 \
+            --volume "${ptp_evidence}:/evidence" \
+            --volume "${PWD}/test/time/pmc.fixture:/input/pmc.log:ro" \
+            --volume "${PWD}/config/time/otel-ptp.yaml:/config.yaml:ro" \
+            "${otel_image}" --config=/config.yaml >/dev/null
+          for _ in {1..30}; do
+            test -s "${ptp_evidence}/hardware-time.otlp.json" && break
+            sleep 1
+          done
+          test -s "${ptp_evidence}/hardware-time.otlp.json"
+          docker stop --time 10 host-ptp-otel >/dev/null
+          docker logs host-ptp-otel > "${work}/ptp-collector.log" 2>&1
+          ! grep -Eiq 'deprecated|(^|[[:space:]])error([[:space:]]|$)' \
+            "${work}/ptp-collector.log"
+
+          docker run --detach --name host-chronyd-unsync \
+            --network none \
+            --volume "${unsync_socket_dir}:/run/robotics-time" \
+            --volume \
+              "${PWD}/config/time/chrony-unsynchronized-fixture.conf:/etc/chrony/chrony.conf:ro" \
+            "${TIME_FIXTURE_IMAGE}" >/dev/null
+          docker run --detach --name host-chrony-otel-unsync \
+            --network none \
+            --user 100:101 \
+            --volume "${unsync_socket_dir}:/run/robotics-time" \
+            --volume "${chrony_unsync_evidence}:/evidence" \
+            --volume "${PWD}/config/time/otel-chrony.yaml:/config.yaml:ro" \
+            "${otel_image}" --config=/config.yaml >/dev/null
+          for _ in {1..30}; do
+            test -s \
+              "${chrony_unsync_evidence}/hardware-time.otlp.json" && break
+            sleep 1
+          done
+          test -s "${chrony_unsync_evidence}/hardware-time.otlp.json"
+          docker stop --time 10 \
+            host-chrony-otel-unsync host-chronyd-unsync >/dev/null
+
+          docker run --detach --name host-ptp-otel-unsync \
+            --network none \
+            --user 100:101 \
+            --volume "${ptp_unsync_evidence}:/evidence" \
+            --volume \
+              "${PWD}/test/time/pmc-unsynchronized.fixture:/input/pmc.log:ro" \
+            --volume "${PWD}/config/time/otel-ptp.yaml:/config.yaml:ro" \
+            "${otel_image}" --config=/config.yaml >/dev/null
+          sleep 2
+          docker stop --time 10 host-ptp-otel-unsync >/dev/null
+          test -s "${ptp_unsync_evidence}/hardware-time.otlp.json"
+
+          verify_timing() {
+            local protocol="$1"
+            local evidence="$2"
+            local expected="$3"
+            docker run --rm --interactive \
+              --volume "${evidence}:/metrics.otlp.json:ro" \
+              --entrypoint /opt/venv/bin/python \
+              "${OBSERVER_IMAGE}" - "${protocol}" "${expected}" <<'PY'
+          import sys
+
+          from robotics_acceptance_harness.hardware_timing import evaluate_hardware_timing
+          from robotics_acceptance_harness.otel import load_otlp_json_metrics
+
+          protocol = sys.argv[1]
+          expected = sys.argv[2] == "true"
+          samples = load_otlp_json_metrics("/metrics.otlp.json")
+          result = evaluate_hardware_timing(
+              {
+                  "clock_sync_protocol": protocol,
+                  "max_clock_offset_ms": 5,
+                  "max_clock_drift_ppm": 20,
+                  "max_message_age_ms": 1000,
+              },
+              samples,
+          )
+          assert result.sample_count >= 1
+          assert result.monotonic is expected
+          assert result.within_policy is expected
+          PY
+          }
+          verify_timing \
+            chrony_ntp "${chrony_evidence}/hardware-time.otlp.json" true
+          verify_timing ptp "${ptp_evidence}/hardware-time.otlp.json" true
+          verify_timing \
+            chrony_ntp \
+            "${chrony_unsync_evidence}/hardware-time.otlp.json" false
+          docker run --rm --interactive \
+            --volume \
+              "${ptp_unsync_evidence}/hardware-time.otlp.json:/metrics.otlp.json:ro" \
+            --entrypoint /opt/venv/bin/python \
+            "${OBSERVER_IMAGE}" - <<'PY'
+          from robotics_acceptance_harness.otel import load_otlp_json_metrics
+
+          assert load_otlp_json_metrics("/metrics.otlp.json") == ()
+          PY
+
+          sudo install -d -m 0755 /dev/robotics
+          sudo mknod "${serial_device}" c 1 3
+          ROBOTICS_SERIAL_DEVICE="${serial_device}" \
+            docker compose \
+              -f compose.yaml \
+              -f compose.serial.yaml \
+              --profile serial-preflight \
+              run --rm --no-deps serial-device-preflight
       - name: Verify Cosign blob boundary and tamper rejection
         env:
           COSIGN_PASSWORD: test-only
@@ -893,7 +1144,7 @@ jobs:
             "${SIMULATION_IMAGE}" "${EDGE_IMAGE}" "${SENSOR_IMAGE}" \
             "${INFERENCE_CPU_IMAGE}" "${OBSERVER_IMAGE}" \
             "${BENCHMARK_IMAGE}" "${EVIDENCE_IMAGE}" \
-            "${PERMIT_PREFLIGHT_IMAGE}"; do
+            "${PERMIT_PREFLIGHT_IMAGE}" "${TIME_FIXTURE_IMAGE}"; do
             safe_name="$(tr '/:' '__' <<<"${image}")"
             if ! docker image inspect "${image}" \
               > "artifacts/runtime/${safe_name}.json"; then
@@ -922,7 +1173,7 @@ jobs:
             "${SIMULATION_IMAGE}" "${EDGE_IMAGE}" "${SENSOR_IMAGE}" \
             "${INFERENCE_CPU_IMAGE}" "${OBSERVER_IMAGE}" \
             "${BENCHMARK_IMAGE}" "${EVIDENCE_IMAGE}" \
-            "${PERMIT_PREFLIGHT_IMAGE}"; do
+            "${PERMIT_PREFLIGHT_IMAGE}" "${TIME_FIXTURE_IMAGE}"; do
             "${trivy[@]}" \
               --skip-db-update --ignore-unfixed \
               --severity HIGH,CRITICAL --exit-code 1 "${image}"

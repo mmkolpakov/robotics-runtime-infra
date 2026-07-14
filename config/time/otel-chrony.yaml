@@ -1,0 +1,89 @@
+---
+receivers:
+  chrony:
+    endpoint: unix:///run/robotics-time/chronyd.sock
+    file_mount_path: /run/robotics-time
+    timeout: 5s
+    collection_interval: 1s
+    initial_delay: 100ms
+    metrics:
+      ntp.frequency.offset:
+        enabled: true
+
+processors:
+  resource/clock:
+    attributes:
+      - key: robotics.clock.sync_protocol
+        action: upsert
+        value: chrony_ntp
+      - key: robotics.clock.source
+        action: upsert
+        value: chronyc_tracking
+  metrics_transform/clock:
+    transforms:
+      - include: ntp.time.correction
+        action: insert
+        new_name: robotics.hardware.clock.offset
+        operations:
+          - action: experimental_scale_value
+            experimental_scale: 1000
+      - include: ntp.frequency.offset
+        action: insert
+        new_name: robotics.hardware.clock.drift
+      - include: ntp.time.correction
+        action: insert
+        new_name: robotics.hardware.message.age
+      - include: ntp.time.correction
+        action: insert
+        new_name: robotics.hardware.clock.monotonic
+  transform/clock:
+    error_mode: propagate
+    metric_statements:
+      - context: metric
+        statements:
+          - set(metric.unit, "ms") where metric.name == "robotics.hardware.clock.offset"
+          - set(metric.unit, "ppm") where metric.name == "robotics.hardware.clock.drift"
+          - set(metric.unit, "ms") where metric.name == "robotics.hardware.message.age"
+          - set(metric.unit, "1") where metric.name == "robotics.hardware.clock.monotonic"
+      - context: datapoint
+        statements:
+          - >-
+            set(datapoint.value_double, 1.0) where
+            metric.name == "robotics.hardware.clock.monotonic" and
+            datapoint.attributes["leap.status"] != "unsynchronised"
+          - >-
+            set(datapoint.value_double, 0.0) where
+            metric.name == "robotics.hardware.clock.monotonic" and
+            datapoint.attributes["leap.status"] == "unsynchronised"
+          - >-
+            set(datapoint.value_double,
+            Double(UnixNano(Now()) - UnixNano(datapoint.time)) / 1000000.0) where
+            metric.name == "robotics.hardware.message.age"
+  filter/contract:
+    error_mode: propagate
+    metrics:
+      metric:
+        - >-
+          not IsMatch(name,
+          "^robotics\\.hardware\\.(clock\\.(offset|drift|monotonic)|message\\.age)$")
+
+exporters:
+  file/contract:
+    path: /evidence/hardware-time.otlp.json
+    format: json
+    append: false
+    flush_interval: 100ms
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    metrics:
+      receivers: [chrony]
+      processors:
+        - resource/clock
+        - metrics_transform/clock
+        - transform/clock
+        - filter/contract
+      exporters: [file/contract]

@@ -145,7 +145,7 @@ services:
 
   acceptance-observer:
     <<: *runtime
-    image: "${OBSERVER_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/acceptance-observer:0.5.0}"
+    image: "${OBSERVER_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/acceptance-observer:0.6.0}"
     build:
       context: .
       dockerfile: Dockerfile
