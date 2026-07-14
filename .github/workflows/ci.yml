@@ -23,11 +23,7 @@ env:
   # yamllint disable-line rule:line-length
   BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a
   ROBOTICS_RKNN_RENDER_GID: "65534"
-  # yamllint disable-line rule:line-length
-  CONFTEST_IMAGE: openpolicyagent/conftest:v0.68.2@sha256:5fd81e332d7e4bc01daf3ef35371800a9a9720a30c0c37a78de0c5fbe4b6d622
   HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
-  # yamllint disable-line rule:line-length
-  OPA_IMAGE: openpolicyagent/opa:1.17.0-static@sha256:94830e998dd9df8e49a61826f1ad03d8a68d3ecd52f105e06a2adb93b459ad46
   # yamllint disable-line rule:line-length
   ORAS_IMAGE: ghcr.io/oras-project/oras:v1.3.3@sha256:a4c54befd87d0366e0ba3ac3a9536a5288c8a3735acd3b635cdace59a2c559c8
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
@@ -68,6 +64,7 @@ jobs:
           docker buildx bake --print nvidia-jetson >/dev/null
           docker buildx bake --print onnxruntime-jetson-source-verification >/dev/null
           docker buildx bake --print rknn >/dev/null
+          docker buildx bake --print policy-tooling >/dev/null
       - name: Validate Compose models
         run: |
           docker compose --profile test --profile acceptance config --quiet
@@ -106,41 +103,91 @@ jobs:
             -f compose.evidence.yaml \
             -f compose.evidence.test.yaml \
             "${profiles[@]}" config --quiet
+      - name: Build the pinned policy engine
+        env:
+          REGISTRY: local
+          VERSION: ci
+        run: |
+          docker buildx bake policy-tooling \
+            --load \
+            --set '*.platform=linux/amd64'
+          docker run --rm \
+            local/robotics-runtime-infra/policy-tooling:ci version
       - name: Enforce policy as code
         run: |
           mkdir -p tmp
           docker compose --profile test --profile acceptance \
             config --format json --output tmp/compose.json
-          conftest=(
-            docker run --rm --volume "${PWD}:/project:ro" --workdir /project
-            "${CONFTEST_IMAGE}"
-          )
           opa=(
             docker run --rm --volume "${PWD}:/project:ro" --workdir /project
-            "${OPA_IMAGE}"
+            local/robotics-runtime-infra/policy-tooling:ci
           )
+          yq=(
+            docker run --rm --volume "${PWD}:/project:ro" --workdir /project
+            --entrypoint /yq
+            local/robotics-runtime-infra/policy-tooling:ci
+          )
+          policy_deny_count() {
+            local policy="$1"
+            local package="$2"
+            local input="$3"
+            "${opa[@]}" eval \
+              --format raw \
+              --data "${policy}" \
+              --input "${input}" \
+              "count(data.${package}.deny)"
+          }
           "${opa[@]}" fmt --list --fail policy
-          "${opa[@]}" test policy test/policy/model_artifact --fail-on-empty
-          "${conftest[@]}" verify --policy policy
-          "${conftest[@]}" test --policy policy/compose.rego \
-            --namespace compose tmp/compose.json
-          "${conftest[@]}" test --policy policy/scenario.rego \
-            --namespace scenario test/acceptance/stepped-smoke.yaml
-          if "${conftest[@]}" test --policy policy/compose.rego \
-            --namespace compose test/policy/unsafe-compose.yaml; then
-            printf 'unsafe Compose fixture was accepted\n' >&2
-            exit 1
-          fi
-          if "${conftest[@]}" test --policy policy/scenario.rego \
-            --namespace scenario test/policy/mock-physical-verdict.yaml; then
-            printf 'mock physical verdict fixture was accepted\n' >&2
-            exit 1
-          fi
+          "${opa[@]}" test \
+            policy \
+            test/policy/model_artifact \
+            test/policy/execution \
+            --fail-on-empty
+          jq '.execution_valid' test/policy/execution/valid.json \
+            > tmp/execution-valid-input.json
+          jq '.execution_valid.permit' test/policy/execution/valid.json \
+            > tmp/execution-permit.json
+          "${opa[@]}" eval \
+            --fail \
+            --format raw \
+            --data policy/execution.rego \
+            --input tmp/execution-valid-input.json \
+            'data.execution.verification with time.now_ns as time.parse_rfc3339_ns("2026-07-14T12:00:00Z")' \
+            > tmp/execution-verification.json
+          uv run --isolated --with "${ROBOTICS_CONTRACTS_REQUIREMENT}" \
+            python - \
+            tmp/execution-permit.json \
+            tmp/execution-verification.json <<'PY'
+          import json
+          import sys
+
+          from robotics_runtime_contracts import validate_document
+
+          for path in sys.argv[1:]:
+              with open(path, encoding="utf-8") as source:
+                  validate_document(json.load(source))
+          PY
+          test "$(policy_deny_count policy/compose.rego compose tmp/compose.json)" -eq 0
+          "${yq[@]}" -o=json test/acceptance/stepped-smoke.yaml \
+            > tmp/stepped-smoke.json
+          test "$(policy_deny_count policy/scenario.rego scenario tmp/stepped-smoke.json)" -eq 0
+          "${yq[@]}" -o=json test/policy/unsafe-compose.yaml \
+            > tmp/unsafe-compose.json
+          test "$(policy_deny_count policy/compose.rego compose tmp/unsafe-compose.json)" -gt 0
+          "${yq[@]}" -o=json test/policy/mock-physical-verdict.yaml \
+            > tmp/mock-physical-verdict.json
+          test "$(policy_deny_count policy/scenario.rego scenario tmp/mock-physical-verdict.json)" -gt 0
           for workflow in \
             .github/workflows/hardware-qualification.yml \
             .github/workflows/rk3588-qualification.yml; do
-            "${conftest[@]}" test --policy policy/hardware-workflow.rego \
-              --namespace hardware_workflow "${workflow}"
+            workflow_json="tmp/$(basename "${workflow}" .yml).json"
+            "${yq[@]}" -o=json "${workflow}" > "${workflow_json}"
+            test "$(
+              policy_deny_count \
+                policy/hardware-workflow.rego \
+                hardware_workflow \
+                "${workflow_json}"
+            )" -eq 0
           done
           jq '.model_artifact_valid' \
             test/policy/model_artifact/valid.json \
@@ -164,8 +211,12 @@ jobs:
           for candidate in \
             tmp/model-artifact-valid.json \
             tmp/model-artifact-tensorrt.json; do
-            "${conftest[@]}" test --policy policy/model-artifact.rego \
-              --namespace model_artifact "${candidate}"
+            test "$(
+              policy_deny_count \
+                policy/model-artifact.rego \
+                model_artifact \
+                "${candidate}"
+            )" -eq 0
           done
           for fixture in \
             tampered_target tampered_report wrong_hardware failed_parity; do
@@ -176,11 +227,12 @@ jobs:
               test/policy/model_artifact/valid.json \
               "test/policy/model_artifact/${fixture}.json" \
               > "${candidate}"
-            if "${conftest[@]}" test --policy policy/model-artifact.rego \
-              --namespace model_artifact "${candidate}"; then
-              printf 'model artifact fixture %s was accepted\n' "${fixture}" >&2
-              exit 1
-            fi
+            test "$(
+              policy_deny_count \
+                policy/model-artifact.rego \
+                model_artifact \
+                "${candidate}"
+            )" -gt 0
           done
           jq -s '
             .[0].model_artifact_tensorrt *
@@ -189,12 +241,12 @@ jobs:
             test/policy/model_artifact/tensorrt.json \
             test/policy/model_artifact/wrong_compute_capability.json \
             > tmp/model-artifact-wrong-compute-capability.json
-          if "${conftest[@]}" test --policy policy/model-artifact.rego \
-            --namespace model_artifact \
-            tmp/model-artifact-wrong-compute-capability.json; then
-            printf 'wrong TensorRT compute capability was accepted\n' >&2
-            exit 1
-          fi
+          test "$(
+            policy_deny_count \
+              policy/model-artifact.rego \
+              model_artifact \
+              tmp/model-artifact-wrong-compute-capability.json
+          )" -gt 0
       - name: Verify OCI model artifact linkage
         run: |
           rm -rf tmp/model-artifact-layout

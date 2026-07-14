@@ -1,0 +1,156 @@
+{
+  "execution_valid": {
+    "permit": {
+      "schema_version": "execution-permit.v2",
+      "predicate_type": "https://robotics-runtime-contracts.dev/attestations/execution-permit/v2",
+      "permit_id": "org.example.hil-permit-001",
+      "scenario_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "trust_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "target": {
+        "environment": "hil",
+        "target_id": "controller-alpha",
+        "identity_kind": "mavlink_system_component",
+        "identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "allowed_physical_effect": "none",
+      "hardware_scope": [
+        "compute",
+        "controller"
+      ],
+      "issued_at": "2026-07-14T11:55:00Z",
+      "expires_at": "2026-07-14T12:10:00Z",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "operator_id": "operator@example.org",
+      "approver_id": "safety@example.org",
+      "interlock_check": {
+        "reference": "s3://robotics-evidence/interlocks/controller-alpha.json",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "status": "passed",
+        "checked_at": "2026-07-14T11:54:00Z"
+      }
+    },
+    "statement": {
+      "_type": "https://in-toto.io/Statement/v1",
+      "subject": [
+        {
+          "name": "robotics-scenario",
+          "digest": {
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        },
+        {
+          "name": "robotics-runtime-image",
+          "digest": {
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      ],
+      "predicateType": "https://robotics-runtime-contracts.dev/attestations/execution-permit/v2",
+      "predicate": {
+        "schema_version": "execution-permit.v2",
+        "predicate_type": "https://robotics-runtime-contracts.dev/attestations/execution-permit/v2",
+        "permit_id": "org.example.hil-permit-001",
+        "scenario_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trust_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "target": {
+          "environment": "hil",
+          "target_id": "controller-alpha",
+          "identity_kind": "mavlink_system_component",
+          "identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "allowed_physical_effect": "none",
+        "hardware_scope": [
+          "compute",
+          "controller"
+        ],
+        "issued_at": "2026-07-14T11:55:00Z",
+        "expires_at": "2026-07-14T12:10:00Z",
+        "nonce": "0123456789abcdef0123456789abcdef",
+        "operator_id": "operator@example.org",
+        "approver_id": "safety@example.org",
+        "interlock_check": {
+          "reference": "s3://robotics-evidence/interlocks/controller-alpha.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "status": "passed",
+          "checked_at": "2026-07-14T11:54:00Z"
+        }
+      }
+    },
+    "trust_policy": {
+      "schema_version": "execution-trust-policy.v1",
+      "policy_id": "org.example.robotics-lab",
+      "max_permit_lifetime_seconds": 1800,
+      "principals": [
+        {
+          "role": "operator",
+          "identity": "operator@example.org",
+          "issuer": "https://token.actions.githubusercontent.com"
+        },
+        {
+          "role": "approver",
+          "identity": "safety@example.org",
+          "issuer": "https://token.actions.githubusercontent.com"
+        }
+      ],
+      "targets": [
+        {
+          "target_id": "controller-alpha",
+          "identity_kind": "mavlink_system_component",
+          "identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "environments": [
+            "hil"
+          ]
+        }
+      ]
+    },
+    "request": {
+      "scenario_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "target": {
+        "environment": "hil",
+        "target_id": "controller-alpha",
+        "identity_kind": "mavlink_system_component",
+        "identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "allowed_physical_effect": "none",
+      "hardware_scope": [
+        "compute",
+        "controller"
+      ],
+      "interlock_check": {
+        "reference": "s3://robotics-evidence/interlocks/controller-alpha.json",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "status": "passed",
+        "checked_at": "2026-07-14T11:54:00Z"
+      }
+    },
+    "artifacts": {
+      "permit_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "statement_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "policy_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+      "trust_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "cosign_version": "3.1.1",
+      "cosign_image_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "verified_signers": [
+      {
+        "role": "operator",
+        "identity": "operator@example.org",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "bundle_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "integrated_time": 1784030250,
+        "transparency_log_verified": true
+      },
+      {
+        "role": "approver",
+        "identity": "safety@example.org",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "bundle_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+        "integrated_time": 1784030280,
+        "transparency_log_verified": true
+      }
+    ]
+  }
+}

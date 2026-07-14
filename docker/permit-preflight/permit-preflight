@@ -7,8 +7,57 @@ usage:
   permit-preflight versions
   permit-preflight verify-keyless-bundle STATEMENT BUNDLE TRUSTED_ROOT IDENTITY ISSUER
   permit-preflight verify-offline-test-bundle STATEMENT BUNDLE PUBLIC_KEY
+  permit-preflight authorize PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUSTED_ROOT TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST
 EOF
   exit 64
+}
+
+sha256_file() {
+  sha256sum "$1" | awk '{print $1}'
+}
+
+validate_contract() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+from robotics_runtime_contracts import validate_document
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    validate_document(json.load(source))
+PY
+}
+
+bundle_integrated_time() {
+  bundle="$1"
+  count="$(yq -r '.verificationMaterial.tlogEntries | length' "${bundle}")"
+  test "${count}" = "1" || {
+    printf 'Sigstore bundle must contain exactly one transparency-log entry: %s\n' \
+      "${bundle}" >&2
+    exit 65
+  }
+  integrated_time="$(
+    yq -r '.verificationMaterial.tlogEntries[0].integratedTime' "${bundle}"
+  )"
+  case "${integrated_time}" in
+    '' | *[!0-9]*)
+      printf 'Sigstore bundle has no numeric integrated time: %s\n' \
+        "${bundle}" >&2
+      exit 65
+      ;;
+  esac
+  printf '%s\n' "${integrated_time}"
+}
+
+trusted_issuer() {
+  role="$1"
+  identity="$2"
+  trust_policy="$3"
+  ROLE="${role}" IDENTITY="${identity}" yq -r '
+    [.principals[] |
+      select(.role == strenv(ROLE) and .identity == strenv(IDENTITY))] |
+    if length == 1 then .[0].issuer else "" end
+  ' "${trust_policy}"
 }
 
 require_file() {
@@ -22,7 +71,11 @@ command_name="${1:-}"
 case "${command_name}" in
   versions)
     test "$#" -eq 1 || usage
-    exec cosign version
+    cosign version
+    opa version
+    yq --version
+    exec python3 -c \
+      'from importlib.metadata import version; print("robotics-runtime-contracts", version("robotics-runtime-contracts"))'
     ;;
   verify-keyless-bundle)
     test "$#" -eq 6 || usage
@@ -42,6 +95,197 @@ case "${command_name}" in
       --certificate-identity "${identity}" \
       --certificate-oidc-issuer "${issuer}" \
       "${statement}"
+    ;;
+  authorize)
+    test "$#" -eq 11 || usage
+    permit="$2"
+    statement="$3"
+    operator_bundle="$4"
+    approver_bundle="$5"
+    trusted_root="$6"
+    trust_policy="$7"
+    request="$8"
+    nonce_dir="$9"
+    output="${10}"
+    cosign_image_digest="${11}"
+    execution_policy=/usr/share/robotics-runtime/policy/execution.rego
+
+    for required in \
+      "${permit}" \
+      "${statement}" \
+      "${operator_bundle}" \
+      "${approver_bundle}" \
+      "${trusted_root}" \
+      "${trust_policy}" \
+      "${request}" \
+      "${execution_policy}"; do
+      require_file "${required}"
+    done
+    case "${cosign_image_digest}" in
+      sha256:????????????????????????????????????????????????????????????????)
+        ;;
+      *)
+        printf 'Cosign image digest must be an immutable sha256 digest\n' >&2
+        exit 65
+        ;;
+    esac
+    test ! -e "${output}" && test ! -L "${output}" || {
+      printf 'authorization output already exists: %s\n' "${output}" >&2
+      exit 73
+    }
+    output_dir="$(dirname "${output}")"
+    test -d "${output_dir}" && test -w "${output_dir}" || {
+      printf 'authorization output directory is not writable: %s\n' \
+        "${output_dir}" >&2
+      exit 73
+    }
+    test -d "${nonce_dir}" && test -w "${nonce_dir}" && test ! -L "${nonce_dir}" || {
+      printf 'nonce store must be an existing writable non-symlink directory: %s\n' \
+        "${nonce_dir}" >&2
+      exit 73
+    }
+
+    work="$(mktemp -d)"
+    output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
+    trap 'rm -rf "${work}"; rm -f "${output_tmp}"' EXIT HUP INT TERM
+
+    validate_contract "${permit}"
+    yq -o=json -I=0 '.predicate' "${statement}" > "${work}/predicate.json"
+    validate_contract "${work}/predicate.json"
+    yq eval-all --exit-status \
+      'select(fileIndex == 0) == select(fileIndex == 1)' \
+      "${permit}" "${work}/predicate.json" >/dev/null || {
+      printf 'statement predicate does not equal the standalone permit\n' >&2
+      exit 65
+    }
+
+    operator_identity="$(yq -r '.operator_id' "${permit}")"
+    approver_identity="$(yq -r '.approver_id' "${permit}")"
+    operator_issuer="$(
+      trusted_issuer operator "${operator_identity}" "${trust_policy}"
+    )"
+    approver_issuer="$(
+      trusted_issuer approver "${approver_identity}" "${trust_policy}"
+    )"
+    test -n "${operator_issuer}" && test -n "${approver_issuer}" || {
+      printf 'permit roles do not resolve to unique trusted principals\n' >&2
+      exit 65
+    }
+
+    cosign verify-blob \
+      --bundle "${operator_bundle}" \
+      --trusted-root "${trusted_root}" \
+      --certificate-identity "${operator_identity}" \
+      --certificate-oidc-issuer "${operator_issuer}" \
+      "${statement}"
+    cosign verify-blob \
+      --bundle "${approver_bundle}" \
+      --trusted-root "${trusted_root}" \
+      --certificate-identity "${approver_identity}" \
+      --certificate-oidc-issuer "${approver_issuer}" \
+      "${statement}"
+
+    operator_integrated_time="$(bundle_integrated_time "${operator_bundle}")"
+    approver_integrated_time="$(bundle_integrated_time "${approver_bundle}")"
+    permit_sha256="$(sha256_file "${permit}")"
+    statement_sha256="$(sha256_file "${statement}")"
+    policy_sha256="$(sha256_file "${execution_policy}")"
+    trust_policy_sha256="$(sha256_file "${trust_policy}")"
+    operator_bundle_sha256="$(sha256_file "${operator_bundle}")"
+    approver_bundle_sha256="$(sha256_file "${approver_bundle}")"
+    cosign_version="$(
+      cosign version --json | yq -r '.gitVersion | sub("^v"; "")'
+    )"
+
+    export \
+      APPROVER_BUNDLE_SHA256="${approver_bundle_sha256}" \
+      APPROVER_IDENTITY="${approver_identity}" \
+      APPROVER_INTEGRATED_TIME="${approver_integrated_time}" \
+      APPROVER_ISSUER="${approver_issuer}" \
+      COSIGN_IMAGE_DIGEST="${cosign_image_digest}" \
+      COSIGN_VERSION="${cosign_version}" \
+      OPERATOR_BUNDLE_SHA256="${operator_bundle_sha256}" \
+      OPERATOR_IDENTITY="${operator_identity}" \
+      OPERATOR_INTEGRATED_TIME="${operator_integrated_time}" \
+      OPERATOR_ISSUER="${operator_issuer}" \
+      PERMIT_FILE="${permit}" \
+      PERMIT_SHA256="${permit_sha256}" \
+      POLICY_SHA256="${policy_sha256}" \
+      REQUEST_FILE="${request}" \
+      STATEMENT_FILE="${statement}" \
+      STATEMENT_SHA256="${statement_sha256}" \
+      TRUST_POLICY_FILE="${trust_policy}" \
+      TRUST_POLICY_SHA256="${trust_policy_sha256}"
+    yq -n -o=json -I=0 '
+      {
+        "permit": load(strenv(PERMIT_FILE)),
+        "statement": load(strenv(STATEMENT_FILE)),
+        "trust_policy": load(strenv(TRUST_POLICY_FILE)),
+        "request": load(strenv(REQUEST_FILE)),
+        "artifacts": {
+          "permit_sha256": strenv(PERMIT_SHA256),
+          "statement_sha256": strenv(STATEMENT_SHA256),
+          "policy_sha256": strenv(POLICY_SHA256),
+          "trust_policy_sha256": strenv(TRUST_POLICY_SHA256),
+          "cosign_version": strenv(COSIGN_VERSION),
+          "cosign_image_digest": strenv(COSIGN_IMAGE_DIGEST)
+        },
+        "verified_signers": [
+          {
+            "role": "operator",
+            "identity": strenv(OPERATOR_IDENTITY),
+            "issuer": strenv(OPERATOR_ISSUER),
+            "bundle_sha256": strenv(OPERATOR_BUNDLE_SHA256),
+            "integrated_time": env(OPERATOR_INTEGRATED_TIME),
+            "transparency_log_verified": true
+          },
+          {
+            "role": "approver",
+            "identity": strenv(APPROVER_IDENTITY),
+            "issuer": strenv(APPROVER_ISSUER),
+            "bundle_sha256": strenv(APPROVER_BUNDLE_SHA256),
+            "integrated_time": env(APPROVER_INTEGRATED_TIME),
+            "transparency_log_verified": true
+          }
+        ]
+      }
+    ' > "${work}/input.json"
+
+    opa eval \
+      --fail \
+      --format raw \
+      --data "${execution_policy}" \
+      --input "${work}/input.json" \
+      data.execution.verification > "${output_tmp}"
+    test -s "${output_tmp}" || {
+      printf 'execution policy did not produce a verification record\n' >&2
+      exit 65
+    }
+    validate_contract "${output_tmp}"
+
+    nonce="$(yq -r '.nonce' "${permit}")"
+    case "${nonce}" in
+      '' | *[!a-f0-9]*)
+        printf 'permit nonce is not a lowercase hexadecimal value\n' >&2
+        exit 65
+        ;;
+    esac
+    nonce_length="${#nonce}"
+    test "${nonce_length}" -ge 32 && test "${nonce_length}" -le 128 || {
+      printf 'permit nonce length is outside the contract bounds\n' >&2
+      exit 65
+    }
+    umask 077
+    mkdir "${nonce_dir}/${nonce}" || {
+      printf 'permit nonce was already consumed: %s\n' "${nonce}" >&2
+      exit 77
+    }
+    printf '%s\n' "${permit_sha256}" \
+      > "${nonce_dir}/${nonce}/permit_sha256"
+    chmod 0444 "${nonce_dir}/${nonce}/permit_sha256"
+    chmod 0444 "${output_tmp}"
+    mv "${output_tmp}" "${output}"
+    output_tmp=
     ;;
   verify-offline-test-bundle)
     test "$#" -eq 4 || usage

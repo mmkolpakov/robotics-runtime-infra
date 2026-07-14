@@ -169,6 +169,7 @@ ADD --checksum=sha256:a6adb750d17c8eb3c50a5b063115c762ffe57724cfbd45cc38e5abe823
 # Rebuild the signed Cosign release source with the patched Go toolchain. The
 # upstream v3.1.1 image was built with Go 1.26.3.
 FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS cosign
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG TARGETOS
 ARG TARGETARCH
 ARG COSIGN_REVISION=7914231b348c4057891edeb321772aad3ed04fce
@@ -206,6 +207,60 @@ RUN --mount=type=cache,id=cosign-v3.1.1-mod,target=/go/pkg/mod,sharing=locked \
       "go=$(go version | awk '{print $3}')" \
       > /out/source.txt
 
+# Build the exact OPA release with the upstream oras-go security update. The
+# v1.18.2 release image predates Go 1.26.5 and oras-go v2.6.2.
+FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS opa
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG TARGETOS
+ARG TARGETARCH
+ARG OPA_REVISION=e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297
+ARG OPA_SOURCE_DATE_EPOCH=1782998040
+ARG OPA_VERSION=1.18.2
+# hadolint ignore=DL3022
+COPY --from=opa-source / /src/opa
+WORKDIR /src/opa
+RUN --mount=type=cache,id=opa-v1.18.2-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=opa-v1.18.2-build,target=/root/.cache/go-build,sharing=locked \
+    test "$(sed -n 's/^module //p' go.mod)" = \
+      "github.com/open-policy-agent/opa" \
+    && test "$(sed -n 's/^var Version = \"\(.*\)\"/\1/p' v1/version/version.go)" = \
+      "${OPA_VERSION}" \
+    && test "$(cat .go-version)" = "1.26.4" \
+    && test "$(sed -n 's#^[[:space:]]*oras.land/oras-go/v2 v##p' go.mod)" = \
+      "2.6.1" \
+    && test "${OPA_REVISION}" = \
+      "e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297" \
+    && test "${OPA_SOURCE_DATE_EPOCH}" = "1782998040" \
+    && go get oras.land/oras-go/v2@v2.6.2 \
+    && test "$(sed -n 's#^[[:space:]]*oras.land/oras-go/v2 v##p' go.mod)" = \
+      "2.6.2" \
+    && test "$(sed -n 's#^[[:space:]]*golang.org/x/sync v##p' go.mod)" = \
+      "0.22.0" \
+    && go mod download \
+    && go mod verify \
+    && CGO_ENABLED=0 go test -mod=readonly ./v1/download \
+    && CGO_ENABLED=0 \
+      GOOS="${TARGETOS}" \
+      GOARCH="${TARGETARCH}" \
+      go build \
+        -mod=readonly \
+        -trimpath \
+        -ldflags "-buildid= -s -w \
+          -X github.com/open-policy-agent/opa/v1/version.Vcs=${OPA_REVISION} \
+          -X github.com/open-policy-agent/opa/v1/version.Timestamp=2026-07-02T13:14:00Z \
+          -X github.com/open-policy-agent/opa/v1/version.Hostname=release" \
+        -o /out/opa \
+        . \
+    && install -m 0444 LICENSE /out/LICENSE \
+    && cp go.mod go.sum /out/ \
+    && printf '%s\n' \
+      "opa=v${OPA_VERSION}" \
+      "revision=${OPA_REVISION}" \
+      "go=$(go version | awk '{print $3}')" \
+      "security_delta=oras.land/oras-go/v2@v2.6.2,golang.org/x/sync@v0.22.0" \
+      "upstream_delta=3f0256edb298a5ebaff9adf1a34584a53278d051" \
+      > /out/source.txt
+
 # Rebuild the exact yq release source with the patched Go toolchain. The
 # upstream release binary was built with a Go standard library below 1.26.5.
 FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS yq
@@ -232,7 +287,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         -X github.com/mikefarah/yq/v4/cmd.GitCommit=${YQ_REVISION} \
         -X github.com/mikefarah/yq/v4/cmd.GitDescribe=${YQ_VERSION}" \
       -o /out/yq \
-      .
+      .; \
+    install -m 0444 "${YQ_SOURCE}/LICENSE" /out/YQ-LICENSE
 
 FROM ${UBUNTU_BASE_IMAGE} AS ubuntu-ca-amd64
 ADD --checksum=sha256:e3b33fefcebc3ef8f3367572a1ffead2e8ddf7807aec1d442b843e50b70261f4 \
@@ -288,6 +344,29 @@ ARG TARGETARCH
 # hadolint ignore=DL3006
 FROM mcap-${TARGETARCH} AS mcap
 
+FROM scratch AS policy-tooling
+
+ARG IMAGE_CREATED=1970-01-01T00:00:00Z
+ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
+ARG IMAGE_VERSION=0.5.0
+ARG VCS_REF=local
+
+LABEL org.opencontainers.image.title="Robotics policy tooling" \
+      org.opencontainers.image.description="Pinned Open Policy Agent for repository and execution policy validation." \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.created="${IMAGE_CREATED}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${IMAGE_SOURCE}" \
+      org.opencontainers.image.licenses="Apache-2.0 AND MIT"
+
+COPY --from=opa /out/opa /opa
+COPY --from=opa /out/LICENSE /LICENSE
+COPY --from=yq /out/yq /yq
+COPY --from=yq /out/YQ-LICENSE /YQ-LICENSE
+USER 65532:65532
+ENTRYPOINT ["/opa"]
+CMD ["version"]
+
 FROM ubuntu-ca AS permit-preflight
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
@@ -303,17 +382,54 @@ LABEL org.opencontainers.image.title="Robotics execution permit preflight" \
       org.opencontainers.image.source="${IMAGE_SOURCE}" \
       org.opencontainers.image.licenses="MIT AND Apache-2.0"
 
-ENV HOME=/home/preflight
+ARG UBUNTU_SNAPSHOT
+
+ENV HOME=/home/preflight \
+    PATH="/opt/venv/bin:${PATH}"
 
 COPY --from=cosign /out/cosign /usr/local/bin/cosign
 COPY --from=cosign /out/LICENSE /usr/share/licenses/cosign/LICENSE
 COPY --from=cosign /out/source.txt /usr/share/robotics-runtime/cosign-source.txt
+COPY --from=opa /out/opa /usr/local/bin/opa
+COPY --from=opa /out/LICENSE /usr/share/licenses/opa/LICENSE
+COPY --from=opa /out/source.txt /usr/share/robotics-runtime/opa-source.txt
+COPY --from=opa /out/go.mod /usr/share/robotics-runtime/opa-go.mod
+COPY --from=opa /out/go.sum /usr/share/robotics-runtime/opa-go.sum
+COPY --from=yq /out/yq /usr/local/bin/yq
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
+COPY docker/python/permit-preflight.lock /tmp/python/permit-preflight.lock
+COPY --chmod=0444 policy/execution.rego /usr/share/robotics-runtime/policy/execution.rego
 COPY --chmod=0555 docker/permit-preflight/permit-preflight /usr/local/bin/permit-preflight
 
-RUN groupadd --gid 10002 preflight \
+RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+    && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+      /usr/local/sbin/use-package-snapshots \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && uv venv --python /usr/bin/python3 /opt/venv \
+    && uv pip install \
+      --python /opt/venv/bin/python \
+      --require-hashes \
+      --no-cache \
+      --no-deps \
+      --requirement /tmp/python/permit-preflight.lock \
+    && uv pip check --python /opt/venv/bin/python \
+    && uv pip freeze --python /opt/venv/bin/python \
+      > /usr/share/robotics-runtime/python-packages.txt \
+    && python3 -c \
+      "from robotics_runtime_contracts import schema_names; assert 'execution-permit.v2' in schema_names() and 'execution-verification.v1' in schema_names()" \
+    && groupadd --gid 10002 preflight \
     && useradd --uid 10002 --gid 10002 --create-home preflight \
     && mkdir -p /work \
-    && chown 10002:10002 /work
+    && chown 10002:10002 /work \
+    && rm -rf \
+      /tmp/python \
+      /var/cache/ldconfig/aux-cache \
+      /var/lib/apt/lists/* \
+      /var/log/apt/* \
+      /var/log/alternatives.log \
+      /var/log/dpkg.log
 
 USER preflight
 WORKDIR /work

@@ -159,7 +159,7 @@ docker compose --profile test run --rm --no-deps test
 ```
 
 CI also validates every Compose overlay on the supported Compose floor and
-current version, enforces Conftest policies, builds all portable targets for
+current version, enforces OPA policies, builds all portable targets for
 arm64, scans every image, and runs the three-repository acceptance path.
 Contribution setup and required checks are in [CONTRIBUTING.md](CONTRIBUTING.md).
 

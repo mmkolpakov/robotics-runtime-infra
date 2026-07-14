@@ -54,6 +54,14 @@ variable "COSIGN_SOURCE_DATE_EPOCH" {
   default = "1781007044"
 }
 
+variable "OPA_SOURCE" {
+  default = "https://github.com/open-policy-agent/opa.git?tag=v1.18.2&checksum=e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297"
+}
+
+variable "OPA_SOURCE_DATE_EPOCH" {
+  default = "1782998040"
+}
+
 group "default" {
   targets = ["simulation"]
 }
@@ -408,8 +416,25 @@ target "_cosign-source" {
   }
 }
 
+target "_permit-sources" {
+  inherits = ["_cosign-source"]
+  args = {
+    OPA_SOURCE_DATE_EPOCH = OPA_SOURCE_DATE_EPOCH
+  }
+  contexts = {
+    "opa-source" = OPA_SOURCE
+  }
+}
+
+target "policy-tooling" {
+  inherits  = ["_permit-sources"]
+  target    = "policy-tooling"
+  platforms = ["linux/amd64", "linux/arm64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/policy-tooling:${VERSION}"]
+}
+
 target "permit-preflight" {
-  inherits  = ["_cosign-source"]
+  inherits  = ["_permit-sources"]
   target    = "permit-preflight"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight:${VERSION}"]
