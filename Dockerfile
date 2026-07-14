@@ -613,8 +613,8 @@ COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
 ENV HOME=/home/ubuntu \
-    ROBOTICS_CONTRACTS_REVISION=576826d9fcdfe795dfc695ad44326610c023e94c \
-    ROBOTICS_HARNESS_REVISION=e0fe6393a18211e28ebd5cf2774445962c72aee5 \
+    ROBOTICS_CONTRACTS_REVISION=32e8fe9d1b6df71e90c69f831db5bab9687e695a \
+    ROBOTICS_HARNESS_REVISION=8328b0381e4d6ae81b8597cee3a46cb69b9134e5 \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 WORKDIR /workspace
@@ -1225,8 +1225,8 @@ COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
 ENV HOME=/home/ubuntu \
-    ROBOTICS_CONTRACTS_REVISION=576826d9fcdfe795dfc695ad44326610c023e94c \
-    ROBOTICS_HARNESS_REVISION=e0fe6393a18211e28ebd5cf2774445962c72aee5 \
+    ROBOTICS_CONTRACTS_REVISION=32e8fe9d1b6df71e90c69f831db5bab9687e695a \
+    ROBOTICS_HARNESS_REVISION=8328b0381e4d6ae81b8597cee3a46cb69b9134e5 \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 
