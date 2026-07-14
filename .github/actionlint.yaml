@@ -1,0 +1,9 @@
+self-hosted-runner:
+  labels:
+    - robotics-amd-gpu
+    - robotics-intel-gpu
+    - robotics-intel-gpu-wsl
+    - robotics-jetson-orin
+    - robotics-jetson-thor
+    - robotics-nvidia-gpu
+    - robotics-rk3588
