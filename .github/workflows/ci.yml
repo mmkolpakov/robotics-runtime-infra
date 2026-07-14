@@ -739,6 +739,18 @@ jobs:
             done
             return 1
           }
+          wait_for_socket() {
+            local path="$1"
+            local container="$2"
+            for _ in {1..30}; do
+              if test -S "${path}"; then
+                return 0
+              fi
+              sleep 1
+            done
+            docker logs "${container}" >&2 || true
+            return 1
+          }
 
           docker run --rm \
             --volume "${PWD}:/project:ro" \
@@ -760,6 +772,7 @@ jobs:
             --network none \
             --volume "${socket_dir}:/run/robotics-time" \
             "${HOST_IO_FIXTURE_IMAGE}" >/dev/null
+          wait_for_socket "${socket_dir}/chronyd.sock" host-chronyd
           docker run --detach --name host-chrony-otel \
             --network none \
             --user 100:101 \
@@ -801,6 +814,8 @@ jobs:
             --volume \
               "${PWD}/config/time/chrony-unsynchronized-fixture.conf:/etc/chrony/chrony.conf:ro" \
             "${HOST_IO_FIXTURE_IMAGE}" >/dev/null
+          wait_for_socket \
+            "${unsync_socket_dir}/chronyd.sock" host-chronyd-unsync
           docker run --detach --name host-chrony-otel-unsync \
             --network none \
             --user 100:101 \
