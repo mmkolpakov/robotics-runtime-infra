@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<policy version="0.2.0">
+  <enclaves>
+    <enclave path="/robotics/telemetry_source">
+      <profiles>
+        <profile node="robotics_telemetry_source" ns="/">
+          <services reply="ALLOW">
+            <service>~/describe_parameters</service>
+            <service>~/get_parameter_types</service>
+            <service>~/get_parameters</service>
+            <service>~/get_type_description</service>
+            <service>~/list_parameters</service>
+            <service>~/set_parameters</service>
+            <service>~/set_parameters_atomically</service>
+          </services>
+          <topics subscribe="ALLOW">
+            <topic>parameter_events</topic>
+            <topic>ros_discovery_info</topic>
+          </topics>
+          <topics publish="ALLOW">
+            <topic>robotics/telemetry</topic>
+            <topic>parameter_events</topic>
+            <topic>ros_discovery_info</topic>
+            <topic>rosout</topic>
+          </topics>
+        </profile>
+      </profiles>
+    </enclave>
+    <enclave path="/robotics/observer">
+      <profiles>
+        <profile node="robotics_acceptance_observer" ns="/">
+          <services reply="ALLOW">
+            <service>~/describe_parameters</service>
+            <service>~/get_parameter_types</service>
+            <service>~/get_parameters</service>
+            <service>~/get_type_description</service>
+            <service>~/list_parameters</service>
+            <service>~/set_parameters</service>
+            <service>~/set_parameters_atomically</service>
+          </services>
+          <services request="ALLOW">
+            <service>*/get_state</service>
+          </services>
+          <topics subscribe="ALLOW">
+            <topic>*</topic>
+          </topics>
+          <topics publish="ALLOW">
+            <topic>parameter_events</topic>
+            <topic>ros_discovery_info</topic>
+            <topic>rosout</topic>
+          </topics>
+        </profile>
+      </profiles>
+    </enclave>
+  </enclaves>
+</policy>

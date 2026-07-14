@@ -40,10 +40,22 @@ services:
         ros2 security create_keystore /run/security/keystore
         ros2 security create_enclave /run/security/keystore /talker
         ros2 security create_enclave /run/security/keystore /listener
+        ros2 security create_enclave \
+          /run/security/keystore /robotics/telemetry_source
+        ros2 security create_enclave \
+          /run/security/keystore /robotics/observer
         ros2 security create_permission \
           /run/security/keystore /talker /config/smoke.policy.xml
         ros2 security create_permission \
           /run/security/keystore /listener /config/smoke.policy.xml
+        ros2 security create_permission \
+          /run/security/keystore \
+          /robotics/telemetry_source \
+          /config/observer.policy.xml
+        ros2 security create_permission \
+          /run/security/keystore \
+          /robotics/observer \
+          /config/observer.policy.xml
     volumes:
       - type: bind
         source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}"
@@ -81,6 +93,14 @@ services:
           -in /security/enclaves/listener/permissions.p7s \
           -CAfile /security/public/permissions_ca.cert.pem \
           -out /tmp/listener-permissions.xml
+        openssl smime -verify \
+          -in /security/enclaves/robotics/telemetry_source/permissions.p7s \
+          -CAfile /security/public/permissions_ca.cert.pem \
+          -out /tmp/telemetry-source-permissions.xml
+        openssl smime -verify \
+          -in /security/enclaves/robotics/observer/permissions.p7s \
+          -CAfile /security/public/permissions_ca.cert.pem \
+          -out /tmp/observer-permissions.xml
         grep -q '<allow_unauthenticated_participants>false' /tmp/governance.xml
         grep -q '<discovery_protection_kind>ENCRYPT' /tmp/governance.xml
         grep -q '<rtps_protection_kind>SIGN' /tmp/governance.xml
@@ -88,6 +108,12 @@ services:
         grep -q '<data_protection_kind>ENCRYPT' /tmp/governance.xml
         grep -q '<topic>rt/chatter</topic>' /tmp/talker-permissions.xml
         grep -q '<topic>rt/chatter</topic>' /tmp/listener-permissions.xml
+        grep -q '<topic>rt/robotics/telemetry</topic>' \
+          /tmp/telemetry-source-permissions.xml
+        grep -q '<topic>rt/\*</topic>' /tmp/observer-permissions.xml
+        grep -q '<topic>rq/\*/get_stateRequest</topic>' \
+          /tmp/observer-permissions.xml
+        grep -q '<default>DENY</default>' /tmp/observer-permissions.xml
     volumes:
       - type: bind
         source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
@@ -106,7 +132,11 @@ services:
 
   data-plane:
     image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
-    profiles: [security, security-negative]
+    profiles:
+      - security
+      - security-negative
+      - security-observer
+      - security-observer-negative
     ipc: shareable
     shm_size: "${ROBOTICS_SHM_SIZE:-2gb}"
     security_opt:
@@ -172,6 +202,117 @@ services:
       - type: bind
         source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/talker"
         target: /security/enclaves/talker
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  secure-observer-source:
+    <<: *security-runtime
+    profiles: [security-observer]
+    command:
+      - ros2
+      - run
+      - demo_nodes_cpp
+      - talker
+      - --ros-args
+      - --enclave
+      - /robotics/telemetry_source
+      - --remap
+      - __node:=robotics_telemetry_source
+      - --remap
+      - chatter:=/robotics/telemetry
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/robotics/telemetry_source"
+        target: /security/enclaves/robotics/telemetry_source
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  secure-observer:
+    <<: *security-runtime
+    profiles: [security-observer]
+    command:
+      - bash
+      - -c
+      - >-
+        timeout 20 ros2 run demo_nodes_cpp listener
+        --ros-args
+        --enclave /robotics/observer
+        --remap __node:=robotics_acceptance_observer
+        --remap chatter:=/robotics/telemetry 2>&1 |
+        grep --max-count=1 'I heard:'
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/robotics/observer"
+        target: /security/enclaves/robotics/observer
+        read_only: true
+    depends_on:
+      data-plane:
+        condition: service_started
+
+  secure-observer-denied-command:
+    <<: *security-runtime
+    profiles: [security-observer-negative]
+    command:
+      - bash
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        set +e
+        output="$(timeout 10 ros2 run demo_nodes_cpp talker \
+          --ros-args \
+          --enclave /robotics/observer \
+          --remap __node:=robotics_acceptance_observer \
+          --remap chatter:=/cmd_vel 2>&1)"
+        status="$?"
+        set -e
+        printf '%s\n' "$${output}"
+        test "$${status}" -ne 0
+        grep -Eqi 'permission|not allowed|denied|create publisher' <<<"$${output}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/robotics/observer"
+        target: /security/enclaves/robotics/observer
         read_only: true
     depends_on:
       data-plane:

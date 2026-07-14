@@ -83,7 +83,7 @@ behavior being tested:
 | `compose.evidence.yaml` | `evidence` | Validate segments and finalize an evidence index locally or in S3 |
 | `compose.high-throughput.yaml` | none | Private shared network and IPC namespaces with Fast DDS SHM |
 | `compose.benchmark.yaml` | `benchmark` | Measure UDP, SHM, or Data Sharing with `performance_test` |
-| `compose.security.yaml` | `security*` | SROS2 Enforce, enclave generation, positive and negative checks |
+| `compose.security.yaml` | `security*` | SROS2 Enforce, observer-only enclave, positive and denial checks |
 | `compose.stepped.yaml` | `stepped` | Run Gazebo paused and advance it through `WorldControl` |
 
 For example, verify the packaged golden MCAP without starting Gazebo:

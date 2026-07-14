@@ -92,6 +92,7 @@ jobs:
             --profile rknn-rk3588
             --profile security --profile security-init
             --profile security-verify --profile security-negative
+            --profile security-observer --profile security-observer-negative
             --profile stepped
           )
           for overlay in "${overlays[@]}"; do
@@ -354,6 +355,7 @@ jobs:
             --profile rknn-rk3588
             --profile security --profile security-init
             --profile security-verify --profile security-negative
+            --profile security-observer --profile security-observer-negative
             --profile stepped
           )
           overlays=(
@@ -642,6 +644,8 @@ jobs:
             "${compose[@]}" \
               --profile security --profile security-init \
               --profile security-verify --profile security-negative \
+              --profile security-observer \
+              --profile security-observer-negative \
               down --volumes --remove-orphans || true
           }
           trap cleanup EXIT
@@ -663,6 +667,16 @@ jobs:
             up --no-build --abort-on-container-exit \
             --exit-code-from secure-reject-unsecured-listener \
             secure-reject-unsecured-listener unsecured-talker
+          "${compose[@]}" --profile security-negative \
+            down --volumes --remove-orphans
+          "${compose[@]}" --profile security-observer \
+            up --no-build --abort-on-container-exit \
+            --exit-code-from secure-observer \
+            secure-observer secure-observer-source
+          "${compose[@]}" --profile security-observer \
+            down --volumes --remove-orphans
+          "${compose[@]}" --profile security-observer-negative \
+            run --rm secure-observer-denied-command
       - name: Verify versioned S3 evidence
         run: |
           evidence_dir="${PWD}/artifacts/evidence-s3"
