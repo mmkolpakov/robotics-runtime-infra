@@ -1,4 +1,4 @@
-schema_version: acceptance-scenario.v2
+schema_version: acceptance-scenario.v1
 scenario_id: org.example.runtime-infra.stepped-smoke
 execution:
   target_environment: simulation
@@ -10,6 +10,12 @@ execution:
   time_mode: simulation_stepped
   data_plane_profile: standard_isolated
   security_profile: none
+authorization:
+  mode: none
+forbidden_ros_graph:
+  topics: []
+  services: []
+  actions: []
 seed: 42
 timeouts:
   startup_sec: 60

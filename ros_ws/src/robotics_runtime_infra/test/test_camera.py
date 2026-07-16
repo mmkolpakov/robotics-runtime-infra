@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import os
-import time
 import unittest
 from pathlib import Path
 
@@ -10,11 +9,11 @@ import launch
 import launch.actions
 import launch.launch_description_sources
 import launch_testing.actions
-import rclpy
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch_testing_ros import WaitForTopics
 from sensor_msgs.msg import CameraInfo, Image
 
 
@@ -57,21 +56,15 @@ def generate_test_description() -> launch.LaunchDescription:
 
 class TestCamera(unittest.TestCase):
     def test_image_and_calibration_are_published(self) -> None:
-        rclpy.init()
-        node = rclpy.create_node("camera_acceptance_test")
-        images: list[Image] = []
-        calibration: list[CameraInfo] = []
-        image_sub = node.create_subscription(Image, "/camera/image", images.append, 10)
-        info_sub = node.create_subscription(
-            CameraInfo,
-            "/camera/camera_info",
-            calibration.append,
-            10,
-        )
-        deadline = time.monotonic() + 90
-        try:
-            while (not images or not calibration) and time.monotonic() < deadline:
-                rclpy.spin_once(node, timeout_sec=0.5)
+        with WaitForTopics(
+            [
+                ("/camera/image", Image),
+                ("/camera/camera_info", CameraInfo),
+            ],
+            timeout=90.0,
+        ) as topics:
+            images = topics.received_messages("/camera/image")
+            calibration = topics.received_messages("/camera/camera_info")
             self.assertTrue(images)
             self.assertTrue(calibration)
             self.assertGreater(images[-1].width, 0)
@@ -80,8 +73,3 @@ class TestCamera(unittest.TestCase):
             self.assertTrue(all(math.isfinite(value) for value in calibration[-1].k))
             self.assertGreater(calibration[-1].k[0], 0.0)
             self.assertGreater(calibration[-1].k[4], 0.0)
-        finally:
-            node.destroy_subscription(image_sub)
-            node.destroy_subscription(info_sub)
-            node.destroy_node()
-            rclpy.shutdown()

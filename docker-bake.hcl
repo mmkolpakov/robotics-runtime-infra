@@ -46,14 +46,6 @@ variable "RKNN_SOURCE" {
   default = "https://github.com/airockchip/rknn-toolkit2.git?tag=v2.3.2&checksum=42aa1d426c0a9e0869b6374edba009f7208a1926"
 }
 
-variable "COSIGN_SOURCE" {
-  default = "https://github.com/sigstore/cosign.git?tag=v3.1.1&checksum=7914231b348c4057891edeb321772aad3ed04fce"
-}
-
-variable "COSIGN_SOURCE_DATE_EPOCH" {
-  default = "1781007044"
-}
-
 variable "OPA_SOURCE" {
   default = "https://github.com/open-policy-agent/opa.git?tag=v1.18.2&checksum=e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297"
 }
@@ -199,9 +191,15 @@ target "inference-cpu" {
 
 target "provider-conformance-cpu" {
   inherits  = ["_common"]
-  target    = "provider-conformance-cpu"
+  target    = "provider-conformance"
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-cpu:${VERSION}"]
+  args = {
+    PROVIDER_CONFORMANCE_BASE              = "inference-cpu"
+    PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "CPUExecutionProvider"
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics CPU provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
+  }
 }
 
 target "inference-amd" {
@@ -213,9 +211,15 @@ target "inference-amd" {
 
 target "provider-conformance-amd" {
   inherits  = ["_common"]
-  target    = "provider-conformance-amd"
+  target    = "provider-conformance"
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-amd:${VERSION}"]
+  args = {
+    PROVIDER_CONFORMANCE_BASE              = "inference-amd"
+    PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "MIGraphXExecutionProvider"
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics AMD provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "Hardware gate for MIGraphX provider identity, fallback, and tensor parity."
+  }
 }
 
 target "inference-intel" {
@@ -227,9 +231,15 @@ target "inference-intel" {
 
 target "provider-conformance-intel" {
   inherits  = ["_common"]
-  target    = "provider-conformance-intel"
+  target    = "provider-conformance"
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-intel:${VERSION}"]
+  args = {
+    PROVIDER_CONFORMANCE_BASE              = "inference-intel"
+    PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "OpenVINOExecutionProvider"
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics Intel provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "Hardware gate for explicit OpenVINO device identity, fallback, and tensor parity."
+  }
 }
 
 target "inference-nvidia" {
@@ -247,9 +257,15 @@ target "inference-nvidia-verification" {
 
 target "provider-conformance-nvidia" {
   inherits  = ["_common"]
-  target    = "provider-conformance-nvidia"
+  target    = "provider-conformance"
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-nvidia:${VERSION}"]
+  args = {
+    PROVIDER_CONFORMANCE_BASE              = "inference-nvidia"
+    PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "CUDAExecutionProvider"
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics NVIDIA provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "Hardware release gate for CUDA provider identity, fallback, and tensor parity."
+  }
 }
 
 target "_onnxruntime-jetson-source" {
@@ -298,14 +314,26 @@ target "inference-nvidia-jetson-thor" {
 
 target "provider-conformance-nvidia-jetson-orin" {
   inherits = ["_nvidia-jetson"]
-  target   = "provider-conformance-nvidia-jetson-orin"
+  target   = "provider-conformance"
   tags     = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-nvidia-jetson-orin:${VERSION}"]
+  args = {
+    PROVIDER_CONFORMANCE_BASE              = "inference-nvidia-jetson-orin"
+    PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "TensorrtExecutionProvider"
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics NVIDIA Jetson Orin provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "Jetson Orin hardware gate for TensorRT provider identity, fallback, and tensor parity."
+  }
 }
 
 target "provider-conformance-nvidia-jetson-thor" {
   inherits = ["_nvidia-jetson"]
-  target   = "provider-conformance-nvidia-jetson-thor"
+  target   = "provider-conformance"
   tags     = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-nvidia-jetson-thor:${VERSION}"]
+  args = {
+    PROVIDER_CONFORMANCE_BASE              = "inference-nvidia-jetson-thor"
+    PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "TensorrtExecutionProvider"
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics NVIDIA Jetson Thor provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "Jetson Thor hardware gate for TensorRT provider identity, fallback, and tensor parity."
+  }
 }
 
 target "_rknn" {
@@ -419,18 +447,8 @@ target "evidence-sink" {
   tags      = ["${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"]
 }
 
-target "_cosign-source" {
-  inherits = ["_common"]
-  args = {
-    COSIGN_SOURCE_DATE_EPOCH = COSIGN_SOURCE_DATE_EPOCH
-  }
-  contexts = {
-    "cosign-source" = COSIGN_SOURCE
-  }
-}
-
 target "_permit-sources" {
-  inherits = ["_cosign-source"]
+  inherits = ["_common"]
   args = {
     OPA_SOURCE_DATE_EPOCH = OPA_SOURCE_DATE_EPOCH
   }

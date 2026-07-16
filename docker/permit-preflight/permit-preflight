@@ -5,8 +5,8 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   permit-preflight versions
-  permit-preflight verify-keyless-bundle STATEMENT BUNDLE TRUSTED_ROOT IDENTITY ISSUER
-  permit-preflight verify-offline-test-bundle STATEMENT BUNDLE PUBLIC_KEY
+  permit-preflight verify-keyless-attestation STATEMENT BUNDLE TRUSTED_ROOT IDENTITY ISSUER
+  permit-preflight verify-offline-test-attestation STATEMENT BUNDLE PUBLIC_KEY
   permit-preflight authorize PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUSTED_ROOT TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST
   permit-preflight materialize-runtime TEMPLATE PERMIT VERIFICATION TRUST_POLICY OUTPUT
 EOF
@@ -57,7 +57,8 @@ trusted_issuer() {
   ROLE="${role}" IDENTITY="${identity}" yq -r '
     [.principals[] |
       select(.role == strenv(ROLE) and .identity == strenv(IDENTITY))] |
-    if length == 1 then .[0].issuer else "" end
+    select(length == 1) |
+    .[0].issuer
   ' "${trust_policy}"
 }
 
@@ -66,6 +67,110 @@ require_file() {
     printf 'required file is not readable: %s\n' "$1" >&2
     exit 66
   }
+}
+
+statement_subject_digest() {
+  statement="$1"
+  digest="$(
+    yq -r '
+      [.subject[] |
+        select(.name == "robotics-scenario") |
+        .digest.sha256] |
+      select(length == 1) |
+      .[0]
+    ' "${statement}"
+  )"
+  case "${digest}" in
+    ????????????????????????????????????????????????????????????????)
+      case "${digest}" in
+        *[!a-f0-9]*) digest= ;;
+      esac
+      ;;
+    *) digest= ;;
+  esac
+  test -n "${digest}" || {
+    printf 'statement must contain one lowercase sha256 robotics-scenario subject\n' >&2
+    exit 65
+  }
+  printf '%s\n' "${digest}"
+}
+
+assert_bundle_statement() {
+  statement="$1"
+  bundle="$2"
+  output="$3"
+  test "$(yq -r '.mediaType' "${bundle}")" = \
+    'application/vnd.dev.sigstore.bundle.v0.3+json' || {
+    printf 'unsupported Sigstore bundle media type: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  test "$(yq -r '.dsseEnvelope.payloadType' "${bundle}")" = \
+    'application/vnd.in-toto+json' || {
+    printf 'Sigstore bundle does not contain an in-toto DSSE envelope: %s\n' \
+      "${bundle}" >&2
+    exit 65
+  }
+  payload="$(yq -r '.dsseEnvelope.payload' "${bundle}")"
+  test -n "${payload}" && test "${payload}" != null || {
+    printf 'Sigstore bundle has no DSSE payload: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  printf '%s' "${payload}" | base64 -d > "${output}" || {
+    printf 'Sigstore bundle has an invalid DSSE payload: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  LEFT_STATEMENT="${statement}" RIGHT_STATEMENT="${output}" \
+    yq --null-input --exit-status '
+      (load(strenv(LEFT_STATEMENT)) | sort_keys(..) | to_json(0)) ==
+      (load(strenv(RIGHT_STATEMENT)) | sort_keys(..) | to_json(0))
+    ' >/dev/null || {
+    printf 'verified DSSE statement does not equal the supplied statement\n' >&2
+    exit 65
+  }
+  yq -o=json -I=0 '.predicate' "${output}" > "${output}.predicate.json"
+  validate_contract "${output}.predicate.json"
+}
+
+verify_keyless_attestation() {
+  statement="$1"
+  bundle="$2"
+  trusted_root="$3"
+  identity="$4"
+  issuer="$5"
+  decoded_statement="$6"
+  digest="$(statement_subject_digest "${statement}")"
+  predicate_type="$(yq -r '.predicateType' "${statement}")"
+  test "${predicate_type}" = \
+    'https://robotics-runtime-contracts.dev/attestations/execution-permit/v1' || {
+    printf 'statement predicate type is not the execution permit contract\n' >&2
+    exit 65
+  }
+  cosign verify-blob-attestation \
+    --bundle "${bundle}" \
+    --trusted-root "${trusted_root}" \
+    --certificate-identity "${identity}" \
+    --certificate-oidc-issuer "${issuer}" \
+    --digest "${digest}" \
+    --digestAlg sha256 \
+    --type "${predicate_type}"
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+}
+
+verify_offline_attestation() {
+  statement="$1"
+  bundle="$2"
+  public_key="$3"
+  decoded_statement="$4"
+  digest="$(statement_subject_digest "${statement}")"
+  predicate_type="$(yq -r '.predicateType' "${statement}")"
+  cosign verify-blob-attestation \
+    --bundle "${bundle}" \
+    --key "${public_key}" \
+    --digest "${digest}" \
+    --digestAlg sha256 \
+    --type "${predicate_type}" \
+    --insecure-ignore-tlog
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
 }
 
 command_name="${1:-}"
@@ -78,7 +183,7 @@ case "${command_name}" in
     exec python3 -c \
       'from importlib.metadata import version; print("robotics-runtime-contracts", version("robotics-runtime-contracts"))'
     ;;
-  verify-keyless-bundle)
+  verify-keyless-attestation)
     test "$#" -eq 6 || usage
     statement="$2"
     bundle="$3"
@@ -90,12 +195,15 @@ case "${command_name}" in
     require_file "${trusted_root}"
     test -n "${identity}" || usage
     test -n "${issuer}" || usage
-    exec cosign verify-blob \
-      --bundle "${bundle}" \
-      --trusted-root "${trusted_root}" \
-      --certificate-identity "${identity}" \
-      --certificate-oidc-issuer "${issuer}" \
-      "${statement}"
+    work="$(mktemp -d)"
+    trap 'rm -rf "${work}"' EXIT HUP INT TERM
+    verify_keyless_attestation \
+      "${statement}" \
+      "${bundle}" \
+      "${trusted_root}" \
+      "${identity}" \
+      "${issuer}" \
+      "${work}/statement.json"
     ;;
   authorize)
     test "$#" -eq 11 || usage
@@ -173,18 +281,20 @@ case "${command_name}" in
       exit 65
     }
 
-    cosign verify-blob \
-      --bundle "${operator_bundle}" \
-      --trusted-root "${trusted_root}" \
-      --certificate-identity "${operator_identity}" \
-      --certificate-oidc-issuer "${operator_issuer}" \
-      "${statement}"
-    cosign verify-blob \
-      --bundle "${approver_bundle}" \
-      --trusted-root "${trusted_root}" \
-      --certificate-identity "${approver_identity}" \
-      --certificate-oidc-issuer "${approver_issuer}" \
-      "${statement}"
+    verify_keyless_attestation \
+      "${statement}" \
+      "${operator_bundle}" \
+      "${trusted_root}" \
+      "${operator_identity}" \
+      "${operator_issuer}" \
+      "${work}/operator-statement.json"
+    verify_keyless_attestation \
+      "${statement}" \
+      "${approver_bundle}" \
+      "${trusted_root}" \
+      "${approver_identity}" \
+      "${approver_issuer}" \
+      "${work}/approver-statement.json"
 
     operator_integrated_time="$(bundle_integrated_time "${operator_bundle}")"
     approver_integrated_time="$(bundle_integrated_time "${approver_bundle}")"
@@ -341,7 +451,7 @@ case "${command_name}" in
     mv "${output_tmp}" "${output}"
     output_tmp=
     ;;
-  verify-offline-test-bundle)
+  verify-offline-test-attestation)
     test "$#" -eq 4 || usage
     statement="$2"
     bundle="$3"
@@ -349,11 +459,13 @@ case "${command_name}" in
     require_file "${statement}"
     require_file "${bundle}"
     require_file "${public_key}"
-    exec cosign verify-blob \
-      --bundle "${bundle}" \
-      --key "${public_key}" \
-      --insecure-ignore-tlog \
-      "${statement}"
+    work="$(mktemp -d)"
+    trap 'rm -rf "${work}"' EXIT HUP INT TERM
+    verify_offline_attestation \
+      "${statement}" \
+      "${bundle}" \
+      "${public_key}" \
+      "${work}/statement.json"
     ;;
   *)
     usage

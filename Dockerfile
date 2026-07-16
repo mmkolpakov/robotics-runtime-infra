@@ -7,9 +7,14 @@ ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0a
 ARG RCLONE_IMAGE=rclone/rclone:1.74.4@sha256:c61954aaa32328a5486715dd063a81c7879f5195ad3505cd362deddd509dc4a1
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
+ARG COSIGN_IMAGE=cgr.dev/chainguard/cosign@sha256:609ca1d6f7434cdacb8597870990b3689ec1a83a462b26b6aeb05d55a1acfe7e
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
+ARG PROVIDER_CONFORMANCE_BASE=inference-cpu
+ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
+ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
+ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG UBUNTU_SNAPSHOT=20260701T000000Z
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
@@ -17,6 +22,7 @@ ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 FROM ${UV_IMAGE} AS uv
 FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
+FROM ${COSIGN_IMAGE} AS cosign
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
 FROM ${NVIDIA_CUDA_RUNTIME_IMAGE} AS nvidia-cuda-runtime-minimal
 
@@ -165,47 +171,6 @@ ADD --checksum=sha256:48154eae949e17b5a1806aa5988f0013a490a062a5c62fa635d4a97ded
 ADD --checksum=sha256:a6adb750d17c8eb3c50a5b063115c762ffe57724cfbd45cc38e5abe823c49bd2 \
   https://github.com/intel/compute-runtime/releases/download/24.48.31907.7/libigdgmm12_22.5.4_amd64.deb \
   /packages/libigdgmm12_22.5.4_amd64.deb
-
-# Rebuild the signed Cosign release source with the patched Go toolchain. The
-# upstream v3.1.1 image was built with Go 1.26.3.
-FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS cosign
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ARG TARGETOS
-ARG TARGETARCH
-ARG COSIGN_REVISION=7914231b348c4057891edeb321772aad3ed04fce
-ARG COSIGN_SOURCE_DATE_EPOCH=1781007044
-ARG COSIGN_VERSION=v3.1.1
-# hadolint ignore=DL3022
-COPY --from=cosign-source / /src/cosign
-WORKDIR /src/cosign
-RUN --mount=type=cache,id=cosign-v3.1.1-mod,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,id=cosign-v3.1.1-build,target=/root/.cache/go-build,sharing=locked \
-    test "$(sed -n 's/^module //p' go.mod)" = \
-      "github.com/sigstore/cosign/v3" \
-    && test "$(sed -n 's/^go //p' go.mod)" = "1.26.0" \
-    && test "${COSIGN_REVISION}" = \
-      "7914231b348c4057891edeb321772aad3ed04fce" \
-    && test "${COSIGN_SOURCE_DATE_EPOCH}" = "1781007044" \
-    && go mod download \
-    && go mod verify \
-    && CGO_ENABLED=0 \
-      GOOS="${TARGETOS}" \
-      GOARCH="${TARGETARCH}" \
-      go build \
-        -trimpath \
-        -ldflags "-buildid= \
-          -X sigs.k8s.io/release-utils/version.gitVersion=${COSIGN_VERSION} \
-          -X sigs.k8s.io/release-utils/version.gitCommit=${COSIGN_REVISION} \
-          -X sigs.k8s.io/release-utils/version.gitTreeState=clean \
-          -X sigs.k8s.io/release-utils/version.buildDate=2026-06-09T12:10:44Z" \
-        -o /out/cosign \
-        ./cmd/cosign \
-    && install -m 0444 LICENSE /out/LICENSE \
-    && printf '%s\n' \
-      "cosign=${COSIGN_VERSION}" \
-      "revision=${COSIGN_REVISION}" \
-      "go=$(go version | awk '{print $3}')" \
-      > /out/source.txt
 
 # Build the exact OPA release with the upstream oras-go security update. The
 # v1.18.2 release image predates Go 1.26.5 and oras-go v2.6.2.
@@ -432,9 +397,9 @@ ARG UBUNTU_SNAPSHOT
 ENV HOME=/home/preflight \
     PATH="/opt/venv/bin:${PATH}"
 
-COPY --from=cosign /out/cosign /usr/local/bin/cosign
-COPY --from=cosign /out/LICENSE /usr/share/licenses/cosign/LICENSE
-COPY --from=cosign /out/source.txt /usr/share/robotics-runtime/cosign-source.txt
+COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
+COPY --from=cosign /var/lib/db/sbom/cosign-3.1.1-r1.spdx.json \
+  /usr/share/licenses/cosign/cosign.spdx.json
 COPY --from=opa /out/opa /usr/local/bin/opa
 COPY --from=opa /out/LICENSE /usr/share/licenses/opa/LICENSE
 COPY --from=opa /out/source.txt /usr/share/robotics-runtime/opa-source.txt
@@ -444,10 +409,6 @@ COPY --from=yq /out/yq /usr/local/bin/yq
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY docker/python/permit-preflight.lock /tmp/python/permit-preflight.lock
-COPY --chmod=0444 policy/execution.rego /usr/share/robotics-runtime/policy/execution.rego
-COPY --chmod=0555 docker/permit-preflight/permit-preflight /usr/local/bin/permit-preflight
-
-RUN chmod 0555 /usr/share/robotics-runtime/policy
 
 RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
@@ -465,11 +426,15 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
     && python3 -c \
-      "from robotics_runtime_contracts import schema_names; assert 'execution-permit.v2' in schema_names() and 'execution-verification.v1' in schema_names()" \
+      "from robotics_runtime_contracts import schema_names; assert 'execution-permit.v1' in schema_names() and 'execution-verification.v1' in schema_names()" \
     && groupadd --gid 10002 preflight \
-    && useradd --uid 10002 --gid 10002 --create-home preflight \
-    && mkdir -p /work \
-    && chown 10002:10002 /work \
+    && useradd \
+      --uid 10002 \
+      --gid 10002 \
+      --home-dir /home/preflight \
+      --no-create-home \
+      preflight \
+    && install -d -m 0755 -o 10002 -g 10002 /home/preflight /work \
     && rm -rf \
       /tmp/python \
       /var/cache/ldconfig/aux-cache \
@@ -477,6 +442,11 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       /var/log/apt/* \
       /var/log/alternatives.log \
       /var/log/dpkg.log
+
+COPY --chmod=0444 policy/execution.rego /usr/share/robotics-runtime/policy/execution.rego
+COPY --chmod=0555 docker/permit-preflight/permit-preflight /usr/local/bin/permit-preflight
+
+RUN chmod 0555 /usr/share/robotics-runtime/policy
 
 USER preflight
 WORKDIR /work
@@ -689,37 +659,6 @@ USER ubuntu
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["python3", "-c", "import onnxruntime as ort; assert 'CPUExecutionProvider' in ort.get_available_providers()"]
 
-FROM inference-cpu AS provider-conformance-cpu
-
-USER root
-COPY docker/python/provider-conformance.lock /tmp/python/provider-conformance.lock
-
-RUN uv pip install \
-      --python /opt/venv/bin/python \
-      --require-hashes \
-      --no-cache \
-      --no-deps \
-      --requirement /tmp/python/provider-conformance.lock \
-    && install -d -o ubuntu -g ubuntu /reports \
-    && install -d -o root -g root -m 0555 /opt/provider-conformance \
-    && rm -rf /tmp/python
-
-COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
-
-ENV ROBOTICS_EXPECTED_PROVIDER=CPUExecutionProvider \
-    ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
-
-LABEL org.opencontainers.image.title="Robotics CPU provider conformance" \
-      org.opencontainers.image.description="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
-
-USER ubuntu
-WORKDIR /opt/provider-conformance
-
-ENTRYPOINT ["python3", "-m", "pytest"]
-CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
-
-HEALTHCHECK NONE
-
 FROM edge-runtime AS inference-intel
 
 USER root
@@ -759,37 +698,6 @@ USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["python3", "-c", "import onnxruntime as ort; assert 'OpenVINOExecutionProvider' in ort.get_available_providers()"]
-
-FROM inference-intel AS provider-conformance-intel
-
-USER root
-COPY docker/python/provider-conformance.lock /tmp/python/provider-conformance.lock
-
-RUN uv pip install \
-      --python /opt/venv/bin/python \
-      --require-hashes \
-      --no-cache \
-      --no-deps \
-      --requirement /tmp/python/provider-conformance.lock \
-    && install -d -o ubuntu -g ubuntu /reports \
-    && install -d -o root -g root -m 0555 /opt/provider-conformance \
-    && rm -rf /tmp/python
-
-COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
-
-ENV ROBOTICS_EXPECTED_PROVIDER=OpenVINOExecutionProvider \
-    ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
-
-LABEL org.opencontainers.image.title="Robotics Intel provider conformance" \
-      org.opencontainers.image.description="Hardware gate for explicit OpenVINO device identity, fallback, and tensor parity."
-
-USER ubuntu
-WORKDIR /opt/provider-conformance
-
-ENTRYPOINT ["python3", "-m", "pytest"]
-CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
-
-HEALTHCHECK NONE
 
 FROM edge-runtime AS inference-amd
 
@@ -876,37 +784,6 @@ USER ubuntu
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["python3", "-c", "import onnxruntime as ort; assert 'MIGraphXExecutionProvider' in ort.get_available_providers()"]
 
-FROM inference-amd AS provider-conformance-amd
-
-USER root
-COPY docker/python/provider-conformance.lock /tmp/python/provider-conformance.lock
-
-RUN uv pip install \
-      --python /opt/venv/bin/python \
-      --require-hashes \
-      --no-cache \
-      --no-deps \
-      --requirement /tmp/python/provider-conformance.lock \
-    && install -d -o ubuntu -g ubuntu /reports \
-    && install -d -o root -g root -m 0555 /opt/provider-conformance \
-    && rm -rf /tmp/python
-
-COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
-
-ENV ROBOTICS_EXPECTED_PROVIDER=MIGraphXExecutionProvider \
-    ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
-
-LABEL org.opencontainers.image.title="Robotics AMD provider conformance" \
-      org.opencontainers.image.description="Hardware gate for MIGraphX provider identity, fallback, and tensor parity."
-
-USER ubuntu
-WORKDIR /opt/provider-conformance
-
-ENTRYPOINT ["python3", "-m", "pytest"]
-CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
-
-HEALTHCHECK NONE
-
 FROM edge-runtime AS inference-nvidia
 
 USER root
@@ -958,37 +835,6 @@ RUN test -s /usr/share/licenses/nvidia/NGC-DL-CONTAINER-LICENSE \
     && test -z "$(find /usr/include -name 'NvInfer*.h' -print -quit)"
 
 USER ubuntu
-
-HEALTHCHECK NONE
-
-FROM inference-nvidia AS provider-conformance-nvidia
-
-USER root
-COPY docker/python/provider-conformance.lock /tmp/python/provider-conformance.lock
-
-RUN uv pip install \
-      --python /opt/venv/bin/python \
-      --require-hashes \
-      --no-cache \
-      --no-deps \
-      --requirement /tmp/python/provider-conformance.lock \
-    && install -d -o ubuntu -g ubuntu /reports \
-    && install -d -o root -g root -m 0555 /opt/provider-conformance \
-    && rm -rf /tmp/python
-
-COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
-
-ENV ROBOTICS_EXPECTED_PROVIDER=CUDAExecutionProvider \
-    ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
-
-LABEL org.opencontainers.image.title="Robotics NVIDIA provider conformance" \
-      org.opencontainers.image.description="Hardware release gate for CUDA provider identity, fallback, and tensor parity."
-
-USER ubuntu
-WORKDIR /opt/provider-conformance
-
-ENTRYPOINT ["python3", "-m", "pytest"]
-CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
 
 HEALTHCHECK NONE
 
@@ -1067,7 +913,11 @@ LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Thor inference runt
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["python3", "-c", "import onnxruntime as ort; assert 'TensorrtExecutionProvider' in ort.get_available_providers()"]
 
-FROM inference-nvidia-jetson-base AS provider-conformance-nvidia-jetson-base
+FROM ${PROVIDER_CONFORMANCE_BASE} AS provider-conformance
+
+ARG PROVIDER_CONFORMANCE_DESCRIPTION
+ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER
+ARG PROVIDER_CONFORMANCE_TITLE
 
 USER root
 COPY docker/python/provider-conformance.lock /tmp/python/provider-conformance.lock
@@ -1085,10 +935,11 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
 
 COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
 
-ENV ROBOTICS_EXPECTED_PROVIDER=TensorrtExecutionProvider \
+ENV ROBOTICS_EXPECTED_PROVIDER=${PROVIDER_CONFORMANCE_EXPECTED_PROVIDER} \
     ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
 
-LABEL org.opencontainers.image.description="Jetson hardware gate for TensorRT provider identity, fallback, and tensor parity."
+LABEL org.opencontainers.image.title="${PROVIDER_CONFORMANCE_TITLE}" \
+      org.opencontainers.image.description="${PROVIDER_CONFORMANCE_DESCRIPTION}"
 
 USER ubuntu
 WORKDIR /opt/provider-conformance
@@ -1097,20 +948,6 @@ ENTRYPOINT ["python3", "-m", "pytest"]
 CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.junit.xml", "test_provider.py"]
 
 HEALTHCHECK NONE
-
-FROM provider-conformance-nvidia-jetson-base AS provider-conformance-nvidia-jetson-orin
-
-ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat_orin:${LD_LIBRARY_PATH}" \
-    ROBOTICS_NVIDIA_JETSON_FAMILY=orin
-
-LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Orin provider conformance"
-
-FROM provider-conformance-nvidia-jetson-base AS provider-conformance-nvidia-jetson-thor
-
-ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat:${LD_LIBRARY_PATH}" \
-    ROBOTICS_NVIDIA_JETSON_FAMILY=thor
-
-LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Thor provider conformance"
 
 FROM edge-runtime AS acceptance-observer
 

@@ -20,8 +20,9 @@ referencing==0.37.0 \
     # via
     #   jsonschema
     #   jsonschema-specifications
-robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.5.0/robotics_runtime_contracts-0.5.0-py3-none-any.whl \
-    --hash=sha256:c56ee51c8f29558573dc8bfe7cba429176521492663d168b44c30c8043a6aba0
+    #   robotics-runtime-contracts
+robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.6.0/robotics_runtime_contracts-0.6.0-py3-none-any.whl \
+    --hash=sha256:13b2500c7ad068d80284847119de087d6ddc3d5699ed33081116de95418e01b0
     # via -r docker/python/permit-preflight.in
 rpds-py==2026.6.3 \
     --hash=sha256:0be972be84cfcaf46c8c6edf690ca0f154ac17babf1f6a955a51579b34ad2dc5 \

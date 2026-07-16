@@ -8,19 +8,16 @@ fi
 
 : "${UBUNTU_SNAPSHOT:?UBUNTU_SNAPSHOT is required}"
 
-ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
-if [[ ! -f ${ubuntu_sources} ]]; then
-  printf 'Ubuntu apt source not found: %s\n' "${ubuntu_sources}" >&2
+if [[ ! ${UBUNTU_SNAPSHOT} =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
+  printf 'Invalid Ubuntu snapshot ID: %s\n' "${UBUNTU_SNAPSHOT}" >&2
   exit 1
 fi
 
-snapshot_uri="https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/"
-sed -i -E \
-  -e "s#https?://archive.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
-  -e "s#https?://security.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
-  -e "s#https?://ports.ubuntu.com/ubuntu-ports/#${snapshot_uri}#g" \
-  "${ubuntu_sources}"
-test "$(grep -Fc "${snapshot_uri}" "${ubuntu_sources}")" -eq 2
+snapshot_config=/etc/apt/apt.conf.d/50robotics-snapshot
+printf 'APT::Snapshot "%s";\nAPT::Update::Error-Mode "any";\n' \
+  "${UBUNTU_SNAPSHOT}" > "${snapshot_config}"
+apt-config dump | grep -Fx "APT::Snapshot \"${UBUNTU_SNAPSHOT}\";" > /dev/null
+apt-config dump | grep -Fx 'APT::Update::Error-Mode "any";' > /dev/null
 
 if [[ -z ${ROS_SNAPSHOT:-} ]]; then
   exit 0

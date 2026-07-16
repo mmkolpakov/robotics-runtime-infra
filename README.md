@@ -70,8 +70,8 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.5.0 |
-| Acceptance harness | `robotics-acceptance-harness` 0.6.0 |
+| Contracts | `robotics-runtime-contracts` 0.6.0 |
+| Acceptance harness | `robotics-acceptance-harness` 0.7.1 |
 
 Base images, package snapshots, Python hashes, and foundation revisions are
 pinned in `Dockerfile`, `docker-bake.hcl`, lock files, and `foundation.repos`.

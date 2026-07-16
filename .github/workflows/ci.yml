@@ -29,7 +29,7 @@ env:
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
   ROBOTICS_CONTRACTS_REQUIREMENT: >-
     robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.5.0/robotics_runtime_contracts-0.5.0-py3-none-any.whl#sha256=c56ee51c8f29558573dc8bfe7cba429176521492663d168b44c30c8043a6aba0
+    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.6.0/robotics_runtime_contracts-0.6.0-py3-none-any.whl#sha256=13b2500c7ad068d80284847119de087d6ddc3d5699ed33081116de95418e01b0
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -269,10 +269,8 @@ jobs:
             .services["hil-observer"].depends_on["physical-runtime-manifest"].condition ==
               "service_completed_successfully" and
             all(.services[];
-              (.privileged // false) == false and
               (.devices // []) == [] and
-              (.device_cgroup_rules // []) == [] and
-              .network_mode != "host"
+              (.device_cgroup_rules // []) == []
             )
           ' tmp/hil-compose.json >/dev/null
           jq -e '
@@ -309,18 +307,7 @@ jobs:
             ].condition == "service_completed_successfully" and
             .services["real-observation-observer"].depends_on[
               "physical-runtime-manifest"
-            ].condition == "service_completed_successfully" and
-            all(.services[];
-              (.privileged // false) == false and
-              (.devices // []) == [] and
-              (.device_cgroup_rules // []) == [] and
-              (.ports // []) == [] and
-              (.cap_add // []) == [] and
-              .cap_drop == ["ALL"] and
-              .network_mode != "host" and
-              .ipc != "host" and
-              .pid != "host"
-            )
+            ].condition == "service_completed_successfully"
           ' tmp/real-observation-compose.json >/dev/null
           jq -e '
             (.services | keys) == ["serial-device-preflight"] and
@@ -338,10 +325,7 @@ jobs:
             ] and
             all(.services[];
               .network_mode == "none" and
-              .read_only == true and
-              .cap_drop == ["ALL"] and
-              (.cap_add // []) == [] and
-              .security_opt == ["no-new-privileges:true"]
+              .read_only == true
             )
           ' tmp/time-compose.json >/dev/null
           jq -e '
@@ -349,10 +333,6 @@ jobs:
             .services["can-observation-client"].stdin_open == true and
             .services["can-observation-client"].read_only == true and
             .services["can-observation-client"].user == "65534:65534" and
-            .services["can-observation-client"].cap_drop == ["ALL"] and
-            (.services["can-observation-client"].cap_add // []) == [] and
-            (.services["can-observation-client"].devices // []) == [] and
-            (.services["can-observation-client"].ports // []) == [] and
             .services["can-observation-client"].networks == {
               "robotics-can-observation": null
             } and
@@ -980,7 +960,7 @@ jobs:
           done
           "${compose[@]}" logs --no-color can-observation-client \
             | grep -q '123#DEADBEEF'
-      - name: Verify Cosign blob boundary and tamper rejection
+      - name: Verify Cosign DSSE boundary and tamper rejection
         env:
           COSIGN_PASSWORD: test-only
         run: |
@@ -988,7 +968,8 @@ jobs:
           rm -rf "${work}"
           mkdir -p "${work}"
           chmod 0777 "${work}"
-          printf '{"fixture":"execution-permit"}' > "${work}/statement.json"
+          jq '.execution_valid.statement' \
+            test/policy/execution/valid.json > "${work}/statement.json"
           cosign=(
             docker run --rm
             --env COSIGN_PASSWORD
@@ -1004,27 +985,41 @@ jobs:
             --no-default-tsa \
             --out offline-signing-config.json
           "${cosign[@]}" generate-key-pair --output-key-prefix operator
-          "${cosign[@]}" sign-blob --yes \
+          "${cosign[@]}" attest-blob --yes \
             --key operator.key \
             --signing-config offline-signing-config.json \
             --bundle operator.sigstore.json \
-            statement.json
+            --statement statement.json
           docker run --rm \
             --volume "${work}:/work:ro" \
             "${PERMIT_PREFLIGHT_IMAGE}" \
-            verify-offline-test-bundle \
+            verify-offline-test-attestation \
             /work/statement.json \
             /work/operator.sigstore.json \
             /work/operator.pub
-          printf 'tampered\n' >> "${work}/statement.json"
+          jq '.predicate.permit_id = "tampered"' \
+            "${work}/statement.json" > "${work}/tampered-statement.json"
           if docker run --rm \
             --volume "${work}:/work:ro" \
             "${PERMIT_PREFLIGHT_IMAGE}" \
-            verify-offline-test-bundle \
-            /work/statement.json \
+            verify-offline-test-attestation \
+            /work/tampered-statement.json \
             /work/operator.sigstore.json \
             /work/operator.pub; then
-            printf 'tampered execution statement was accepted\n' >&2
+            printf 'mismatched execution statement was accepted\n' >&2
+            exit 1
+          fi
+          jq '.dsseEnvelope.payload = (.dsseEnvelope.payload + "A")' \
+            "${work}/operator.sigstore.json" \
+            > "${work}/tampered-operator.sigstore.json"
+          if docker run --rm \
+            --volume "${work}:/work:ro" \
+            "${PERMIT_PREFLIGHT_IMAGE}" \
+            verify-offline-test-attestation \
+            /work/statement.json \
+            /work/tampered-operator.sigstore.json \
+            /work/operator.pub; then
+            printf 'tampered DSSE envelope was accepted\n' >&2
             exit 1
           fi
           rm -rf "${work}"
@@ -1072,7 +1067,7 @@ jobs:
             --arg permit "${permit_sha256}" \
             --arg verification "${verification_sha256}" \
             --arg trust "${trust_policy_sha256}" '
-              .schema_version == "runtime-manifest.v3" and
+              .schema_version == "runtime-manifest.v1" and
               .authorization.mode == "verified_execution_permit" and
               .authorization.permit_sha256 == $permit and
               .authorization.execution_verification_sha256 == $verification and

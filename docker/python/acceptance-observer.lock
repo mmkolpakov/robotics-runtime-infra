@@ -137,11 +137,12 @@ referencing==0.37.0 \
     # via
     #   jsonschema
     #   jsonschema-specifications
-robotics-acceptance-harness @ https://github.com/mmkolpakov/robotics-acceptance-harness/releases/download/v0.6.0/robotics_acceptance_harness-0.6.0-py3-none-any.whl \
-    --hash=sha256:0b47c52e594bc9780301cf461cd06e2bb4c0b1115a568e211d62a855948fa53e
+    #   robotics-runtime-contracts
+robotics-acceptance-harness @ https://github.com/mmkolpakov/robotics-acceptance-harness/releases/download/v0.7.1/robotics_acceptance_harness-0.7.1-py3-none-any.whl \
+    --hash=sha256:a5287781ee7785e96d7f3e99e9cb9a43df580162c317a3da9e51eea3eb30bb44
     # via -r docker/python/acceptance-observer.in
-robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.5.0/robotics_runtime_contracts-0.5.0-py3-none-any.whl \
-    --hash=sha256:c56ee51c8f29558573dc8bfe7cba429176521492663d168b44c30c8043a6aba0
+robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.6.0/robotics_runtime_contracts-0.6.0-py3-none-any.whl \
+    --hash=sha256:13b2500c7ad068d80284847119de087d6ddc3d5699ed33081116de95418e01b0
     # via robotics-acceptance-harness
 rpds-py==2026.6.3 \
     --hash=sha256:0be972be84cfcaf46c8c6edf690ca0f154ac17babf1f6a955a51579b34ad2dc5 \

@@ -115,7 +115,7 @@ jq -n \
   --argjson security_enclaves "$security_enclaves" \
   --argjson security_policy_digests "$security_policy_digests" \
   '{
-    schema_version: "runtime-manifest.v2",
+    schema_version: "runtime-manifest.v1",
     runtime_id: $runtime_id,
     generated_at: $generated_at,
     oci_image: {reference: $image_reference, digest: $image_digest},
@@ -140,6 +140,7 @@ jq -n \
       time_mode: $time_mode,
       data_plane_profile: $data_plane_profile
     },
+    authorization: {mode: "none"},
     data_plane: ({
       rmw_implementation: $rmw,
       ipc_namespace: $ipc_namespace,

@@ -9,8 +9,8 @@ import launch
 import launch.actions
 import launch.launch_description_sources
 import launch_testing.actions
-import rclpy
 from ament_index_python.packages import get_package_share_directory
+from launch_testing_ros import WaitForTopics
 from rosgraph_msgs.msg import Clock
 
 
@@ -37,18 +37,20 @@ def generate_test_description() -> launch.LaunchDescription:
 
 class TestClock(unittest.TestCase):
     def test_clock_is_monotonic(self) -> None:
-        rclpy.init()
-        node = rclpy.create_node("clock_acceptance_test")
-        samples: list[int] = []
-
-        def receive(message: Clock) -> None:
-            samples.append(message.clock.sec * 1_000_000_000 + message.clock.nanosec)
-
-        subscription = node.create_subscription(Clock, "/clock", receive, 10)
-        deadline = time.monotonic() + 60
-        try:
-            while len(samples) < 10 and time.monotonic() < deadline:
-                rclpy.spin_once(node, timeout_sec=0.5)
+        with WaitForTopics(
+            [("/clock", Clock)],
+            timeout=60.0,
+            messages_received_buffer_length=10,
+        ) as topics:
+            deadline = time.monotonic() + 10.0
+            messages = topics.received_messages("/clock")
+            while len(messages) < 10 and time.monotonic() < deadline:
+                time.sleep(0.1)
+                messages = topics.received_messages("/clock")
+            samples = [
+                message.clock.sec * 1_000_000_000 + message.clock.nanosec
+                for message in messages
+            ]
             self.assertGreaterEqual(len(samples), 10)
             self.assertTrue(
                 all(
@@ -56,7 +58,3 @@ class TestClock(unittest.TestCase):
                     for previous, current in zip(samples, samples[1:])
                 )
             )
-        finally:
-            node.destroy_subscription(subscription)
-            node.destroy_node()
-            rclpy.shutdown()

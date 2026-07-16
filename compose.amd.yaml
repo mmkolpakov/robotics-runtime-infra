@@ -41,8 +41,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: provider-conformance-amd
-      args: *build-args
+      target: provider-conformance
+      args:
+        <<: *build-args
+        PROVIDER_CONFORMANCE_BASE: inference-amd
+        PROVIDER_CONFORMANCE_EXPECTED_PROVIDER: MIGraphXExecutionProvider
+        PROVIDER_CONFORMANCE_TITLE: Robotics AMD provider conformance
+        PROVIDER_CONFORMANCE_DESCRIPTION: >-
+          Hardware gate for MIGraphX provider identity, fallback, and tensor parity.
     profiles: [conformance-amd]
     environment:
       ROBOTICS_EXPECTED_PROVIDER: MIGraphXExecutionProvider

@@ -1,5 +1,5 @@
 {
-  "schema_version": "runtime-manifest.v3",
+  "schema_version": "runtime-manifest.v1",
   "runtime_id": "org.example.controller-hil-runtime",
   "generated_at": "2026-07-14T12:00:00Z",
   "oci_image": {

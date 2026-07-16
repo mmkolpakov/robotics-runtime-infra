@@ -12,12 +12,12 @@ signers := object.get(input, "verified_signers", [])
 sha256_pattern := "^[a-f0-9]{64}$"
 image_digest_pattern := "^sha256:[a-f0-9]{64}$"
 
-deny contains "permit must use execution-permit.v2" if {
-	object.get(permit, "schema_version", "") != "execution-permit.v2"
+deny contains "permit must use execution-permit.v1" if {
+	object.get(permit, "schema_version", "") != "execution-permit.v1"
 }
 
-deny contains "permit predicate type is not execution-permit.v2" if {
-	object.get(permit, "predicate_type", "") != "https://robotics-runtime-contracts.dev/attestations/execution-permit/v2"
+deny contains "permit predicate type is not execution-permit.v1" if {
+	object.get(permit, "predicate_type", "") != "https://robotics-runtime-contracts.dev/attestations/execution-permit/v1"
 }
 
 deny contains "statement must use in-toto Statement v1" if {

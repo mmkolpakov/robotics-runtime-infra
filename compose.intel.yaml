@@ -29,8 +29,14 @@ x-intel-conformance: &intel-conformance
   build:
     context: .
     dockerfile: Dockerfile
-    target: provider-conformance-intel
-    args: *build-args
+    target: provider-conformance
+    args:
+      <<: *build-args
+      PROVIDER_CONFORMANCE_BASE: inference-intel
+      PROVIDER_CONFORMANCE_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+      PROVIDER_CONFORMANCE_TITLE: Robotics Intel provider conformance
+      PROVIDER_CONFORMANCE_DESCRIPTION: >-
+        Hardware gate for explicit OpenVINO device identity, fallback, and tensor parity.
   environment:
     ROBOTICS_EXPECTED_PROVIDER: OpenVINOExecutionProvider
     ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"

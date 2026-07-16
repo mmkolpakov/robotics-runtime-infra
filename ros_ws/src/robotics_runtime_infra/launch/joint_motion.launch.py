@@ -3,8 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
+from controller_manager.launch_utils import (
+    generate_controllers_spawner_launch_description,
+)
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -49,21 +52,9 @@ def generate_launch_description() -> LaunchDescription:
         arguments=["-topic", "robot_description", "-name", "joint_motion_probe"],
         output="screen",
     )
-    controllers_start = TimerAction(
-        period=5.0,
-        actions=[
-            Node(
-                package="controller_manager",
-                executable="spawner",
-                arguments=[
-                    "joint_state_broadcaster",
-                    "joint_trajectory_controller",
-                    "--controller-manager-timeout",
-                    "45",
-                ],
-                output="screen",
-            ),
-        ],
+    controllers_start = generate_controllers_spawner_launch_description(
+        ["joint_state_broadcaster", "joint_trajectory_controller"],
+        extra_spawner_args=["--controller-manager-timeout", "45"],
     )
     clock_bridge = Node(
         package="ros_gz_bridge",
@@ -78,6 +69,6 @@ def generate_launch_description() -> LaunchDescription:
             robot_state_publisher,
             spawn,
             clock_bridge,
-            controllers_start,
+            *controllers_start.entities,
         ]
     )
