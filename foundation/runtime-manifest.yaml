@@ -1,0 +1,44 @@
+---
+schema_version: runtime-manifest.v1
+runtime_id: foundation.headless-clock-runtime
+generated_at: "2026-07-16T00:00:00Z"
+oci_image:
+  reference: >-
+    local/robotics-runtime-infra/simulation@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+components:
+  contracts_revision: "547e4912b0f61d74b07c836a5fdfc3f53449228a"
+  harness_revision: "ea07bb95e02a532a1e3d96f6dd24ef8d1700a8f2"
+  infra_revision: "0000000000000000000000000000000000000000"
+host:
+  os: ubuntu
+  os_version: "24.04"
+  architecture: x86_64
+  kernel: 6.8.0
+ros:
+  distribution: jazzy
+  rmw_implementation: rmw_fastrtps_cpp
+gazebo:
+  collection: harmonic
+  version: 8.10.0
+  libraries: {gz-sim: 8.10.0}
+render: {mode: software, renderer: llvmpipe}
+workload: {kind: none}
+execution:
+  target_environment: simulation
+  data_source: gazebo
+  plant_backend: gazebo_physics
+  time_mode: simulation_realtime
+  data_plane_profile: standard_isolated
+authorization: {mode: none}
+data_plane:
+  rmw_implementation: rmw_fastrtps_cpp
+  ipc_namespace: container:simulation
+  network_namespace: compose:default
+  shm_transport: false
+  data_sharing: false
+  private_ipc: false
+security: {profile: none, strategy: none, enclaves: [], policy_digests: []}
+lifecycle_states: []
+physical_targets: []
+clock: {basis: ros_time, sync_protocol: sim_clock, offset_ms: 0, drift_ppm: 0}

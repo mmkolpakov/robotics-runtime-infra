@@ -104,6 +104,7 @@ jobs:
             .venv/bin/pytest \
               tests \
               --robotics-scenario "$GITHUB_WORKSPACE/foundation/acceptance-scenario.yaml" \
+              --robotics-runtime "$GITHUB_WORKSPACE/foundation/runtime-manifest.yaml" \
               --junitxml "$GITHUB_WORKSPACE/artifacts/harness.xml"
           )
       - name: Build foundation runtime images
