@@ -1,15 +1,15 @@
 [Unit]
-Description=Read-only SocketCAN observation gateway for %I
+Description=Read-only SocketCAN observation gateway for %i
 Documentation=https://github.com/linux-can/can-utils/blob/v2025.01/canlogserver.c
 After=network-online.target
 Wants=network-online.target
-AssertPathExists=/sys/class/net/%I
+AssertPathExists=/sys/class/net/%i
 StartLimitIntervalSec=30s
 StartLimitBurst=3
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/canlogserver -p 28700 %I
+ExecStart=/usr/bin/canlogserver -p 28700 %i
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=10s
