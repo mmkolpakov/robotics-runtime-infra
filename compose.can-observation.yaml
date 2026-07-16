@@ -8,6 +8,7 @@ services:
     image: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
     profiles: [can-observation]
     init: true
+    stdin_open: true
     read_only: true
     user: "65534:65534"
     command:

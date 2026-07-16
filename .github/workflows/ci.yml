@@ -346,6 +346,7 @@ jobs:
           ' tmp/time-compose.json >/dev/null
           jq -e '
             (.services | keys) == ["can-observation-client"] and
+            .services["can-observation-client"].stdin_open == true and
             .services["can-observation-client"].read_only == true and
             .services["can-observation-client"].user == "65534:65534" and
             .services["can-observation-client"].cap_drop == ["ALL"] and
