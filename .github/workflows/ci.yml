@@ -1749,8 +1749,9 @@ jobs:
           docker buildx bake amd \
             --set '*.platform=linux/amd64' \
             --set '*.output=type=cacheonly' \
-            --set '*.cache-from=type=gha,scope=runtime-infra-amd-amd64' \
-            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-amd-amd64'
+            --set 'inference-amd.cache-from=type=gha,scope=runtime-infra-amd-amd64' \
+            --set 'provider-conformance-amd.cache-from=type=gha,scope=runtime-infra-amd-amd64' \
+            --set 'provider-conformance-amd.cache-to=type=gha,mode=max,scope=runtime-infra-amd-amd64'
 
   intel-image:
     runs-on: ubuntu-24.04

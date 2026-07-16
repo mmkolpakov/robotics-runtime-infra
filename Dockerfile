@@ -793,8 +793,13 @@ HEALTHCHECK NONE
 
 FROM edge-runtime AS inference-amd
 
+ARG HIP_DEB_VERSION=7.2.53211.70204-93~24.04
+ARG HIPBLASLT_DEB_VERSION=1.2.2.70204-93~24.04
 ARG MIGRAPHX_DEB_VERSION=2.15.0.70204-93~24.04
+ARG MIOPEN_DEB_VERSION=3.5.1.70204-93~24.04
+ARG ROCBLAS_DEB_VERSION=5.2.0.70204-93~24.04
 ARG ROCM_VERSION=7.2.4
+ARG ROCRAND_DEB_VERSION=4.2.0.70204-93~24.04
 
 USER root
 COPY --from=uv /uv /uvx /usr/local/bin/
@@ -812,7 +817,26 @@ RUN install -D -m 0644 /tmp/rocm.asc /etc/apt/keyrings/rocm.asc \
       > /etc/apt/preferences.d/rocm-pin-600 \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+      "hip-runtime-amd=${HIP_DEB_VERSION}" \
+    && apt-get clean \
+    && apt-get install -y --no-install-recommends \
+      "hip-dev=${HIP_DEB_VERSION}" \
+    && apt-get clean \
+    && apt-get install -y --no-install-recommends \
+      "hipblaslt=${HIPBLASLT_DEB_VERSION}" \
+    && apt-get clean \
+    && apt-get install -y --no-install-recommends \
+      "rocblas=${ROCBLAS_DEB_VERSION}" \
+    && apt-get clean \
+    && apt-get install -y --no-install-recommends \
+      "rocrand=${ROCRAND_DEB_VERSION}" \
+    && apt-get clean \
+    && apt-get install -y --no-install-recommends \
+      "miopen-hip=${MIOPEN_DEB_VERSION}" \
+    && apt-get clean \
+    && apt-get install -y --no-install-recommends \
       "migraphx=${MIGRAPHX_DEB_VERSION}" \
+    && apt-get clean \
     && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
