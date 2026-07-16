@@ -141,7 +141,8 @@ jobs:
           docker compose -p "$project" pull simulation
           docker compose -p "$project" up --detach --no-build --wait --wait-timeout 120 simulation
           docker compose -p "$project" exec -T simulation \
-            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+            robotics-entrypoint timeout 20 ros2 topic echo \
+            /clock rosgraph_msgs/msg/Clock --once
           docker compose -p "$project" --profile test run --rm --no-deps test
       - name: Scan the published image
         env:

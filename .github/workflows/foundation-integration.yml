@@ -126,7 +126,8 @@ jobs:
           trap cleanup EXIT
           docker compose -p "$project" up --detach --no-build --wait --wait-timeout 120
           docker compose -p "$project" exec -T simulation \
-            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+            robotics-entrypoint timeout 20 ros2 topic echo \
+            /clock rosgraph_msgs/msg/Clock --once
           test_container="${project}-test"
           set +e
           docker compose -p "$project" run --name "$test_container" --no-deps test
@@ -158,9 +159,11 @@ jobs:
           ROS_DOMAIN_ID=42 GZ_PARTITION="${project_b}" \
             docker compose -p "$project_b" up --detach --no-build --wait --wait-timeout 120
           docker compose -p "$project_a" exec -T simulation \
-            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+            robotics-entrypoint timeout 20 ros2 topic echo \
+            /clock rosgraph_msgs/msg/Clock --once
           docker compose -p "$project_b" exec -T simulation \
-            robotics-entrypoint timeout 20 ros2 topic echo /clock --once
+            robotics-entrypoint timeout 20 ros2 topic echo \
+            /clock rosgraph_msgs/msg/Clock --once
       - name: Run the three-repository acceptance path
         run: |
           project="foundation-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
