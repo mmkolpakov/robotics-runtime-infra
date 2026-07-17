@@ -2,7 +2,7 @@
 x-build-args: &build-args
   IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
   IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
-  IMAGE_VERSION: "${IMAGE_VERSION:-0.5.0}"
+  IMAGE_VERSION: "${IMAGE_VERSION:-dev}"
   VCS_REF: "${VCS_REF:-local}"
 
 x-intel-runtime: &intel-runtime
@@ -15,7 +15,7 @@ x-intel-runtime: &intel-runtime
 
 x-intel-image: &intel-image
   # yamllint disable-line rule:line-length
-  image: "${INFERENCE_INTEL_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/inference-intel:0.5.0}"
+  image: "${INFERENCE_INTEL_IMAGE:-local/robotics-runtime-infra/inference-intel:dev}"
   build:
     context: .
     dockerfile: Dockerfile
@@ -25,7 +25,7 @@ x-intel-image: &intel-image
 x-intel-conformance: &intel-conformance
   <<: *intel-runtime
   # yamllint disable-line rule:line-length
-  image: "${INFERENCE_INTEL_CONFORMANCE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/provider-conformance-intel:0.5.0}"
+  image: "${INFERENCE_INTEL_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-intel:dev}"
   build:
     context: .
     dockerfile: Dockerfile

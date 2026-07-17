@@ -358,7 +358,7 @@ FROM scratch AS policy-tooling
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
-ARG IMAGE_VERSION=0.5.0
+ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 
 LABEL org.opencontainers.image.title="Robotics policy tooling" \
@@ -381,7 +381,7 @@ FROM ubuntu-ca AS permit-preflight
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
-ARG IMAGE_VERSION=0.5.0
+ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 
 LABEL org.opencontainers.image.title="Robotics execution permit preflight" \
@@ -464,7 +464,7 @@ FROM ubuntu-ca AS evidence-sink
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
-ARG IMAGE_VERSION=0.5.0
+ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 
@@ -522,7 +522,7 @@ FROM ${ROS_BASE_IMAGE} AS edge-runtime
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
-ARG IMAGE_VERSION=0.5.0
+ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG ROS_SNAPSHOT
@@ -1012,7 +1012,7 @@ FROM ${SIMULATION_BASE_IMAGE} AS simulation
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
-ARG IMAGE_VERSION=0.5.0
+ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG ROS_SNAPSHOT

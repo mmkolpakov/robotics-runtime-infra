@@ -84,6 +84,8 @@ image is published with an SBOM, BuildKit provenance, and an artifact
 attestation.
 
 Candidate versions are reproducible build inputs, not hardware support claims.
+The current source line targets prerelease `v0.8.0-rc.1`; unqualified
+accelerator and physical-observation paths remain qualification-gated.
 
 ## Support status
 

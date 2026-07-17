@@ -2,7 +2,7 @@
 x-build-args: &build-args
   IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
   IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
-  IMAGE_VERSION: "${IMAGE_VERSION:-0.5.0}"
+  IMAGE_VERSION: "${IMAGE_VERSION:-dev}"
   VCS_REF: "${VCS_REF:-local}"
 
 x-ros-environment: &ros-environment
@@ -151,7 +151,7 @@ services:
 
   acceptance-observer:
     <<: *runtime
-    image: "${OBSERVER_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/acceptance-observer:0.6.0}"
+    image: "${OBSERVER_IMAGE:-local/robotics-runtime-infra/acceptance-observer:dev}"
     build:
       context: .
       dockerfile: Dockerfile

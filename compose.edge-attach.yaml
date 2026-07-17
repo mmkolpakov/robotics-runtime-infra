@@ -1,6 +1,6 @@
 ---
 x-edge-attach-observer: &edge-attach-observer
-  image: "${OBSERVER_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/acceptance-observer:0.6.0}"
+  image: "${OBSERVER_IMAGE:-local/robotics-runtime-infra/acceptance-observer:dev}"
   init: true
   network_mode: service:edge-attach-data-plane
   read_only: true
@@ -22,7 +22,7 @@ x-edge-attach-observer: &edge-attach-observer
 
 x-permit-runtime: &permit-runtime
   # yamllint disable-line rule:line-length
-  image: "${PERMIT_PREFLIGHT_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight:0.5.0}"
+  image: "${PERMIT_PREFLIGHT_IMAGE:-local/robotics-runtime-infra/permit-preflight:dev}"
   init: true
   network_mode: none
   read_only: true

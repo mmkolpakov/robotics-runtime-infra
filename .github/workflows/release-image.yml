@@ -242,8 +242,13 @@ jobs:
             echo
             echo "Each image includes BuildKit provenance and an SBOM and has a GitHub artifact attestation."
           } > release-notes.md
+          release_flags=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             release-artifacts/digests/*.txt \
+            "${release_flags[@]}" \
             --verify-tag \
             --title "robotics-runtime-infra ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md
