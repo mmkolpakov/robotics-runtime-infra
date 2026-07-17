@@ -1,15 +1,63 @@
-# robotics-runtime-infra
+# Robotics Runtime Infra
 
 [![CI](https://github.com/mmkolpakov/robotics-runtime-infra/actions/workflows/ci.yml/badge.svg)](https://github.com/mmkolpakov/robotics-runtime-infra/actions/workflows/ci.yml)
 [![Foundation integration](https://github.com/mmkolpakov/robotics-runtime-infra/actions/workflows/foundation-integration.yml/badge.svg)](https://github.com/mmkolpakov/robotics-runtime-infra/actions/workflows/foundation-integration.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Domain-neutral OCI runtimes and Docker Compose profiles for ROS 2 simulation,
-portable edge workloads, repeatable playback, recording, and acceptance evidence.
-Product scenes, robot descriptions, models, hardware drivers, and control logic
-belong in consuming repositories.
+Run portable ROS 2 workloads from a developer machine to qualification hosts
+without coupling the runtime platform to one robot or product.
 
-## Quick start
+Use this repository to:
+
+1. **Run** headless ROS 2 Jazzy simulation, sensor, playback, recording, and
+   edge services through Docker Compose.
+2. **Select** an explicit CPU, accelerator, or device profile without hidden
+   provider fallback.
+3. **Prove** what ran with runtime manifests, MCAP and OpenTelemetry evidence,
+   and an attach-only acceptance observer.
+
+This repository owns the execution environment. Consuming repositories own
+scenes, robot descriptions, models, hardware drivers, and control logic.
+
+## Where It Fits
+
+```mermaid
+flowchart LR
+    product["Product repository<br/>worlds, robots, models, drivers, behavior"]
+    infra["Runtime infra<br/>start services, expose facts, capture evidence"]
+    execution["Running ROS 2 execution"]
+    harness["Acceptance harness<br/>observe, evaluate, report"]
+    result["Acceptance result<br/>JSON and JUnit"]
+    contracts["Runtime contracts<br/>scenario, runtime, evidence, result"]
+
+    product --> infra --> execution --> harness --> result
+    contracts -. validates .-> product
+    contracts -. validates .-> infra
+    contracts -. validates .-> harness
+```
+
+The end-to-end handoff is machine-readable: a product repository supplies its
+workload and scenario, runtime infra emits observed runtime and evidence facts,
+and the harness emits an acceptance result plus JUnit. Each layer can evolve
+and be tested independently.
+
+The shared document model lives in
+[`robotics-runtime-contracts`](https://github.com/mmkolpakov/robotics-runtime-contracts).
+Execution verdicts are produced by
+[`robotics-acceptance-harness`](https://github.com/mmkolpakov/robotics-acceptance-harness),
+which observes a running graph but never starts or controls it.
+
+## Choose a Workflow
+
+| Goal | Start here |
+| --- | --- |
+| Prove the local simulation runtime | [Quick Start](#quick-start) |
+| Develop a scene, robot, driver, or control package | [Add a Product Repository](#add-a-product-repository) |
+| Replay or record deterministic sensor data | [Compose Profiles](#compose-profiles) |
+| Choose CPU, accelerator, or edge hardware | [Support Status](#support-status) |
+| Observe HIL or a real target | [Physical Host Preflight](#physical-host-preflight) and [Scope and Safety](#scope-and-safety) |
+
+## Quick Start
 
 The headless simulation requires Docker Engine or Docker Desktop, the Compose
 plugin 2.35.1 or newer, and an amd64 host. It does not require a host ROS
@@ -18,10 +66,16 @@ installation or a display server.
 ```bash
 docker compose pull simulation
 docker compose up --detach --wait simulation
-docker compose ps
 docker compose exec -T simulation \
   robotics-entrypoint timeout 20 ros2 topic echo /clock --once
-docker compose logs --follow simulation
+```
+
+The final command must print one `/clock` message. Inspect or stop the service
+without entering the container:
+
+```bash
+docker compose ps
+docker compose logs --tail 100 simulation
 docker compose down --volumes --remove-orphans
 ```
 
@@ -32,7 +86,33 @@ ROS/Gazebo acceptance tests with:
 docker compose --profile test run --rm --no-deps test
 ```
 
-## Runtime images
+## Add a Product Repository
+
+Do not add product code to this repository. Copy
+`compose.override.yaml.example` to the consuming repository, set
+`ROBOTICS_PROJECT_DIR`, and run Compose from this repository with the consumer
+override:
+
+```bash
+export ROBOTICS_PROJECT_DIR=../my-robotics-project
+docker compose -f compose.yaml -f ../my-robotics-project/compose.override.yaml \
+  up --detach --wait simulation
+docker compose -f compose.yaml -f ../my-robotics-project/compose.override.yaml \
+  exec simulation bash
+```
+
+The consumer workspace is mounted at `/workspace/project`. Production
+consumers should inherit released images by digest, add their own ROS packages
+in a product Dockerfile, and keep worlds, models, parameters, and hardware
+access in their own Compose overlays. Set a distinct `ROS_DOMAIN_ID`,
+`GZ_PARTITION`, and Compose project name for each concurrent run.
+
+The inherited image exposes its exact common-layer source lock at
+`/usr/share/robotics-runtime/foundation.repos`. Product images must retain that
+file so generated runtime manifests remain attributable to the contracts and
+acceptance harness that were actually integrated.
+
+## Runtime Images
 
 Release tags publish immutable digests for these images under
 `ghcr.io/mmkolpakov/robotics-runtime-infra/`:
@@ -53,7 +133,7 @@ and device drivers are not qualified by the 0.5 release.
 CI also builds the non-release `host-io-fixture` image for amd64 and arm64 to
 validate host time, udev, systemd, and SocketCAN assets reproducibly.
 
-## Version baseline
+## Version Baseline
 
 | Component | Release baseline |
 | --- | --- |
@@ -91,7 +171,7 @@ Candidate versions are reproducible build inputs, not hardware support claims.
 The current source line targets prerelease `v0.8.0-rc.1`; unqualified
 accelerator and physical-observation paths remain qualification-gated.
 
-## Support status
+## Support Status
 
 Support is scoped to an immutable source revision and image digest. The status
 terms are normative:
@@ -151,7 +231,7 @@ The compatibility basis is ROS 2 Jazzy on Ubuntu 24.04
 [CUDA 13 minor-version compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html),
 and [RKNN Toolkit2 2.3.2](https://github.com/airockchip/rknn-toolkit2/releases/tag/v2.3.2).
 
-## Compose profiles
+## Compose Profiles
 
 The base `compose.yaml` is intentionally small. Add one overlay for the runtime
 behavior being tested:
@@ -202,7 +282,7 @@ Use a free `ROS_DOMAIN_ID` for each concurrent run. Slow executors can override
 `ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC` and
 `ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC`.
 
-## Run artifacts
+## Run Artifacts
 
 Recording and acceptance profiles use one host-visible run directory:
 
@@ -222,7 +302,7 @@ volumes avoid host ownership concerns for interactive development.
 The host time profiles are the exception: their evidence directory is owned by
 the host `_chrony` UID/GID.
 
-## Physical host preflight
+## Physical Host Preflight
 
 The canonical physical host is Ubuntu 24.04 with systemd 255 or newer. The CI
 fixture qualifies Chrony 4.5, linuxptp 4.0, systemd/udev 255.4, and the Ubuntu
@@ -322,30 +402,7 @@ The container has no CAN network interface or transmit utility. Command-capable
 CAN belongs to a separately authorized control profile and is not provided by
 this repository.
 
-## Add a product repository
-
-Do not add product code to this repository. Copy
-`compose.override.yaml.example` to the consuming repository, set
-`ROBOTICS_PROJECT_DIR`, and run Compose from this repository with the consumer
-override:
-
-```bash
-ROBOTICS_PROJECT_DIR=../my-robotics-project \
-  docker compose -f compose.yaml -f ../my-robotics-project/compose.override.yaml \
-  up --detach --wait simulation
-```
-
-Production consumers should inherit released images by digest, add their own
-ROS packages in a product Dockerfile, and keep worlds, models, parameters, and
-hardware access in their own Compose overlays. Set a distinct `ROS_DOMAIN_ID`,
-`GZ_PARTITION`, and Compose project name for each concurrent run.
-
-The inherited image exposes its exact common-layer source lock at
-`/usr/share/robotics-runtime/foundation.repos`. Product images must retain that
-file so generated runtime manifests remain attributable to the contracts and
-acceptance harness that were actually integrated.
-
-## Build and verify changes
+## Build and Verify Changes
 
 ```bash
 docker buildx bake --print cpu
@@ -360,7 +417,7 @@ current version, enforces OPA policies, builds all portable targets for
 arm64, scans every image, and runs the three-repository acceptance path.
 Contribution setup and required checks are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Scope and safety
+## Scope and Safety
 
 The 0.5 release supports CPU simulation, playback, recording, transport
 benchmarks, and acceptance observation. It does not claim qualification for GPU,
