@@ -549,14 +549,15 @@ COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-s
 COPY --chmod=0444 docker/apt/ros-snapshot-key.gpg /usr/share/keyrings/ros-snapshot-key.gpg
 COPY --from=geographiclib-datasets /datasets /tmp/geographiclib
 
-RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
+    UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
     ROS_DISTRO="${ROS_DISTRO}" \
     ROS_SNAPSHOT="${ROS_SNAPSHOT}" \
     ROSDISTRO_INDEX_REVISION="${ROSDISTRO_INDEX_REVISION}" \
       /usr/local/sbin/use-package-snapshots \
     && export HOME=/root \
     && apt-get update \
-    && rosdep update --rosdistro "${ROS_DISTRO}" \
+    && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
       --ignore-src \
@@ -604,9 +605,10 @@ USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY docker/rosdeps/sensor/package.xml /tmp/rosdep/sensor/package.xml
 
-RUN export HOME=/root \
+RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
+    export HOME=/root \
     && apt-get update \
-    && rosdep update --rosdistro "${ROS_DISTRO}" \
+    && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
       --ignore-src \
@@ -985,9 +987,10 @@ USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY docker/rosdeps/benchmark/package.xml /tmp/rosdep/benchmark/package.xml
 
-RUN export HOME=/root \
+RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
+    export HOME=/root \
     && apt-get update \
-    && rosdep update --rosdistro "${ROS_DISTRO}" \
+    && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
       --ignore-src \
@@ -1046,14 +1049,15 @@ COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-s
 COPY --chmod=0444 docker/apt/ros-snapshot-key.gpg /usr/share/keyrings/ros-snapshot-key.gpg
 COPY --from=geographiclib-datasets /datasets /tmp/geographiclib
 
-RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
+    UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
     ROS_DISTRO="${ROS_DISTRO}" \
     ROS_SNAPSHOT="${ROS_SNAPSHOT}" \
     ROSDISTRO_INDEX_REVISION="${ROSDISTRO_INDEX_REVISION}" \
       /usr/local/sbin/use-package-snapshots \
     && export HOME=/root \
     && apt-get update \
-    && rosdep update --rosdistro "${ROS_DISTRO}" \
+    && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
       --ignore-src \

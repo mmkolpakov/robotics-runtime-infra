@@ -491,6 +491,7 @@ jobs:
             "${SHELLCHECK_IMAGE}" \
             docker/entrypoint.sh \
             docker/apt/use-package-snapshots \
+            docker/apt/update-rosdep-cache \
             docker/evidence-sink/evidence-sink \
             docker/permit-preflight/permit-preflight \
             docker/runtime/emit-runtime-manifest

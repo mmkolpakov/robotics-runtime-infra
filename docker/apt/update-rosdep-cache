@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if (($# != 1)); then
+  printf 'Usage: update-rosdep-cache ROS_DISTRO\n' >&2
+  exit 2
+fi
+
+ros_distro=$1
+if [[ ! ${ros_distro} =~ ^[a-z][a-z0-9_]*$ ]]; then
+  printf 'Invalid ROS distribution: %s\n' "${ros_distro}" >&2
+  exit 2
+fi
+
+readonly max_attempts=3
+attempt=1
+while ! rosdep update --rosdistro "${ros_distro}"; do
+  if ((attempt >= max_attempts)); then
+    printf 'rosdep update failed after %d attempts\n' "${max_attempts}" >&2
+    exit 1
+  fi
+
+  delay=$((5 * 2 ** (attempt - 1)))
+  printf 'rosdep update attempt %d failed; retrying in %d seconds\n' \
+    "${attempt}" "${delay}" >&2
+  sleep "${delay}"
+  ((attempt += 1))
+done
