@@ -73,8 +73,12 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Contracts | `robotics-runtime-contracts` 0.6.0 |
 | Acceptance harness | `robotics-acceptance-harness` 0.7.1 |
 
-Base images, package snapshots, Python hashes, and foundation revisions are
-pinned in `Dockerfile`, `docker-bake.hcl`, lock files, and `foundation.repos`.
+Base images, package snapshots, and Python artifacts are pinned in
+`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
+source of exact contracts and harness revisions. BuildKit embeds it and derives
+the runtime-readable `foundation-lock.json` used when a manifest is emitted.
+CI also requires each imported revision to be an exact release tag matching the
+package version installed in the acceptance observer image.
 Ubuntu packages for both amd64 and arm64 resolve from the same signed,
 timestamped `snapshot.ubuntu.com` archive rather than from architecture-specific
 live mirrors.
@@ -335,6 +339,11 @@ Production consumers should inherit released images by digest, add their own
 ROS packages in a product Dockerfile, and keep worlds, models, parameters, and
 hardware access in their own Compose overlays. Set a distinct `ROS_DOMAIN_ID`,
 `GZ_PARTITION`, and Compose project name for each concurrent run.
+
+The inherited image exposes its exact common-layer source lock at
+`/usr/share/robotics-runtime/foundation.repos`. Product images must retain that
+file so generated runtime manifests remain attributable to the contracts and
+acceptance harness that were actually integrated.
 
 ## Build and verify changes
 

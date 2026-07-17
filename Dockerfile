@@ -579,12 +579,15 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /var/log/alternatives.log \
       /var/log/dpkg.log
 
+COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
+RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
+    yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
+      > /usr/share/robotics-runtime/foundation-lock.json \
+    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
 ENV HOME=/home/ubuntu \
-    ROBOTICS_CONTRACTS_REVISION=32e8fe9d1b6df71e90c69f831db5bab9687e695a \
-    ROBOTICS_HARNESS_REVISION=8328b0381e4d6ae81b8597cee3a46cb69b9134e5 \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 WORKDIR /workspace
@@ -1082,12 +1085,15 @@ RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
       --cmake-args -DBUILD_TESTING=ON \
     && chown -R ubuntu:ubuntu build install log
 
+COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
+RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
+    yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
+      > /usr/share/robotics-runtime/foundation-lock.json \
+    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
 ENV HOME=/home/ubuntu \
-    ROBOTICS_CONTRACTS_REVISION=32e8fe9d1b6df71e90c69f831db5bab9687e695a \
-    ROBOTICS_HARNESS_REVISION=8328b0381e4d6ae81b8597cee3a46cb69b9134e5 \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 

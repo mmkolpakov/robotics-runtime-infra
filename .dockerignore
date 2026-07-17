@@ -1,5 +1,6 @@
 **
 !Dockerfile
+!foundation.repos
 !docker/
 !docker/entrypoint.sh
 !docker/apt/

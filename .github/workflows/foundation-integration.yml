@@ -115,6 +115,30 @@ jobs:
             --set '*.platform=linux/amd64' \
             --set '*.cache-from=type=gha,scope=foundation-amd64' \
             --set '*.cache-to=type=gha,mode=max,scope=foundation-amd64'
+      - name: Verify embedded foundation revisions
+        run: |
+          contracts_revision="$(git -C dependencies/contracts rev-parse HEAD)"
+          harness_revision="$(git -C dependencies/harness rev-parse HEAD)"
+          contracts_tag="$(git -C dependencies/contracts describe --tags --exact-match)"
+          harness_tag="$(git -C dependencies/harness describe --tags --exact-match)"
+          for image in "${SIMULATION_IMAGE}" "${OBSERVER_IMAGE}"; do
+            test "$(docker run --rm --entrypoint jq "${image}" \
+              -er '.repositories.contracts.version' \
+              /usr/share/robotics-runtime/foundation-lock.json)" = \
+              "${contracts_revision}"
+            test "$(docker run --rm --entrypoint jq "${image}" \
+              -er '.repositories.harness.version' \
+              /usr/share/robotics-runtime/foundation-lock.json)" = \
+              "${harness_revision}"
+          done
+          contracts_version="$(docker run --rm \
+            --entrypoint /opt/venv/bin/python "${OBSERVER_IMAGE}" \
+            -c 'from importlib.metadata import version; print(version("robotics-runtime-contracts"))')"
+          harness_version="$(docker run --rm \
+            --entrypoint /opt/venv/bin/python "${OBSERVER_IMAGE}" \
+            -c 'from importlib.metadata import version; print(version("robotics-acceptance-harness"))')"
+          test "${contracts_tag}" = "v${contracts_version}"
+          test "${harness_tag}" = "v${harness_version}"
       - name: Run scenario against the real ROS graph
         run: |
           project="foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -230,6 +254,14 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
           jq -e '.status == "passed"' \
             "${run_dir}/results/acceptance-result.json"
+          contracts_revision="$(git -C dependencies/contracts rev-parse HEAD)"
+          harness_revision="$(git -C dependencies/harness rev-parse HEAD)"
+          jq -e \
+            --arg contracts_revision "${contracts_revision}" \
+            --arg harness_revision "${harness_revision}" \
+            '.components.contracts_revision == $contracts_revision and
+             .components.harness_revision == $harness_revision' \
+            "${run_dir}/runtime-manifest.json"
           test -s "${run_dir}/results/junit.xml"
           cp -r "${run_dir}/results" artifacts/acceptance-results
           cp "${run_dir}/runtime-manifest.json" artifacts/

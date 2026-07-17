@@ -22,10 +22,17 @@ for variable in \
   ROBOTICS_RUNTIME_ID \
   ROBOTICS_OCI_REFERENCE \
   ROBOTICS_OCI_DIGEST \
-  ROBOTICS_CONTRACTS_REVISION \
-  ROBOTICS_HARNESS_REVISION \
   ROBOTICS_INFRA_REVISION; do
   required "$variable"
+done
+
+foundation_lock=/usr/share/robotics-runtime/foundation-lock.json
+[[ -r "$foundation_lock" ]] || fail "foundation lock is not readable: $foundation_lock"
+
+contracts_revision="$(jq -er '.repositories.contracts.version' "$foundation_lock")"
+harness_revision="$(jq -er '.repositories.harness.version' "$foundation_lock")"
+for revision in "$contracts_revision" "$harness_revision"; do
+  [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || fail "foundation revision is not a full Git SHA: $revision"
 done
 
 [[ "${ROBOTICS_OCI_REFERENCE}" == *@"${ROBOTICS_OCI_DIGEST}" ]] || \
@@ -86,8 +93,8 @@ jq -n \
   --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --arg image_reference "${ROBOTICS_OCI_REFERENCE}" \
   --arg image_digest "${ROBOTICS_OCI_DIGEST}" \
-  --arg contracts_revision "${ROBOTICS_CONTRACTS_REVISION}" \
-  --arg harness_revision "${ROBOTICS_HARNESS_REVISION}" \
+  --arg contracts_revision "$contracts_revision" \
+  --arg harness_revision "$harness_revision" \
   --arg infra_revision "${ROBOTICS_INFRA_REVISION}" \
   --arg host_os "$host_os" \
   --arg host_os_version "$host_os_version" \
