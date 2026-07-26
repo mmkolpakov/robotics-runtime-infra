@@ -10,19 +10,22 @@ cd "${root}"
 
 foundation_require_env SIMULATION_IMAGE OBSERVER_IMAGE
 
-contracts_revision="$(git -C dependencies/contracts rev-parse HEAD)"
-harness_revision="$(git -C dependencies/harness rev-parse HEAD)"
-contracts_tag="$(git -C dependencies/contracts describe --tags --exact-match)"
-harness_tag="$(git -C dependencies/harness describe --tags --exact-match)"
+contracts_dir=dependencies/robotics-runtime-contracts
+harness_dir=dependencies/robotics-acceptance-harness
+
+contracts_revision="$(git -C "${contracts_dir}" rev-parse HEAD)"
+harness_revision="$(git -C "${harness_dir}" rev-parse HEAD)"
+contracts_tag="$(git -C "${contracts_dir}" describe --tags --exact-match)"
+harness_tag="$(git -C "${harness_dir}" describe --tags --exact-match)"
 for image in "${SIMULATION_IMAGE}" "${OBSERVER_IMAGE}"; do
   test "$(
     docker run --rm --entrypoint jq "${image}" \
-      -er '.repositories.contracts.version' \
+      -er '.repositories["robotics-runtime-contracts"].version' \
       /usr/share/robotics-runtime/foundation-lock.json
   )" = "${contracts_revision}"
   test "$(
     docker run --rm --entrypoint jq "${image}" \
-      -er '.repositories.harness.version' \
+      -er '.repositories["robotics-acceptance-harness"].version' \
       /usr/share/robotics-runtime/foundation-lock.json
   )" = "${harness_revision}"
 done

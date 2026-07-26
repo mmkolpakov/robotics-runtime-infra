@@ -4,19 +4,22 @@ set -Eeuo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 cd "${root}"
 
-uv sync --project dependencies/contracts --locked --all-groups
-uv sync --project dependencies/harness --locked --all-groups
+contracts_dir=dependencies/robotics-runtime-contracts
+harness_dir=dependencies/robotics-acceptance-harness
+
+uv sync --project "${contracts_dir}" --locked --all-groups
+uv sync --project "${harness_dir}" --locked --all-groups
 (
-  cd dependencies/contracts
+  cd "${contracts_dir}"
   uv run --no-sync pytest \
     --junitxml "${root}/artifacts/contracts.xml"
 )
 uv pip install \
-  --python dependencies/harness/.venv/bin/python \
+  --python "${harness_dir}/.venv/bin/python" \
   --reinstall \
-  ./dependencies/contracts
+  "./${contracts_dir}"
 (
-  cd dependencies/harness
+  cd "${harness_dir}"
   .venv/bin/pytest \
     -p robotics_acceptance_harness.plugin \
     tests \

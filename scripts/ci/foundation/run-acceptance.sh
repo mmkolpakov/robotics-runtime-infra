@@ -34,7 +34,7 @@ ROBOTICS_RUN_ID="$(
 )"
 export ROBOTICS_DOMAIN_ID=primary
 foundation_validate_document \
-  dependencies/contracts/.venv/bin/python \
+  dependencies/robotics-runtime-contracts/.venv/bin/python \
   "${run_dir}/acceptance-run.json"
 sudo chown -R 1000:1000 "${run_dir}"
 sudo chown -R 10001:10001 "${run_dir}/evidence"
@@ -140,8 +140,12 @@ jq -e '
   [.segments[].media_type]
   | contains(["application/json", "application/x-ndjson"])
 ' "${run_dir}/evidence/evidence-index.json"
-contracts_revision="$(git -C dependencies/contracts rev-parse HEAD)"
-harness_revision="$(git -C dependencies/harness rev-parse HEAD)"
+contracts_revision="$(
+  git -C dependencies/robotics-runtime-contracts rev-parse HEAD
+)"
+harness_revision="$(
+  git -C dependencies/robotics-acceptance-harness rev-parse HEAD
+)"
 jq -e \
   --arg contracts_revision "${contracts_revision}" \
   --arg harness_revision "${harness_revision}" \

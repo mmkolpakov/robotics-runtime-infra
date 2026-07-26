@@ -6,19 +6,29 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 ci_enter_repo
 
 test "$#" -ge 2 || {
-  printf 'usage: scan-image.sh IMAGE REPORT_ID [PLATFORM...]\n' >&2
+  printf 'usage: scan-image.sh IMAGE REPORT_ID [PLATFORM_OR_CSV...]\n' >&2
   exit 64
 }
 
 image="$1"
 report_id="$2"
 shift 2
-platforms=("$@")
+platform_inputs=("$@")
+platforms=()
 
 : "${TRIVY_IMAGE:?TRIVY_IMAGE is required}"
 [[ "${report_id}" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]
-if test "${#platforms[@]}" -eq 0; then
+if test "${#platform_inputs[@]}" -eq 0; then
   platforms=("")
+else
+  for platform_input in "${platform_inputs[@]}"; do
+    IFS=',' read -r -a parsed_platforms <<<"${platform_input}"
+    test "${#parsed_platforms[@]}" -gt 0
+    for platform in "${parsed_platforms[@]}"; do
+      test -n "${platform}"
+      platforms+=("${platform}")
+    done
+  done
 fi
 
 security_artifact_dir="${ROBOTICS_CI_SECURITY_ARTIFACT_DIR:-${PWD}/artifacts/security}"

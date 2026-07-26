@@ -64,7 +64,7 @@ RUN printf '%s\n' \
 COPY docker/python/rknn-converter.lock /tmp/python/rknn-converter.lock
 
 RUN --mount=type=cache,id=rknn-converter-uv,target=/root/.cache/uv,sharing=locked \
-    uv venv --python /usr/local/bin/python3 /opt/venv \
+    uv venv --no-cache --python /usr/local/bin/python3 /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -74,8 +74,8 @@ RUN --mount=type=cache,id=rknn-converter-uv,target=/root/.cache/uv,sharing=locke
     && install -d /usr/share/rknn-toolkit2 \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/rknn-toolkit2/python-packages.txt \
-    && /opt/venv/bin/python -c "import pkg_resources" \
-    && python3 -c "from pathlib import Path; assert Path('/usr/share/licenses/rknn-toolkit2/LICENSE').stat().st_size > 0" \
+    && /opt/venv/bin/python -B -c "import pkg_resources" \
+    && python3 -B -c "from pathlib import Path; assert Path('/usr/share/licenses/rknn-toolkit2/LICENSE').stat().st_size > 0" \
     && rm -rf /tmp/python
 
 ENV PATH="/opt/venv/bin:${PATH}" \
@@ -199,14 +199,14 @@ RUN --mount=type=cache,id=rknn-runtime-uv,target=/root/.cache/uv,sharing=locked 
       /usr/lib/aarch64-linux-gnu/librknnrt.so \
       | sha256sum --check --strict \
     && ldconfig \
-    && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+    && uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
       --no-deps \
       --requirement /tmp/python/rknn-runtime.lock \
     && uv pip check --python /opt/venv/bin/python \
-    && /opt/venv/bin/python -c \
+    && /opt/venv/bin/python -B -c \
       "from rknnlite.api import RKNNLite; assert RKNNLite is not None; print('rknnlite-import-ok')" \
     && ldd /usr/local/bin/rknn_benchmark \
       | tee /tmp/rknn-benchmark.ldd \

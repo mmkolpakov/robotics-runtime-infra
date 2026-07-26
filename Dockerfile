@@ -416,7 +416,7 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
     && apt-get install -y --no-install-recommends python3 \
-    && uv venv --python /usr/bin/python3 /opt/venv \
+    && uv venv --no-cache --python /usr/bin/python3 /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -426,7 +426,7 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && python3 -c \
+    && python3 -B -c \
       "from robotics_runtime_contracts import schema_names; assert 'execution-permit.v1' in schema_names() and 'execution-verification.v1' in schema_names()" \
     && groupadd --gid 10002 preflight \
     && useradd \
@@ -437,6 +437,7 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       preflight \
     && install -d -m 0755 -o 10002 -g 10002 /home/preflight /work \
     && rm -rf \
+      /home/preflight/.cache \
       /tmp/python \
       /var/cache/ldconfig/aux-cache \
       /var/lib/apt/lists/* \
@@ -495,7 +496,7 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       jq \
       python3 \
     && mkdir -p /usr/share/robotics-runtime \
-    && uv venv --python /usr/bin/python3 /opt/venv \
+    && uv venv --no-cache --python /usr/bin/python3 /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -505,13 +506,14 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && python3 -c "from mcap.reader import make_reader" \
+    && python3 -B -c "from mcap.reader import make_reader" \
     && rm -f /usr/local/bin/uv /usr/local/bin/uvx \
     && groupadd --gid 10001 evidence \
     && useradd --uid 10001 --gid 10001 --create-home evidence \
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
       | sort > /usr/share/robotics-runtime/deb-packages.tsv \
     && rm -rf \
+      /home/evidence/.cache \
       /var/cache/ldconfig/aux-cache \
       /tmp/python \
       /var/lib/apt/lists/* \
@@ -592,6 +594,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
       | sort > /usr/share/robotics-runtime/deb-packages.tsv \
     && rm -rf \
+      /root/.cache/uv \
       /tmp/rosdep \
       /var/cache/ldconfig/aux-cache \
       /var/lib/apt/lists/* \
@@ -662,7 +665,7 @@ USER root
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/inference-cpu.lock /tmp/python/inference-cpu.lock
 
-RUN uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+RUN uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -671,7 +674,7 @@ RUN uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
       --requirement /tmp/python/inference-cpu.lock \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && rm -rf /tmp/python
+    && rm -rf /home/ubuntu/.cache/uv /tmp/python
 
 ENV PATH="/opt/venv/bin:${PATH}"
 
@@ -695,7 +698,7 @@ RUN apt-get update \
       clinfo \
       ocl-icd-libopencl1 \
       /tmp/intel-gpu/*.deb \
-    && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+    && uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -705,6 +708,7 @@ RUN apt-get update \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
     && rm -rf \
+      /home/ubuntu/.cache/uv \
       /tmp/intel-gpu \
       /tmp/python \
       /var/cache/ldconfig/aux-cache \
@@ -769,7 +773,7 @@ RUN install -D -m 0644 /tmp/rocm.asc /etc/apt/keyrings/rocm.asc \
     && apt-get install -y --no-install-recommends \
       "migraphx=${MIGRAPHX_DEB_VERSION}" \
     && apt-get clean \
-    && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+    && uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -786,6 +790,7 @@ RUN install -D -m 0644 /tmp/rocm.asc /etc/apt/keyrings/rocm.asc \
       /etc/apt/keyrings/rocm.asc \
       /etc/apt/preferences.d/rocm-pin-600 \
       /etc/apt/sources.list.d/rocm.list \
+      /home/ubuntu/.cache/uv \
       /tmp/debian-packages.txt \
       /tmp/python \
       /tmp/rocm.asc \
@@ -820,7 +825,7 @@ COPY --from=nvidia-cuda-runtime \
 COPY docker/python/inference-nvidia.lock /tmp/python/inference-nvidia.lock
 
 RUN ln -s /usr/local/cuda-13.3 /usr/local/cuda \
-    && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+    && uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -829,7 +834,7 @@ RUN ln -s /usr/local/cuda-13.3 /usr/local/cuda \
       --requirement /tmp/python/inference-nvidia.lock \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && rm -rf /tmp/python
+    && rm -rf /home/ubuntu/.cache/uv /tmp/python
 
 ENV CUDA_HOME=/usr/local/cuda \
     CUDA_MODULE_LOADING=LAZY \
@@ -852,7 +857,7 @@ FROM inference-nvidia AS inference-nvidia-verification
 USER root
 
 RUN test -s /usr/share/licenses/nvidia/NGC-DL-CONTAINER-LICENSE \
-    && python3 -c \
+    && python3 -B -c \
       "import onnxruntime as ort; providers = ort.get_available_providers(); assert 'CUDAExecutionProvider' in providers, providers" \
     && ! command -v nvcc \
     && test ! -e /usr/local/cuda/include/cuda.h \
@@ -876,7 +881,7 @@ WORKDIR /tmp/onnxruntime
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
     ln -s /usr/local/cuda-13.3 /usr/local/cuda \
     && sha256sum --check --strict SHA256SUMS \
-    && uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+    && uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -899,7 +904,7 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
     && test ! -d /usr/local/cuda/include \
     && test -z "$(find /usr/include -name 'NvInfer*.h' -print -quit)" \
     && test ! -e /src/onnxruntime \
-    && rm -rf /tmp/onnxruntime /tmp/python
+    && rm -rf /home/ubuntu/.cache/uv /tmp/onnxruntime /tmp/python
 
 WORKDIR /workspace
 
@@ -955,7 +960,7 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
       --requirement /tmp/python/provider-conformance.lock \
     && install -d -o ubuntu -g ubuntu /reports \
     && install -d -o root -g root -m 0555 /opt/provider-conformance \
-    && rm -rf /tmp/python
+    && rm -rf /home/ubuntu/.cache/uv /tmp/python
 
 COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
 
@@ -983,7 +988,7 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
       --require-hashes \
       --no-cache \
       --requirement /tmp/python/sensor-inference-probe.lock \
-    && rm -rf /tmp/python
+    && rm -rf /home/ubuntu/.cache/uv /tmp/python
 COPY --chmod=0444 probes/sensor_inference/robotics_sensor_inference \
   /opt/robotics/probes/robotics_sensor_inference
 ENV PYTHONPATH="/opt/robotics/probes"
@@ -998,7 +1003,7 @@ USER root
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/acceptance-observer.lock /tmp/python/acceptance-observer.lock
 
-RUN uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
+RUN uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -1007,7 +1012,7 @@ RUN uv venv --python /usr/bin/python3 --system-site-packages /opt/venv \
       --requirement /tmp/python/acceptance-observer.lock \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && rm -rf /tmp/python
+    && rm -rf /home/ubuntu/.cache/uv /tmp/python
 
 ENV PATH="/opt/venv/bin:${PATH}"
 
@@ -1037,6 +1042,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
       | sort > /usr/share/robotics-runtime/deb-packages.tsv \
     && rm -rf \
+      /root/.cache/uv \
       /tmp/rosdep \
       /var/cache/ldconfig/aux-cache \
       /var/lib/apt/lists/* \
@@ -1101,6 +1107,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get update \
     && uv pip install \
       --system \
+      --break-system-packages \
       --require-hashes \
       --no-cache \
       --python /usr/bin/python3 \

@@ -36,13 +36,13 @@ write_runtime_manifest_input() {
   )"
   contracts_revision="$(
     awk '
-      /^  contracts:/ {contracts = 1; next}
+      /^  robotics-runtime-contracts:/ {contracts = 1; next}
       contracts && /^    version:/ {print $2; exit}
     ' "${REPOSITORY_ROOT}/foundation.repos"
   )"
   harness_revision="$(
     awk '
-      /^  harness:/ {harness = 1; next}
+      /^  robotics-acceptance-harness:/ {harness = 1; next}
       harness && /^    version:/ {print $2; exit}
     ' "${REPOSITORY_ROOT}/foundation.repos"
   )"

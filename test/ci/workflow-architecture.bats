@@ -107,6 +107,19 @@ setup() {
   [ "${#failures[@]}" -eq 0 ]
 }
 
+@test "every repository script referenced by a workflow exists and is executable" {
+  mapfile -t scripts < <(
+    grep -rhoE 'scripts/ci/[A-Za-z0-9._/-]+\.sh' .github/workflows |
+      LC_ALL=C sort -u
+  )
+  [ "${#scripts[@]}" -gt 0 ]
+
+  for script in "${scripts[@]}"; do
+    [ -f "${script}" ]
+    [ -x "${script}" ]
+  done
+}
+
 @test "all CI shell files parse" {
   while IFS= read -r -d '' script; do
     run bash -n "${script}"

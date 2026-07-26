@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+work_dir="$(
+  mktemp -d \
+    "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/robotics-reproducibility.XXXXXX"
+)"
+trap 'rm -rf -- "${work_dir}"' EXIT
+
 created="$(git show --no-patch --format=%cI HEAD)"
 epoch="$(git show --no-patch --format=%ct HEAD)"
 build=(
@@ -17,10 +23,20 @@ build=(
   .
 )
 "${build[@]}" --output \
-  type=oci,dest=first.tar,rewrite-timestamp=true
+  "type=oci,dest=${work_dir}/first.tar,rewrite-timestamp=true"
 "${build[@]}" --output \
-  type=oci,dest=second.tar,rewrite-timestamp=true
-first_digest="$(tar -xOf first.tar index.json | jq -er '.manifests[0].digest')"
-second_digest="$(tar -xOf second.tar index.json | jq -er '.manifests[0].digest')"
-test "${first_digest}" = "${second_digest}"
+  "type=oci,dest=${work_dir}/second.tar,rewrite-timestamp=true"
+first_digest="$(
+  tar -xOf "${work_dir}/first.tar" index.json |
+    jq -er '.manifests[0].digest'
+)"
+second_digest="$(
+  tar -xOf "${work_dir}/second.tar" index.json |
+    jq -er '.manifests[0].digest'
+)"
+if test "${first_digest}" != "${second_digest}"; then
+  printf 'first OCI manifest:  %s\n' "${first_digest}" >&2
+  printf 'second OCI manifest: %s\n' "${second_digest}" >&2
+  exit 1
+fi
 printf 'reproducible OCI manifest: %s\n' "${first_digest}"
