@@ -14,3 +14,14 @@ setup() {
   run grep -F '<buildtool_depend>ament_python</buildtool_depend>' "${package}"
   [ "${status}" -eq 1 ]
 }
+
+@test "locked Python dependency is excluded once from rosdep installation" {
+  run grep -F '<exec_depend>python3-opentelemetry-api-pip</exec_depend>' \
+    ros_ws/src/robotics_observability/package.xml
+  [ "${status}" -eq 0 ]
+
+  run grep -F 'opentelemetry-api==1.44.0' docker/python/observability.lock
+  [ "${status}" -eq 0 ]
+
+  [ "$(grep -Fc -- '--skip-keys python3-opentelemetry-api-pip' Dockerfile)" -eq 1 ]
+}

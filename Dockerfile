@@ -1124,6 +1124,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       --from-paths /tmp/rosdep \
       --ignore-src \
       --rosdistro "${ROS_DISTRO}" \
+      --skip-keys python3-opentelemetry-api-pip \
       -y \
     && tar -xjf /tmp/geographiclib/egm96-5.tar.bz2 -C /usr/share/GeographicLib \
     && tar -xjf /tmp/geographiclib/egm96.tar.bz2 -C /usr/share/GeographicLib \
