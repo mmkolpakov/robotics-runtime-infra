@@ -32,6 +32,7 @@ EOF
 
   [ "${status}" -eq 0 ]
   [ "$(wc -l <"${DOCKER_LOG}")" -eq 4 ]
+  [ "$(grep -Fc -- '--vex /work/security/vex/linux-libc-dev.openvex.json' "${DOCKER_LOG}")" -eq 4 ]
   run grep -F -- '--platform linux/amd64' "${DOCKER_LOG}"
   [ "${status}" -eq 0 ]
   run grep -F -- '--platform linux/arm64' "${DOCKER_LOG}"
@@ -78,5 +79,46 @@ EOF
   run grep -F 'registry.example/runtime:test' "${DOCKER_LOG}"
   [ "${status}" -eq 0 ]
   run grep -F 'registry.example/conformance:test' "${DOCKER_LOG}"
+  [ "${status}" -eq 0 ]
+}
+
+@test "reviewed OpenVEX policy is scoped to the kernel header package" {
+  run jq -e '
+    .["@context"] == "https://openvex.dev/ns/v0.2.0"
+    and .author == "mmkolpakov"
+    and (.statements | length) == 53
+    and (
+      [.statements[].vulnerability.name]
+      | length == (unique | length)
+    )
+    and all(
+      .statements[];
+      (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
+      and .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
+      and .status == "not_affected"
+      and .justification == "vulnerable_code_not_present"
+    )
+  ' security/vex/linux-libc-dev.openvex.json
+  [ "${status}" -eq 0 ]
+
+  run awk '!/^[[:space:]]*(#|$)/ { print }' .trivyignore
+  [ "${status}" -eq 0 ]
+  [ -z "${output}" ]
+
+  run grep -F -- '--vex /work/security/vex/linux-libc-dev.openvex.json' \
+    .github/workflows/rk3588-qualification.yml
+  [ "${status}" -eq 0 ]
+}
+
+@test "Ubuntu package snapshot and kernel headers are pinned together" {
+  run grep -F 'ARG UBUNTU_SNAPSHOT=20260726T000000Z' Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136' Dockerfile
+  [ "${status}" -eq 0 ]
+  [ "$(grep -Fc 'https://snapshot.ubuntu.com/ubuntu/20260726T000000Z/' Dockerfile)" -eq 4 ]
+  [ "$(grep -Fc '"linux-libc-dev=${LINUX_LIBC_DEV_VERSION}"' Dockerfile)" -eq 2 ]
+  run grep -F 'default = "20260726T000000Z"' docker-bake.hcl
+  [ "${status}" -eq 0 ]
+  run grep -F 'default = "6.8.0-136.136"' docker-bake.hcl
   [ "${status}" -eq 0 ]
 }

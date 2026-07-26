@@ -16,7 +16,8 @@ ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG SENSOR_INFERENCE_BASE=inference-cpu
-ARG UBUNTU_SNAPSHOT=20260701T000000Z
+ARG UBUNTU_SNAPSHOT=20260726T000000Z
+ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 
@@ -258,18 +259,18 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM ${UBUNTU_BASE_IMAGE} AS ubuntu-ca-amd64
 ADD --checksum=sha256:e3b33fefcebc3ef8f3367572a1ffead2e8ddf7807aec1d442b843e50b70261f4 \
-  https://snapshot.ubuntu.com/ubuntu/20260701T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.11_amd64.deb \
+  https://snapshot.ubuntu.com/ubuntu/20260726T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.11_amd64.deb \
   /packages/openssl.deb
 ADD --checksum=sha256:6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50 \
-  https://snapshot.ubuntu.com/ubuntu/20260701T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb \
+  https://snapshot.ubuntu.com/ubuntu/20260726T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb \
   /packages/ca-certificates.deb
 
 FROM ${UBUNTU_BASE_IMAGE} AS ubuntu-ca-arm64
 ADD --checksum=sha256:98961f09af294bdfb96a8a9418d48cba89efc9d2a7460975904484106071ae79 \
-  https://snapshot.ubuntu.com/ubuntu/20260701T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.11_arm64.deb \
+  https://snapshot.ubuntu.com/ubuntu/20260726T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.11_arm64.deb \
   /packages/openssl.deb
 ADD --checksum=sha256:6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50 \
-  https://snapshot.ubuntu.com/ubuntu/20260701T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb \
+  https://snapshot.ubuntu.com/ubuntu/20260726T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb \
   /packages/ca-certificates.deb
 
 ARG TARGETARCH
@@ -546,6 +547,7 @@ ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
+ARG LINUX_LIBC_DEV_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -578,6 +580,8 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       /usr/local/sbin/use-package-snapshots \
     && export HOME=/root \
     && apt-get update \
+    && apt-get install -y --no-install-recommends \
+      "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
     && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
@@ -1065,6 +1069,7 @@ ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
+ARG LINUX_LIBC_DEV_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -1105,6 +1110,8 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       /usr/local/sbin/use-package-snapshots \
     && export HOME=/root \
     && apt-get update \
+    && apt-get install -y --no-install-recommends \
+      "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
     && uv pip install \
       --system \
       --break-system-packages \
@@ -1128,6 +1135,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
       | sort > /usr/share/robotics-runtime/deb-packages.tsv \
     && rm -rf \
+      /root/.cache/uv \
       /tmp/rosdep \
       /var/cache/ldconfig/aux-cache \
       /var/lib/apt/lists/* \

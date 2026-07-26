@@ -127,6 +127,7 @@ jobs:
           "${trivy[@]}" \
             --config /work/trivy.yaml \
             --ignorefile /work/.trivyignore \
+            --vex /work/security/vex/linux-libc-dev.openvex.json \
             --skip-db-update \
             --severity HIGH,CRITICAL --exit-code 1 \
             "${RKNN_CONFORMANCE_IMAGE}"

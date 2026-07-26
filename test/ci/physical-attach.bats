@@ -670,6 +670,9 @@ EOF
 @test "time evidence cannot be consumed twice" {
   run bash -c '
     set -Eeuo pipefail
+    export GITHUB_RUN_ATTEMPT=1
+    export GITHUB_RUN_ID=local
+    export GITHUB_SHA=local
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
     source "$1"
     work_root="$(mktemp -d)"

@@ -45,6 +45,7 @@ trivy=(
   "${TRIVY_IMAGE}" image
   --config /work/trivy.yaml
   --ignorefile /work/.trivyignore
+  --vex /work/security/vex/linux-libc-dev.openvex.json
 )
 
 for platform in "${platforms[@]}"; do

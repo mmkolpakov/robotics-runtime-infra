@@ -155,7 +155,7 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 
 | Component | Release baseline |
 | --- | --- |
-| OS | Ubuntu 24.04 packages from snapshot `20260701T000000Z` |
+| OS | Ubuntu 24.04 packages from snapshot `20260726T000000Z` |
 | ROS | ROS 2 Jazzy packages from snapshot `2026-06-18` |
 | Simulator | Gazebo Harmonic from the pinned Jazzy simulation image |
 | CPU inference | ONNX Runtime 1.27.0 |
