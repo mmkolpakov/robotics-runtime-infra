@@ -1,0 +1,42 @@
+---
+x-nvidia-rendering: &nvidia-rendering
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+  environment:
+    __GLX_VENDOR_LIBRARY_NAME: nvidia
+    EGL_PLATFORM: surfaceless
+    LIBGL_ALWAYS_SOFTWARE: "0"
+    NVIDIA_DRIVER_CAPABILITIES: graphics,utility
+    NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+    QT_QPA_PLATFORM: offscreen
+
+services:
+  simulation:
+    <<: *nvidia-rendering
+    profiles: [nvidia-simulation]
+    command:
+      - ros2
+      - launch
+      - robotics_runtime_infra
+      - gpu_lidar.launch.py
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/robotics-entrypoint
+        - timeout
+        - "8"
+        - ros2
+        - topic
+        - echo
+        - /gpu_lidar/scan
+        - sensor_msgs/msg/LaserScan
+        - --once
+      interval: 10s
+      timeout: 10s
+      start_period: 45s
+      retries: 9

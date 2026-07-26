@@ -1,0 +1,50 @@
+---
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  resource/run:
+    attributes:
+      - key: run.id
+        value: ${env:ROBOTICS_RUN_ID}
+        action: upsert
+      - key: domain.id
+        value: ${env:ROBOTICS_DOMAIN_ID}
+        action: upsert
+      - key: service.namespace
+        value: robotics-runtime
+        action: insert
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  file/metrics:
+    path: /evidence/metrics.otlp.json
+    format: json
+    flush_interval: 1s
+  file/traces:
+    path: /evidence/traces.otlp.jsonl
+    format: json
+    flush_interval: 1s
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [resource/run, batch]
+      exporters: [file/metrics]
+    traces:
+      receivers: [otlp]
+      processors: [resource/run, batch]
+      exporters: [file/traces]

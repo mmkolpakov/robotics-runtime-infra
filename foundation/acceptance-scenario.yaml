@@ -1,5 +1,5 @@
 ---
-schema_version: acceptance-scenario.v1
+schema_version: acceptance-scenario.v2
 scenario_id: foundation.headless-clock
 execution:
   target_environment: simulation
@@ -38,6 +38,10 @@ assertions: []
 time_policy:
   min_realtime_factor: 0.8
   max_deadline_miss_ratio: 0.01
+  time_authority_min_samples: 30
+  max_clock_offset_p50_ms: 1
+  max_clock_offset_p95_ms: 2
+  max_clock_offset_ms: 5
 data_plane_policy:
   max_message_age_ms: 100
   max_loss_ratio: 0

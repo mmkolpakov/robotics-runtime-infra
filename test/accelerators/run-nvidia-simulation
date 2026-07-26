@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly root
+readonly report_dir="${ROBOTICS_GPU_SIM_REPORT_DIR:-${root}/artifacts/gpu-simulation}"
+readonly project_name="${COMPOSE_PROJECT_NAME:-robotics-gpu-sim-$RANDOM}"
+readonly compose=(
+  docker compose
+  --project-name "${project_name}"
+  --file "${root}/compose.yaml"
+  --file "${root}/compose.nvidia-sim.yaml"
+  --profile nvidia-simulation
+)
+
+cleanup() {
+  "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+rm -rf "${report_dir}"
+mkdir -p "${report_dir}"
+
+nvidia-smi \
+  --query-gpu=name,driver_version,compute_cap \
+  --format=csv,noheader \
+  > "${report_dir}/device.csv"
+
+"${compose[@]}" config --quiet
+"${compose[@]}" up --detach --no-build --wait --wait-timeout 150 simulation
+"${compose[@]}" exec -T simulation \
+  timeout 20 ros2 topic echo \
+  /gpu_lidar/scan sensor_msgs/msg/LaserScan --once \
+  > "${report_dir}/scan.yaml"
+"${compose[@]}" logs --no-color simulation > "${report_dir}/simulation.log"
+
+test -s "${report_dir}/device.csv"
+grep -q '^ranges:' "${report_dir}/scan.yaml"
+if grep -qi 'llvmpipe' "${report_dir}/simulation.log"; then
+  printf 'software renderer detected in NVIDIA qualification\n' >&2
+  exit 1
+fi

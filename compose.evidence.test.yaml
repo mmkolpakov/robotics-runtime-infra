@@ -11,7 +11,7 @@ services:
       disable: true
 
   s3-fixture-init:
-    image: "${EVIDENCE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/evidence-sink:0.5.0}"
+    image: "${EVIDENCE_IMAGE:-local/robotics-runtime-infra/evidence-sink:dev}"
     profiles: [test]
     entrypoint: [/bin/bash, -c]
     command:
@@ -59,4 +59,4 @@ services:
       RCLONE_CONFIG_EVIDENCE_TYPE: s3
       RCLONE_REMOTE: evidence
       ROBOTICS_RETENTION_CLASS: regression-30d
-      ROBOTICS_RUN_ID: org.example.s3-evidence
+      ROBOTICS_RUN_ID: run-00000000-0000-4000-8000-000000000001

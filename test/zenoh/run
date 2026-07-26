@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly root
+readonly report_dir="${ROBOTICS_ZENOH_REPORT_DIR:-${root}/artifacts/zenoh}"
+readonly project_name="${COMPOSE_PROJECT_NAME:-robotics-zenoh-$RANDOM}"
+readonly compose=(
+  docker compose
+  --project-name "${project_name}"
+  --file "${root}/compose.yaml"
+  --file "${root}/compose.zenoh.yaml"
+  --profile zenoh
+)
+
+cleanup() {
+  "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+rm -rf "${report_dir}"
+mkdir -p "${report_dir}"
+export ROBOTICS_ZENOH_REPORT_DIR="${report_dir}"
+
+"${compose[@]}" config --quiet
+"${compose[@]}" up \
+  --abort-on-container-exit \
+  --exit-code-from zenoh-subscriber \
+  zenoh-source-plane \
+  zenoh-destination-plane \
+  zenoh-source-bridge \
+  zenoh-destination-bridge \
+  zenoh-subscriber \
+  zenoh-publisher
+
+jq -e '
+  .status == "passed"
+  and .source_domain_id == 31
+  and .destination_domain_id == 32
+  and .received_messages >= .minimum_messages
+' "${report_dir}/channel-observation.json" >/dev/null

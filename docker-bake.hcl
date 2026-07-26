@@ -64,6 +64,7 @@ group "cpu" {
     "edge-runtime",
     "sensor-runtime",
     "inference-cpu",
+    "sensor-inference-cpu",
     "acceptance-observer",
     "benchmark-runtime",
     "evidence-sink",
@@ -114,6 +115,7 @@ group "nvidia" {
   targets = [
     "inference-nvidia",
     "provider-conformance-nvidia",
+    "sensor-inference-nvidia",
   ]
 }
 
@@ -202,6 +204,16 @@ target "provider-conformance-cpu" {
   }
 }
 
+target "sensor-inference-cpu" {
+  inherits  = ["_common"]
+  target    = "sensor-inference-probe"
+  platforms = ["linux/amd64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/sensor-inference-cpu:${VERSION}"]
+  args = {
+    SENSOR_INFERENCE_BASE = "inference-cpu"
+  }
+}
+
 target "inference-amd" {
   inherits  = ["_common"]
   target    = "inference-amd"
@@ -265,6 +277,16 @@ target "provider-conformance-nvidia" {
     PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "CUDAExecutionProvider"
     PROVIDER_CONFORMANCE_TITLE             = "Robotics NVIDIA provider conformance"
     PROVIDER_CONFORMANCE_DESCRIPTION       = "Hardware release gate for CUDA provider identity, fallback, and tensor parity."
+  }
+}
+
+target "sensor-inference-nvidia" {
+  inherits  = ["_common"]
+  target    = "sensor-inference-probe"
+  platforms = ["linux/amd64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/sensor-inference-nvidia:${VERSION}"]
+  args = {
+    SENSOR_INFERENCE_BASE = "inference-nvidia"
   }
 }
 

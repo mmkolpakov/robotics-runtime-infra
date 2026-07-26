@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>robotics_observability</name>
+  <version>0.8.0</version>
+  <description>OpenTelemetry W3C Trace Context propagation helpers for ROS 2.</description>
+  <maintainer email="184955981+mmkolpakov@users.noreply.github.com">mmkolpakov</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>python3-opentelemetry-api-pip</exec_depend>
+  <exec_depend>robotics_observability_msgs</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

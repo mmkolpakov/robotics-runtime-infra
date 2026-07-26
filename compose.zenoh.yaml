@@ -1,0 +1,154 @@
+---
+x-zenoh-node: &zenoh-node
+  image: "${EDGE_IMAGE:-local/robotics-runtime-infra/edge:dev}"
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [zenoh]
+  environment:
+    RCUTILS_COLORIZED_OUTPUT: "0"
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+  healthcheck:
+    disable: true
+
+x-zenoh-bridge: &zenoh-bridge
+  image: >-
+    eclipse/zenoh-bridge-ros2dds:1.9.0@sha256:5aca6798ae112e390a97788450fd37360ddd72ac092032a25acf9fac17b2d9af
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [zenoh]
+  volumes:
+    - type: bind
+      source: ./config/zenoh
+      target: /etc/robotics/zenoh
+      read_only: true
+  healthcheck:
+    disable: true
+
+services:
+  zenoh-source-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [zenoh]
+    networks: [zenoh-backbone]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  zenoh-destination-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [zenoh]
+    networks: [zenoh-backbone]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  zenoh-source-bridge:
+    <<: *zenoh-bridge
+    network_mode: service:zenoh-source-plane
+    command: [-c, /etc/robotics/zenoh/source.json5]
+    depends_on:
+      zenoh-source-plane:
+        condition: service_started
+
+  zenoh-destination-bridge:
+    <<: *zenoh-bridge
+    network_mode: service:zenoh-destination-plane
+    command: [-c, /etc/robotics/zenoh/destination.json5]
+    depends_on:
+      zenoh-destination-plane:
+        condition: service_started
+      zenoh-source-bridge:
+        condition: service_started
+
+  zenoh-subscriber:
+    <<: *zenoh-node
+    network_mode: service:zenoh-destination-plane
+    environment:
+      RCUTILS_COLORIZED_OUTPUT: "0"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_DOMAIN_ID: "32"
+    command:
+      - bash
+      - -euo
+      - pipefail
+      - -c
+      - |
+        rm -f /reports/messages.csv /reports/channel-observation.json
+        status=0
+        timeout 25 ros2 topic echo \
+          /robotics/qualification std_msgs/msg/String --csv \
+          > /reports/messages.csv || status=$?
+        test "$${status}" -eq 0 || test "$${status}" -eq 124
+        received="$$(grep -c qualification /reports/messages.csv || true)"
+        test "$${received}" -ge 10
+        jq -n \
+          --argjson sent 20 \
+          --argjson received "$${received}" \
+          '{
+            schema_version: "zenoh-smoke-observation.v1",
+            source_domain_id: 31,
+            destination_domain_id: 32,
+            topic: "/robotics/qualification",
+            sent_messages: $$sent,
+            received_messages: $$received,
+            minimum_messages: 10,
+            status: "passed"
+          }' > /reports/channel-observation.json
+        touch /reports/complete
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
+        target: /reports
+    depends_on:
+      zenoh-destination-bridge:
+        condition: service_started
+
+  zenoh-publisher:
+    <<: *zenoh-node
+    network_mode: service:zenoh-source-plane
+    environment:
+      RCUTILS_COLORIZED_OUTPUT: "0"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_DOMAIN_ID: "31"
+    command:
+      - bash
+      - -euo
+      - pipefail
+      - -c
+      - |
+        sleep 8
+        ros2 topic pub \
+          --rate 20 \
+          --times 20 \
+          /robotics/qualification \
+          std_msgs/msg/String \
+          "{data: qualification}"
+        timeout 30 bash -c \
+          'until test -f /reports/complete; do sleep 1; done'
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
+        target: /reports
+    depends_on:
+      zenoh-source-bridge:
+        condition: service_started
+      zenoh-subscriber:
+        condition: service_started
+
+networks:
+  zenoh-backbone:
+    internal: true

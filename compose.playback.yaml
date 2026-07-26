@@ -8,7 +8,7 @@ services:
       ROBOTICS_TIME_MODE: playback_clocked
 
   playback:
-    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
     profiles: [playback]
     init: true
     command:
@@ -63,7 +63,7 @@ services:
       retries: 10
 
   playback-gate:
-    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
     profiles: [playback]
     init: true
     command:
@@ -97,7 +97,7 @@ services:
       disable: true
 
   playback-probe:
-    image: "${EDGE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/edge:0.5.0}"
+    image: "${EDGE_IMAGE:-local/robotics-runtime-infra/edge:dev}"
     profiles: [test]
     init: true
     command:

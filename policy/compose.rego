@@ -156,6 +156,25 @@ deny contains "real observation must use the SROS2 observer enclave in Enforce m
 	object.get(environment, "ROS_SECURITY_ENCLAVE_OVERRIDE", "") != "/robotics/observer"
 }
 
+high_throughput_manifest_environment := {
+	"FASTRTPS_DEFAULT_PROFILES_FILE": "/etc/robotics/fastdds/high-throughput.xml",
+	"RMW_FASTRTPS_USE_QOS_FROM_XML": "1",
+	"RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+	"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST",
+}
+
+deny contains message if {
+	service := input.services["runtime-manifest"]
+	environment := object.get(service, "environment", {})
+	object.get(environment, "ROBOTICS_DATA_PLANE_PROFILE", "") == "local_high_throughput"
+	some name, expected in high_throughput_manifest_environment
+	object.get(environment, name, "") != expected
+	message := sprintf(
+		"high-throughput runtime manifest requires %s=%s",
+		[name, expected],
+	)
+}
+
 volume_source(volume) := source if {
 	is_object(volume)
 	source := object.get(volume, "source", "")

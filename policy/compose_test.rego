@@ -196,3 +196,38 @@ test_permissive_sros2_is_denied_in_real_observation_profile if {
 	violations := compose.deny with input as candidate
 	count(violations) == 1
 }
+
+test_high_throughput_runtime_manifest_requires_profile_environment if {
+	candidate := {
+		"services": {"runtime-manifest": {
+			"environment": {
+				"ROBOTICS_DATA_PLANE_PROFILE": "local_high_throughput",
+				"RMW_FASTRTPS_USE_QOS_FROM_XML": "1",
+				"RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+				"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST",
+			},
+			"cap_drop": ["ALL"],
+			"security_opt": ["no-new-privileges:true"],
+		}},
+	}
+	violations := compose.deny with input as candidate
+	"high-throughput runtime manifest requires FASTRTPS_DEFAULT_PROFILES_FILE=/etc/robotics/fastdds/high-throughput.xml" in violations
+}
+
+test_high_throughput_runtime_manifest_environment_is_allowed if {
+	candidate := {
+		"services": {"runtime-manifest": {
+			"environment": {
+				"ROBOTICS_DATA_PLANE_PROFILE": "local_high_throughput",
+				"FASTRTPS_DEFAULT_PROFILES_FILE": "/etc/robotics/fastdds/high-throughput.xml",
+				"RMW_FASTRTPS_USE_QOS_FROM_XML": "1",
+				"RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+				"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST",
+			},
+			"cap_drop": ["ALL"],
+			"security_opt": ["no-new-privileges:true"],
+		}},
+	}
+	violations := compose.deny with input as candidate
+	count(violations) == 0
+}

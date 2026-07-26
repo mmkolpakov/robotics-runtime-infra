@@ -5,6 +5,9 @@ x-build-args: &build-args
   IMAGE_VERSION: "${IMAGE_VERSION:-dev}"
   VCS_REF: "${VCS_REF:-local}"
 
+x-robotics-runtime:
+  mode: "${ROBOTICS_RUNTIME_MODE:-source}"
+
 x-ros-environment: &ros-environment
   GZ_PARTITION: "${GZ_PARTITION:-robotics-runtime}"
   RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
@@ -23,7 +26,7 @@ x-runtime: &runtime
 services:
   simulation:
     <<: *runtime
-    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -36,7 +39,7 @@ services:
 
   test:
     <<: *runtime
-    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -66,7 +69,7 @@ services:
 
   edge-smoke:
     <<: *runtime
-    image: "${EDGE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/edge:0.5.0}"
+    image: "${EDGE_IMAGE:-local/robotics-runtime-infra/edge:dev}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -80,7 +83,7 @@ services:
 
   sensor-smoke:
     <<: *runtime
-    image: "${SENSOR_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/sensor:0.5.0}"
+    image: "${SENSOR_IMAGE:-local/robotics-runtime-infra/sensor:dev}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -100,7 +103,7 @@ services:
 
   inference-cpu-smoke:
     <<: *runtime
-    image: "${INFERENCE_CPU_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/inference-cpu:0.5.0}"
+    image: "${INFERENCE_CPU_IMAGE:-local/robotics-runtime-infra/inference-cpu:dev}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -123,7 +126,7 @@ services:
   provider-conformance-cpu:
     <<: *runtime
     # yamllint disable-line rule:line-length
-    image: "${INFERENCE_CPU_CONFORMANCE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/provider-conformance-cpu:0.5.0}"
+    image: "${INFERENCE_CPU_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-cpu:dev}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -168,8 +171,16 @@ services:
       - /run/robotics/scenario.yaml
       - --runtime
       - /run/robotics/runtime-manifest.json
+      - --run-id
+      - "${ROBOTICS_RUN_ID}"
+      - --domain-id
+      - "${ROBOTICS_DOMAIN_ID}"
+      - --run-context
+      - /run/robotics/acceptance-run.json
       - --evidence-index
       - /run/robotics/evidence/evidence-index.json
+      - --otel-metrics
+      - /run/robotics/evidence/metrics.otlp.json
       - --output
       - /run/robotics/results
     environment: *ros-environment
@@ -186,7 +197,7 @@ services:
 
   runtime-manifest:
     <<: *runtime
-    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
     build:
       context: .
       dockerfile: Dockerfile

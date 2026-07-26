@@ -1,0 +1,31 @@
+{
+  id: "1",
+  mode: "router",
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"],
+  },
+  scouting: {
+    multicast: {
+      enabled: false,
+    },
+    gossip: {
+      enabled: false,
+    },
+  },
+  plugins: {
+    ros2dds: {
+      nodename: "qualification_source_bridge",
+      domain: 31,
+      ros_automatic_discovery_range: "LOCALHOST",
+      allow: {
+        publishers: ["^/robotics/qualification$"],
+        subscribers: ["^/robotics/qualification$"],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+      reliable_routes_blocking: true,
+    },
+  },
+}

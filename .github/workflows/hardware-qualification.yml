@@ -10,14 +10,20 @@ on:
         type: choice
         options:
           - nvidia-x86
+          - nvidia-simulation-x86
+          - nvidia-sensor-inference-x86
           - intel-native
           - intel-wsl
           - amd-native
           - jetson-orin
           - jetson-thor
       image_ref:
-        description: Immutable private conformance image reference
+        description: Immutable private qualification image reference
         required: true
+        type: string
+      support_image_ref:
+        description: Immutable simulation image for a composed qualification
+        required: false
         type: string
       source_sha:
         description: Full commit SHA from main used to build the image
@@ -26,10 +32,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: hardware-${{ inputs.target }}
-  cancel-in-progress: false
 
 defaults:
   run:
@@ -50,6 +52,7 @@ jobs:
       report_kind: ${{ steps.route.outputs.report_kind }}
       runner_label: ${{ steps.route.outputs.runner_label }}
       service: ${{ steps.route.outputs.service }}
+      support_image_env: ${{ steps.route.outputs.support_image_env }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -60,6 +63,7 @@ jobs:
         env:
           IMAGE_REF: ${{ inputs.image_ref }}
           SOURCE_SHA: ${{ inputs.source_sha }}
+          SUPPORT_IMAGE_REF: ${{ inputs.support_image_ref }}
           TARGET: ${{ inputs.target }}
         run: |
           case "${TARGET}" in
@@ -73,6 +77,29 @@ jobs:
               profile=conformance-nvidia
               report_kind=onnxruntime
               service=provider-conformance-nvidia
+              ;;
+            nvidia-simulation-x86)
+              runner_label=robotics-nvidia-gpu
+              environment=accelerator-nvidia
+              expected_arch=amd64
+              expected_provider=none
+              image_env=SIMULATION_IMAGE
+              overlay=compose.nvidia-sim.yaml
+              profile=nvidia-simulation
+              report_kind=gazebo
+              service=simulation
+              ;;
+            nvidia-sensor-inference-x86)
+              runner_label=robotics-nvidia-gpu
+              environment=accelerator-nvidia
+              expected_arch=amd64
+              expected_provider=CUDAExecutionProvider
+              image_env=SENSOR_INFERENCE_NVIDIA_IMAGE
+              support_image_env=SIMULATION_IMAGE
+              overlay=compose.sensor-inference-nvidia.yaml
+              profile=sensor-inference
+              report_kind=sensor-inference
+              service=sensor-inference-probe
               ;;
             intel-native)
               runner_label=robotics-intel-gpu
@@ -134,6 +161,11 @@ jobs:
           image_pattern="^ghcr\\.io/${owner}/.+@sha256:[0-9a-f]{64}$"
           [[ "${IMAGE_REF}" =~ ${image_pattern} ]]
           [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${TARGET}" == nvidia-sensor-inference-x86 ]]; then
+            [[ "${SUPPORT_IMAGE_REF}" =~ ${image_pattern} ]]
+          else
+            test -z "${SUPPORT_IMAGE_REF}"
+          fi
           git merge-base --is-ancestor "${SOURCE_SHA}" origin/main
           {
             echo "environment=${environment}"
@@ -145,6 +177,7 @@ jobs:
             echo "report_kind=${report_kind}"
             echo "runner_label=${runner_label}"
             echo "service=${service}"
+            echo "support_image_env=${support_image_env:-}"
           } >> "${GITHUB_OUTPUT}"
 
   qualify:
@@ -156,6 +189,9 @@ jobs:
       - self-hosted
       - linux
       - ${{ needs.prepare.outputs.runner_label }}
+    concurrency:
+      group: hardware-runner-${{ needs.prepare.outputs.runner_label }}
+      cancel-in-progress: false
     environment:
       name: ${{ needs.prepare.outputs.environment }}
     timeout-minutes: 45
@@ -164,7 +200,8 @@ jobs:
       contents: read
       packages: read
     env:
-      COMPOSE_PROJECT_NAME: hardware-${{ github.run_id }}-${{ github.run_attempt }}
+      # yamllint disable-line rule:line-length
+      COMPOSE_PROJECT_NAME: hardware-${{ inputs.target }}-${{ github.run_id }}-${{ github.run_attempt }}
       EXPECTED_ARCH: ${{ needs.prepare.outputs.expected_arch }}
       EXPECTED_PROVIDER: ${{ needs.prepare.outputs.expected_provider }}
       IMAGE_ENV: ${{ needs.prepare.outputs.image_env }}
@@ -177,6 +214,8 @@ jobs:
       SERVICE: ${{ needs.prepare.outputs.service }}
       SIGNER_WORKFLOW: ${{ vars.ROBOTICS_ATTESTATION_SIGNER_WORKFLOW }}
       SOURCE_SHA: ${{ inputs.source_sha }}
+      SUPPORT_IMAGE_ENV: ${{ needs.prepare.outputs.support_image_env }}
+      SUPPORT_IMAGE_REF: ${{ inputs.support_image_ref }}
       TARGET: ${{ inputs.target }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -195,13 +234,21 @@ jobs:
           test -n "${SIGNER_WORKFLOW}"
           test "$(gh --version | awk 'NR == 1 {print $3}')" = 2.96.0
           mkdir -p artifacts/hardware
-          gh attestation verify "oci://${IMAGE_REF}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --signer-workflow "${SIGNER_WORKFLOW}" \
-            --source-digest "${SOURCE_SHA}" \
-            --source-ref refs/heads/main \
-            --format json \
-            > artifacts/hardware/attestation-verification.json
+          images=("${IMAGE_REF}")
+          if [[ -n "${SUPPORT_IMAGE_REF}" ]]; then
+            images+=("${SUPPORT_IMAGE_REF}")
+          fi
+          index=0
+          for image in "${images[@]}"; do
+            gh attestation verify "oci://${image}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${SIGNER_WORKFLOW}" \
+              --source-digest "${SOURCE_SHA}" \
+              --source-ref refs/heads/main \
+              --format json \
+              > "artifacts/hardware/attestation-verification-${index}.json"
+            index=$((index + 1))
+          done
       - name: Record and validate host hardware
         run: |
           {
@@ -210,7 +257,7 @@ jobs:
             docker compose version --short
           } > artifacts/hardware/host.txt
           case "${TARGET}" in
-            nvidia-x86)
+            nvidia-x86|nvidia-simulation-x86|nvidia-sensor-inference-x86)
               test "$(uname -m)" = x86_64
               nvidia-smi \
                 --query-gpu=name,driver_version,compute_cap \
@@ -276,36 +323,57 @@ jobs:
           docker image inspect "${IMAGE_REF}" \
             > artifacts/hardware/image-inspect.json
           export "${IMAGE_ENV}=${IMAGE_REF}"
-          export ROBOTICS_PROVIDER_REPORT_DIR="${PWD}/artifacts/hardware"
-          compose=(
-            docker compose
-            -f compose.yaml
-            -f "${OVERLAY}"
-            --profile "${PROFILE}"
-          )
-          "${compose[@]}" pull "${SERVICE}"
-          "${compose[@]}" run --rm --no-deps --no-build "${SERVICE}" \
-            2>&1 | tee artifacts/hardware/conformance.log
-          test "${REPORT_KIND}" = onnxruntime
-          jq -e --arg provider "${EXPECTED_PROVIDER}" '
-            .status == "passed" and
-            .executed_providers == [$provider] and
-            .fallback_count == 0
-          ' artifacts/hardware/provider-conformance.json
+          if [[ -n "${SUPPORT_IMAGE_REF}" ]]; then
+            docker pull "${SUPPORT_IMAGE_REF}"
+            test "$(
+              docker image inspect "${SUPPORT_IMAGE_REF}" \
+                --format '{{.Architecture}}'
+            )" = "${EXPECTED_ARCH}"
+            docker image inspect "${SUPPORT_IMAGE_REF}" \
+              > artifacts/hardware/support-image-inspect.json
+            export "${SUPPORT_IMAGE_ENV}=${SUPPORT_IMAGE_REF}"
+          fi
+          case "${REPORT_KIND}" in
+            onnxruntime)
+              export ROBOTICS_PROVIDER_REPORT_DIR="${PWD}/artifacts/hardware"
+              compose=(
+                docker compose
+                -f compose.yaml
+                -f "${OVERLAY}"
+                --profile "${PROFILE}"
+              )
+              "${compose[@]}" pull "${SERVICE}"
+              "${compose[@]}" run --rm --no-deps --no-build "${SERVICE}" \
+                2>&1 | tee artifacts/hardware/conformance.log
+              jq -e --arg provider "${EXPECTED_PROVIDER}" '
+                .status == "passed" and
+                .executed_providers == [$provider] and
+                .fallback_count == 0
+              ' artifacts/hardware/provider-conformance.json
+              ;;
+            gazebo)
+              ROBOTICS_GPU_SIM_REPORT_DIR="${PWD}/artifacts/gpu-simulation" \
+                bash test/accelerators/run-nvidia-simulation
+              ;;
+            sensor-inference)
+              ROBOTICS_ACCELERATOR=nvidia \
+              ROBOTICS_BUILD_IMAGES=0 \
+              ROBOTICS_SENSOR_INFERENCE_REPORT_DIR="${PWD}/artifacts/sensor-inference" \
+                bash test/accelerators/run-sensor-inference
+              ;;
+            *)
+              printf 'unsupported report kind: %s\n' "${REPORT_KIND}" >&2
+              exit 2
+              ;;
+          esac
       - name: Remove runtime resources
         if: always()
-        run: |
-          docker compose \
-            -f compose.yaml \
-            -f "${OVERLAY}" \
-            --profile "${PROFILE}" \
-            down --volumes --remove-orphans || true
-          docker image rm "${IMAGE_REF}" || true
+        run: scripts/ci/hardware-qualification/cleanup-runtime-resources.sh
       - name: Upload qualification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: hardware-${{ inputs.target }}-${{ inputs.source_sha }}
-          path: artifacts/hardware/
+          path: artifacts/
           if-no-files-found: warn
           retention-days: 14

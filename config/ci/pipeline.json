@@ -1,0 +1,153 @@
+{
+  "bake_targets": [
+    "default",
+    "cpu",
+    "sensor-inference-cpu",
+    "edge-smoke",
+    "inference-cpu-smoke",
+    "runtime-manifest",
+    "sensor-smoke",
+    "test",
+    "multiarch",
+    "conformance",
+    "amd",
+    "intel",
+    "nvidia",
+    "inference-nvidia-verification",
+    "nvidia-jetson",
+    "onnxruntime-jetson-source-verification",
+    "onnxruntime-jetson-build-dependencies",
+    "onnxruntime-jetson-wheel",
+    "rknn",
+    "rknn-converter",
+    "policy-tooling",
+    "host-io-test"
+  ],
+  "compose_models": [
+    {
+      "name": "base",
+      "files": ["compose.yaml"]
+    },
+    {
+      "name": "playback",
+      "files": ["compose.yaml", "compose.playback.yaml"]
+    },
+    {
+      "name": "record",
+      "files": ["compose.yaml", "compose.record.yaml"]
+    },
+    {
+      "name": "evidence",
+      "files": ["compose.yaml", "compose.evidence.yaml"]
+    },
+    {
+      "name": "evidence-test",
+      "files": [
+        "compose.yaml",
+        "compose.evidence.yaml",
+        "compose.evidence.test.yaml"
+      ]
+    },
+    {
+      "name": "high-throughput",
+      "files": ["compose.yaml", "compose.high-throughput.yaml"]
+    },
+    {
+      "name": "benchmark",
+      "files": ["compose.yaml", "compose.benchmark.yaml"]
+    },
+    {
+      "name": "security",
+      "files": ["compose.yaml", "compose.security.yaml"]
+    },
+    {
+      "name": "stepped",
+      "files": ["compose.yaml", "compose.stepped.yaml"]
+    },
+    {
+      "name": "edge-attach",
+      "files": ["compose.yaml", "compose.edge-attach.yaml"]
+    },
+    {
+      "name": "real-observation",
+      "files": [
+        "compose.yaml",
+        "compose.edge-attach.yaml",
+        "compose.real-observation.yaml"
+      ]
+    },
+    {
+      "name": "real-observation-test",
+      "files": [
+        "compose.yaml",
+        "compose.edge-attach.yaml",
+        "compose.real-observation.yaml",
+        "compose.real-observation.test.yaml"
+      ]
+    },
+    {
+      "name": "amd",
+      "files": ["compose.yaml", "compose.amd.yaml"]
+    },
+    {
+      "name": "intel",
+      "files": ["compose.yaml", "compose.intel.yaml"]
+    },
+    {
+      "name": "nvidia",
+      "files": ["compose.yaml", "compose.nvidia.yaml"]
+    },
+    {
+      "name": "nvidia-simulation",
+      "files": ["compose.yaml", "compose.nvidia-sim.yaml"]
+    },
+    {
+      "name": "nvidia-jetson",
+      "files": ["compose.yaml", "compose.nvidia-jetson.yaml"]
+    },
+    {
+      "name": "rknn",
+      "files": ["compose.yaml", "compose.rknn.yaml"]
+    },
+    {
+      "name": "serial",
+      "files": ["compose.yaml", "compose.serial.yaml"]
+    },
+    {
+      "name": "time",
+      "files": ["compose.yaml", "compose.time.yaml"]
+    },
+    {
+      "name": "can-observation",
+      "files": ["compose.yaml", "compose.can-observation.yaml"]
+    },
+    {
+      "name": "observability",
+      "files": ["compose.yaml", "compose.observability.yaml"]
+    },
+    {
+      "name": "sensor-inference-cpu",
+      "files": [
+        "compose.yaml",
+        "compose.high-throughput.yaml",
+        "compose.observability.yaml",
+        "compose.sensor-inference.yaml"
+      ]
+    },
+    {
+      "name": "sensor-inference-nvidia",
+      "files": [
+        "compose.yaml",
+        "compose.high-throughput.yaml",
+        "compose.observability.yaml",
+        "compose.sensor-inference.yaml",
+        "compose.nvidia-sim.yaml",
+        "compose.sensor-inference-nvidia.yaml"
+      ]
+    },
+    {
+      "name": "zenoh",
+      "files": ["compose.yaml", "compose.zenoh.yaml"]
+    }
+  ]
+}

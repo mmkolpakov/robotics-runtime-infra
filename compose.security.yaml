@@ -10,7 +10,7 @@ x-security-environment: &security-environment
   ROS_SECURITY_STRATEGY: Enforce
 
 x-security-runtime: &security-runtime
-  image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+  image: "${BENCHMARK_IMAGE:-local/robotics-runtime-infra/benchmark:dev}"
   profiles: [security]
   init: true
   ipc: service:data-plane
@@ -25,7 +25,7 @@ x-security-runtime: &security-runtime
 
 services:
   security-artifacts:
-    image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+    image: "${BENCHMARK_IMAGE:-local/robotics-runtime-infra/benchmark:dev}"
     profiles: [security-init]
     init: true
     environment:
@@ -72,7 +72,7 @@ services:
       disable: true
 
   security-signature-check:
-    image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+    image: "${BENCHMARK_IMAGE:-local/robotics-runtime-infra/benchmark:dev}"
     profiles: [security-verify]
     init: true
     command:
@@ -429,7 +429,7 @@ services:
         condition: service_started
 
   unsecured-talker:
-    image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+    image: "${BENCHMARK_IMAGE:-local/robotics-runtime-infra/benchmark:dev}"
     profiles: [security-negative]
     init: true
     ipc: service:data-plane

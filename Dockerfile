@@ -15,6 +15,7 @@ ARG PROVIDER_CONFORMANCE_BASE=inference-cpu
 ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
+ARG SENSOR_INFERENCE_BASE=inference-cpu
 ARG UBUNTU_SNAPSHOT=20260701T000000Z
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
@@ -339,14 +340,14 @@ ADD --checksum=sha256:8e71a9704c5f2714bb65581df68e30f0d84d0ad17286d00efb782e7232
   /datasets/emm2015.tar.bz2
 
 FROM ${UBUNTU_BASE_IMAGE} AS mcap-amd64
-ADD --checksum=sha256:53274b6ca922e2078daa02ae32aed75da046f78d6c3da9dc19065254be24b483 \
-  https://github.com/foxglove/mcap/releases/download/releases%2Fmcap-cli%2Fv0.2.0/mcap-linux-amd64 \
+ADD --checksum=sha256:5d4100573fab880f1c6400952466275bb3b32c3d230a54f7c380ee0d08e59eef \
+  https://github.com/foxglove/mcap/releases/download/releases%2Fmcap-cli%2Fv0.3.0/mcap-linux-amd64 \
   /mcap
 RUN chmod 0555 /mcap
 
 FROM ${UBUNTU_BASE_IMAGE} AS mcap-arm64
-ADD --checksum=sha256:983af5f0d6b4e845ab0b4923f1505a992a3199a8bf797ee3afd78c1c8700a6fd \
-  https://github.com/foxglove/mcap/releases/download/releases%2Fmcap-cli%2Fv0.2.0/mcap-linux-arm64 \
+ADD --checksum=sha256:be9734ef63ada9d0cc7a3aa41378ab65fd482601e5f5b3b52098d8e6553deabf \
+  https://github.com/foxglove/mcap/releases/download/releases%2Fmcap-cli%2Fv0.3.0/mcap-linux-arm64 \
   /mcap
 RUN chmod 0555 /mcap
 
@@ -478,9 +479,12 @@ LABEL org.opencontainers.image.title="Robotics evidence sink" \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
-    HOME=/home/evidence
+    HOME=/home/evidence \
+    PATH="/opt/venv/bin:${PATH}"
 
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY docker/python/evidence-sink.lock /tmp/python/evidence-sink.lock
 
 RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /usr/local/sbin/use-package-snapshots \
@@ -489,13 +493,27 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       ca-certificates \
       inotify-tools \
       jq \
+      python3 \
+    && mkdir -p /usr/share/robotics-runtime \
+    && uv venv --python /usr/bin/python3 /opt/venv \
+    && uv pip install \
+      --python /opt/venv/bin/python \
+      --require-hashes \
+      --no-cache \
+      --no-deps \
+      --requirement /tmp/python/evidence-sink.lock \
+    && uv pip check --python /opt/venv/bin/python \
+    && uv pip freeze --python /opt/venv/bin/python \
+      > /usr/share/robotics-runtime/python-packages.txt \
+    && python3 -c "from mcap.reader import make_reader" \
+    && rm -f /usr/local/bin/uv /usr/local/bin/uvx \
     && groupadd --gid 10001 evidence \
     && useradd --uid 10001 --gid 10001 --create-home evidence \
-    && mkdir -p /usr/share/robotics-runtime \
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
       | sort > /usr/share/robotics-runtime/deb-packages.tsv \
     && rm -rf \
       /var/cache/ldconfig/aux-cache \
+      /tmp/python \
       /var/lib/apt/lists/* \
       /var/log/apt/* \
       /var/log/alternatives.log \
@@ -508,6 +526,7 @@ COPY --from=aws-cli /usr/local/aws-cli /usr/local/aws-cli
 RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws
 
 COPY --chmod=0555 docker/evidence-sink/evidence-sink /usr/local/bin/evidence-sink
+COPY --chmod=0555 docker/evidence-sink/mcap-summary /usr/local/bin/mcap-summary
 
 USER evidence
 WORKDIR /work
@@ -954,6 +973,25 @@ CMD ["-q", "-p", "no:cacheprovider", "--junitxml=/reports/provider-conformance.j
 
 HEALTHCHECK NONE
 
+FROM ${SENSOR_INFERENCE_BASE} AS sensor-inference-probe
+
+USER root
+COPY docker/python/sensor-inference-probe.lock /tmp/python/sensor-inference-probe.lock
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
+    uv pip install \
+      --python /opt/venv/bin/python \
+      --require-hashes \
+      --no-cache \
+      --requirement /tmp/python/sensor-inference-probe.lock \
+    && rm -rf /tmp/python
+COPY --chmod=0444 probes/sensor_inference/robotics_sensor_inference \
+  /opt/robotics/probes/robotics_sensor_inference
+ENV PYTHONPATH="/opt/robotics/probes"
+USER ubuntu
+CMD ["python3", "-m", "robotics_sensor_inference"]
+
+HEALTHCHECK NONE
+
 FROM edge-runtime AS acceptance-observer
 
 USER root
@@ -1007,7 +1045,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       /var/log/dpkg.log
 
 LABEL org.opencontainers.image.title="ROS 2 data-plane benchmark" \
-      org.opencontainers.image.description="Apex.AI performance_test 2.3.0 on ROS 2 Jazzy."
+      org.opencontainers.image.description="performance_test 2.3.0 on ROS 2 Jazzy."
 
 USER ubuntu
 
@@ -1045,6 +1083,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /opt/robotics_ws
 
 COPY ros_ws/src/robotics_runtime_infra/package.xml /tmp/rosdep/robotics_runtime_infra/package.xml
+COPY ros_ws/src/robotics_observability/package.xml /tmp/rosdep/robotics_observability/package.xml
+COPY ros_ws/src/robotics_observability_msgs/package.xml /tmp/rosdep/robotics_observability_msgs/package.xml
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY --chmod=0444 docker/python/observability.lock /tmp/observability.lock
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --chmod=0444 docker/apt/ros-snapshot-key.gpg /usr/share/keyrings/ros-snapshot-key.gpg
 COPY --from=geographiclib-datasets /datasets /tmp/geographiclib
@@ -1057,6 +1099,12 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       /usr/local/sbin/use-package-snapshots \
     && export HOME=/root \
     && apt-get update \
+    && uv pip install \
+      --system \
+      --require-hashes \
+      --no-cache \
+      --python /usr/bin/python3 \
+      --requirement /tmp/observability.lock \
     && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \

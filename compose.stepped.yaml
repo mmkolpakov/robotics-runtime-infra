@@ -19,7 +19,7 @@ services:
       retries: 15
 
   simulation-stepper:
-    image: "${SIMULATION_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.5.0}"
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
     profiles: [stepped]
     init: true
     network_mode: service:simulation

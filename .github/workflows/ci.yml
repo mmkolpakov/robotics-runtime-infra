@@ -2,6 +2,7 @@
 name: ci
 
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -19,6 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # yamllint disable-line rule:line-length
+  BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
   BUILDX_VERSION: v0.35.0
   # yamllint disable-line rule:line-length
   BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a
@@ -29,7 +32,7 @@ env:
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
   ROBOTICS_CONTRACTS_REQUIREMENT: >-
     robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.6.0/robotics_runtime_contracts-0.6.0-py3-none-any.whl#sha256=13b2500c7ad068d80284847119de087d6ddc3d5699ed33081116de95418e01b0
+    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.7.0/robotics_runtime_contracts-0.7.0-py3-none-any.whl#sha256=1f2fc3b2b76f468803a7d2626fc8acaaa292f9cf0b835e4fa0321fbe903926c5
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -51,475 +54,50 @@ jobs:
         with:
           version: "0.11.28"
           enable-cache: false
+      - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43  # 4.0.0
+        with:
+          bats-version: "1.14.0"
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
+      - name: Test CI workflow architecture
+        run: scripts/ci/static-analysis/test-workflow-architecture.sh
       - name: Validate Docker Bake definition
-        run: |
-          docker buildx bake --print cpu >/dev/null
-          docker buildx bake --print conformance >/dev/null
-          docker buildx bake --print amd >/dev/null
-          docker buildx bake --print intel >/dev/null
-          docker buildx bake --print nvidia >/dev/null
-          docker buildx bake --print inference-nvidia-verification >/dev/null
-          docker buildx bake --print nvidia-jetson >/dev/null
-          docker buildx bake --print onnxruntime-jetson-source-verification >/dev/null
-          docker buildx bake --print rknn >/dev/null
-          docker buildx bake --print policy-tooling >/dev/null
-          docker buildx bake --print host-io-test >/dev/null
+        run: scripts/ci/static-analysis/validate-docker-bake-definition.sh
       - name: Validate Compose models
-        env:
-          # Configuration-only fixture; production must use the published image digest.
-          ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
-          ROBOTICS_CHRONY_IDENTITY: "100:101"
-          ROBOTICS_PTP_SAMPLE_FILE: ./test/time/pmc.fixture
-          ROBOTICS_SERIAL_DEVICE: /dev/robotics/controller-alpha
-        run: |
-          docker compose --profile test --profile acceptance config --quiet
-          overlays=(
-            compose.playback.yaml compose.record.yaml compose.evidence.yaml
-            compose.high-throughput.yaml compose.benchmark.yaml
-            compose.security.yaml compose.stepped.yaml compose.edge-attach.yaml
-            compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
-            compose.nvidia-jetson.yaml
-            compose.rknn.yaml
-            compose.serial.yaml compose.time.yaml compose.can-observation.yaml
-          )
-          profiles=(
-            --profile test --profile acceptance --profile playback
-            --profile record --profile evidence --profile benchmark
-            --profile conformance
-            --profile amd --profile conformance-amd
-            --profile intel-cpu --profile conformance-intel-cpu
-            --profile conformance-intel-gpu-linux
-            --profile conformance-intel-gpu-wsl
-            --profile nvidia --profile conformance-nvidia
-            --profile nvidia-jetson-orin
-            --profile conformance-nvidia-jetson-orin
-            --profile nvidia-jetson-thor
-            --profile conformance-nvidia-jetson-thor
-            --profile rknn-rk3588
-            --profile security --profile security-init
-            --profile security-verify --profile security-negative
-            --profile security-observer --profile security-observer-negative
-            --profile stepped --profile simulation
-            --profile edge-attach --profile hil
-            --profile serial-preflight --profile time-chrony --profile time-ptp
-            --profile can-observation
-          )
-          for overlay in "${overlays[@]}"; do
-            docker compose -f compose.yaml -f "${overlay}" \
-              "${profiles[@]}" config --quiet
-          done
-          docker compose \
-            -f compose.yaml \
-            -f compose.evidence.yaml \
-            -f compose.evidence.test.yaml \
-            "${profiles[@]}" config --quiet
-          docker compose \
-            -f compose.yaml \
-            -f compose.edge-attach.yaml \
-            -f compose.real-observation.yaml \
-            --profile real-observation config --quiet
-          docker compose \
-            -f compose.yaml \
-            -f compose.edge-attach.yaml \
-            -f compose.real-observation.yaml \
-            -f compose.real-observation.test.yaml \
-            --profile real-observation \
-            --profile real-observation-test \
-            --profile real-observation-test-negative \
-            config --quiet
+        run: scripts/ci/validate-compose-models.sh
       - name: Build the pinned policy engine
         env:
           REGISTRY: local
           VERSION: ci
-        run: |
-          docker buildx bake policy-tooling \
-            --load \
-            --set '*.platform=linux/amd64'
-          docker run --rm \
-            local/robotics-runtime-infra/policy-tooling:ci version
-      - name: Enforce policy as code
-        env:
-          # Configuration-only fixture; production must use the published image digest.
-          ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
-          ROBOTICS_CHRONY_IDENTITY: "100:101"
-          ROBOTICS_PTP_SAMPLE_FILE: ./test/time/pmc.fixture
-          ROBOTICS_SERIAL_DEVICE: /dev/robotics/controller-alpha
-        run: |
-          mkdir -p tmp
-          docker compose --profile test --profile acceptance \
-            config --format json --output tmp/compose.json
-          opa=(
-            docker run --rm --volume "${PWD}:/project:ro" --workdir /project
-            local/robotics-runtime-infra/policy-tooling:ci
-          )
-          yq=(
-            docker run --rm --volume "${PWD}:/project:ro" --workdir /project
-            --entrypoint /yq
-            local/robotics-runtime-infra/policy-tooling:ci
-          )
-          policy_deny_count() {
-            local policy="$1"
-            local package="$2"
-            local input="$3"
-            "${opa[@]}" eval \
-              --format raw \
-              --data "${policy}" \
-              --input "${input}" \
-              "count(data.${package}.deny)"
-          }
-          "${opa[@]}" fmt --list --fail policy
-          "${opa[@]}" test \
-            policy \
-            test/policy/model_artifact \
-            test/policy/execution \
-            --fail-on-empty
-          jq '.execution_valid' test/policy/execution/valid.json \
-            > tmp/execution-valid-input.json
-          jq '.execution_valid.permit' test/policy/execution/valid.json \
-            > tmp/execution-permit.json
-          "${opa[@]}" eval \
-            --fail \
-            --format raw \
-            --data policy/execution.rego \
-            --input tmp/execution-valid-input.json \
-            'data.execution.verification with time.now_ns as time.parse_rfc3339_ns("2026-07-14T12:00:00Z")' \
-            > tmp/execution-verification.json
-          uv run --isolated --with "${ROBOTICS_CONTRACTS_REQUIREMENT}" \
-            python - \
-            tmp/execution-permit.json \
-            tmp/execution-verification.json <<'PY'
-          import json
-          import sys
-
-          from robotics_runtime_contracts import validate_document
-
-          for path in sys.argv[1:]:
-              with open(path, encoding="utf-8") as source:
-                  validate_document(json.load(source))
-          PY
-          test "$(policy_deny_count policy/compose.rego compose tmp/compose.json)" -eq 0
-          docker compose \
-            -f compose.yaml \
-            -f compose.edge-attach.yaml \
-            --profile edge-attach \
-            config --format json --output tmp/edge-attach-compose.json
-          docker compose \
-            -f compose.yaml \
-            -f compose.edge-attach.yaml \
-            --profile hil \
-            config --format json --output tmp/hil-compose.json
-          docker compose \
-            -f compose.yaml \
-            -f compose.edge-attach.yaml \
-            -f compose.real-observation.yaml \
-            --profile real-observation \
-            config --format json --output tmp/real-observation-compose.json
-          docker compose \
-            -f compose.yaml \
-            -f compose.serial.yaml \
-            --profile serial-preflight \
-            config --format json --output tmp/serial-compose.json
-          docker compose \
-            -f compose.yaml \
-            -f compose.time.yaml \
-            --profile time-chrony \
-            --profile time-ptp \
-            config --format json --output tmp/time-compose.json
-          docker compose \
-            -f compose.yaml \
-            -f compose.can-observation.yaml \
-            --profile can-observation \
-            config --format json --output tmp/can-observation-compose.json
-          jq -e '
-            (.services | keys | sort) == [
-              "edge-attach-data-plane",
-              "edge-attach-observer"
-            ] and
-            .networks["robotics-attach"].external == true and
-            .services["edge-attach-observer"].network_mode ==
-              "service:edge-attach-data-plane" and
-            (.services["edge-attach-observer"].command |
-              index("--otel-metrics")) == null
-          ' tmp/edge-attach-compose.json >/dev/null
-          jq -e '
-            (.services | keys | sort) == [
-              "edge-attach-data-plane",
-              "hil-observer",
-              "physical-permit-preflight",
-              "physical-runtime-manifest"
-            ] and
-            .networks["robotics-attach"].external == true and
-            .services["physical-permit-preflight"].network_mode == "none" and
-            .services["physical-runtime-manifest"].network_mode == "none" and
-            .services["hil-observer"].network_mode ==
-              "service:edge-attach-data-plane" and
-            .services["hil-observer"].environment.ROS_SECURITY_STRATEGY ==
-              "Enforce" and
-            (.services["hil-observer"].command |
-              index("--otel-metrics")) != null and
-            (.services["hil-observer"].command |
-              index("/evidence/hardware-time.otlp.json")) != null and
-            any(.services["hil-observer"].volumes[];
-              .target == "/evidence" and .read_only == true
-            ) and
-            .services["hil-observer"].depends_on["physical-permit-preflight"].condition ==
-              "service_completed_successfully" and
-            .services["hil-observer"].depends_on["physical-runtime-manifest"].condition ==
-              "service_completed_successfully" and
-            all(.services[];
-              (.devices // []) == [] and
-              (.device_cgroup_rules // []) == []
-            )
-          ' tmp/hil-compose.json >/dev/null
-          jq -e '
-            (.services | keys | sort) == [
-              "edge-attach-data-plane",
-              "physical-permit-preflight",
-              "physical-runtime-manifest",
-              "real-observation-observer"
-            ] and
-            (.services | has("simulation") | not) and
-            .networks["robotics-attach"].external == true and
-            .services["physical-permit-preflight"].network_mode == "none" and
-            .services["physical-runtime-manifest"].network_mode == "none" and
-            (.services["real-observation-observer"].profiles |
-              index("real-observation")) != null and
-            (.services["real-observation-observer"].profiles |
-              index("hil")) == null and
-            .services["real-observation-observer"].network_mode ==
-              "service:edge-attach-data-plane" and
-            .services["real-observation-observer"].environment.ROS_SECURITY_ENABLE ==
-              "true" and
-            .services["real-observation-observer"].environment.ROS_SECURITY_STRATEGY ==
-              "Enforce" and
-            .services["real-observation-observer"].environment.ROS_SECURITY_ENCLAVE_OVERRIDE ==
-              "/robotics/observer" and
-            .services["real-observation-observer"].labels[
-              "org.robotics-runtime.execution.environment"
-            ] == "real_robot" and
-            .services["real-observation-observer"].labels[
-              "org.robotics-runtime.execution.physical-effect"
-            ] == "observation" and
-            .services["real-observation-observer"].depends_on[
-              "physical-permit-preflight"
-            ].condition == "service_completed_successfully" and
-            .services["real-observation-observer"].depends_on[
-              "physical-runtime-manifest"
-            ].condition == "service_completed_successfully"
-          ' tmp/real-observation-compose.json >/dev/null
-          jq -e '
-            (.services | keys) == ["serial-device-preflight"] and
-            .services["serial-device-preflight"].network_mode == "none" and
-            .services["serial-device-preflight"].devices == [{
-              "source": "/dev/robotics/controller-alpha",
-              "target": "/dev/robotics/target",
-              "permissions": "r"
-            }]
-          ' tmp/serial-compose.json >/dev/null
-          jq -e '
-            (.services | keys | sort) == [
-              "time-evidence-chrony",
-              "time-evidence-ptp"
-            ] and
-            all(.services[];
-              .network_mode == "none" and
-              .read_only == true
-            )
-          ' tmp/time-compose.json >/dev/null
-          jq -e '
-            (.services | keys) == ["can-observation-client"] and
-            .services["can-observation-client"].stdin_open == true and
-            .services["can-observation-client"].read_only == true and
-            .services["can-observation-client"].user == "65534:65534" and
-            .services["can-observation-client"].networks == {
-              "robotics-can-observation": null
-            } and
-            (.services["can-observation-client"].extra_hosts // []) == [] and
-            (.services["can-observation-client"].command | index("nc")) == 0 and
-            (.services["can-observation-client"].command | index("172.30.247.1")) == 3 and
-            (.services["can-observation-client"].command | index("cansend")) == null and
-            .networks["robotics-can-observation"].internal == true and
-            .networks["robotics-can-observation"].ipam.config == [{
-              "subnet": "172.30.247.0/28",
-              "gateway": "172.30.247.1"
-            }] and
-            .networks["robotics-can-observation"].driver_opts[
-              "com.docker.network.bridge.name"
-            ] == "robotics-can"
-          ' tmp/can-observation-compose.json >/dev/null
-          test "$(
-            policy_deny_count \
-              policy/compose.rego compose tmp/edge-attach-compose.json
-          )" -eq 0
-          test "$(
-            policy_deny_count policy/compose.rego compose tmp/hil-compose.json
-          )" -eq 0
-          test "$(
-            policy_deny_count \
-              policy/compose.rego compose tmp/real-observation-compose.json
-          )" -eq 0
-          test "$(
-            policy_deny_count policy/compose.rego compose tmp/serial-compose.json
-          )" -eq 0
-          test "$(
-            policy_deny_count policy/compose.rego compose tmp/time-compose.json
-          )" -eq 0
-          test "$(
-            policy_deny_count \
-              policy/compose.rego compose tmp/can-observation-compose.json
-          )" -eq 0
-          "${yq[@]}" -o=json test/acceptance/stepped-smoke.yaml \
-            > tmp/stepped-smoke.json
-          test "$(policy_deny_count policy/scenario.rego scenario tmp/stepped-smoke.json)" -eq 0
-          "${yq[@]}" -o=json test/policy/unsafe-compose.yaml \
-            > tmp/unsafe-compose.json
-          test "$(policy_deny_count policy/compose.rego compose tmp/unsafe-compose.json)" -gt 0
-          "${yq[@]}" -o=json test/policy/mock-physical-verdict.yaml \
-            > tmp/mock-physical-verdict.json
-          test "$(policy_deny_count policy/scenario.rego scenario tmp/mock-physical-verdict.json)" -gt 0
-          for workflow in \
-            .github/workflows/hardware-qualification.yml \
-            .github/workflows/rk3588-qualification.yml; do
-            workflow_json="tmp/$(basename "${workflow}" .yml).json"
-            "${yq[@]}" -o=json "${workflow}" > "${workflow_json}"
-            test "$(
-              policy_deny_count \
-                policy/hardware-workflow.rego \
-                hardware_workflow \
-                "${workflow_json}"
-            )" -eq 0
-          done
-          jq '.model_artifact_valid' \
-            test/policy/model_artifact/valid.json \
-            > tmp/model-artifact-valid.json
-          jq '.model_artifact_tensorrt' \
-            test/policy/model_artifact/tensorrt.json \
-            > tmp/model-artifact-tensorrt.json
-          uv run --isolated --with "${ROBOTICS_CONTRACTS_REQUIREMENT}" \
-            python - \
-            tmp/model-artifact-valid.json \
-            tmp/model-artifact-tensorrt.json <<'PY'
-          import json
-          import sys
-
-          from robotics_runtime_contracts import validate_document
-
-          for path in sys.argv[1:]:
-              with open(path, encoding="utf-8") as source:
-                  validate_document(json.load(source)["manifest"])
-          PY
-          for candidate in \
-            tmp/model-artifact-valid.json \
-            tmp/model-artifact-tensorrt.json; do
-            test "$(
-              policy_deny_count \
-                policy/model-artifact.rego \
-                model_artifact \
-                "${candidate}"
-            )" -eq 0
-          done
-          for fixture in \
-            tampered_target tampered_report wrong_hardware failed_parity; do
-            key="model_artifact_${fixture}"
-            candidate="tmp/model-artifact-${fixture}.json"
-            jq -s --arg key "${key}" \
-              '.[0].model_artifact_valid * .[1][$key]' \
-              test/policy/model_artifact/valid.json \
-              "test/policy/model_artifact/${fixture}.json" \
-              > "${candidate}"
-            test "$(
-              policy_deny_count \
-                policy/model-artifact.rego \
-                model_artifact \
-                "${candidate}"
-            )" -gt 0
-          done
-          jq -s '
-            .[0].model_artifact_tensorrt *
-            .[1].model_artifact_wrong_compute_capability
-          ' \
-            test/policy/model_artifact/tensorrt.json \
-            test/policy/model_artifact/wrong_compute_capability.json \
-            > tmp/model-artifact-wrong-compute-capability.json
-          test "$(
-            policy_deny_count \
-              policy/model-artifact.rego \
-              model_artifact \
-              tmp/model-artifact-wrong-compute-capability.json
-          )" -gt 0
+        run: scripts/ci/static-analysis/build-the-pinned-policy-engine.sh
+      - name: Verify policy format and unit tests
+        run: scripts/ci/static-analysis/verify-policy-format-and-tests.sh
+      - name: Verify execution authorization policy
+        run: scripts/ci/static-analysis/verify-execution-policy.sh
+      - name: Verify runtime Compose policy
+        run: scripts/ci/static-analysis/verify-compose-runtime-policy.sh
+      - name: Verify physical runtime policy
+        run: scripts/ci/static-analysis/verify-physical-runtime-policy.sh
+      - name: Verify host I/O policy
+        run: scripts/ci/static-analysis/verify-host-io-policy.sh
+      - name: Verify scenario policy
+        run: scripts/ci/static-analysis/verify-scenario-policy.sh
+      - name: Verify hardware workflow policy
+        run: scripts/ci/static-analysis/verify-hardware-workflow-policy.sh
+      - name: Verify model artifact policy
+        run: scripts/ci/static-analysis/verify-model-artifact-policy.sh
       - name: Verify OCI model artifact linkage
-        run: |
-          rm -rf tmp/model-artifact-layout
-          jq '.manifest' tmp/model-artifact-valid.json \
-            > tmp/model-artifact-manifest.json
-          jq '.observations.conformance_report' tmp/model-artifact-valid.json \
-            > tmp/model-conformance-report.json
-          oras=(
-            docker run --rm --volume "${PWD}:/work" --workdir /work
-            "${ORAS_IMAGE}"
-          )
-          "${oras[@]}" push --oci-layout \
-            --artifact-type application/vnd.robotics.model.fixture.v1 \
-            --annotation org.opencontainers.image.title=model-fixture \
-            tmp/model-artifact-layout:model
-          subject_digest="$(
-            "${oras[@]}" resolve --oci-layout tmp/model-artifact-layout:model
-          )"
-          "${oras[@]}" attach --oci-layout \
-            --artifact-type application/vnd.robotics.model-artifact-manifest.v1 \
-            tmp/model-artifact-layout:model \
-            tmp/model-artifact-manifest.json:application/vnd.robotics.model-artifact-manifest.v1
-          "${oras[@]}" attach --oci-layout \
-            --artifact-type application/vnd.robotics.model-conformance-report.v1 \
-            tmp/model-artifact-layout:model \
-            tmp/model-conformance-report.json:application/vnd.robotics.model-conformance-report.v1
-          "${oras[@]}" discover --no-tty --oci-layout \
-            --format json --depth 1 tmp/model-artifact-layout:model \
-            > tmp/model-artifact-referrers.json
-          jq -e --arg digest "${subject_digest}" '
-            .digest == $digest and
-            ([.referrers[].artifactType] | sort) == [
-              "application/vnd.robotics.model-artifact-manifest.v1",
-              "application/vnd.robotics.model-conformance-report.v1"
-            ]
-          ' tmp/model-artifact-referrers.json
+        run: scripts/ci/static-analysis/verify-oci-model-artifact-linkage.sh
       - name: Lint shell entrypoints
-        run: |
-          docker run --rm --volume "${PWD}:/work:ro" --workdir /work \
-            "${SHELLCHECK_IMAGE}" \
-            docker/entrypoint.sh \
-            docker/apt/use-package-snapshots \
-            docker/apt/update-rosdep-cache \
-            docker/evidence-sink/evidence-sink \
-            docker/permit-preflight/permit-preflight \
-            docker/runtime/emit-runtime-manifest
+        run: scripts/ci/static-analysis/lint-shell-entrypoints.sh
       - name: Lint Dockerfile
-        run: >-
-          docker run --rm
-          --volume "${PWD}:/work:ro"
-          --workdir /work
-          "${HADOLINT_IMAGE}"
-          /bin/hadolint --config .hadolint.yaml
-          Dockerfile docker/rknn.Dockerfile
+        run: scripts/ci/static-analysis/lint-dockerfile.sh
       - name: Validate Renovate configuration
-        run: >-
-          docker run --rm
-          --volume "${PWD}:/work:ro"
-          --workdir /work
-          "${RENOVATE_IMAGE}"
-          renovate-config-validator --strict renovate.json
+        run: scripts/ci/static-analysis/validate-renovate-configuration.sh
       - name: Audit GitHub Actions
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          uvx --from zizmor==1.26.1 zizmor
-          --pedantic
-          --min-severity medium
-          --format github
-          .github/workflows
-
+        run: scripts/ci/static-analysis/audit-github-actions.sh
   compose-version:
     name: compose-${{ matrix.version }}
     runs-on: ubuntu-24.04
@@ -536,73 +114,11 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - name: Verify Compose version
-        run: |
-          actual="v$(docker compose version --short | sed 's/^v//')"
-          test "${actual}" = "${{ matrix.version }}"
-      - name: Validate every overlay
         env:
-          # Configuration-only fixture; production must use the published image digest.
-          ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
-          ROBOTICS_CHRONY_IDENTITY: "100:101"
-          ROBOTICS_PTP_SAMPLE_FILE: ./test/time/pmc.fixture
-          ROBOTICS_SERIAL_DEVICE: /dev/robotics/controller-alpha
-        run: |
-          profiles=(
-            --profile test --profile acceptance --profile playback
-            --profile record --profile snapshot --profile evidence
-            --profile benchmark --profile conformance
-            --profile amd --profile conformance-amd
-            --profile intel-cpu --profile conformance-intel-cpu
-            --profile conformance-intel-gpu-linux
-            --profile conformance-intel-gpu-wsl
-            --profile nvidia --profile conformance-nvidia
-            --profile nvidia-jetson-orin
-            --profile conformance-nvidia-jetson-orin
-            --profile nvidia-jetson-thor
-            --profile conformance-nvidia-jetson-thor
-            --profile rknn-rk3588
-            --profile security --profile security-init
-            --profile security-verify --profile security-negative
-            --profile security-observer --profile security-observer-negative
-            --profile stepped --profile simulation
-            --profile edge-attach --profile hil
-            --profile serial-preflight --profile time-chrony --profile time-ptp
-            --profile can-observation
-          )
-          overlays=(
-            compose.playback.yaml compose.record.yaml compose.evidence.yaml
-            compose.high-throughput.yaml compose.benchmark.yaml
-            compose.security.yaml compose.stepped.yaml compose.edge-attach.yaml
-            compose.amd.yaml compose.intel.yaml compose.nvidia.yaml
-            compose.nvidia-jetson.yaml
-            compose.rknn.yaml
-            compose.serial.yaml compose.time.yaml compose.can-observation.yaml
-          )
-          docker compose "${profiles[@]}" config --quiet
-          for overlay in "${overlays[@]}"; do
-            docker compose -f compose.yaml -f "${overlay}" \
-              "${profiles[@]}" config --quiet
-          done
-          docker compose \
-            -f compose.yaml \
-            -f compose.evidence.yaml \
-            -f compose.evidence.test.yaml \
-            "${profiles[@]}" config --quiet
-          docker compose \
-            -f compose.yaml \
-            -f compose.edge-attach.yaml \
-            -f compose.real-observation.yaml \
-            --profile real-observation config --quiet
-          docker compose \
-            -f compose.yaml \
-            -f compose.edge-attach.yaml \
-            -f compose.real-observation.yaml \
-            -f compose.real-observation.test.yaml \
-            --profile real-observation \
-            --profile real-observation-test \
-            --profile real-observation-test-negative \
-            config --quiet
-
+          EXPECTED_COMPOSE_VERSION: ${{ matrix.version }}
+        run: scripts/ci/compose-version/verify-compose-version.sh
+      - name: Validate every Compose model
+        run: scripts/ci/validate-compose-models.sh
   integration:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -635,888 +151,45 @@ jobs:
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
       - name: Set reproducible build metadata
-        run: |
-          {
-            echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)"
-            echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)"
-            echo "VCS_REF=${GITHUB_SHA}"
-          } >> "$GITHUB_ENV"
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the amd64 CPU product
-        run: |
-          docker buildx bake cpu provider-conformance-cpu \
-            --load \
-            --set '*.platform=linux/amd64' \
-            --set '*.cache-from=type=gha,scope=runtime-infra-amd64' \
-            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-amd64'
+        run: scripts/ci/integration/build-the-amd64-cpu-product.sh
       - name: Verify portable runtime images
-        run: |
-          docker compose --profile test run --rm --no-deps edge-smoke
-          docker compose --profile test run --rm --no-deps sensor-smoke
-          docker compose --profile test run --rm --no-deps inference-cpu-smoke
-          docker run --rm "${OBSERVER_IMAGE}" robotics-acceptance --version
-          docker run --rm "${EVIDENCE_IMAGE}" versions
-          docker run --rm "${PERMIT_PREFLIGHT_IMAGE}" versions
-          docker run --rm --entrypoint cat "${HOST_IO_FIXTURE_IMAGE}" \
-            /usr/share/robotics-runtime/host-io-fixture-packages.tsv \
-            > "${RUNNER_TEMP}/host-io-fixture-packages.tsv"
-          grep -Fxq $'can-utils\t2023.03-1\tamd64' \
-            "${RUNNER_TEMP}/host-io-fixture-packages.tsv"
-          grep -Fxq $'chrony\t4.5-1ubuntu4.2\tamd64' \
-            "${RUNNER_TEMP}/host-io-fixture-packages.tsv"
-          grep -Fxq $'iproute2\t6.1.0-1ubuntu6.3\tamd64' \
-            "${RUNNER_TEMP}/host-io-fixture-packages.tsv"
-          grep -Fxq $'linuxptp\t4.0-1ubuntu1.1\tamd64' \
-            "${RUNNER_TEMP}/host-io-fixture-packages.tsv"
-          grep -Fxq $'systemd\t255.4-1ubuntu8.16\tamd64' \
-            "${RUNNER_TEMP}/host-io-fixture-packages.tsv"
-          grep -Fxq $'udev\t255.4-1ubuntu8.16\tamd64' \
-            "${RUNNER_TEMP}/host-io-fixture-packages.tsv"
-          docker run --rm --entrypoint test "${HOST_IO_FIXTURE_IMAGE}" \
-            ! -s /etc/machine-id
-      - name: Verify host time evidence and stable serial mapping
-        run: |
-          otel_repository=otel/opentelemetry-collector-contrib:0.153.0
-          otel_digest=sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
-          otel_image="${otel_repository}@${otel_digest}"
-          work="${RUNNER_TEMP}/host-preflight"
-          socket_dir="${work}/socket"
-          unsync_socket_dir="${work}/unsync-socket"
-          chrony_evidence="${work}/chrony"
-          chrony_unsync_evidence="${work}/chrony-unsync"
-          ptp_evidence="${work}/ptp"
-          ptp_unsync_evidence="${work}/ptp-unsync"
-          serial_device=/dev/robotics/controller-ci
-          sudo rm -rf "${work}"
-          mkdir -p \
-            "${socket_dir}" "${unsync_socket_dir}" \
-            "${chrony_evidence}" "${chrony_unsync_evidence}" \
-            "${ptp_evidence}" "${ptp_unsync_evidence}"
-          sudo chown 100:101 \
-            "${socket_dir}" "${unsync_socket_dir}" \
-            "${chrony_evidence}" "${chrony_unsync_evidence}" \
-            "${ptp_evidence}" "${ptp_unsync_evidence}"
-          sudo chmod 0770 "${socket_dir}" "${unsync_socket_dir}"
-          cleanup() {
-            docker rm --force \
-              host-chronyd host-chrony-otel host-ptp-otel \
-              host-chronyd-unsync host-chrony-otel-unsync \
-              host-ptp-otel-unsync \
-              >/dev/null 2>&1 || true
-            sudo rm -f "${serial_device}"
-            sudo rmdir /dev/robotics >/dev/null 2>&1 || true
-            sudo rm -rf "${work}"
-          }
-          trap cleanup EXIT
-          wait_for_evidence() {
-            local path="$1"
-            shift
-            for _ in {1..30}; do
-              if test -s "${path}"; then
-                return 0
-              fi
-              sleep 1
-            done
-            for container in "$@"; do
-              docker logs "${container}" >&2 || true
-            done
-            return 1
-          }
-          wait_for_socket() {
-            local path="$1"
-            local container="$2"
-            for _ in {1..30}; do
-              if docker exec "${container}" test -S "${path}"; then
-                return 0
-              fi
-              sleep 1
-            done
-            docker logs "${container}" >&2 || true
-            return 1
-          }
-
-          docker run --rm \
-            --volume "${PWD}:/project:ro" \
-            --entrypoint bash "${HOST_IO_FIXTURE_IMAGE}" -euo pipefail -c '
-              udevadm verify /project/config/udev/99-robotics-serial.rules
-              systemd-analyze verify \
-                /project/systemd/robotics-ptp-sample.service \
-                /project/systemd/robotics-ptp-sample.timer \
-                /project/systemd/robotics-can-observation@.service
-              systemd-tmpfiles --create \
-                /project/tmpfiles.d/robotics-time.conf
-              test -f /run/robotics-time/pmc.log
-            '
-          docker run --rm \
-            --volume "${PWD}/config/time:/config:ro" \
-            "${otel_image}" validate --config=/config/otel-ptp.yaml
-
-          docker run --detach --name host-chronyd \
-            --network none \
-            --volume "${socket_dir}:/run/robotics-time" \
-            "${HOST_IO_FIXTURE_IMAGE}" >/dev/null
-          wait_for_socket /run/robotics-time/chronyd.sock host-chronyd
-          docker run --detach --name host-chrony-otel \
-            --network none \
-            --user 100:101 \
-            --volume "${socket_dir}:/run/robotics-time" \
-            --volume "${chrony_evidence}:/evidence" \
-            --volume "${PWD}/config/time/otel-chrony.yaml:/config.yaml:ro" \
-            "${otel_image}" --config=/config.yaml >/dev/null
-          wait_for_evidence \
-            "${chrony_evidence}/hardware-time.otlp.json" \
-            host-chronyd host-chrony-otel
-          docker stop --time 10 host-chrony-otel host-chronyd >/dev/null
-          docker logs host-chrony-otel > "${work}/chrony-collector.log" 2>&1
-          if grep -Eiq 'deprecated|(^|[[:space:]])error([[:space:]]|$)' \
-            "${work}/chrony-collector.log"; then
-            echo "Chrony collector log contains an error or deprecation" >&2
-            exit 1
-          fi
-
-          docker run --detach --name host-ptp-otel \
-            --network none \
-            --user 100:101 \
-            --volume "${ptp_evidence}:/evidence" \
-            --volume "${PWD}/test/time/pmc.fixture:/input/pmc.log:ro" \
-            --volume "${PWD}/config/time/otel-ptp.yaml:/config.yaml:ro" \
-            "${otel_image}" --config=/config.yaml >/dev/null
-          wait_for_evidence \
-            "${ptp_evidence}/hardware-time.otlp.json" host-ptp-otel
-          docker stop --time 10 host-ptp-otel >/dev/null
-          docker logs host-ptp-otel > "${work}/ptp-collector.log" 2>&1
-          if grep -Eiq 'deprecated|(^|[[:space:]])error([[:space:]]|$)' \
-            "${work}/ptp-collector.log"; then
-            echo "PTP collector log contains an error or deprecation" >&2
-            exit 1
-          fi
-
-          docker run --detach --name host-chronyd-unsync \
-            --network none \
-            --volume "${unsync_socket_dir}:/run/robotics-time" \
-            --volume \
-              "${PWD}/config/time/chrony-unsynchronized-fixture.conf:/etc/chrony/chrony.conf:ro" \
-            "${HOST_IO_FIXTURE_IMAGE}" >/dev/null
-          wait_for_socket \
-            /run/robotics-time/chronyd.sock host-chronyd-unsync
-          docker run --detach --name host-chrony-otel-unsync \
-            --network none \
-            --user 100:101 \
-            --volume "${unsync_socket_dir}:/run/robotics-time" \
-            --volume "${chrony_unsync_evidence}:/evidence" \
-            --volume "${PWD}/config/time/otel-chrony.yaml:/config.yaml:ro" \
-            "${otel_image}" --config=/config.yaml >/dev/null
-          wait_for_evidence \
-            "${chrony_unsync_evidence}/hardware-time.otlp.json" \
-            host-chronyd-unsync host-chrony-otel-unsync
-          docker stop --time 10 \
-            host-chrony-otel-unsync host-chronyd-unsync >/dev/null
-
-          docker run --detach --name host-ptp-otel-unsync \
-            --network none \
-            --user 100:101 \
-            --volume "${ptp_unsync_evidence}:/evidence" \
-            --volume \
-              "${PWD}/test/time/pmc-unsynchronized.fixture:/input/pmc.log:ro" \
-            --volume "${PWD}/config/time/otel-ptp.yaml:/config.yaml:ro" \
-            "${otel_image}" --config=/config.yaml >/dev/null
-          sleep 2
-          docker stop --time 10 host-ptp-otel-unsync >/dev/null
-          test -s "${ptp_unsync_evidence}/hardware-time.otlp.json"
-
-          verify_timing() {
-            local protocol="$1"
-            local evidence="$2"
-            local expected="$3"
-            docker run --rm --interactive \
-              --volume "${evidence}:/metrics.otlp.json:ro" \
-              --entrypoint /opt/venv/bin/python \
-              "${OBSERVER_IMAGE}" - "${protocol}" "${expected}" <<'PY'
-          import sys
-
-          from robotics_acceptance_harness.hardware_timing import evaluate_hardware_timing
-          from robotics_acceptance_harness.otel import load_otlp_json_metrics
-
-          protocol = sys.argv[1]
-          expected = sys.argv[2] == "true"
-          samples = load_otlp_json_metrics("/metrics.otlp.json")
-          result = evaluate_hardware_timing(
-              {
-                  "clock_sync_protocol": protocol,
-                  "max_clock_offset_ms": 5,
-                  "max_clock_drift_ppm": 20,
-                  "max_message_age_ms": 1000,
-              },
-              samples,
-          )
-          assert result.sample_count >= 1
-          assert result.monotonic is expected
-          assert result.within_policy is expected
-          PY
-          }
-          verify_timing \
-            chrony_ntp "${chrony_evidence}/hardware-time.otlp.json" true
-          verify_timing ptp "${ptp_evidence}/hardware-time.otlp.json" true
-          verify_timing \
-            chrony_ntp \
-            "${chrony_unsync_evidence}/hardware-time.otlp.json" false
-          docker run --rm --interactive \
-            --volume \
-              "${ptp_unsync_evidence}/hardware-time.otlp.json:/metrics.otlp.json:ro" \
-            --entrypoint /opt/venv/bin/python \
-            "${OBSERVER_IMAGE}" - <<'PY'
-          from robotics_acceptance_harness.otel import load_otlp_json_metrics
-
-          assert load_otlp_json_metrics("/metrics.otlp.json") == ()
-          PY
-
-          sudo install -d -m 0755 /dev/robotics
-          sudo mknod "${serial_device}" c 1 3
-          ROBOTICS_SERIAL_DEVICE="${serial_device}" \
-            docker compose \
-              -f compose.yaml \
-              -f compose.serial.yaml \
-              --profile serial-preflight \
-              run --rm --no-deps serial-device-preflight
-      - name: Verify receive-only SocketCAN gateway
-        run: |
-          compose=(
-            docker compose
-            -f compose.yaml
-            -f compose.can-observation.yaml
-            --profile can-observation
-          )
-          unit=robotics-can-observation@vcan-ci.service
-          denied_network=robotics-can-observation-denied
-          allowed_gateway=172.30.247.1
-          denied_gateway=172.30.248.1
-          cleanup() {
-            "${compose[@]}" down --volumes --remove-orphans \
-              >/dev/null 2>&1 || true
-            docker network rm "${denied_network}" >/dev/null 2>&1 || true
-            sudo systemctl stop "${unit}" >/dev/null 2>&1 || true
-            sudo rm -f /etc/systemd/system/robotics-can-observation@.service
-            sudo systemctl daemon-reload
-            sudo systemctl reset-failed "${unit}" >/dev/null 2>&1 || true
-            sudo ip link del vcan-ci >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            can-utils "linux-modules-extra-$(uname -r)"
-          sudo modprobe vcan
-          sudo ip link add dev vcan-ci type vcan
-          sudo ip link set dev vcan-ci up
-          "${compose[@]}" create can-observation-client
-          sudo install -m 0644 \
-            systemd/robotics-can-observation@.service \
-            /etc/systemd/system/robotics-can-observation@.service
-          sudo systemctl daemon-reload
-          if ! sudo systemctl start "${unit}"; then
-            sudo journalctl --no-pager --unit "${unit}"
-            exit 1
-          fi
-          sudo systemctl is-active --quiet "${unit}"
-
-          docker run --rm \
-            --network robotics-can-observation \
-            "${CAN_CLIENT_IMAGE}" \
-            nc -z -w 2 "${allowed_gateway}" 28700
-
-          docker network create \
-            --internal \
-            --subnet 172.30.248.0/28 \
-            "${denied_network}" >/dev/null
-          if docker run --rm \
-            --network "${denied_network}" \
-            "${CAN_CLIENT_IMAGE}" \
-            nc -z -w 2 "${denied_gateway}" 28700; then
-            echo "CAN gateway accepted a client outside its allow-list" >&2
-            exit 1
-          fi
-
-          unexpected="${RUNNER_TEMP}/unexpected-can-frame.log"
-          rm -f "${unexpected}"
-          timeout 3 candump -L -n 1 vcan-ci > "${unexpected}" &
-          candump_pid=$!
-          sleep 1
-          printf '123#01020304\n' | docker run --rm --interactive \
-            --network robotics-can-observation \
-            "${CAN_CLIENT_IMAGE}" \
-            nc -w 1 "${allowed_gateway}" 28700 || true
-          wait "${candump_pid}" || test "$?" -eq 124
-          test ! -s "${unexpected}"
-
-          "${compose[@]}" up --detach can-observation-client
-          for _ in {1..20}; do
-            sudo ss -Htn state established sport = :28700 | grep -q . && break
-            sleep 1
-          done
-          sudo ss -Htn state established sport = :28700 | grep -q .
-          cansend vcan-ci 123#DEADBEEF
-          for _ in {1..20}; do
-            "${compose[@]}" logs --no-color can-observation-client \
-              | grep -q '123#DEADBEEF' && break
-            sleep 1
-          done
-          "${compose[@]}" logs --no-color can-observation-client \
-            | grep -q '123#DEADBEEF'
+        run: scripts/ci/integration/verify-portable-runtime-images.sh
+      - name: Verify host time evidence
+        run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify Cosign DSSE boundary and tamper rejection
         env:
           COSIGN_PASSWORD: test-only
-        run: |
-          work="${RUNNER_TEMP}/permit-crypto"
-          rm -rf "${work}"
-          mkdir -p "${work}"
-          chmod 0777 "${work}"
-          jq '.execution_valid.statement' \
-            test/policy/execution/valid.json > "${work}/statement.json"
-          cosign=(
-            docker run --rm
-            --env COSIGN_PASSWORD
-            --volume "${work}:/work"
-            --workdir /work
-            --entrypoint /usr/local/bin/cosign
-            "${PERMIT_PREFLIGHT_IMAGE}"
-          )
-          "${cosign[@]}" signing-config create \
-            --no-default-fulcio \
-            --no-default-oidc \
-            --no-default-rekor \
-            --no-default-tsa \
-            --out offline-signing-config.json
-          "${cosign[@]}" generate-key-pair --output-key-prefix operator
-          "${cosign[@]}" attest-blob --yes \
-            --key operator.key \
-            --signing-config offline-signing-config.json \
-            --bundle operator.sigstore.json \
-            --statement statement.json
-          docker run --rm \
-            --volume "${work}:/work:ro" \
-            "${PERMIT_PREFLIGHT_IMAGE}" \
-            verify-offline-test-attestation \
-            /work/statement.json \
-            /work/operator.sigstore.json \
-            /work/operator.pub
-          jq '.predicate.permit_id = "tampered"' \
-            "${work}/statement.json" > "${work}/tampered-statement.json"
-          if docker run --rm \
-            --volume "${work}:/work:ro" \
-            "${PERMIT_PREFLIGHT_IMAGE}" \
-            verify-offline-test-attestation \
-            /work/tampered-statement.json \
-            /work/operator.sigstore.json \
-            /work/operator.pub; then
-            printf 'mismatched execution statement was accepted\n' >&2
-            exit 1
-          fi
-          docker run --rm \
-            --volume "${work}:/work:ro" \
-            --entrypoint /usr/local/bin/yq \
-            "${PERMIT_PREFLIGHT_IMAGE}" \
-            --output-format json \
-            '.dsseEnvelope.payload = (.dsseEnvelope.payload + "A")' \
-            /work/operator.sigstore.json \
-            > "${work}/tampered-operator.sigstore.json"
-          if docker run --rm \
-            --volume "${work}:/work:ro" \
-            "${PERMIT_PREFLIGHT_IMAGE}" \
-            verify-offline-test-attestation \
-            /work/statement.json \
-            /work/tampered-operator.sigstore.json \
-            /work/operator.pub; then
-            printf 'tampered DSSE envelope was accepted\n' >&2
-            exit 1
-          fi
-          rm -rf "${work}"
-      - name: Verify physical runtime manifest materialization
-        run: |
-          work="${RUNNER_TEMP}/runtime-materialization"
-          rm -rf "${work}"
-          mkdir -p "${work}"
-          chmod 0777 "${work}"
-          jq '.execution_valid.permit' \
-            test/policy/execution/valid.json > "${work}/permit.json"
-          jq '.execution_valid.trust_policy' \
-            test/policy/execution/valid.json > "${work}/trust-policy.json"
-          jq '.execution_valid' \
-            test/policy/execution/valid.json > "${work}/execution-input.json"
-          docker run --rm \
-            --volume "${work}:/work" \
-            --entrypoint /usr/local/bin/opa \
-            "${PERMIT_PREFLIGHT_IMAGE}" \
-            eval \
-            --fail \
-            --format raw \
-            --data /usr/share/robotics-runtime/policy/execution.rego \
-            --input /work/execution-input.json \
-            'data.execution.verification with time.now_ns as time.parse_rfc3339_ns("2026-07-14T12:00:00Z")' \
-            > "${work}/verification.json"
-          docker run --rm \
-            --volume "${PWD}/test/physical:/fixtures:ro" \
-            --volume "${work}:/work" \
-            "${PERMIT_PREFLIGHT_IMAGE}" \
-            materialize-runtime \
-            /fixtures/hil-runtime.input.json \
-            /work/permit.json \
-            /work/verification.json \
-            /work/trust-policy.json \
-            /work/runtime-manifest.json
-          permit_sha256="$(sha256sum "${work}/permit.json" | awk '{print $1}')"
-          verification_sha256="$(
-            sha256sum "${work}/verification.json" | awk '{print $1}'
-          )"
-          trust_policy_sha256="$(
-            sha256sum "${work}/trust-policy.json" | awk '{print $1}'
-          )"
-          jq -e \
-            --arg permit "${permit_sha256}" \
-            --arg verification "${verification_sha256}" \
-            --arg trust "${trust_policy_sha256}" '
-              .schema_version == "runtime-manifest.v1" and
-              .authorization.mode == "verified_execution_permit" and
-              .authorization.permit_sha256 == $permit and
-              .authorization.execution_verification_sha256 == $verification and
-              .authorization.trust_policy_sha256 == $trust
-            ' "${work}/runtime-manifest.json" >/dev/null
-          if docker run --rm \
-            --volume "${PWD}/test/physical:/fixtures:ro" \
-            --volume "${work}:/work" \
-            "${PERMIT_PREFLIGHT_IMAGE}" \
-            materialize-runtime \
-            /fixtures/hil-runtime.input.json \
-            /work/permit.json \
-            /work/verification.json \
-            /work/trust-policy.json \
-            /work/runtime-manifest.json; then
-            printf 'existing runtime manifest was overwritten\n' >&2
-            exit 1
-          fi
-          rm -rf "${work}"
-      - name: Verify edge attach lifecycle without physical execution
+        run: scripts/ci/integration/verify-cosign-dsse-boundary-and-tamper-rejection.sh
+      - name: Verify synthetic physical attach end to end
         env:
-          ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
-        run: |
-          project="edge-attach-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          network="${project}-network"
-          work="${RUNNER_TEMP}/${project}"
-          mkdir -p \
-            "${work}/input" \
-            "${work}/authorization" \
-            "${work}/authorization-output" \
-            "${work}/nonces" \
-            "${work}/results" \
-            "${work}/security/keystore/public" \
-            "${work}/security/keystore/enclaves/robotics/observer"
-          touch "${work}/security/keystore/enclaves/governance.p7s"
-          chmod -R 0777 "${work}"
-          export ROBOTICS_ATTACH_NETWORK="${network}"
-          export ROBOTICS_RUN_INPUT_DIR="${work}/input"
-          export ROBOTICS_AUTHORIZATION_DIR="${work}/authorization"
-          export ROBOTICS_AUTHORIZATION_OUTPUT_DIR="${work}/authorization-output"
-          export ROBOTICS_NONCE_DIR="${work}/nonces"
-          export ROBOTICS_RESULTS_DIR="${work}/results"
-          export ROBOTICS_SECURITY_WORK_DIR="${work}/security"
-          compose=(
-            docker compose -p "${project}"
-            -f compose.yaml
-            -f compose.edge-attach.yaml
-          )
-          cleanup() {
-            "${compose[@]}" --profile hil \
-              down --volumes --remove-orphans || true
-            docker network rm "${network}" >/dev/null 2>&1 || true
-            rm -rf "${work}"
-          }
-          trap cleanup EXIT
-          docker network create --driver bridge --internal "${network}"
-          "${compose[@]}" --profile hil up --no-build --no-start
-          mapfile -t services < <(
-            "${compose[@]}" --profile hil ps --all --services | sort
-          )
-          expected=(
-            edge-attach-data-plane
-            hil-observer
-            physical-permit-preflight
-            physical-runtime-manifest
-          )
-          test "${services[*]}" = "${expected[*]}"
-          "${compose[@]}" --profile hil down --volumes --remove-orphans
-          docker network inspect "${network}" >/dev/null
-          test -z "$(
-            docker ps --all --quiet \
-              --filter "label=com.docker.compose.project=${project}"
-          )"
+          COSIGN_PASSWORD: test-only
+        run: scripts/ci/integration/verify-synthetic-physical-attach-end-to-end.sh
       - name: Verify CPU provider identity and tensor parity
-        run: |
-          report_dir="${PWD}/artifacts/provider-conformance/cpu"
-          negative_dir="${PWD}/artifacts/provider-conformance/cpu-negative"
-          mkdir -p "${report_dir}" "${negative_dir}"
-          sudo chown -R 1000:1000 "${PWD}/artifacts/provider-conformance"
-          ROBOTICS_PROVIDER_REPORT_DIR="${report_dir}" \
-            docker compose --profile conformance run \
-            --rm --no-deps provider-conformance-cpu
-          jq -e '
-            .status == "passed" and
-            .expected_provider == "CPUExecutionProvider" and
-            .executed_providers == ["CPUExecutionProvider"] and
-            .fallback_count == 0
-          ' "${report_dir}/provider-conformance.json"
-          set +e
-          ROBOTICS_EXPECTED_PROVIDER=CUDAExecutionProvider \
-          ROBOTICS_PROVIDER_REPORT_DIR="${negative_dir}" \
-            docker compose --profile conformance run \
-            --rm --no-deps provider-conformance-cpu
-          status=$?
-          set -e
-          test "${status}" -ne 0
-          jq -e '
-            .status == "failed" and
-            .reason == "expected_provider_unavailable"
-          ' "${negative_dir}/provider-conformance.json"
+        run: scripts/ci/integration/verify-cpu-provider-identity-and-tensor-parity.sh
       - name: Run ROS and Gazebo acceptance tests
-        run: |
-          docker compose up --detach --no-build --wait --wait-timeout 120 simulation
-          docker compose exec -T simulation \
-            robotics-entrypoint timeout 20 ros2 topic echo \
-            /clock rosgraph_msgs/msg/Clock --once
-          test_container="${COMPOSE_PROJECT_NAME}-test"
-          set +e
-          docker compose --profile test run \
-            --name "${test_container}" --no-deps test
-          status=$?
-          set -e
-          mkdir -p artifacts/test-results
-          docker cp \
-            "${test_container}:/opt/robotics_ws/build/robotics_runtime_infra/test_results/." \
-            artifacts/test-results/
-          docker rm "${test_container}"
-          test "${status}" -eq 0
+        run: scripts/ci/integration/run-ros-and-gazebo-acceptance-tests.sh
       - name: Verify paused MCAP playback
-        run: |
-          project="playback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          compose=(
-            docker compose -p "${project}"
-            -f compose.yaml
-            -f compose.playback.yaml
-          )
-          cleanup() {
-            "${compose[@]}" --profile playback --profile test \
-              down --volumes --remove-orphans || true
-          }
-          trap cleanup EXIT
-          export ROS_DOMAIN_ID=87
-          "${compose[@]}" \
-            --profile playback --profile test \
-            up --no-build --detach \
-            playback playback-gate playback-probe
-          "${compose[@]}" \
-            --profile playback --profile test \
-            wait playback-gate playback-probe
+        run: scripts/ci/integration/verify-paused-mcap-playback.sh
       - name: Verify playback readiness fails closed
-        run: |
-          project="playback-negative-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          compose=(
-            docker compose -p "${project}"
-            -f compose.yaml
-            -f compose.playback.yaml
-          )
-          cleanup() {
-            "${compose[@]}" --profile playback --profile test \
-              down --volumes --remove-orphans || true
-          }
-          trap cleanup EXIT
-          export ROS_DOMAIN_ID=86
-          export ROBOTICS_PLAYBACK_READINESS_TOPIC=/never_present
-          export ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC=2
-          export ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC=4
-          "${compose[@]}" \
-            --profile playback --profile test \
-            up --no-build --detach \
-            playback playback-gate playback-probe
-          set +e
-          "${compose[@]}" \
-            --profile playback --profile test \
-            wait playback-gate playback-probe
-          status=$?
-          set -e
-          if (( status == 0 )); then
-            printf 'playback timeout fixture unexpectedly passed\n' >&2
-            exit 1
-          fi
-          printf 'playback timeout fixture failed closed: %s\n' "${status}"
+        run: scripts/ci/integration/verify-playback-readiness-fails-closed.sh
       - name: Verify the local high-throughput profile
-        run: |
-          project="high-throughput-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          compose=(
-            docker compose -p "${project}"
-            -f compose.yaml
-            -f compose.high-throughput.yaml
-          )
-          cleanup() {
-            "${compose[@]}" --profile test \
-              down --volumes --remove-orphans || true
-          }
-          trap cleanup EXIT
-          GZ_PARTITION="high-throughput-${GITHUB_RUN_ID}" \
-          ROS_DOMAIN_ID=88 \
-            "${compose[@]}" --profile test \
-            up --no-build --abort-on-container-exit \
-            --exit-code-from data-plane-probe \
-            simulation data-plane data-plane-probe
+        run: scripts/ci/integration/verify-the-local-high-throughput-profile.sh
       - name: Benchmark the supported ROS data planes
-        run: |
-          result_root="${PWD}/artifacts/benchmarks"
-          mkdir -p "${result_root}"
-          for profile in \
-            udp-only.xml \
-            shm-only.xml \
-            datasharing-required.xml; do
-            name="${profile%.xml}"
-            result_dir="${result_root}/${name}"
-            project="benchmark-${name}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-            mkdir -p "${result_dir}"
-            sudo chown -R 1000:1000 "${result_dir}"
-            compose=(
-              docker compose -p "${project}"
-              -f compose.yaml
-              -f compose.benchmark.yaml
-            )
-            set +e
-            ROBOTICS_BENCHMARK_PROFILE="${profile}" \
-            ROBOTICS_BENCHMARK_DIR="${result_dir}" \
-            ROBOTICS_BENCHMARK_DURATION_SEC=5 \
-              "${compose[@]}" --profile benchmark \
-              up --no-build --abort-on-container-exit \
-              --exit-code-from benchmark-subscriber \
-              benchmark-subscriber benchmark-publisher
-            status=$?
-            set -e
-            "${compose[@]}" --profile benchmark \
-              down --volumes --remove-orphans || true
-            test "${status}" -eq 0
-            jq -e '
-              ([.analysis_results[].num_samples_received] | add) > 0 and
-              ([.analysis_results[].num_samples_lost] | add) == 0
-            ' "${result_dir}/subscriber.json"
-          done
+        run: scripts/ci/integration/benchmark-the-supported-ros-data-planes.sh
       - name: Verify SROS2 enforcement
         env:
           # Configuration-only fixture; production uses the verified image digest.
           ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
-        run: |
-          work_dir="${PWD}/artifacts/security-runtime"
-          project="security-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          real_project="${project}-real-observation"
-          real_network="${real_project}-network"
-          mkdir -p "${work_dir}"
-          sudo chown -R 1000:1000 "${work_dir}"
-          export ROS_DOMAIN_ID=92
-          export ROBOTICS_SECURITY_WORK_DIR="${work_dir}"
-          compose=(
-            docker compose -p "${project}"
-            -f compose.yaml
-            -f compose.security.yaml
-          )
-          real_compose=(
-            docker compose -p "${real_project}"
-            -f compose.yaml
-            -f compose.edge-attach.yaml
-            -f compose.real-observation.yaml
-            -f compose.real-observation.test.yaml
-          )
-          cleanup() {
-            "${real_compose[@]}" \
-              --profile real-observation \
-              --profile real-observation-test \
-              --profile real-observation-test-negative \
-              down --volumes --remove-orphans || true
-            docker network rm "${real_network}" >/dev/null 2>&1 || true
-            "${compose[@]}" \
-              --profile security --profile security-init \
-              --profile security-verify --profile security-negative \
-              --profile security-observer \
-              --profile security-observer-negative \
-              down --volumes --remove-orphans || true
-          }
-          trap cleanup EXIT
-          "${compose[@]}" --profile security-init \
-            run --rm security-artifacts
-          "${compose[@]}" --profile security-verify \
-            run --rm security-signature-check
-          "${compose[@]}" --profile security \
-            up --no-build --abort-on-container-exit \
-            --exit-code-from secure-listener \
-            secure-listener secure-talker
-          "${compose[@]}" --profile security \
-            down --volumes --remove-orphans
-          "${compose[@]}" --profile security-negative \
-            run --rm secure-denied-remap
-          "${compose[@]}" --profile security-negative \
-            run --rm secure-missing-enclave
-          "${compose[@]}" --profile security-negative \
-            up --no-build --abort-on-container-exit \
-            --exit-code-from secure-reject-unsecured-listener \
-            secure-reject-unsecured-listener unsecured-talker
-          "${compose[@]}" --profile security-negative \
-            down --volumes --remove-orphans
-          "${compose[@]}" --profile security-observer \
-            up --no-build --abort-on-container-exit \
-            --exit-code-from secure-observer \
-            secure-observer secure-observer-source
-          "${compose[@]}" --profile security-observer \
-            down --volumes --remove-orphans
-          "${compose[@]}" --profile security-observer-negative \
-            run --rm secure-observer-denied-command
-
-          sudo install -d -o 1000 -g 1000 -m 0770 \
-            "${work_dir}/real/input" \
-            "${work_dir}/real/authorization" \
-            "${work_dir}/real/authorization-output" \
-            "${work_dir}/real/evidence" \
-            "${work_dir}/real/nonces" \
-            "${work_dir}/real/results"
-          export OBSERVER_IMAGE="${BENCHMARK_IMAGE}"
-          export ROBOTICS_ATTACH_NETWORK="${real_network}"
-          export ROBOTICS_RUN_INPUT_DIR="${work_dir}/real/input"
-          export ROBOTICS_AUTHORIZATION_DIR="${work_dir}/real/authorization"
-          export ROBOTICS_AUTHORIZATION_OUTPUT_DIR="${work_dir}/real/authorization-output"
-          export ROBOTICS_EVIDENCE_DIR="${work_dir}/real/evidence"
-          export ROBOTICS_NONCE_DIR="${work_dir}/real/nonces"
-          export ROBOTICS_RESULTS_DIR="${work_dir}/real/results"
-          docker network create --driver bridge --internal "${real_network}"
-          "${real_compose[@]}" \
-            --profile real-observation \
-            --profile real-observation-test \
-            up --detach edge-attach-data-plane real-observation-test-source
-          "${real_compose[@]}" --profile real-observation \
-            run --rm --no-deps real-observation-observer \
-            bash -Eeu -c '
-              timeout 20 ros2 run demo_nodes_cpp listener \
-                --ros-args \
-                --enclave /robotics/observer \
-                --remap __node:=robotics_acceptance_observer \
-                --remap chatter:=/robotics/telemetry 2>&1 | \
-                grep --max-count=1 "I heard:"
-            '
-          # The container shell expands the nested script variables.
-          # shellcheck disable=SC2016
-          "${real_compose[@]}" --profile real-observation \
-            run --rm --no-deps real-observation-observer \
-            bash -Eeuo pipefail -c '
-              set +e
-              output="$(timeout 10 ros2 run demo_nodes_cpp talker \
-                --ros-args \
-                --enclave /robotics/observer \
-                --remap __node:=robotics_acceptance_observer \
-                --remap chatter:=/cmd_vel 2>&1)"
-              status="$?"
-              set -e
-              printf "%s\n" "${output}"
-              test "${status}" -ne 0
-              grep -Eqi "permission|not allowed|denied|create publisher" \
-                <<<"${output}"
-            '
-          "${real_compose[@]}" \
-            --profile real-observation \
-            --profile real-observation-test \
-            stop real-observation-test-source
-          "${real_compose[@]}" \
-            --profile real-observation \
-            --profile real-observation-test \
-            rm --force real-observation-test-source
-          "${real_compose[@]}" \
-            --profile real-observation \
-            --profile real-observation-test-negative \
-            up --detach \
-            edge-attach-data-plane real-observation-test-unsecured-source
-          # The container shell expands the nested script variables.
-          # shellcheck disable=SC2016
-          "${real_compose[@]}" --profile real-observation \
-            run --rm --no-deps real-observation-observer \
-            bash -Eeuo pipefail -c '
-              set +e
-              output="$(timeout 8 ros2 run demo_nodes_cpp listener \
-                --ros-args \
-                --enclave /robotics/observer \
-                --remap __node:=robotics_acceptance_observer \
-                --remap chatter:=/robotics/telemetry 2>&1)"
-              status="$?"
-              set -e
-              printf "%s\n" "${output}"
-              test "${status}" -eq 124
-              ! grep -q "I heard:" <<<"${output}"
-            '
+        run: scripts/ci/integration/verify-sros2-enforcement.sh
       - name: Verify versioned S3 evidence
-        run: |
-          evidence_dir="${PWD}/artifacts/evidence-s3"
-          project="evidence-s3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "${evidence_dir}"
-          sudo chown -R 10001:10001 "${evidence_dir}"
-          export ROBOTICS_BAG_DIR="${PWD}/test/fixtures/playback/golden"
-          export ROBOTICS_EVIDENCE_DIR="${evidence_dir}"
-          compose=(
-            docker compose -p "${project}"
-            -f compose.yaml
-            -f compose.evidence.yaml
-            -f compose.evidence.test.yaml
-          )
-          cleanup() {
-            "${compose[@]}" --profile test --profile evidence \
-              down --volumes --remove-orphans || true
-          }
-          trap cleanup EXIT
-          "${compose[@]}" --profile test --profile evidence \
-            run --rm evidence-finalize
-          jq -e '
-            .finalized == true and
-            (.segments | length) == 1 and
-            .segments[0].upload_status == "confirmed" and
-            (.segments[0].version_id | length) > 0
-          ' "${evidence_dir}/evidence-index.json"
+        run: scripts/ci/integration/verify-versioned-s3-evidence.sh
       - name: Capture runtime evidence
         if: always()
-        run: |
-          mkdir -p artifacts/runtime
-          docker compose logs --no-color > artifacts/runtime/compose.log 2>&1 || true
-          for image in \
-            "${SIMULATION_IMAGE}" "${EDGE_IMAGE}" "${SENSOR_IMAGE}" \
-            "${INFERENCE_CPU_IMAGE}" "${OBSERVER_IMAGE}" \
-            "${BENCHMARK_IMAGE}" "${EVIDENCE_IMAGE}" \
-            "${PERMIT_PREFLIGHT_IMAGE}" "${HOST_IO_FIXTURE_IMAGE}"; do
-            safe_name="$(tr '/:' '__' <<<"${image}")"
-            if ! docker image inspect "${image}" \
-              > "artifacts/runtime/${safe_name}.json"; then
-              rm -f "artifacts/runtime/${safe_name}.json"
-              printf '%s\n' "${image}" \
-                >> artifacts/runtime/missing-images.txt
-            fi
-          done
+        run: scripts/ci/integration/capture-runtime-evidence.sh
       - name: Scan images and enforce vulnerability policy
-        run: |
-          mkdir -p artifacts/security .trivy-cache
-          trivy=(
-            docker run --rm
-            --volume /var/run/docker.sock:/var/run/docker.sock
-            --volume "${PWD}:/work:ro"
-            --volume "${PWD}/artifacts/security:/reports"
-            --volume "${PWD}/.trivy-cache:/root/.cache/trivy"
-            "${TRIVY_IMAGE}" image
-            --config /work/trivy.yaml
-            --ignorefile /work/.trivyignore
-          )
-          "${trivy[@]}" \
-            --format sarif --output /reports/simulation.sarif \
-            "${SIMULATION_IMAGE}"
-          for image in \
-            "${SIMULATION_IMAGE}" "${EDGE_IMAGE}" "${SENSOR_IMAGE}" \
-            "${INFERENCE_CPU_IMAGE}" "${OBSERVER_IMAGE}" \
-            "${BENCHMARK_IMAGE}" "${EVIDENCE_IMAGE}" \
-            "${PERMIT_PREFLIGHT_IMAGE}" "${HOST_IO_FIXTURE_IMAGE}"; do
-            "${trivy[@]}" \
-              --skip-db-update --ignore-unfixed \
-              --severity HIGH,CRITICAL --exit-code 1 "${image}"
-          done
+        run: scripts/ci/integration/scan-images-and-enforce-vulnerability-policy.sh
       - name: Stop runtime
         if: always()
         run: docker compose --profile test --profile acceptance down --volumes --remove-orphans
@@ -1552,31 +225,21 @@ jobs:
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
       - name: Set reproducible build metadata
-        run: |
-          {
-            echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)"
-            echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)"
-            echo "VCS_REF=${GITHUB_SHA}"
-          } >> "$GITHUB_ENV"
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the NVIDIA runtime image
-        run: |
-          docker buildx bake inference-nvidia \
-            --load \
-            --set '*.platform=linux/amd64' \
-            --set '*.cache-from=type=gha,scope=runtime-infra-nvidia-amd64' \
-            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-nvidia-amd64'
+        run: scripts/ci/nvidia-image/build-the-nvidia-runtime-image.sh
       - name: Verify the ONNX Runtime GPU ABI
-        run: |
-          image="${REGISTRY}/robotics-runtime-infra/inference-nvidia:${VERSION}"
-          docker run --rm --entrypoint test "${image}" \
-            -s /usr/share/licenses/nvidia/NGC-DL-CONTAINER-LICENSE
-          docker run --rm --interactive --entrypoint /opt/venv/bin/python "${image}" - <<'PY'
-          import onnxruntime as ort
-
-          providers = ort.get_available_providers()
-          assert "CUDAExecutionProvider" in providers, providers
-          PY
-
+        run: scripts/ci/nvidia-image/verify-the-onnx-runtime-gpu-abi.sh
+      - name: Scan NVIDIA runtime images
+        run: scripts/ci/security/scan-bake-group.sh nvidia
+      - name: Upload NVIDIA scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-nvidia-${{ github.sha }}
+          path: artifacts/security/
+          if-no-files-found: error
+          retention-days: 7
   nvidia-jetson-supply-chain:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -1590,49 +253,13 @@ jobs:
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
       - name: Verify pinned NVIDIA base manifests
-        run: |
-          verify_digest() {
-            local reference="$1"
-            local expected="$2"
-            local actual
-            actual="$(docker buildx imagetools inspect "${reference}" \
-              --format '{{.Manifest.Digest}}')"
-            test "${actual}" = "${expected}"
-          }
-          verify_digest \
-            nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04 \
-            sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
-          verify_digest \
-            nvidia/cuda:13.3.0-runtime-ubuntu24.04 \
-            sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
+        run: scripts/ci/nvidia-jetson-supply-chain/verify-pinned-nvidia-base-manifests.sh
       - name: Verify the ONNX Runtime source pin
-        run: |
-          revision="$(git ls-remote \
-            https://github.com/microsoft/onnxruntime.git \
-            refs/tags/v1.27.0 | awk '{print $1}')"
-          test "${revision}" = \
-            8f0278c77bf44b0cc83c098c6c722b92a36ac4b5
-          curl --fail --location --silent --show-error \
-            https://pypi.org/pypi/onnxruntime-gpu/1.27.0/json \
-            | jq -e \
-              '[.urls[].filename | select(test("manylinux.*aarch64"))] | length == 0'
+        run: scripts/ci/nvidia-jetson-supply-chain/verify-the-onnx-runtime-source-pin.sh
       - name: Resolve and verify the ONNX Runtime source context
-        run: |
-          docker buildx bake onnxruntime-jetson-source-verification \
-            --set '*.output=type=cacheonly' \
-            --set '*.cache-from=type=gha,scope=runtime-infra-onnxruntime-source' \
-            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-onnxruntime-source'
+        run: scripts/ci/nvidia-jetson-supply-chain/resolve-and-verify-the-onnx-runtime-source-context.sh
       - name: Verify the Jetson runtime lock
-        run: |
-          lock=docker/python/inference-nvidia-jetson.lock
-          grep -Fq 'numpy==1.26.4' "${lock}"
-          grep -Fq 'nvidia-cublas==13.5.1.27' "${lock}"
-          grep -Fq 'nvidia-cuda-nvrtc==13.3.33' "${lock}"
-          grep -Fq 'nvidia-cudnn-cu13==9.23.0.39' "${lock}"
-          grep -Fq 'tensorrt-cu13-libs @' "${lock}"
-          grep -Fq \
-            'sha256=58debb693e0708cf7722868845f3e5286fb9c4d5ac2a1bf3b3806eb4706be39b' \
-            "${lock}"
+        run: scripts/ci/nvidia-jetson-supply-chain/verify-the-jetson-runtime-lock.sh
       - name: Validate the Jetson build graph
         run: docker buildx bake --print nvidia-jetson >/dev/null
 
@@ -1649,32 +276,15 @@ jobs:
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
       - name: Verify the RKNN source and dependency policy
-        run: |
-          revision="$(git ls-remote \
-            https://github.com/airockchip/rknn-toolkit2.git \
-            refs/tags/v2.3.2 | awk '{print $1}')"
-          test "${revision}" = \
-            42aa1d426c0a9e0869b6374edba009f7208a1926
-          if grep -Eq '^(nvidia-|triton==)' \
-            docker/python/rknn-converter.lock; then
-            echo "RKNN converter lock contains a prohibited GPU package" >&2
-            exit 1
-          fi
-          if grep -Eq '^(nvidia-|triton==)' \
-            docker/python/rknn-runtime.lock; then
-            echo "RKNN runtime lock contains a prohibited GPU package" >&2
-            exit 1
-          fi
-          docker buildx bake rknn-source-verification \
-            --set '*.output=type=cacheonly'
+        run: scripts/ci/rknn-supply-chain/verify-the-rknn-source-and-dependency-policy.sh
       - name: Run the official RKNN conversion fixture
-        run: |
-          docker buildx bake rknn-converter-verification \
-            --set '*.output=type=cacheonly'
-
+        run: scripts/ci/rknn-supply-chain/run-the-official-rknn-conversion-fixture.sh
   rknn-arm64-image:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
+    env:
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
+      VERSION: rknn-ci
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -1687,15 +297,23 @@ jobs:
       - name: Require the native ARM64 runner
         run: test "$(uname -m)" = aarch64
       - name: Build the RK3588 runtime without publishing vendor artifacts
-        run: |
-          docker buildx bake \
-            inference-rknn-rk3588 \
-            provider-conformance-rknn-rk3588 \
-            --set '*.output=type=cacheonly'
-
+        run: scripts/ci/rknn-arm64-image/build-the-rk3588-runtime-without-publishing-vendor-artifacts.sh
+      - name: Scan RK3588 runtime images
+        run: scripts/ci/security/scan-bake-group.sh rknn
+      - name: Upload RK3588 scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-rknn-${{ github.sha }}
+          path: artifacts/security/
+          if-no-files-found: error
+          retention-days: 7
   amd-supply-chain:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
+      VERSION: amd-ci
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -1710,50 +328,23 @@ jobs:
           version: "0.11.28"
           enable-cache: false
       - name: Verify the signed ROCm package channel
-        run: |
-          docker run --rm \
-            ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90 \
-            bash -euo pipefail -c '
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update >/dev/null
-            apt-get install -y --no-install-recommends \
-              ca-certificates curl gnupg >/dev/null
-            install -d -m 0755 /etc/apt/keyrings
-            curl --fail --location --silent --show-error \
-              https://repo.radeon.com/rocm/rocm.gpg.key \
-              --output /tmp/rocm.asc
-            echo \
-              "2de99e2354646a90d9903e2a669fc4e36b02c1bbff7075c481e12d7edab2c88b  /tmp/rocm.asc" \
-              | sha256sum --check --strict
-            cp /tmp/rocm.asc /etc/apt/keyrings/rocm.asc
-            rocm_repo=https://repo.radeon.com/rocm/apt/7.2.4
-            printf \
-              "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.asc] %s noble main\n" \
-              "$rocm_repo" \
-              > /etc/apt/sources.list.d/rocm.list
-            apt-get update >/dev/null
-            test "$(apt-cache policy migraphx | awk "/Candidate:/ {print \$2}")" \
-              = "2.15.0.70204-93~24.04"
-          '
+        run: scripts/ci/amd-supply-chain/verify-the-signed-rocm-package-channel.sh
       - name: Verify the locked AMD wheel
-        run: |
-          uv pip compile docker/python/inference-amd.in \
-            --python-version 3.12 \
-            --python-platform x86_64-unknown-linux-gnu \
-            --generate-hashes \
-            --output-file docker/python/inference-amd.lock
-          git diff --exit-code -- docker/python/inference-amd.lock
+        run: scripts/ci/amd-supply-chain/verify-the-locked-amd-wheel.sh
       - name: Validate the AMD build graph
         run: docker buildx bake --print amd >/dev/null
       - name: Build the AMD runtime and conformance images
-        run: |
-          docker buildx bake amd \
-            --set '*.platform=linux/amd64' \
-            --set '*.output=type=cacheonly' \
-            --set 'inference-amd.cache-from=type=gha,scope=runtime-infra-amd-amd64' \
-            --set 'provider-conformance-amd.cache-from=type=gha,scope=runtime-infra-amd-amd64' \
-            --set 'provider-conformance-amd.cache-to=type=gha,mode=max,scope=runtime-infra-amd-amd64'
-
+        run: scripts/ci/amd-supply-chain/build-the-amd-runtime-and-conformance-images.sh
+      - name: Scan AMD runtime images
+        run: scripts/ci/security/scan-bake-group.sh amd
+      - name: Upload AMD scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-amd-${{ github.sha }}
+          path: artifacts/security/
+          if-no-files-found: error
+          retention-days: 7
   intel-image:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -1774,36 +365,21 @@ jobs:
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
       - name: Set reproducible build metadata
-        run: |
-          {
-            echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)"
-            echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)"
-            echo "VCS_REF=${GITHUB_SHA}"
-          } >> "$GITHUB_ENV"
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the Intel runtime and conformance images
-        run: |
-          docker buildx bake intel \
-            --load \
-            --set '*.platform=linux/amd64' \
-            --set '*.cache-from=type=gha,scope=runtime-infra-intel-amd64' \
-            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-intel-amd64'
+        run: scripts/ci/intel-image/build-the-intel-runtime-and-conformance-images.sh
       - name: Verify OpenVINO CPU execution without fallback
-        run: |
-          report_dir="${PWD}/artifacts/provider-conformance/intel-cpu"
-          mkdir -p "${report_dir}"
-          sudo chown -R 1000:1000 "${PWD}/artifacts/provider-conformance"
-          ROBOTICS_PROVIDER_REPORT_DIR="${report_dir}" \
-            docker compose -f compose.yaml -f compose.intel.yaml \
-            --profile conformance-intel-cpu run \
-            --rm --no-deps provider-conformance-intel-cpu
-          jq -e '
-            .status == "passed" and
-            .expected_provider == "OpenVINOExecutionProvider" and
-            .executed_providers == ["OpenVINOExecutionProvider"] and
-            .provider_options.device_type == "CPU" and
-            .fallback_count == 0
-          ' "${report_dir}/provider-conformance.json"
-
+        run: scripts/ci/intel-image/verify-openvino-cpu-execution-without-fallback.sh
+      - name: Scan Intel runtime images
+        run: scripts/ci/security/scan-bake-group.sh intel
+      - name: Upload Intel scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-intel-${{ github.sha }}
+          path: artifacts/security/
+          if-no-files-found: error
+          retention-days: 7
   portable-arm64:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -1816,6 +392,7 @@ jobs:
           persist-credentials: false
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
         with:
+          image: ${{ env.BINFMT_IMAGE }}
           platforms: arm64
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
         with:
@@ -1823,20 +400,9 @@ jobs:
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
       - name: Set reproducible build metadata
-        run: |
-          {
-            echo "IMAGE_CREATED=$(git show --no-patch --format=%cI HEAD)"
-            echo "SOURCE_DATE_EPOCH=$(git show --no-patch --format=%ct HEAD)"
-            echo "VCS_REF=${GITHUB_SHA}"
-          } >> "$GITHUB_ENV"
+        run: scripts/ci/set-build-metadata.sh
       - name: Build every portable target for ARM64
-        run: |
-          docker buildx bake multiarch \
-            --set '*.platform=linux/arm64' \
-            --set '*.output=type=cacheonly' \
-            --set '*.cache-from=type=gha,scope=runtime-infra-arm64' \
-            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
-
+        run: scripts/ci/portable-arm64/build-every-portable-target-for-arm64.sh
   reproducibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -1850,31 +416,7 @@ jobs:
           driver-opts: |
             image=${{ env.BUILDKIT_IMAGE }}
       - name: Rebuild the same OCI image twice
-        run: |
-          created="$(git show --no-patch --format=%cI HEAD)"
-          epoch="$(git show --no-patch --format=%ct HEAD)"
-          build=(
-            docker buildx build
-            --no-cache
-            --platform linux/amd64
-            --target evidence-sink
-            --provenance=false
-            --build-arg "IMAGE_CREATED=${created}"
-            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-            --build-arg "IMAGE_VERSION=reproducibility"
-            --build-arg "SOURCE_DATE_EPOCH=${epoch}"
-            --build-arg "VCS_REF=${GITHUB_SHA}"
-            .
-          )
-          "${build[@]}" --output \
-            type=oci,dest=first.tar,rewrite-timestamp=true
-          "${build[@]}" --output \
-            type=oci,dest=second.tar,rewrite-timestamp=true
-          first_digest="$(tar -xOf first.tar index.json | jq -er '.manifests[0].digest')"
-          second_digest="$(tar -xOf second.tar index.json | jq -er '.manifests[0].digest')"
-          test "${first_digest}" = "${second_digest}"
-          printf 'reproducible OCI manifest: %s\n' "${first_digest}"
-
+        run: scripts/ci/reproducibility/rebuild-the-same-oci-image-twice.sh
   ci:
     if: always()
     needs:
@@ -1892,6 +434,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - name: Require every CI gate
         env:
           STATIC_RESULT: ${{ needs.static-analysis.result }}
@@ -1905,15 +450,4 @@ jobs:
           RKNN_ARM64_RESULT: ${{ needs.rknn-arm64-image.result }}
           ARM64_RESULT: ${{ needs.portable-arm64.result }}
           REPRO_RESULT: ${{ needs.reproducibility.result }}
-        run: |
-          test "${STATIC_RESULT}" = success
-          test "${COMPOSE_RESULT}" = success
-          test "${INTEGRATION_RESULT}" = success
-          test "${AMD_RESULT}" = success
-          test "${INTEL_RESULT}" = success
-          test "${NVIDIA_RESULT}" = success
-          test "${NVIDIA_JETSON_RESULT}" = success
-          test "${RKNN_RESULT}" = success
-          test "${RKNN_ARM64_RESULT}" = success
-          test "${ARM64_RESULT}" = success
-          test "${REPRO_RESULT}" = success
+        run: scripts/ci/ci/require-every-ci-gate.sh

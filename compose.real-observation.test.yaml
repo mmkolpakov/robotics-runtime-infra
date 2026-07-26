@@ -1,6 +1,6 @@
 ---
 x-real-observation-test-runtime: &real-observation-test-runtime
-  image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+  image: "${BENCHMARK_IMAGE:-local/robotics-runtime-infra/benchmark:dev}"
   init: true
   network_mode: service:edge-attach-data-plane
   read_only: true
@@ -27,6 +27,26 @@ x-real-observation-test-environment: &real-observation-test-environment
   ROS_LOG_DIR: /tmp/ros-logs
 
 services:
+  physical-permit-preflight:
+    command:
+      - authorize-offline-test
+      - /authorization/execution-permit.json
+      - /authorization/execution-statement.json
+      - /authorization/operator.sigstore.json
+      - /authorization/approver.sigstore.json
+      - /test-keys
+      - /authorization/trust-policy.json
+      - /authorization/execution-request.json
+      - /nonces
+      - /output/execution-verification.json
+      # yamllint disable-line rule:line-length
+      - "${ROBOTICS_COSIGN_IMAGE_DIGEST:?set ROBOTICS_COSIGN_IMAGE_DIGEST to the immutable permit-preflight image digest}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_TEST_KEY_DIR:?set ROBOTICS_TEST_KEY_DIR for the synthetic authorization test}"
+        target: /test-keys
+        read_only: true
+
   real-observation-test-source:
     <<: *real-observation-test-runtime
     profiles: [real-observation-test]

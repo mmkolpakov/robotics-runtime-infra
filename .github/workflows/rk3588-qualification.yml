@@ -127,7 +127,7 @@ jobs:
           "${trivy[@]}" \
             --config /work/trivy.yaml \
             --ignorefile /work/.trivyignore \
-            --skip-db-update --ignore-unfixed \
+            --skip-db-update \
             --severity HIGH,CRITICAL --exit-code 1 \
             "${RKNN_CONFORMANCE_IMAGE}"
       - name: Run the official RKNN hardware fixture

@@ -1,4 +1,5 @@
-schema_version: acceptance-scenario.v1
+---
+schema_version: acceptance-scenario.v2
 scenario_id: org.example.runtime-infra.stepped-smoke
 execution:
   target_environment: simulation
@@ -36,6 +37,10 @@ expected_ros_graph:
 assertions: []
 time_policy:
   step_size_sec: 0.001
+  time_authority_min_samples: 30
+  max_clock_offset_p50_ms: 1
+  max_clock_offset_p95_ms: 2
+  max_clock_offset_ms: 5
 data_plane_policy:
   max_message_age_ms: 100
   max_loss_ratio: 0

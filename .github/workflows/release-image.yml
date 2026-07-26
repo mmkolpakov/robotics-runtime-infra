@@ -18,14 +18,68 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # yamllint disable-line rule:line-length
+  BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
   BUILDX_VERSION: v0.35.0
   # yamllint disable-line rule:line-length
   BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
 
 jobs:
-  publish:
-    name: publish-${{ matrix.id }}
+  verify-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify tag belongs to main
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin \
+            refs/heads/main:refs/remotes/origin/main
+          tagged_commit="$(git rev-parse 'HEAD^{commit}')"
+          main_commit="$(git rev-parse 'refs/remotes/origin/main^{commit}')"
+          if ! git merge-base --is-ancestor "$tagged_commit" "$main_commit"; then
+            echo "::error::Tagged commit $tagged_commit is not reachable from origin/main"
+            exit 1
+          fi
+
+  quality-gates:
+    needs: verify-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  foundation-gate:
+    needs: verify-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/foundation-integration.yml
+
+  prepare:
+    needs:
+      - quality-gates
+      - foundation-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Resolve the declarative release plan
+        id: plan
+        run: scripts/ci/release/prepare-plan.sh
+
+  candidate:
+    needs: prepare
+    name: candidate-${{ matrix.id }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -36,52 +90,17 @@ jobs:
       security-events: write
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - id: simulation
-            target: simulation
-            image: simulation
-            platforms: linux/amd64
-          - id: edge
-            target: edge-runtime
-            image: edge
-            platforms: linux/amd64,linux/arm64
-          - id: sensor
-            target: sensor-runtime
-            image: sensor
-            platforms: linux/amd64,linux/arm64
-          - id: inference-cpu
-            target: inference-cpu
-            image: inference-cpu
-            platforms: linux/amd64,linux/arm64
-          - id: inference-intel
-            target: inference-intel
-            image: inference-intel
-            platforms: linux/amd64
-          - id: acceptance-observer
-            target: acceptance-observer
-            image: acceptance-observer
-            platforms: linux/amd64,linux/arm64
-          - id: benchmark
-            target: benchmark-runtime
-            image: benchmark
-            platforms: linux/amd64,linux/arm64
-          - id: evidence-sink
-            target: evidence-sink
-            image: evidence-sink
-            platforms: linux/amd64,linux/arm64
-          - id: permit-preflight
-            target: permit-preflight
-            image: permit-preflight
-            platforms: linux/amd64,linux/arm64
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
-      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/${{ matrix.image }}
+      # yamllint disable-line rule:line-length
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/${{ matrix.repository }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
         with:
+          image: ${{ env.BINFMT_IMAGE }}
           platforms: arm64
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
         with:
@@ -97,14 +116,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Extract image metadata
-        id: metadata
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=sha,prefix=sha-
       - name: Set reproducible build metadata
         id: build-metadata
         run: |
@@ -112,29 +123,48 @@ jobs:
             echo "created=$(git show --no-patch --format=%cI HEAD)"
             echo "epoch=$(git show --no-patch --format=%ct HEAD)"
           } >> "$GITHUB_OUTPUT"
-      - name: Build and publish image
+      - name: Build an untagged candidate by digest
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b  # v7.3.0
+        env:
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
         with:
-          context: .
-          file: Dockerfile
-          target: ${{ matrix.target }}
-          platforms: ${{ matrix.platforms }}
-          outputs: type=image,push=true,rewrite-timestamp=true
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          build-args: |
-            IMAGE_CREATED=${{ steps.build-metadata.outputs.created }}
-            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
-            IMAGE_VERSION=${{ steps.metadata.outputs.version }}
-            SOURCE_DATE_EPOCH=${{ steps.build-metadata.outputs.epoch }}
-            VCS_REF=${{ github.sha }}
+          source: .
+          files: ./docker-bake.hcl
+          targets: ${{ matrix.target }}
+          pull: true
+          push: true
           provenance: mode=max
           sbom: true
-      - name: Verify the published simulation image
+          vars: |
+            IMAGE_CREATED=${{ steps.build-metadata.outputs.created }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            SOURCE_DATE_EPOCH=${{ steps.build-metadata.outputs.epoch }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ needs.prepare.outputs.version }}
+          # Preserve Bake contexts and publish no mutable or SemVer tag yet.
+          # yamllint disable rule:line-length
+          set: |
+            ${{ matrix.target }}.platform=${{ matrix.platforms_csv }}
+            ${{ matrix.target }}.tags=${{ env.IMAGE_NAME }}
+            ${{ matrix.target }}.output=type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+          # yamllint enable rule:line-length
+      - name: Resolve the candidate digest
+        id: digest
+        env:
+          BAKE_METADATA: ${{ steps.build.outputs.metadata }}
+          BAKE_TARGET: ${{ matrix.target }}
+        run: |
+          digest="$(
+            jq -er --arg target "${BAKE_TARGET}" \
+              '.[$target]["containerimage.digest"]' <<<"${BAKE_METADATA}"
+          )"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+      - name: Verify the simulation candidate
         if: matrix.id == 'simulation'
         env:
-          SIMULATION_IMAGE: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          SIMULATION_IMAGE: ${{ env.IMAGE_NAME }}@${{ steps.digest.outputs.digest }}
         run: |
           project="release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           trap 'docker compose -p "$project" --profile test down --volumes --remove-orphans || true' EXIT
@@ -144,111 +174,126 @@ jobs:
             robotics-entrypoint timeout 20 ros2 topic echo \
             /clock rosgraph_msgs/msg/Clock --once
           docker compose -p "$project" --profile test run --rm --no-deps test
-      - name: Scan the published image
+      - name: Scan every candidate platform
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-          PLATFORMS: ${{ matrix.platforms }}
-        run: |
-          mkdir -p artifacts/security .trivy-cache
-          trivy=(
-            docker run --rm
-            --volume "$HOME/.docker:/root/.docker:ro"
-            --volume "$PWD:/work:ro"
-            --volume "$PWD/artifacts/security:/reports"
-            --volume "$PWD/.trivy-cache:/root/.cache/trivy"
-            "$TRIVY_IMAGE" image
-            --config /work/trivy.yaml
-            --ignorefile /work/.trivyignore
-          )
-          for platform in ${PLATFORMS//,/ }; do
-            platform_id="${platform//\//-}"
-            "${trivy[@]}" \
-              --platform "${platform}" \
-              --format sarif \
-              --output "/reports/${{ matrix.id }}-${platform_id}.sarif" \
-              "${IMAGE_NAME}@${DIGEST}"
-            "${trivy[@]}" \
-              --platform "${platform}" \
-              --skip-db-update --ignore-unfixed \
-              --severity HIGH,CRITICAL --exit-code 1 \
-              "${IMAGE_NAME}@${DIGEST}"
-          done
-      - name: Attest the published image
+          CANDIDATE_ID: ${{ matrix.id }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          PLATFORMS: ${{ matrix.platforms_csv }}
+        run: >-
+          scripts/ci/security/scan-image.sh
+          "${IMAGE_NAME}@${DIGEST}"
+          "${CANDIDATE_ID}"
+          ${PLATFORMS//,/ }
+      - name: Attest the verified candidate
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763  # v4.1.1
         with:
           subject-name: ${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
-      - name: Verify image attestation
+      - name: Verify candidate attestation
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh attestation verify
           "oci://${IMAGE_NAME}@${DIGEST}"
           --repo "${GITHUB_REPOSITORY}"
-      - name: Record immutable image reference
+          --source-digest "${GITHUB_SHA}"
+      - name: Record the immutable candidate
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          mkdir -p artifacts/digests
-          printf '%s@%s\n' "${IMAGE_NAME}" "${DIGEST}" \
-            > "artifacts/digests/${{ matrix.id }}.txt"
-      - name: Upload amd64 scan results
-        if: contains(matrix.platforms, 'linux/amd64')
+          CANDIDATE_ENVIRONMENT_VARIABLE: ${{ matrix.environment_variable }}
+          CANDIDATE_ID: ${{ matrix.id }}
+          CANDIDATE_PLATFORMS: ${{ matrix.platforms_csv }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: >-
+          scripts/ci/release/record-candidate.sh
+          "${CANDIDATE_ID}"
+          "${CANDIDATE_ENVIRONMENT_VARIABLE}"
+          "${IMAGE_NAME}"
+          "${DIGEST}"
+          "${CANDIDATE_PLATFORMS}"
+          "artifacts/release-candidates/${CANDIDATE_ID}.json"
+      - name: Upload scan results
         uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
         with:
-          sarif_file: artifacts/security/${{ matrix.id }}-linux-amd64.sarif
-          category: released-${{ matrix.id }}-linux-amd64
-      - name: Upload arm64 scan results
-        if: contains(matrix.platforms, 'linux/arm64')
-        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
-        with:
-          sarif_file: artifacts/security/${{ matrix.id }}-linux-arm64.sarif
-          category: released-${{ matrix.id }}-linux-arm64
+          sarif_file: artifacts/security
+          category: release-candidate-${{ matrix.id }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: release-${{ matrix.id }}-${{ github.ref_name }}
-          path: artifacts/
+          name: candidate-${{ matrix.id }}-${{ github.ref_name }}
+          path: |
+            artifacts/release-candidates/
+            artifacts/security/
           if-no-files-found: error
           retention-days: 7
 
-  release:
-    needs: publish
+  promote:
+    needs:
+      - prepare
+      - candidate
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
-      actions: read
-      contents: write
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+        with:
+          cache-binary: false
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: |
+            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
         with:
-          pattern: release-*-${{ github.ref_name }}
-          path: release-artifacts
+          pattern: candidate-*-${{ github.ref_name }}
+          path: candidate-artifacts
           merge-multiple: true
-      - name: Publish release notes and digest records
+      - name: Promote the complete verified set
+        run: >-
+          scripts/ci/release/promote-candidates.sh
+          config/ci/release-images.json
+          candidate-artifacts/release-candidates
+          "${{ needs.prepare.outputs.version }}"
+          artifacts/release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-bundle-${{ github.ref_name }}
+          path: artifacts/release/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    needs: promote
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
+        with:
+          name: release-bundle-${{ github.ref_name }}
+          path: release
+      - name: Publish release notes, lock, and digest records
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          {
-            echo "## OCI images"
-            echo
-            for record in release-artifacts/digests/*.txt; do
-              printf -- '- \x60%s\x60\n' "$(cat "${record}")"
-            done
-            echo
-            echo "Each image includes BuildKit provenance and an SBOM and has a GitHub artifact attestation."
-          } > release-notes.md
           release_flags=()
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             release_flags+=(--prerelease)
           fi
           gh release create "${GITHUB_REF_NAME}" \
-            release-artifacts/digests/*.txt \
+            release/release.env \
+            release/digests/*.txt \
             "${release_flags[@]}" \
             --verify-tag \
             --title "robotics-runtime-infra ${GITHUB_REF_NAME}" \
-            --notes-file release-notes.md
+            --notes-file release/release-notes.md

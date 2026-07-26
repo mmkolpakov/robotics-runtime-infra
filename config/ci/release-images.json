@@ -1,0 +1,111 @@
+{
+  "schema_version": "release-images.v1",
+  "images": [
+    {
+      "id": "simulation",
+      "target": "simulation",
+      "repository": "simulation",
+      "environment_variable": "SIMULATION_IMAGE",
+      "platforms": [
+        "linux/amd64"
+      ]
+    },
+    {
+      "id": "edge",
+      "target": "edge-runtime",
+      "repository": "edge",
+      "environment_variable": "EDGE_IMAGE",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    {
+      "id": "sensor",
+      "target": "sensor-runtime",
+      "repository": "sensor",
+      "environment_variable": "SENSOR_IMAGE",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    {
+      "id": "inference-cpu",
+      "target": "inference-cpu",
+      "repository": "inference-cpu",
+      "environment_variable": "INFERENCE_CPU_IMAGE",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    {
+      "id": "provider-conformance-cpu",
+      "target": "provider-conformance-cpu",
+      "repository": "provider-conformance-cpu",
+      "environment_variable": "INFERENCE_CPU_CONFORMANCE_IMAGE",
+      "platforms": [
+        "linux/amd64"
+      ]
+    },
+    {
+      "id": "sensor-inference-cpu",
+      "target": "sensor-inference-cpu",
+      "repository": "sensor-inference-cpu",
+      "environment_variable": "SENSOR_INFERENCE_IMAGE",
+      "platforms": [
+        "linux/amd64"
+      ]
+    },
+    {
+      "id": "inference-intel",
+      "target": "inference-intel",
+      "repository": "inference-intel",
+      "environment_variable": "INFERENCE_INTEL_IMAGE",
+      "platforms": [
+        "linux/amd64"
+      ]
+    },
+    {
+      "id": "acceptance-observer",
+      "target": "acceptance-observer",
+      "repository": "acceptance-observer",
+      "environment_variable": "OBSERVER_IMAGE",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    {
+      "id": "benchmark",
+      "target": "benchmark-runtime",
+      "repository": "benchmark",
+      "environment_variable": "BENCHMARK_IMAGE",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    {
+      "id": "evidence-sink",
+      "target": "evidence-sink",
+      "repository": "evidence-sink",
+      "environment_variable": "EVIDENCE_IMAGE",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    {
+      "id": "permit-preflight",
+      "target": "permit-preflight",
+      "repository": "permit-preflight",
+      "environment_variable": "PERMIT_PREFLIGHT_IMAGE",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    }
+  ]
+}

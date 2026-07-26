@@ -68,7 +68,7 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
         "CUDAExecutionProvider",
         "TensorrtExecutionProvider",
     }:
-        ort.preload_dlls(directory="")
+        ort.preload_dlls()
     available = ort.get_available_providers()
     if EXPECTED_PROVIDER not in available:
         _write_report(
@@ -97,6 +97,7 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
             providers=[EXPECTED_PROVIDER],
             provider_options=[provider_options],
         )
+        session.disable_fallback()
     except Exception as error:
         _write_report(
             status="failed",
@@ -116,6 +117,14 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
     ]
     values = np.linspace(-4.0, 4.0, num=int(np.prod(shape)), dtype=np.float32)
     values = values.reshape(shape)
+    reference_session = ort.InferenceSession(
+        get_example("sigmoid.onnx"),
+        providers=["CPUExecutionProvider"],
+    )
+    reference_outputs = reference_session.run(
+        None,
+        {reference_session.get_inputs()[0].name: values},
+    )
     outputs = session.run(None, {model_input.name: values})
     profile_path = Path(session.end_profiling())
     executed_providers = _profiled_providers(profile_path)
@@ -125,6 +134,12 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
     numerical_error: str | None = None
     try:
         np.testing.assert_allclose(outputs[0], expected, rtol=RTOL, atol=ATOL)
+        np.testing.assert_allclose(
+            outputs[0],
+            reference_outputs[0],
+            rtol=RTOL,
+            atol=ATOL,
+        )
     except AssertionError as error:
         numerical_error = str(error)
 
@@ -151,6 +166,10 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
             "dtype": str(outputs[0].dtype),
             "shape": list(outputs[0].shape),
             "sha256": hashlib.sha256(outputs[0].tobytes()).hexdigest(),
+        },
+        cpu_reference={
+            "provider": "CPUExecutionProvider",
+            "sha256": hashlib.sha256(reference_outputs[0].tobytes()).hexdigest(),
         },
         numerical_error=numerical_error,
     )

@@ -1,0 +1,82 @@
+{
+  "trust_policy": {
+    "schema_version": "execution-trust-policy.v1",
+    "policy_id": "ci.physical-attach",
+    "max_permit_lifetime_seconds": 1800,
+    "principals": [
+      {
+        "role": "operator",
+        "identity": "ci.operator",
+        "issuer": "https://github.com/sigstore/cosign/key"
+      },
+      {
+        "role": "approver",
+        "identity": "ci.approver",
+        "issuer": "https://github.com/sigstore/cosign/key"
+      }
+    ],
+    "targets": [
+      {
+        "target_id": "controller-ci",
+          "identity_kind": "x509_spki",
+        "identity_sha256": "",
+        "environments": [
+          "hil"
+        ]
+      }
+    ]
+  },
+  "permit": {
+    "schema_version": "execution-permit.v1",
+    "predicate_type": "https://robotics-runtime-contracts.dev/attestations/execution-permit/v1",
+    "permit_id": "ci.physical-attach-permit",
+    "scenario_sha256": "",
+    "image_digest": "",
+    "trust_policy_sha256": "",
+    "target": {
+      "environment": "hil",
+      "target_id": "controller-ci",
+      "identity_kind": "x509_spki",
+      "identity_sha256": ""
+    },
+    "allowed_physical_effect": "none",
+    "hardware_scope": [
+      "compute",
+      "sensor",
+      "controller"
+    ],
+    "issued_at": "",
+    "expires_at": "",
+    "nonce": "",
+    "operator_id": "",
+    "approver_id": "",
+    "interlock_check": {
+      "reference": "file:///evidence/target-evidence.json",
+      "sha256": "",
+      "status": "passed",
+      "checked_at": ""
+    }
+  },
+  "request": {
+    "scenario_sha256": "",
+    "image_digest": "",
+    "target": {
+      "environment": "hil",
+      "target_id": "controller-ci",
+      "identity_kind": "x509_spki",
+      "identity_sha256": ""
+    },
+    "allowed_physical_effect": "none",
+    "hardware_scope": [
+      "compute",
+      "sensor",
+      "controller"
+    ],
+    "interlock_check": {
+      "reference": "file:///evidence/target-evidence.json",
+      "sha256": "",
+      "status": "passed",
+      "checked_at": ""
+    }
+  }
+}
