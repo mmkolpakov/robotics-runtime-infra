@@ -65,14 +65,14 @@ EOF
 
 @test "acceptance phase retains telemetry evidence and aggregation" {
   run grep -E \
-    'foundation-(metrics|traces)\.jq|evidence-sink artifact|acceptance-observer aggregate' \
+    'foundation-(metrics|traces)\.jq|evidence-sink artifact|robotics-acceptance aggregate' \
     "${ACCEPTANCE_PHASE}"
 
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"foundation-metrics.jq"* ]]
   [[ "${output}" == *"foundation-traces.jq"* ]]
   [[ "${output}" == *"evidence-sink artifact"* ]]
-  [[ "${output}" == *"acceptance-observer aggregate"* ]]
+  [[ "${output}" == *"robotics-acceptance aggregate"* ]]
 }
 
 @test "acceptance telemetry spans the scenario measurement window" {

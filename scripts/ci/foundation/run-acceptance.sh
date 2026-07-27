@@ -144,7 +144,7 @@ test -s "${run_dir}/evidence/traces.otlp.jsonl"
 docker wait "${observer}"
 test "$(docker inspect "${observer}" --format '{{.State.ExitCode}}')" -eq 0
 "${compose[@]}" --profile acceptance run --rm --no-deps \
-  acceptance-observer aggregate \
+  acceptance-observer robotics-acceptance aggregate \
   --run-context /run/robotics/acceptance-run.json \
   --result /run/robotics/results/acceptance-result.json \
   --output /run/robotics/results/acceptance-aggregate.json
