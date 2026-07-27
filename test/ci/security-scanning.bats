@@ -33,6 +33,7 @@ EOF
   [ "${status}" -eq 0 ]
   [ "$(wc -l <"${DOCKER_LOG}")" -eq 4 ]
   [ "$(grep -Fc -- '--vex /work/security/vex/linux-libc-dev.openvex.json' "${DOCKER_LOG}")" -eq 4 ]
+  [ "$(grep -Fc -- '--vex /work/security/vex/grpc-go-cli.openvex.json' "${DOCKER_LOG}")" -eq 4 ]
   run grep -F -- '--platform linux/amd64' "${DOCKER_LOG}"
   [ "${status}" -eq 0 ]
   run grep -F -- '--platform linux/arm64' "${DOCKER_LOG}"
@@ -108,6 +109,59 @@ EOF
   run grep -F -- '--vex /work/security/vex/linux-libc-dev.openvex.json' \
     .github/workflows/rk3588-qualification.yml
   [ "${status}" -eq 0 ]
+}
+
+@test "gRPC OpenVEX policy is limited to non-server CLI dependency paths" {
+  run jq -e '
+    .["@context"] == "https://openvex.dev/ns/v0.2.0"
+    and .author == "mmkolpakov"
+    and (.statements | length) == 2
+    and all(
+      .statements[];
+      .vulnerability.name == "GHSA-hrxh-6v49-42gf"
+      and .status == "not_affected"
+      and .justification == "vulnerable_code_not_in_execute_path"
+      and (.impact_statement | contains("HTTP/2 gRPC server"))
+      and (.products | length) == 1
+      and (
+        .products[0]["@id"] ==
+          "pkg:golang/github.com/sigstore/cosign/v3@v3.1.1"
+        or .products[0]["@id"] ==
+          "pkg:golang/github.com/open-policy-agent/opa"
+      )
+      and .products[0].subcomponents == [
+        {"@id": "pkg:golang/google.golang.org/grpc@v1.81.1"}
+      ]
+    )
+    and all(
+      .statements[].products[];
+      .["@id"] != "pkg:golang/google.golang.org/grpc@v1.81.1"
+    )
+  ' security/vex/grpc-go-cli.openvex.json
+  [ "${status}" -eq 0 ]
+
+  run grep -F -- '--vex /work/security/vex/grpc-go-cli.openvex.json' \
+    .github/workflows/rk3588-qualification.yml
+  [ "${status}" -eq 0 ]
+
+  run grep -F 'ARG OPA_VERSION=1.18.2' Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -F \
+    'ARG OPA_REVISION=e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297' \
+    Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -E '^[[:space:]]*opa (run|serve)([[:space:]]|$)' \
+    Dockerfile docker/permit-preflight/permit-preflight
+  [ "${status}" -eq 1 ]
+
+  run grep -F \
+    'https://raw.githubusercontent.com/sigstore/cosign/v3.1.1/LICENSE' \
+    Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -F 'install -d -m 0555 /usr/share/licenses/cosign' Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -F 'cosign.spdx.json' Dockerfile
+  [ "${status}" -eq 1 ]
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {

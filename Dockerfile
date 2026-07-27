@@ -25,6 +25,12 @@ FROM ${UV_IMAGE} AS uv
 FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${COSIGN_IMAGE} AS cosign
+
+FROM scratch AS cosign-license
+ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
+  https://raw.githubusercontent.com/sigstore/cosign/v3.1.1/LICENSE \
+  /LICENSE
+
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
 FROM ${NVIDIA_CUDA_RUNTIME_IMAGE} AS nvidia-cuda-runtime-minimal
 
@@ -399,9 +405,10 @@ ARG UBUNTU_SNAPSHOT
 ENV HOME=/home/preflight \
     PATH="/opt/venv/bin:${PATH}"
 
+RUN install -d -m 0555 /usr/share/licenses/cosign
 COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
-COPY --from=cosign /var/lib/db/sbom/cosign-3.1.1-r1.spdx.json \
-  /usr/share/licenses/cosign/cosign.spdx.json
+COPY --from=cosign-license --chmod=0444 /LICENSE \
+  /usr/share/licenses/cosign/LICENSE
 COPY --from=opa /out/opa /usr/local/bin/opa
 COPY --from=opa /out/LICENSE /usr/share/licenses/opa/LICENSE
 COPY --from=opa /out/source.txt /usr/share/robotics-runtime/opa-source.txt

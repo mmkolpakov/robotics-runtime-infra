@@ -46,6 +46,7 @@ trivy=(
   --config /work/trivy.yaml
   --ignorefile /work/.trivyignore
   --vex /work/security/vex/linux-libc-dev.openvex.json
+  --vex /work/security/vex/grpc-go-cli.openvex.json
 )
 
 for platform in "${platforms[@]}"; do
