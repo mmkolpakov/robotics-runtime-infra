@@ -437,6 +437,29 @@ EOF
   [[ "${output}" == *"permit validation failed"* ]]
 }
 
+@test "observer wait accepts a first message and reports ROS failures" {
+  wait_script="${BATS_TEST_TMPDIR}/observer-wait.sh"
+  tail -n +7 "${FIXTURES}/observer-listen.sh" >"${wait_script}"
+
+  timeout() {
+    printf 'I heard: fixture\n'
+    return 141
+  }
+  export -f timeout
+  run bash "${wait_script}"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"I heard: fixture"* ]]
+
+  timeout() {
+    printf 'listener startup failed\n' >&2
+    return 1
+  }
+  export -f timeout
+  run bash "${wait_script}"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"listener startup failed"* ]]
+}
+
 @test "host lock serializes access and cleanup honors ownership flags" {
   lock="${BATS_TEST_TMPDIR}/physical-attach.lock"
   bash -c '
