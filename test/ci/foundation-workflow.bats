@@ -3,6 +3,7 @@
 setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   ACCEPTANCE_PHASE="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
+  RUNTIME_MANIFEST_EMITTER="${REPOSITORY_ROOT}/docker/runtime/emit-runtime-manifest"
   LIBRARY="${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh"
   WORKFLOW="${REPOSITORY_ROOT}/.github/workflows/foundation-integration.yml"
   # shellcheck source=scripts/ci/foundation/lib.sh
@@ -72,4 +73,13 @@ EOF
   [[ "${output}" == *"foundation-traces.jq"* ]]
   [[ "${output}" == *"evidence-sink artifact"* ]]
   [[ "${output}" == *"acceptance-observer aggregate"* ]]
+}
+
+@test "runtime manifest reads the canonical foundation repository keys" {
+  run grep -E \
+    '\.repositories\["robotics-(runtime-contracts|acceptance-harness)"\]\.version' \
+    "${RUNTIME_MANIFEST_EMITTER}"
+
+  [ "${status}" -eq 0 ]
+  [ "$(printf '%s\n' "${output}" | wc -l)" -eq 2 ]
 }

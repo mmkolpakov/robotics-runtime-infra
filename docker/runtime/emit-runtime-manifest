@@ -29,8 +29,12 @@ done
 foundation_lock=/usr/share/robotics-runtime/foundation-lock.json
 [[ -r "$foundation_lock" ]] || fail "foundation lock is not readable: $foundation_lock"
 
-contracts_revision="$(jq -er '.repositories.contracts.version' "$foundation_lock")"
-harness_revision="$(jq -er '.repositories.harness.version' "$foundation_lock")"
+contracts_revision="$(
+  jq -er '.repositories["robotics-runtime-contracts"].version' "$foundation_lock"
+)"
+harness_revision="$(
+  jq -er '.repositories["robotics-acceptance-harness"].version' "$foundation_lock"
+)"
 for revision in "$contracts_revision" "$harness_revision"; do
   [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || fail "foundation revision is not a full Git SHA: $revision"
 done
