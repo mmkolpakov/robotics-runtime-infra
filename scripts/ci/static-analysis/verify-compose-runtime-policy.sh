@@ -11,9 +11,12 @@ docker compose --profile test --profile acceptance \
   config --format json --output tmp/compose.json
 test "$(ci_policy_deny_count policy/compose.rego compose tmp/compose.json)" -eq 0
 jq -e '
-  any(.services["acceptance-observer"].volumes[];
-    .target == "/evidence" and .read_only == true
-  )
+  .services["acceptance-observer"] as $observer
+  | any($observer.volumes[];
+      .target == "/evidence" and .read_only == true
+    )
+    and ($observer.command | index("/evidence/evidence-index.json")) != null
+    and ($observer.command | index("/evidence/metrics.otlp.json")) != null
 ' tmp/compose.json >/dev/null
 docker compose \
   -f compose.yaml \

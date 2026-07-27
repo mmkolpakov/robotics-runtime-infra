@@ -178,9 +178,9 @@ services:
       - --run-context
       - /run/robotics/acceptance-run.json
       - --evidence-index
-      - /run/robotics/evidence/evidence-index.json
+      - /evidence/evidence-index.json
       - --otel-metrics
-      - /run/robotics/evidence/metrics.otlp.json
+      - /evidence/metrics.otlp.json
       - --output
       - /run/robotics/results
     environment: *ros-environment
