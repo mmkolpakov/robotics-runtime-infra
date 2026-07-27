@@ -1,0 +1,6 @@
+can-utils	2023.03-1	amd64
+chrony	4.5-1ubuntu4.2	amd64
+iproute2	6.1.0-1ubuntu6.4	amd64
+linuxptp	4.0-1ubuntu1.1	amd64
+systemd	255.4-1ubuntu8.16	amd64
+udev	255.4-1ubuntu8.16	amd64

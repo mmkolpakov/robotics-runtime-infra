@@ -38,3 +38,6 @@
 !ros_ws/src/robotics_observability/**
 !ros_ws/src/robotics_observability_msgs/
 !ros_ws/src/robotics_observability_msgs/**
+
+**/__pycache__/
+**/*.py[cod]

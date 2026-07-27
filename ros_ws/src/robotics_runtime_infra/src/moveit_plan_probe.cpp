@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <exception>
 #include <memory>
@@ -6,13 +7,20 @@
 #include <thread>
 #include <vector>
 
+#include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
 
 namespace
 {
+using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
+
 constexpr char kPlanningGroup[] = "slider";
 constexpr char kJointName[] = "slider_joint";
+constexpr char kControllerAction[] =
+  "/joint_trajectory_controller/follow_joint_trajectory";
+constexpr auto kControllerTimeout = std::chrono::seconds{60};
 constexpr double kInvalidTarget = 0.8;
 constexpr double kValidTarget = 0.3;
 constexpr double kPositionTolerance = 0.05;
@@ -24,6 +32,8 @@ int main(int argc, char ** argv)
   auto node = rclcpp::Node::make_shared(
     "moveit_plan_probe",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
+  auto controller_client =
+    rclcpp_action::create_client<FollowJointTrajectory>(node, kControllerAction);
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
   std::thread spinner([&executor]() {executor.spin();});
@@ -37,8 +47,14 @@ int main(int argc, char ** argv)
     move_group.setMaxVelocityScalingFactor(0.5);
     move_group.setMaxAccelerationScalingFactor(0.5);
 
-    const auto initial_state = move_group.getCurrentState(15.0);
-    if (!initial_state) {
+    const bool controller_ready =
+      controller_client->wait_for_action_server(kControllerTimeout);
+    const auto initial_state =
+      controller_ready ? move_group.getCurrentState(15.0) : nullptr;
+    if (!controller_ready) {
+      RCLCPP_ERROR(node->get_logger(), "Trajectory controller action server is unavailable");
+      status = 12;
+    } else if (!initial_state) {
       RCLCPP_ERROR(node->get_logger(), "Initial robot state is unavailable");
       status = 2;
     } else if (move_group.setJointValueTarget(std::vector<double>{kInvalidTarget})) {

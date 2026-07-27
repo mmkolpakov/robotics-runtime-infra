@@ -25,3 +25,14 @@ setup() {
 
   [ "$(grep -Fc -- '--skip-keys python3-opentelemetry-api-pip' Dockerfile)" -eq 1 ]
 }
+
+@test "launch tests use distinct ROS domains" {
+  cmake=ros_ws/src/robotics_runtime_infra/CMakeLists.txt
+
+  [ "$(grep -Ec 'ENV "ROS_DOMAIN_ID=[0-9]+"' "${cmake}")" -eq 5 ]
+  [ "$(
+    grep -Eo 'ROS_DOMAIN_ID=[0-9]+' "${cmake}" |
+      sort -u |
+      wc -l
+  )" -eq 5 ]
+}

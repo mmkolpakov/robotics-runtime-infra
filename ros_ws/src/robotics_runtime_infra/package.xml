@@ -8,7 +8,7 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <exec_depend>control_msgs</exec_depend>
+  <depend>control_msgs</depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>gz_ros2_control</exec_depend>
@@ -28,6 +28,7 @@
   <exec_depend>moveit_simple_controller_manager</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>ros2_control</exec_depend>
   <exec_depend>ros2_controllers</exec_depend>
@@ -45,7 +46,6 @@
   <exec_depend>xacro</exec_depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
-  <test_depend>ament_cmake_ros</test_depend>
   <test_depend>controller_manager_msgs</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
