@@ -65,10 +65,21 @@ write_runtime_manifest_input() {
 
 run_observer_script() {
   local script="$1"
+  local status=0
   shift
   real_compose --profile real-observation \
     run --rm "$@" --no-TTY real-observation-observer \
-    bash -Eeuo pipefail -s <"${PHYSICAL_ATTACH_FIXTURE_ROOT}/${script}"
+    bash -Eeuo pipefail -s <"${PHYSICAL_ATTACH_FIXTURE_ROOT}/${script}" ||
+    status=$?
+  if test "${status}" -ne 0; then
+    real_compose --profile real-observation \
+      ps --all >&2 || true
+    real_compose --profile real-observation \
+      logs --no-color --timestamps \
+      physical-permit-preflight \
+      physical-runtime-manifest >&2 || true
+    return "${status}"
+  fi
 }
 
 start_sros2_observer() {

@@ -349,6 +349,39 @@ EOF
   [[ "${output}" == *"config --quiet"* ]]
 }
 
+@test "observer startup preserves the failure code and emits compose diagnostics" {
+  run bash -c '
+    set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    real_compose() {
+      case " $* " in
+        *" run "*)
+          return 65
+          ;;
+        *" ps --all "*)
+          printf "physical-permit-preflight exited 65\n"
+          ;;
+        *" logs --no-color "*)
+          printf "permit validation failed\n"
+          ;;
+        *)
+          return 64
+          ;;
+      esac
+    }
+    set +e
+    run_observer_script observer-listen.sh
+    status=$?
+    set -e
+    test "${status}" -eq 65
+  ' _ "${SCRIPT}"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"physical-permit-preflight exited 65"* ]]
+  [[ "${output}" == *"permit validation failed"* ]]
+}
+
 @test "host lock serializes access and cleanup honors ownership flags" {
   lock="${BATS_TEST_TMPDIR}/physical-attach.lock"
   bash -c '
