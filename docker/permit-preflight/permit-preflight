@@ -30,6 +30,19 @@ with open(sys.argv[1], encoding="utf-8") as source:
 PY
 }
 
+assert_json_documents_equal() {
+  left_document="$1"
+  right_document="$2"
+  failure_message="$3"
+  LEFT_DOCUMENT="${left_document}" RIGHT_DOCUMENT="${right_document}" \
+    yq --null-input --exit-status \
+      --from-file /usr/share/robotics-runtime/permit-preflight/json-equal.yq \
+      >/dev/null || {
+    printf '%s\n' "${failure_message}" >&2
+    exit 65
+  }
+}
+
 bundle_integrated_time() {
   bundle="$1"
   count="$(yq -r '.verificationMaterial.tlogEntries | length' "${bundle}")"
@@ -157,14 +170,10 @@ assert_bundle_statement() {
     printf 'Sigstore bundle has an invalid DSSE payload: %s\n' "${bundle}" >&2
     exit 65
   }
-  LEFT_STATEMENT="${statement}" RIGHT_STATEMENT="${output}" \
-    yq --null-input --exit-status '
-      (load(strenv(LEFT_STATEMENT)) | sort_keys(..) | to_json(0)) ==
-      (load(strenv(RIGHT_STATEMENT)) | sort_keys(..) | to_json(0))
-    ' >/dev/null || {
-    printf 'verified DSSE statement does not equal the supplied statement\n' >&2
-    exit 65
-  }
+  assert_json_documents_equal \
+    "${statement}" \
+    "${output}" \
+    "verified DSSE statement does not equal the supplied statement"
   yq -o=json -I=0 '.predicate' "${output}" > "${output}.predicate.json"
   validate_contract "${output}.predicate.json"
 }
@@ -284,12 +293,10 @@ authorize_common() {
   validate_contract "${permit}"
   yq -o=json -I=0 '.predicate' "${statement}" >"${work}/predicate.json"
   validate_contract "${work}/predicate.json"
-  yq eval-all --exit-status \
-    'select(fileIndex == 0) == select(fileIndex == 1)' \
-    "${permit}" "${work}/predicate.json" >/dev/null || {
-    printf 'statement predicate does not equal the standalone permit\n' >&2
-    exit 65
-  }
+  assert_json_documents_equal \
+    "${permit}" \
+    "${work}/predicate.json" \
+    "statement predicate does not equal the standalone permit"
 
   operator_identity="$(yq -r '.operator_id' "${permit}")"
   approver_identity="$(yq -r '.approver_id' "${permit}")"

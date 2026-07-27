@@ -209,6 +209,27 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
+@test "permit comparison is canonical and rejects a changed document" {
+  filter="${REPOSITORY_ROOT}/docker/permit-preflight/json-equal.yq"
+  integration="$(
+    cat \
+      "${REPOSITORY_ROOT}/scripts/ci/integration/verify-synthetic-physical-attach-end-to-end.sh"
+  )"
+
+  run grep -F \
+    '/usr/share/robotics-runtime/permit-preflight/json-equal.yq' \
+    "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
+  [ "${status}" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+
+  run grep -F 'sort_keys(..) | to_json(0)' "${filter}"
+  [ "${status}" -eq 0 ]
+
+  [[ "${integration}" == *'"beta":2'* ]]
+  [[ "${integration}" == *'"beta":3'* ]]
+  [[ "${integration}" == *"permit comparison accepted a changed predicate"* ]]
+}
+
 @test "synthetic target identity is the generated certificate SPKI" {
   run bash -c '
     set -Eeuo pipefail

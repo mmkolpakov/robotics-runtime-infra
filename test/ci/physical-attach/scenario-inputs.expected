@@ -8,6 +8,7 @@ compose.yaml
 config/fastdds/udp-only.xml
 config/sros2/observer.policy.xml
 config/sros2/smoke.policy.xml
+docker/permit-preflight/json-equal.yq
 docker/permit-preflight/permit-preflight
 foundation.repos
 policy/execution.rego

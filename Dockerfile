@@ -447,9 +447,13 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       /var/log/dpkg.log
 
 COPY --chmod=0444 policy/execution.rego /usr/share/robotics-runtime/policy/execution.rego
+COPY --chmod=0444 docker/permit-preflight/json-equal.yq \
+  /usr/share/robotics-runtime/permit-preflight/json-equal.yq
 COPY --chmod=0555 docker/permit-preflight/permit-preflight /usr/local/bin/permit-preflight
 
-RUN chmod 0555 /usr/share/robotics-runtime/policy
+RUN chmod 0555 \
+      /usr/share/robotics-runtime/permit-preflight \
+      /usr/share/robotics-runtime/policy
 
 USER preflight
 WORKDIR /work
