@@ -8,7 +8,7 @@
             <service>~/describe_parameters</service>
             <service>~/get_parameter_types</service>
             <service>~/get_parameters</service>
-            <service>~/get_type_description</service>
+            <service>*/get_type_description</service>
             <service>~/list_parameters</service>
             <service>~/set_parameters</service>
             <service>~/set_parameters_atomically</service>

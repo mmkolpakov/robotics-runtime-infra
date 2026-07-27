@@ -437,27 +437,45 @@ EOF
   [[ "${output}" == *"permit validation failed"* ]]
 }
 
+@test "observer probes use the standard ROS topic CLI" {
+  grep -q '<exec_depend>ros2topic</exec_depend>' \
+    "${REPOSITORY_ROOT}/docker/rosdeps/edge/package.xml"
+  grep -q '<service>\*/get_type_description</service>' \
+    "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml"
+  grep -q 'ros2 topic echo' "${FIXTURES}/observer-listen.sh"
+  grep -q 'ros2 topic pub' "${FIXTURES}/observer-command-denied.sh"
+  grep -q 'ros2 topic echo' "${FIXTURES}/observer-unsecured-source-denied.sh"
+  run grep -R 'demo_nodes_' \
+    "${FIXTURES}/observer-listen.sh" \
+    "${FIXTURES}/observer-command-denied.sh" \
+    "${FIXTURES}/observer-unsecured-source-denied.sh"
+  [ "${status}" -eq 1 ]
+}
+
 @test "observer wait accepts a first message and reports ROS failures" {
   wait_script="${BATS_TEST_TMPDIR}/observer-wait.sh"
-  tail -n +7 "${FIXTURES}/observer-listen.sh" >"${wait_script}"
+  awk '
+    /^set \+e$/ {copy = 1}
+    copy {print}
+  ' "${FIXTURES}/observer-listen.sh" >"${wait_script}"
 
   timeout() {
-    printf 'I heard: fixture\n'
-    return 141
+    printf 'data: fixture\n'
+    return 0
   }
   export -f timeout
   run bash "${wait_script}"
   [ "${status}" -eq 0 ]
-  [[ "${output}" == *"I heard: fixture"* ]]
+  [[ "${output}" == *"data: fixture"* ]]
 
   timeout() {
-    printf 'listener startup failed\n' >&2
+    printf 'topic subscription failed\n' >&2
     return 1
   }
   export -f timeout
   run bash "${wait_script}"
   [ "${status}" -ne 0 ]
-  [[ "${output}" == *"listener startup failed"* ]]
+  [[ "${output}" == *"topic subscription failed"* ]]
 }
 
 @test "host lock serializes access and cleanup honors ownership flags" {

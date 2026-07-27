@@ -5,11 +5,13 @@ test -r /authorization-output/runtime-manifest.json
 test -r /authorization-output/execution-verification.json
 set +e
 output="$(
-  timeout 10 ros2 run demo_nodes_cpp talker \
-    --ros-args \
-    --enclave /robotics/observer \
-    --remap __node:=robotics_acceptance_observer \
-    --remap chatter:=/cmd_vel 2>&1
+  timeout 10 ros2 topic pub \
+    /cmd_vel \
+    std_msgs/msg/String \
+    '{data: blocked}' \
+    --once \
+    --node-name robotics_acceptance_observer \
+    --wait-matching-subscriptions 0 2>&1
 )"
 status=$?
 set -e
