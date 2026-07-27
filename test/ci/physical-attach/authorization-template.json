@@ -51,7 +51,7 @@
     "operator_id": "",
     "approver_id": "",
     "interlock_check": {
-      "reference": "file:///evidence/target-evidence.json",
+      "reference": "https://example.invalid/robotics-runtime-infra/synthetic-physical-attach/target-evidence.json",
       "sha256": "",
       "status": "passed",
       "checked_at": ""
@@ -73,7 +73,7 @@
       "controller"
     ],
     "interlock_check": {
-      "reference": "file:///evidence/target-evidence.json",
+      "reference": "https://example.invalid/robotics-runtime-infra/synthetic-physical-attach/target-evidence.json",
       "sha256": "",
       "status": "passed",
       "checked_at": ""

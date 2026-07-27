@@ -70,7 +70,7 @@ plugin 2.35.1 or newer, and an amd64 host. It does not require a host ROS
 installation or a display server.
 
 ```bash
-gh release download v0.8.0 \
+gh release download v0.8.0-rc.1 \
   --repo mmkolpakov/robotics-runtime-infra \
   --pattern release.env
 docker compose --env-file release.env pull simulation
@@ -214,8 +214,8 @@ terms are normative:
 
 | Target | Runtime path | Current evidence | Status |
 | --- | --- | --- | --- |
-| amd64 CPU | `simulation`, `inference-cpu` | Native integration and provider-conformance CI; images in `v0.8.0` | Released |
-| arm64 CPU | Portable runtime images | Multi-platform BuildKit gate; images in `v0.8.0`; no native board claim | Released |
+| amd64 CPU | `simulation`, `inference-cpu` | Native integration and provider-conformance CI; images in `v0.8.0-rc.1` | Released |
+| arm64 CPU | Portable runtime images | Multi-platform BuildKit gate; images in `v0.8.0-rc.1`; no native board claim | Released |
 | Intel CPU on amd64 Linux | `inference-intel` | Image build and OpenVINO CPU provider conformance in hosted CI | CI-verified |
 | Intel GPU on native Linux | `compose.intel.yaml` | Device-specific provider, no-fallback and tensor-parity gate defined | Qualification-gated |
 | Intel GPU through WSL2 | `compose.intel.yaml` | `/dev/dxg` route and a separate protected runner gate defined | Qualification-gated |
@@ -240,7 +240,7 @@ devices.
 
 | Environment | Allowed physical effect | Current evidence | Status |
 | --- | --- | --- | --- |
-| Gazebo simulation | Simulated actuation | ROS/Gazebo integration and acceptance CI; images in `v0.8.0` | Released |
+| Gazebo simulation | Simulated actuation | ROS/Gazebo integration and acceptance CI; images in `v0.8.0-rc.1` | Released |
 | MCAP playback | None | Clocked playback, readiness, evidence, and acceptance CI | Released |
 | HIL attach | None | Signed permit, target identity, SROS2, time, serial, and CAN software gates | Qualification-gated |
 | Real target observation | Observation only | Permit policy and live SROS2 telemetry/command-denial CI | Qualification-gated |

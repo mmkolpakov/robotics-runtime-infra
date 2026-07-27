@@ -191,7 +191,10 @@ EOF
   run jq -e '
     .trust_policy.schema_version == "execution-trust-policy.v1" and
     .permit.schema_version == "execution-permit.v1" and
-    .request.target.environment == "hil"
+    .request.target.environment == "hil" and
+    .permit.interlock_check.reference ==
+      "https://example.invalid/robotics-runtime-infra/synthetic-physical-attach/target-evidence.json" and
+    .request.interlock_check.reference == .permit.interlock_check.reference
   ' "${FIXTURES}/authorization-template.json"
   [ "${status}" -eq 0 ]
 

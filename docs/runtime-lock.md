@@ -22,7 +22,7 @@ qualification claim.
 Released mode pulls immutable images listed in `release.env`:
 
 ```bash
-gh release download v0.8.0 \
+gh release download v0.8.0-rc.1 \
   --repo mmkolpakov/robotics-runtime-infra \
   --pattern release.env
 docker compose --env-file release.env pull simulation
