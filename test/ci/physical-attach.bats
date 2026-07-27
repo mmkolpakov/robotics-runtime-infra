@@ -680,6 +680,31 @@ EOF
   [[ "${output}" == *"-m 0755 -o 10002 -g 10002 ${BATS_TEST_TMPDIR}/state/output"* ]]
 }
 
+@test "nonce inspection uses privilege and fails closed" {
+  run bash -c '
+    set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    sudo() {
+      test "$1" = find
+      printf "%s/consumed\n" "$2"
+    }
+    require_empty_nonce_store "$2"
+  ' _ "${SCRIPT}" "${BATS_TEST_TMPDIR}/nonces"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"denied permit consumed a nonce"* ]]
+
+  run bash -c '
+    set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    sudo() { return 42; }
+    require_empty_nonce_store "$2"
+  ' _ "${SCRIPT}" "${BATS_TEST_TMPDIR}/nonces"
+  [ "${status}" -eq 70 ]
+  [[ "${output}" == *"could not inspect the permit nonce store"* ]]
+}
+
 @test "denial and replay cases invoke the real preflight entrypoint" {
   run grep -Fc 'expect_preflight_denial' "${SCRIPT}"
 

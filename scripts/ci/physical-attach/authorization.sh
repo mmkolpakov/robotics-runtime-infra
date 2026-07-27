@@ -410,10 +410,16 @@ expect_preflight_denial() {
 
 require_empty_nonce_store() {
   local nonce_dir="$1"
+  local first_entry
 
-  test -z "$(
-    find "${nonce_dir}" -mindepth 1 -maxdepth 1 -print -quit
-  )" || {
+  if ! first_entry="$(
+    sudo find "${nonce_dir}" -mindepth 1 -maxdepth 1 -print -quit
+  )"; then
+    printf 'could not inspect the permit nonce store: %s\n' \
+      "${nonce_dir}" >&2
+    return 70
+  fi
+  test -z "${first_entry}" || {
     printf 'denied permit consumed a nonce: %s\n' "${nonce_dir}" >&2
     return 1
   }

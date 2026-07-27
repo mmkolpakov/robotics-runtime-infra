@@ -69,8 +69,10 @@ cleanup_owned_host_resources() {
       printf 'refusing to remove a CAN network not owned by this run\n' >&2
       unsafe=1
     else
-      can_compose down --volumes --remove-orphans >/dev/null 2>&1 ||
+      can_compose down --volumes --remove-orphans >/dev/null 2>&1 || {
+        printf 'failed to tear down the CAN observation Compose project\n' >&2
         unsafe=1
+      }
     fi
   fi
   if test "${denied_can_network_created}" -eq 1; then
@@ -84,8 +86,14 @@ cleanup_owned_host_resources() {
       org.robotics-runtime.owner || unsafe=1
   fi
   if test "${can_service_started}" -eq 1; then
-    sudo systemctl stop "${can_unit}" >/dev/null 2>&1 || unsafe=1
-    sudo systemctl reset-failed "${can_unit}" >/dev/null 2>&1 || unsafe=1
+    sudo systemctl stop "${can_unit}" >/dev/null 2>&1 || {
+      printf 'failed to stop the owned CAN service: %s\n' "${can_unit}" >&2
+      unsafe=1
+    }
+    sudo systemctl reset-failed "${can_unit}" >/dev/null 2>&1 || {
+      printf 'failed to reset the owned CAN service: %s\n' "${can_unit}" >&2
+      unsafe=1
+    }
   fi
   if test "${systemd_template_created}" -eq 1; then
     if test ! -e /etc/systemd/system/robotics-can-observation@.service; then
@@ -94,8 +102,14 @@ cleanup_owned_host_resources() {
       sha256_file /etc/systemd/system/robotics-can-observation@.service
     )" = "${systemd_template_sha256}"; then
       sudo rm -f /etc/systemd/system/robotics-can-observation@.service ||
+        {
+          printf 'failed to remove the owned CAN systemd template\n' >&2
+          unsafe=1
+        }
+      sudo systemctl daemon-reload || {
+        printf 'failed to reload systemd after CAN template removal\n' >&2
         unsafe=1
-      sudo systemctl daemon-reload || unsafe=1
+      }
     else
       printf 'refusing to remove a modified systemd template\n' >&2
       unsafe=1
@@ -106,7 +120,11 @@ cleanup_owned_host_resources() {
       :
     elif test "$(< "/sys/class/net/${vcan_interface}/ifindex")" = \
       "${vcan_ifindex_owned}"; then
-      sudo ip link del "${vcan_interface}" >/dev/null 2>&1 || unsafe=1
+      sudo ip link del "${vcan_interface}" >/dev/null 2>&1 || {
+        printf 'failed to remove the owned virtual CAN interface: %s\n' \
+          "${vcan_interface}" >&2
+        unsafe=1
+      }
     else
       printf 'refusing to remove a replaced host interface: %s\n' \
         "${vcan_interface}" >&2
@@ -115,10 +133,18 @@ cleanup_owned_host_resources() {
   fi
   if test -n "${serial_bridge_pid}"; then
     if kill -0 "${serial_bridge_pid}" >/dev/null 2>&1; then
-      kill "${serial_bridge_pid}" >/dev/null 2>&1 || unsafe=1
+      kill "${serial_bridge_pid}" >/dev/null 2>&1 || {
+        printf 'failed to stop the owned serial bridge process: %s\n' \
+          "${serial_bridge_pid}" >&2
+        unsafe=1
+      }
       wait "${serial_bridge_pid}" >/dev/null 2>&1 || true
     fi
-    kill -0 "${serial_bridge_pid}" >/dev/null 2>&1 && unsafe=1
+    if kill -0 "${serial_bridge_pid}" >/dev/null 2>&1; then
+      printf 'owned serial bridge process remains active: %s\n' \
+        "${serial_bridge_pid}" >&2
+      unsafe=1
+    fi
   fi
   if test -n "${attach_network}" &&
     docker network inspect "${attach_network}" >/dev/null 2>&1; then
@@ -137,7 +163,10 @@ cleanup_owned_host_resources() {
       docker network ls \
         --quiet \
         --filter 'name=^robotics-can-observation$'
-    )" || unsafe=1
+    )" || {
+      printf 'failed to query the CAN observation network after cleanup\n' >&2
+      unsafe=1
+    }
     if test -n "${can_networks}"; then
       printf 'CAN observation network remains after cleanup: %s\n' \
         "${can_networks}" >&2

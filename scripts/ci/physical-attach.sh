@@ -241,17 +241,26 @@ cleanup() {
   local status="${1:-0}"
   set +e
   if test "${real_compose_started}" -eq 1; then
-    real_compose \
+    if ! real_compose \
       --profile real-observation \
       --profile real-observation-test \
       --profile real-observation-test-negative \
-      down --volumes --remove-orphans >/dev/null 2>&1 || status=70
+      down --volumes --remove-orphans >/dev/null; then
+      printf 'failed to tear down the real-observation Compose project\n' >&2
+      status=70
+    fi
   fi
   if test "${security_compose_used}" -eq 1; then
-    security_compose --profile security-init \
-      down --volumes --remove-orphans >/dev/null 2>&1 || status=70
+    if ! security_compose --profile security-init \
+      down --volumes --remove-orphans >/dev/null; then
+      printf 'failed to tear down the SROS2 bootstrap Compose project\n' >&2
+      status=70
+    fi
   fi
-  cleanup_owned_host_resources || status=70
+  if ! cleanup_owned_host_resources; then
+    printf 'failed to tear down one or more owned host resources\n' >&2
+    status=70
+  fi
   if test "${status}" -ne 0 && test -n "${work_root}"; then
     find "${work_root}" -maxdepth 2 -type f \
       ! -name '*.key' \
