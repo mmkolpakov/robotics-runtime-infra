@@ -487,6 +487,47 @@ EOF
   [[ "${output}" == *"topic subscription failed"* ]]
 }
 
+@test "preflight verification comparison permits only a later verification time" {
+  expected="${BATS_TEST_TMPDIR}/expected-verification.json"
+  actual="${BATS_TEST_TMPDIR}/actual-verification.json"
+  jq -n '{
+    schema_version: "execution-verification.v1",
+    verification_id: "permit-fixture",
+    verified_at: "2026-07-27T05:07:30.100000000Z",
+    decision: "allow"
+  }' >"${expected}"
+  jq \
+    '.verified_at = "2026-07-27T05:07:31.200000000Z"' \
+    "${expected}" >"${actual}"
+
+  run bash -c '
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    verify_execution_verification_equivalence "$2" "$3"
+  ' _ "${SCRIPT}" "${expected}" "${actual}"
+  [ "${status}" -eq 0 ]
+
+  jq '.decision = "deny"' "${actual}" >"${actual}.tmp"
+  mv "${actual}.tmp" "${actual}"
+  run bash -c '
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    verify_execution_verification_equivalence "$2" "$3"
+  ' _ "${SCRIPT}" "${expected}" "${actual}"
+  [ "${status}" -ne 0 ]
+
+  jq \
+    '.decision = "allow" | .verified_at = "2026-07-27T05:07:29Z"' \
+    "${actual}" >"${actual}.tmp"
+  mv "${actual}.tmp" "${actual}"
+  run bash -c '
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    verify_execution_verification_equivalence "$2" "$3"
+  ' _ "${SCRIPT}" "${expected}" "${actual}"
+  [ "${status}" -ne 0 ]
+}
+
 @test "host lock serializes access and cleanup honors ownership flags" {
   lock="${BATS_TEST_TMPDIR}/physical-attach.lock"
   bash -c '

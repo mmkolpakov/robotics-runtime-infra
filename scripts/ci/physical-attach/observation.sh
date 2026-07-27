@@ -82,6 +82,21 @@ run_observer_script() {
   fi
 }
 
+verify_execution_verification_equivalence() {
+  local expected="$1"
+  local actual="$2"
+
+  jq -e --slurpfile expected "${expected}" '
+    def epoch_seconds:
+      sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
+
+    ($expected | length) == 1 and
+    ((.verified_at | epoch_seconds) >=
+      ($expected[0].verified_at | epoch_seconds)) and
+    (del(.verified_at) == ($expected[0] | del(.verified_at)))
+  ' "${actual}" >/dev/null
+}
+
 start_sros2_observer() {
   local case_dir="$1"
   local runtime_dir="${work_root}/runtime"
@@ -153,12 +168,20 @@ start_sros2_observer() {
     up --detach edge-attach-data-plane real-observation-test-source
   run_observer_script observer-listen.sh
 
-  test -s "${authorization_output_dir}/execution-verification.json"
-  test -s "${authorization_output_dir}/runtime-manifest.json"
-  jq -e \
-    --slurpfile expected "${case_dir}/execution-verification.json" \
-    '. == $expected[0]' \
-    "${authorization_output_dir}/execution-verification.json" >/dev/null
+  test -s "${authorization_output_dir}/execution-verification.json" || {
+    printf 'permit preflight did not emit execution verification\n' >&2
+    return 70
+  }
+  test -s "${authorization_output_dir}/runtime-manifest.json" || {
+    printf 'permit preflight did not materialize the runtime manifest\n' >&2
+    return 70
+  }
+  verify_execution_verification_equivalence \
+    "${case_dir}/execution-verification.json" \
+    "${authorization_output_dir}/execution-verification.json" || {
+    printf 'preflight verification differs from the reference decision\n' >&2
+    return 70
+  }
   target_identity="$(<"${work_root}/target-identity.sha256")"
   jq -e \
     --arg target_identity "${target_identity}" '
@@ -172,7 +195,10 @@ start_sros2_observer() {
         (.physical_targets[0] | has("stable_device_path") | not) and
         (.physical_targets[0].preflight_evidence_sha256 | length) == 64 and
       .clock.sync_protocol == "chrony_ntp"
-    ' "${authorization_output_dir}/runtime-manifest.json" >/dev/null
+    ' "${authorization_output_dir}/runtime-manifest.json" >/dev/null || {
+    printf 'runtime manifest does not bind the authorized physical target\n' >&2
+    return 70
+  }
 }
 
 verify_command_publish_denied() {
