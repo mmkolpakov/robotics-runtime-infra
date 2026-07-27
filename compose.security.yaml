@@ -113,6 +113,8 @@ services:
         grep -q '<topic>rt/\*</topic>' /tmp/observer-permissions.xml
         grep -q '<topic>rq/\*/get_stateRequest</topic>' \
           /tmp/observer-permissions.xml
+        grep -q '<topic>rq/\*/get_type_descriptionRequest</topic>' \
+          /tmp/observer-permissions.xml
         grep -q '<default>DENY</default>' /tmp/observer-permissions.xml
     volumes:
       - type: bind

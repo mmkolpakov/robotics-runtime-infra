@@ -440,8 +440,17 @@ EOF
 @test "observer probes use the standard ROS topic CLI" {
   grep -q '<exec_depend>ros2topic</exec_depend>' \
     "${REPOSITORY_ROOT}/docker/rosdeps/edge/package.xml"
-  grep -q '<service>\*/get_type_description</service>' \
-    "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml"
+  run awk '
+    /<enclave path="\/robotics\/observer">/ {observer = 1}
+    observer && /<service>\*\/get_type_description<\/service>/ {found = 1}
+    observer && /<\/enclave>/ {exit}
+    END {exit !found}
+  ' "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml"
+  [ "${status}" -eq 0 ]
+  run grep -F \
+    '<topic>rq/\*/get_type_descriptionRequest</topic>' \
+    "${REPOSITORY_ROOT}/compose.security.yaml"
+  [ "${status}" -eq 0 ]
   grep -q 'ros2 topic echo' "${FIXTURES}/observer-listen.sh"
   grep -q 'ros2 topic pub' "${FIXTURES}/observer-command-denied.sh"
   grep -q 'ros2 topic echo' "${FIXTURES}/observer-unsecured-source-denied.sh"
