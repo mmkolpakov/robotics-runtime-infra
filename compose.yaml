@@ -192,6 +192,10 @@ services:
         source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
         target: /spool
         read_only: true
+      - type: bind
+        source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
+        target: /evidence
+        read_only: true
     healthcheck:
       disable: true
 
