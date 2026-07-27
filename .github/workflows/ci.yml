@@ -32,7 +32,7 @@ env:
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
   ROBOTICS_CONTRACTS_REQUIREMENT: >-
     robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.7.0/robotics_runtime_contracts-0.7.0-py3-none-any.whl#sha256=1f2fc3b2b76f468803a7d2626fc8acaaa292f9cf0b835e4fa0321fbe903926c5
+    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.8.0/robotics_runtime_contracts-0.8.0-py3-none-any.whl#sha256=f3aae69ea71daf1554fcbd8276d8b0ba73599bdbc5dcb5c0249fd45a0bff9313
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f

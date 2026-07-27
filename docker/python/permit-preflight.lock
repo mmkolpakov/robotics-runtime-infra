@@ -60,8 +60,8 @@ rfc3987-syntax==1.1.0 \
     --hash=sha256:6c3d97604e4c5ce9f714898e05401a0445a641cfa276432b0a648c80856f6a3f \
     --hash=sha256:717a62cbf33cffdd16dfa3a497d81ce48a660ea691b1ddd7be710c22f00b4a0d
     # via jsonschema
-robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.7.0/robotics_runtime_contracts-0.7.0-py3-none-any.whl \
-    --hash=sha256:1f2fc3b2b76f468803a7d2626fc8acaaa292f9cf0b835e4fa0321fbe903926c5
+robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.8.0/robotics_runtime_contracts-0.8.0-py3-none-any.whl \
+    --hash=sha256:f3aae69ea71daf1554fcbd8276d8b0ba73599bdbc5dcb5c0249fd45a0bff9313
     # via -r docker/python/permit-preflight.in
 rpds-py==2026.6.3 \
     --hash=sha256:0be972be84cfcaf46c8c6edf690ca0f154ac17babf1f6a955a51579b34ad2dc5 \

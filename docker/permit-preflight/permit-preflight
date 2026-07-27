@@ -204,6 +204,7 @@ verify_offline_attestation() {
   cosign verify-blob-attestation \
     --bundle "${bundle}" \
     --key "${public_key}" \
+    --insecure-ignore-tlog \
     --digest "${digest}" \
     --digestAlg sha256 \
     --type "${predicate_type}" || {

@@ -8,7 +8,7 @@ source "${script_dir}/lib.sh"
 root="$(foundation_repository_root)"
 cd "${root}"
 
-foundation_require_env SIMULATION_IMAGE
+foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE
 
 run_id="${GITHUB_RUN_ID:-local}"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
@@ -90,21 +90,41 @@ observer="$(
     --name "${project}-observer" --no-deps acceptance-observer
 )"
 sleep 2
-timestamp="$(date +%s)000000000"
-jq -c -n \
-  --arg timestamp "${timestamp}" \
-  --arg source_id gazebo-clock \
-  -f test/observability/foundation-metrics.jq \
-  > artifacts/foundation-metrics-input.json
+telemetry_duration="$(
+  docker run --rm \
+    --entrypoint /usr/local/bin/yq \
+    --volume "${run_dir}/scenario.yaml:/scenario.yaml:ro" \
+    "${EVIDENCE_IMAGE}" \
+    -r \
+    '.timeouts.graph_ready_sec +
+     .timeouts.stable_for_sec +
+     .timeouts.execution_sec + 3' \
+    /scenario.yaml
+)"
+if ! [[ "${telemetry_duration}" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'invalid telemetry duration: %s\n' "${telemetry_duration}" >&2
+  exit 2
+fi
+telemetry_deadline=$((SECONDS + telemetry_duration))
+while ((SECONDS < telemetry_deadline)); do
+  timestamp="$(date +%s%N)"
+  jq -c -n \
+    --arg timestamp "${timestamp}" \
+    --arg source_id gazebo-clock \
+    -f test/observability/foundation-metrics.jq \
+    > artifacts/foundation-metrics-input.json
+  curl --fail --silent --show-error \
+    --header "Content-Type: application/json" \
+    --data-binary @artifacts/foundation-metrics-input.json \
+    http://127.0.0.1:4318/v1/metrics
+  sleep 1
+done
+timestamp="$(date +%s%N)"
 jq -c -n \
   --arg start_timestamp "${timestamp}" \
   --arg end_timestamp "$((timestamp + 1000000))" \
   -f test/observability/foundation-traces.jq \
   > artifacts/foundation-traces-input.json
-curl --fail --silent --show-error \
-  --header "Content-Type: application/json" \
-  --data-binary @artifacts/foundation-metrics-input.json \
-  http://127.0.0.1:4318/v1/metrics
 curl --fail --silent --show-error \
   --header "Content-Type: application/json" \
   --data-binary @artifacts/foundation-traces-input.json \

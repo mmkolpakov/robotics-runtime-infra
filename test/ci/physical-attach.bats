@@ -734,3 +734,22 @@ EOF
     "${SCRIPT}" "${MODULES}" "${FIXTURES}"
   [ "${status}" -eq 1 ]
 }
+
+@test "only the isolated offline verifier may bypass the transparency log" {
+  run bash -ceu '
+    script="$1"
+    keyless="$(
+      sed -n \
+        "/^verify_keyless_attestation()/,/^verify_offline_attestation()/p" \
+        "${script}"
+    )"
+    offline="$(
+      sed -n \
+        "/^verify_offline_attestation()/,/^authorize_common()/p" \
+        "${script}"
+    )"
+    ! grep -F -- "--insecure-ignore-tlog" <<<"${keyless}"
+    grep -F -- "--insecure-ignore-tlog" <<<"${offline}"
+  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
+  [ "${status}" -eq 0 ]
+}

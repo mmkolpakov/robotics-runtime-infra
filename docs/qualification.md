@@ -11,7 +11,7 @@ certificate verification remain delegated to Cosign.
 - jq 1.6 or newer
 - yq 4.53 or newer
 - check-jsonschema 0.37 or newer
-- robotics-runtime-contracts 0.7.0
+- robotics-runtime-contracts 0.8.0
 
 `ROBOTICS_CONTRACT_SCHEMA_DIR` may point to an unpacked contracts schema
 directory. Otherwise, the scripts resolve schemas from the installed
@@ -64,6 +64,13 @@ bundle. The policy defines:
 
 Do not distribute the policy from the workflow that produces the qualification
 bundle. Store and review it with the verifier configuration.
+
+The production verifier requires a Rekor-backed keyless bundle and never
+disables transparency-log verification. The `authorize-offline-test` path uses
+a local key pair and `--insecure-ignore-tlog` only for the isolated CI
+cryptography and tamper-rejection test; its signing configuration explicitly
+disables Rekor, and its output cannot satisfy the production authorization
+path.
 
 ## Verify
 

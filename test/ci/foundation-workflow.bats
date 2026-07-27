@@ -75,6 +75,21 @@ EOF
   [[ "${output}" == *"acceptance-observer aggregate"* ]]
 }
 
+@test "acceptance telemetry spans the scenario measurement window" {
+  run grep -E \
+    'foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE|graph_ready_sec|stable_for_sec|execution_sec|date \+%s%N|SECONDS < telemetry_deadline' \
+    "${ACCEPTANCE_PHASE}"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == \
+    *"foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE"* ]]
+  [[ "${output}" == *"graph_ready_sec"* ]]
+  [[ "${output}" == *"stable_for_sec"* ]]
+  [[ "${output}" == *"execution_sec"* ]]
+  [[ "${output}" == *"date +%s%N"* ]]
+  [[ "${output}" == *"SECONDS < telemetry_deadline"* ]]
+}
+
 @test "runtime manifest reads the canonical foundation repository keys" {
   run grep -E \
     '\.repositories\["robotics-(runtime-contracts|acceptance-harness)"\]\.version' \
