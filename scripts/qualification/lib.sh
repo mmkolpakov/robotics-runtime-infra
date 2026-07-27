@@ -23,33 +23,52 @@ qualification_sha256() {
   sha256sum "$1" | cut -d' ' -f1
 }
 
-qualification_schema_path() {
-  local schema_name="$1"
-  local schema_path
-
-  if [[ -n "${ROBOTICS_CONTRACT_SCHEMA_DIR:-}" ]]; then
-    schema_path="${ROBOTICS_CONTRACT_SCHEMA_DIR}/${schema_name}.schema.json"
+qualification_resolve_contracts_cli() {
+  if [[ -n "${ROBOTICS_CONTRACTS_CLI:-}" ]]; then
+    [[ -x "$ROBOTICS_CONTRACTS_CLI" ]] ||
+      qualification_fail \
+        "ROBOTICS_CONTRACTS_CLI is not executable: $ROBOTICS_CONTRACTS_CLI"
+    QUALIFICATION_CONTRACTS_CLI="$ROBOTICS_CONTRACTS_CLI"
+  elif command -v robotics-contracts >/dev/null 2>&1; then
+    QUALIFICATION_CONTRACTS_CLI="$(command -v robotics-contracts)"
+  elif [[ -x dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts ]]; then
+    QUALIFICATION_CONTRACTS_CLI="$PWD/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
   else
-    qualification_require_command python3
-    schema_path="$(
-      python3 -c \
-        'from robotics_runtime_contracts import schema_path; print(schema_path(__import__("sys").argv[1]))' \
-        "$schema_name"
-    )" || qualification_fail "cannot resolve contract schema: $schema_name"
+    qualification_fail \
+      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.9.1 or newer'
   fi
-  qualification_require_file "$schema_path"
-  printf '%s\n' "$schema_path"
 }
 
 qualification_validate_contract() {
   local document="$1"
   local schema_name="$2"
-  local schema_path
 
-  qualification_require_command check-jsonschema
-  schema_path="$(qualification_schema_path "$schema_name")"
-  check-jsonschema --schemafile "$schema_path" "$document" >/dev/null ||
+  [[ -n "${QUALIFICATION_CONTRACTS_CLI:-}" ]] ||
+    qualification_resolve_contracts_cli
+  "$QUALIFICATION_CONTRACTS_CLI" validate \
+    "$document" --schema "$schema_name" --quiet >/dev/null ||
     qualification_fail "$document does not satisfy $schema_name"
+}
+
+qualification_validate_declared_contracts() {
+  (($# > 0)) || qualification_fail 'no contract documents were supplied'
+  [[ -n "${QUALIFICATION_CONTRACTS_CLI:-}" ]] ||
+    qualification_resolve_contracts_cli
+  local command=(
+    "$QUALIFICATION_CONTRACTS_CLI"
+    validate
+    --quiet
+  )
+  local specification
+
+  # The caller owns this array; this file is a sourced command library.
+  # shellcheck disable=SC2154
+  for specification in "${extension_schema_specs[@]}"; do
+    command+=(--extension-schema "$specification")
+  done
+  command+=("$@")
+  "${command[@]}" >/dev/null ||
+    qualification_fail 'one or more documents do not satisfy their declared contracts'
 }
 
 qualification_parse_named_file() {
@@ -187,11 +206,59 @@ qualification_validate_links() {
   local local_results
   local referenced_mcap
   local local_mcap
+  local scenario_schema
+  local aggregate_schema
+  local contract_documents=(
+    "$scenario_path"
+    "$acceptance_run_path"
+    "$aggregate_path"
+  )
 
+  scenario_schema="$(yq -er '.schema_version' "$scenario_path")"
+  case "$scenario_schema" in
+    acceptance-scenario.v1 | acceptance-scenario.v2 | acceptance-scenario.v3) ;;
+    *) qualification_fail "unsupported scenario contract: $scenario_schema" ;;
+  esac
   [[ "$(jq -er '.schema_version' "$acceptance_run_path")" == acceptance-run.v1 ]] ||
     qualification_fail 'acceptance run must declare acceptance-run.v1'
-  [[ "$(jq -er '.schema_version' "$aggregate_path")" == acceptance-aggregate.v2 ]] ||
-    qualification_fail 'aggregate must declare acceptance-aggregate.v2'
+  aggregate_schema="$(jq -er '.schema_version' "$aggregate_path")"
+  case "$aggregate_schema" in
+    acceptance-aggregate.v1 | acceptance-aggregate.v2) ;;
+    *) qualification_fail "unsupported aggregate contract: $aggregate_schema" ;;
+  esac
+  # The caller owns these arrays; this file is a sourced command library.
+  # shellcheck disable=SC2154
+  for specification in "${runtime_manifest_specs[@]}"; do
+    qualification_parse_named_file "$specification"
+    contract_documents+=("$QUALIFICATION_PATH")
+  done
+  # shellcheck disable=SC2154
+  for specification in "${result_specs[@]}"; do
+    qualification_parse_named_file "$specification"
+    contract_documents+=("$QUALIFICATION_PATH")
+  done
+  # shellcheck disable=SC2154
+  for specification in "${evidence_index_specs[@]}"; do
+    qualification_parse_named_file "$specification"
+    contract_documents+=("$QUALIFICATION_PATH")
+  done
+  # shellcheck disable=SC2154
+  for specification in "${mcap_summary_specs[@]}"; do
+    qualification_parse_named_file "$specification"
+    contract_documents+=("$QUALIFICATION_PATH")
+  done
+  # shellcheck disable=SC2154
+  for specification in "${optional_evidence_specs[@]}"; do
+    qualification_parse_evidence_file "$specification"
+    case "$QUALIFICATION_KIND" in
+      channel_contract | channel_observation)
+        contract_documents+=("$QUALIFICATION_PATH")
+        ;;
+      metrics | traces | junit | other_evidence) ;;
+    esac
+  done
+  qualification_validate_declared_contracts "${contract_documents[@]}"
+
   run_id="$(jq -er '.run_id' "$acceptance_run_path")"
   generated_at="$(jq -er '.generated_at' "$aggregate_path")"
   run_sha256="$(qualification_sha256 "$acceptance_run_path")"
@@ -215,6 +282,9 @@ qualification_validate_links() {
   # shellcheck disable=SC2154
   for specification in "${runtime_manifest_specs[@]}"; do
     qualification_parse_named_file "$specification"
+    [[ "$(jq -er '.schema_version' "$QUALIFICATION_PATH")" == runtime-manifest.v1 ]] ||
+      qualification_fail \
+        "runtime manifest $QUALIFICATION_LABEL must declare runtime-manifest.v1"
     jq -cn --arg value "$QUALIFICATION_LABEL" '$value' >>"$work/runtime-domains.ndjson"
     jq -cn --arg value "$(qualification_sha256 "$QUALIFICATION_PATH")" '$value' \
       >>"$work/runtime-digests.ndjson"
@@ -225,8 +295,8 @@ qualification_validate_links() {
     qualification_parse_named_file "$specification"
     label="$QUALIFICATION_LABEL"
     path="$QUALIFICATION_PATH"
-    [[ "$(jq -er '.schema_version' "$path")" == acceptance-result.v2 ]] ||
-      qualification_fail "result $label must declare acceptance-result.v2"
+    [[ "$(jq -er '.schema_version' "$path")" == acceptance-result.v3 ]] ||
+      qualification_fail "result $label must declare acceptance-result.v3"
     result_run_id="$(jq -er '.run_id' "$path")"
     result_domain_id="$(jq -er '.domain_id' "$path")"
     [[ "$result_run_id" == "$run_id" ]] ||
@@ -267,7 +337,8 @@ qualification_validate_links() {
     qualification_parse_named_file "$specification"
     path="$QUALIFICATION_PATH"
     [[ "$(jq -er '.schema_version' "$path")" == mcap-summary.v1 ]] ||
-      qualification_fail "MCAP summary $QUALIFICATION_LABEL must declare mcap-summary.v1"
+      qualification_fail \
+        "MCAP summary $QUALIFICATION_LABEL must declare mcap-summary.v1"
     jq -cn --arg value "$(qualification_sha256 "$path")" '$value' \
       >>"$work/mcap-digests.ndjson"
   done
@@ -347,7 +418,8 @@ qualification_prepare() {
 
   qualification_require_command jq
   qualification_require_command sha256sum
-  qualification_require_command check-jsonschema
+  qualification_require_command yq
+  qualification_resolve_contracts_cli
   [[ -n "$scenario_path" ]] || qualification_fail '--scenario is required'
   [[ -n "$acceptance_run_path" ]] || qualification_fail '--acceptance-run is required'
   [[ -n "$aggregate_path" ]] || qualification_fail '--aggregate is required'
@@ -361,6 +433,26 @@ qualification_prepare() {
     qualification_fail 'at least one --evidence-index is required'
   ((${#mcap_summary_specs[@]} > 0)) ||
     qualification_fail 'at least one --mcap-summary is required'
+
+  # The caller owns this array; this file is a sourced command library.
+  # shellcheck disable=SC2154
+  for specification in "${optional_evidence_specs[@]}"; do
+    qualification_parse_evidence_file "$specification"
+    case "$QUALIFICATION_KIND" in
+      channel_contract)
+        [[ "$(jq -er '.schema_version' "$QUALIFICATION_PATH")" == zenoh-channel.v1 ]] ||
+          qualification_fail \
+            "channel contract $QUALIFICATION_LABEL must declare zenoh-channel.v1"
+        ;;
+      channel_observation)
+        [[ "$(jq -er '.schema_version' "$QUALIFICATION_PATH")" == \
+          zenoh-channel-observation.v1 ]] ||
+          qualification_fail \
+            "channel observation $QUALIFICATION_LABEL must declare zenoh-channel-observation.v1"
+        ;;
+      metrics | traces | junit | other_evidence) ;;
+    esac
+  done
 
   qualification_collect_subjects "$work"
   qualification_validate_links "$work"

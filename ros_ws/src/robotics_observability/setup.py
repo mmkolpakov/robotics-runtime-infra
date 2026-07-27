@@ -10,10 +10,21 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{PACKAGE_NAME}"]),
         (f"share/{PACKAGE_NAME}", ["package.xml"]),
     ],
-    install_requires=["opentelemetry-api", "setuptools"],
+    install_requires=[
+        "opentelemetry-api",
+        "opentelemetry-exporter-otlp-proto-http",
+        "opentelemetry-sdk",
+        "setuptools",
+    ],
+    extras_require={"test": ["pytest"]},
+    entry_points={
+        "console_scripts": [
+            "runtime_metrics = robotics_observability.runtime_metrics:main",
+        ],
+    },
     zip_safe=True,
     maintainer="mmkolpakov",
     maintainer_email="184955981+mmkolpakov@users.noreply.github.com",
-    description="OpenTelemetry W3C Trace Context propagation helpers for ROS 2.",
+    description="OpenTelemetry propagation and runtime measurements for ROS 2.",
     license="MIT",
 )

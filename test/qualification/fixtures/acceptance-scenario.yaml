@@ -1,5 +1,5 @@
 ---
-schema_version: acceptance-scenario.v3
+schema_version: acceptance-scenario.v2
 scenario_id: org.example.runtime-infra.stepped-smoke
 execution:
   target_environment: simulation
@@ -28,15 +28,8 @@ expected_ros_graph:
   topics:
     - name: /clock
       type: rosgraph_msgs/msg/Clock
-      qos_profile: sensor_data
       min_publishers: 1
       min_subscribers: 0
-      first_message_timeout_sec: 10
-    - name: /robotics/runtime_probe
-      type: std_msgs/msg/UInt64
-      qos_profile: system_default
-      min_publishers: 1
-      min_subscribers: 1
       first_message_timeout_sec: 10
   services: []
   actions: []
@@ -44,7 +37,6 @@ expected_ros_graph:
 assertions: []
 time_policy:
   step_size_sec: 0.001
-  max_skipped_steps: 0
   time_authority_min_samples: 30
   max_clock_offset_p50_ms: 1
   max_clock_offset_p95_ms: 2
@@ -56,10 +48,10 @@ data_plane_policy:
   data_sharing: false
   private_ipc: false
 evidence_policy:
-  topics: [/clock, /robotics/runtime_probe]
+  topics: [/clock]
   recording_mode: bounded
   compression: zstd
-  max_segment_size_bytes: 2097152
+  max_segment_size_bytes: 1048576
   max_segment_duration_sec: 30
   max_spool_size_bytes: 10485760
   spool_high_watermark_ratio: 0.8

@@ -1,0 +1,20 @@
+{
+  "acceptance_run_sha256": "4c363b7411422e1ebb6ffa683743e9801157603794e2bd76d16fa35dc0f86b56",
+  "aggregate_id": "aggregate-4e33ee1c-a878-4b3f-b459-9dc694c5cb07",
+  "cross_domain_e2e": {
+    "reason": "trace_evidence_not_evaluated",
+    "status": "unevaluated"
+  },
+  "generated_at": "2026-07-27T07:27:01.248949Z",
+  "per_domain_aggregate": "passed",
+  "per_domain_results": [
+    {
+      "domain_id": "primary",
+      "result_id": "result-7cf21812-6ace-4abc-a12f-636dfb83ec83",
+      "result_sha256": "eb14c009ffd70bfd7491d38f7fabf26e2b6d29f486549771e53a0d1d8ef533ca",
+      "status": "passed"
+    }
+  ],
+  "run_id": "run-c7e6898d-0266-4dde-aed8-7c194eaf241a",
+  "schema_version": "acceptance-aggregate.v1"
+}

@@ -10,12 +10,11 @@ certificate verification remain delegated to Cosign.
 - Cosign 3.1.1
 - jq 1.6 or newer
 - yq 4.53 or newer
-- check-jsonschema 0.37 or newer
-- robotics-runtime-contracts 0.8.0
+- robotics-runtime-contracts 0.9.1 or newer
 
-`ROBOTICS_CONTRACT_SCHEMA_DIR` may point to an unpacked contracts schema
-directory. Otherwise, the scripts resolve schemas from the installed
-`robotics-runtime-contracts` package.
+`ROBOTICS_CONTRACTS_CLI` may point to an executable from an isolated
+installation. Otherwise, the scripts resolve `robotics-contracts` from `PATH`
+or from the imported foundation environment.
 
 ## Produce and sign
 
@@ -49,8 +48,10 @@ cosign attest-blob \
 ```
 
 The generated statement is deterministic for unchanged inputs. Its
-`generated_at` value comes from `acceptance-aggregate.v2`; the producer does not
-insert its own wall-clock timestamp.
+`generated_at` value comes from the supplied aggregate; the producer does not
+insert its own wall-clock timestamp. Base domain aggregation uses
+`acceptance-aggregate.v1`; a completed cross-domain trace evaluation supplies
+`acceptance-aggregate.v2`.
 
 ## Independent policy
 
@@ -93,7 +94,9 @@ scripts/qualification/verify-bundle \
 Verification is ordered deliberately:
 
 1. validate the independent policy and its trusted-root digest;
-2. reconstruct and validate the expected qualification Statement;
+2. validate every supplied contract document through the
+   `robotics-contracts` CLI, then reconstruct and validate the expected
+   qualification Statement;
 3. run `cosign verify-blob-attestation` for an identity allowed by the policy;
 4. decode the authenticated DSSE payload from the Sigstore bundle;
 5. require exact equality of subject names, local SHA-256 digests, artifact
@@ -115,3 +118,13 @@ The Bats tests use a Cosign command double to exercise policy argument routing
 without requesting an OIDC certificate. Production verification always invokes
 the real `cosign verify-blob-attestation`; cryptographic positive testing
 requires a genuine keyless bundle and trusted root.
+
+Domain extension schemas are supplied explicitly and digest-checked by the
+contracts package:
+
+```bash
+scripts/qualification/create-statement \
+  ... \
+  --extension-schema \
+  https://example.org/contracts/sorting.v1.schema.json=contracts/sorting.v1.schema.json
+```

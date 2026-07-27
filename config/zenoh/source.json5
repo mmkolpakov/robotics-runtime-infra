@@ -14,12 +14,12 @@
   },
   plugins: {
     ros2dds: {
-      nodename: "qualification_source_bridge",
+      nodename: "trace_context_source_bridge",
       domain: 31,
       ros_automatic_discovery_range: "LOCALHOST",
       allow: {
-        publishers: ["^/robotics/qualification$"],
-        subscribers: ["^/robotics/qualification$"],
+        publishers: ["^/robotics/trace_context$"],
+        subscribers: ["^/robotics/trace_context$"],
         service_servers: [],
         service_clients: [],
         action_servers: [],

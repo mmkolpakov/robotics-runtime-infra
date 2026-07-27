@@ -16,6 +16,7 @@ usage: create-statement
   --aggregate PATH
   --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
   --mcap-summary LABEL=PATH [--mcap-summary LABEL=PATH ...]
+  [--extension-schema URI=PATH ...]
   [--evidence KIND:LABEL=PATH ...]
   --output PATH
 
@@ -38,6 +39,7 @@ result_specs=()
 evidence_index_specs=()
 mcap_summary_specs=()
 optional_evidence_specs=()
+extension_schema_specs=()
 
 while (($# > 0)); do
   case "$1" in
@@ -79,6 +81,11 @@ while (($# > 0)); do
     --evidence)
       (($# >= 2)) || usage
       optional_evidence_specs+=("$2")
+      shift 2
+      ;;
+    --extension-schema)
+      (($# >= 2)) || usage
+      extension_schema_specs+=("$2")
       shift 2
       ;;
     --output)

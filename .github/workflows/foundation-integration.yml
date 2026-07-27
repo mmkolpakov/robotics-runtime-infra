@@ -20,9 +20,11 @@ on:
       - "ros_ws/**"
       - "scripts/create-acceptance-run"
       - "scripts/ci/foundation/**"
+      - "scripts/qualification/**"
       - "test/acceptance/**"
       - "test/ci/foundation*.bats"
       - "test/observability/**"
+      - "test/qualification/**"
   push:
     branches:
       - main
@@ -39,9 +41,11 @@ on:
       - "ros_ws/**"
       - "scripts/create-acceptance-run"
       - "scripts/ci/foundation/**"
+      - "scripts/qualification/**"
       - "test/acceptance/**"
       - "test/ci/foundation*.bats"
       - "test/observability/**"
+      - "test/qualification/**"
 
 permissions:
   contents: read

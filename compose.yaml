@@ -53,7 +53,9 @@ services:
         status=0
         colcon test \
           --merge-install \
-          --packages-select robotics_runtime_infra \
+          --packages-select \
+            robotics_observability \
+            robotics_runtime_infra \
           --event-handlers console_direct+ \
           --return-code-on-test-failure || status=$?
         colcon test-result --verbose || status=$?

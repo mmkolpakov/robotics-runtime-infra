@@ -1,6 +1,7 @@
 ---
 x-zenoh-node: &zenoh-node
   image: "${EDGE_IMAGE:-local/robotics-runtime-infra/edge:dev}"
+  user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
   init: true
   security_opt:
     - no-new-privileges:true
@@ -8,6 +9,7 @@ x-zenoh-node: &zenoh-node
     - ALL
   profiles: [zenoh]
   environment:
+    HOME: /tmp
     RCUTILS_COLORIZED_OUTPUT: "0"
     RMW_IMPLEMENTATION: rmw_fastrtps_cpp
     ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
@@ -23,6 +25,8 @@ x-zenoh-bridge: &zenoh-bridge
   cap_drop:
     - ALL
   profiles: [zenoh]
+  environment:
+    ROS_DISTRO: jazzy
   volumes:
     - type: bind
       source: ./config/zenoh
@@ -76,6 +80,7 @@ services:
     <<: *zenoh-node
     network_mode: service:zenoh-destination-plane
     environment:
+      HOME: /tmp
       RCUTILS_COLORIZED_OUTPUT: "0"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
       ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
@@ -89,29 +94,35 @@ services:
         rm -f /reports/messages.csv /reports/channel-observation.json
         status=0
         timeout 25 ros2 topic echo \
-          /robotics/qualification std_msgs/msg/String --csv \
+          /robotics/trace_context \
+          robotics_observability_msgs/msg/TraceContext --csv \
           > /reports/messages.csv || status=$?
         test "$${status}" -eq 0 || test "$${status}" -eq 124
-        received="$$(grep -c qualification /reports/messages.csv || true)"
-        test "$${received}" -ge 10
+        traceparent=00-0123456789abcdef0123456789abcdef-0123456789abcdef-01
+        tracestate=runtime=zenoh
+        received="$$(grep -c "$${traceparent}" /reports/messages.csv || true)"
+        states="$$(grep -c "$${tracestate}" /reports/messages.csv || true)"
+        minimum=10
         jq -n \
+          --arg message_type robotics_observability_msgs/msg/TraceContext \
+          --arg traceparent "$${traceparent}" \
+          --arg tracestate "$${tracestate}" \
           --argjson sent 20 \
           --argjson received "$${received}" \
-          '{
-            schema_version: "zenoh-smoke-observation.v1",
-            source_domain_id: 31,
-            destination_domain_id: 32,
-            topic: "/robotics/qualification",
-            sent_messages: $$sent,
-            received_messages: $$received,
-            minimum_messages: 10,
-            status: "passed"
-          }' > /reports/channel-observation.json
+          --argjson states "$${states}" \
+          --argjson minimum "$${minimum}" \
+          -f /etc/robotics/zenoh/channel-observation.jq \
+          > /reports/channel-observation.json
+        jq -e '.status == "passed"' /reports/channel-observation.json
         touch /reports/complete
     volumes:
       - type: bind
         source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
         target: /reports
+      - type: bind
+        source: ./config/zenoh
+        target: /etc/robotics/zenoh
+        read_only: true
     depends_on:
       zenoh-destination-bridge:
         condition: service_started
@@ -120,6 +131,7 @@ services:
     <<: *zenoh-node
     network_mode: service:zenoh-source-plane
     environment:
+      HOME: /tmp
       RCUTILS_COLORIZED_OUTPUT: "0"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
       ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
@@ -131,12 +143,13 @@ services:
       - -c
       - |
         sleep 8
+        traceparent=00-0123456789abcdef0123456789abcdef-0123456789abcdef-01
         ros2 topic pub \
           --rate 20 \
           --times 20 \
-          /robotics/qualification \
-          std_msgs/msg/String \
-          "{data: qualification}"
+          /robotics/trace_context \
+          robotics_observability_msgs/msg/TraceContext \
+          "{traceparent: '$${traceparent}', tracestate: 'runtime=zenoh'}"
         timeout 30 bash -c \
           'until test -f /reports/complete; do sleep 1; done'
     volumes:

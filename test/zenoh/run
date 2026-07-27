@@ -21,6 +21,8 @@ trap cleanup EXIT
 rm -rf "${report_dir}"
 mkdir -p "${report_dir}"
 export ROBOTICS_ZENOH_REPORT_DIR="${report_dir}"
+export ROBOTICS_HOST_UID="${ROBOTICS_HOST_UID:-$(id -u)}"
+export ROBOTICS_HOST_GID="${ROBOTICS_HOST_GID:-$(id -g)}"
 
 "${compose[@]}" config --quiet
 "${compose[@]}" up \
@@ -37,5 +39,9 @@ jq -e '
   .status == "passed"
   and .source_domain_id == 31
   and .destination_domain_id == 32
+  and .message_type == "robotics_observability_msgs/msg/TraceContext"
+  and .expected_traceparent == "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+  and .expected_tracestate == "runtime=zenoh"
   and .received_messages >= .minimum_messages
+  and .matched_tracestate_messages == .received_messages
 ' "${report_dir}/channel-observation.json" >/dev/null

@@ -3,7 +3,7 @@
 setup() {
   export REPOSITORY_ROOT
   REPOSITORY_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  export ROBOTICS_CONTRACT_SCHEMA_DIR="${ROBOTICS_CONTRACT_SCHEMA_DIR:-$REPOSITORY_ROOT/../robotics-runtime-contracts/src/robotics_runtime_contracts/schemas}"
+  export FIXTURES="$REPOSITORY_ROOT/test/qualification/fixtures"
   export TEST_ROOT="$BATS_TEST_TMPDIR/qualification"
   export TEST_BIN="$TEST_ROOT/bin"
   mkdir -p "$TEST_BIN" "$TEST_ROOT/artifacts"
@@ -78,81 +78,14 @@ sha256() {
 
 create_artifacts() {
   local artifacts="$TEST_ROOT/artifacts"
-  local run_id='run-00000000-0000-4000-8000-000000000001'
-  local result_id='result-00000000-0000-4000-8000-000000000001'
-
-  printf '{"schema_version":"acceptance-scenario.v2"}\n' >"$artifacts/scenario.json"
-  printf '{"schema_version":"runtime-manifest.v1"}\n' >"$artifacts/runtime.json"
-  printf '{"diagnostics":"nominal"}\n' >"$artifacts/diagnostics.json"
-  printf '{"schema_version":"mcap-summary.v1","run_id":"%s"}\n' \
-    "$run_id" >"$artifacts/mcap-summary.json"
-
-  local scenario_sha256
-  local runtime_sha256
-  local mcap_sha256
-  scenario_sha256="$(sha256 "$artifacts/scenario.json")"
-  runtime_sha256="$(sha256 "$artifacts/runtime.json")"
-  mcap_sha256="$(sha256 "$artifacts/mcap-summary.json")"
-
-  jq -n \
-    --arg run_id "$run_id" \
-    --arg scenario_sha256 "$scenario_sha256" \
-    '{
-      schema_version: "acceptance-run.v1",
-      run_id: $run_id,
-      created_at: "2026-07-26T12:00:00Z",
-      scenario_id: "qualification-smoke",
-      scenario_sha256: $scenario_sha256,
-      time_authority: {kind: "sim_clock", source_id: "gazebo"},
-      domains: [{domain_id: "control", role: "controller"}]
-    }' >"$artifacts/run.json"
-  local run_sha256
-  run_sha256="$(sha256 "$artifacts/run.json")"
-
-  jq -n \
-    --arg run_id "$run_id" \
-    --arg result_id "$result_id" \
-    --arg runtime_sha256 "$runtime_sha256" \
-    '{
-      schema_version: "acceptance-result.v2",
-      result_id: $result_id,
-      run_id: $run_id,
-      domain_id: "control",
-      runtime_manifest_sha256: $runtime_sha256,
-      status: "passed"
-    }' >"$artifacts/result.json"
-  local result_sha256
-  result_sha256="$(sha256 "$artifacts/result.json")"
-
-  jq -n \
-    --arg run_id "$run_id" \
-    --arg run_sha256 "$run_sha256" \
-    --arg result_id "$result_id" \
-    --arg result_sha256 "$result_sha256" \
-    '{
-      schema_version: "acceptance-aggregate.v2",
-      run_id: $run_id,
-      acceptance_run_sha256: $run_sha256,
-      generated_at: "2026-07-26T12:05:00Z",
-      per_domain_results: [{
-        domain_id: "control",
-        result_id: $result_id,
-        result_sha256: $result_sha256,
-        status: "passed"
-      }]
-    }' >"$artifacts/aggregate.json"
-
-  jq -n \
-    --arg run_id "$run_id" \
-    --arg mcap_sha256 "$mcap_sha256" \
-    '{
-      schema_version: "evidence-index.v2",
-      run_id: $run_id,
-      segments: [{
-        media_type: "application/mcap",
-        mcap_summary: {sha256: $mcap_sha256}
-      }]
-    }' >"$artifacts/evidence-index.json"
+  cp "$FIXTURES/acceptance-scenario.yaml" "$artifacts/scenario.yaml"
+  cp "$FIXTURES/acceptance-run.json" "$artifacts/run.json"
+  cp "$FIXTURES/runtime-manifest.json" "$artifacts/runtime.json"
+  cp "$FIXTURES/acceptance-result.json" "$artifacts/result.json"
+  cp "$FIXTURES/acceptance-aggregate.json" "$artifacts/aggregate.json"
+  cp "$FIXTURES/evidence-index.json" "$artifacts/evidence-index.json"
+  cp "$FIXTURES/mcap-summary.json" "$artifacts/mcap-summary.json"
+  cp "$FIXTURES/diagnostics.json" "$artifacts/diagnostics.json"
   printf '{"trustedRoot":"fixture"}\n' >"$artifacts/trusted-root.json"
   create_policy "$EXPECTED_IDENTITY" "$EXPECTED_ISSUER"
 }
@@ -188,17 +121,17 @@ create_policy() {
 artifact_arguments() {
   cat <<EOF
 --scenario
-$TEST_ROOT/artifacts/scenario.json
+$TEST_ROOT/artifacts/scenario.yaml
 --runtime-manifest
-control=$TEST_ROOT/artifacts/runtime.json
+primary=$TEST_ROOT/artifacts/runtime.json
 --acceptance-run
 $TEST_ROOT/artifacts/run.json
 --result
-control=$TEST_ROOT/artifacts/result.json
+primary=$TEST_ROOT/artifacts/result.json
 --aggregate
 $TEST_ROOT/artifacts/aggregate.json
 --evidence-index
-control=$TEST_ROOT/artifacts/evidence-index.json
+primary=$TEST_ROOT/artifacts/evidence-index.json
 --mcap-summary
 control-0=$TEST_ROOT/artifacts/mcap-summary.json
 --evidence
@@ -256,6 +189,20 @@ verify_bundle() {
   run jq -e '.subject == (.subject | sort_by(.name))' \
     "$TEST_ROOT/artifacts/statement.second.json"
   [ "$status" -eq 0 ]
+}
+
+@test "rejects a schema-invalid result before statement creation" {
+  mapfile -t args < <(artifact_arguments)
+  jq 'del(.run_id)' "$TEST_ROOT/artifacts/result.json" \
+    >"$TEST_ROOT/artifacts/result.invalid.json"
+  mv "$TEST_ROOT/artifacts/result.invalid.json" \
+    "$TEST_ROOT/artifacts/result.json"
+
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    "${args[@]}" --output "$TEST_ROOT/artifacts/invalid-statement.json"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"one or more documents do not satisfy"* ]]
 }
 
 @test "rejects a locally tampered subject after signature verification" {

@@ -27,3 +27,5 @@ uv pip install \
     --robotics-runtime "${root}/foundation/runtime-manifest.yaml" \
     --junitxml "${root}/artifacts/harness.xml"
 )
+ROBOTICS_CONTRACTS_CLI="${contracts_dir}/.venv/bin/robotics-contracts" \
+  bats test/qualification/qualification.bats

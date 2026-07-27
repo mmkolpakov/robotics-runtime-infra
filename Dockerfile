@@ -551,7 +551,7 @@ CMD ["watch"]
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["/usr/local/bin/evidence-sink", "versions"]
 
-FROM ${ROS_BASE_IMAGE} AS edge-runtime
+FROM ${ROS_BASE_IMAGE} AS edge-runtime-base
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
@@ -617,11 +617,45 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       /var/log/alternatives.log \
       /var/log/dpkg.log
 
+FROM edge-runtime-base AS edge-runtime-interfaces
+
+WORKDIR /opt/robotics_ws
+COPY ros_ws/src/robotics_observability_msgs src/robotics_observability_msgs
+
+RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
+    export HOME=/root \
+    && apt-get update \
+    && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
+    && rosdep install \
+      --from-paths src \
+      --ignore-src \
+      --rosdistro "${ROS_DISTRO}" \
+      -y \
+    && source "/opt/ros/${ROS_DISTRO}/setup.bash" \
+    && colcon build \
+      --merge-install \
+      --event-handlers console_direct+ \
+      --cmake-args -DBUILD_TESTING=OFF \
+    && rm -rf \
+      /root/.cache/uv \
+      /var/cache/ldconfig/aux-cache \
+      /var/lib/apt/lists/* \
+      /var/log/apt/* \
+      /var/log/alternatives.log \
+      /var/log/dpkg.log
+
+FROM edge-runtime-base AS edge-runtime
+
+COPY --from=edge-runtime-interfaces /opt/robotics_ws/install /opt/robotics_ws/install
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
 RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
     yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
       > /usr/share/robotics-runtime/foundation-lock.json \
-    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json
+    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json \
+    && source "/opt/ros/${ROS_DISTRO}/setup.bash" \
+    && source /opt/robotics_ws/install/setup.bash \
+    && ros2 interface show \
+      robotics_observability_msgs/msg/TraceContext > /dev/null
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
@@ -1135,7 +1169,10 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       --from-paths /tmp/rosdep \
       --ignore-src \
       --rosdistro "${ROS_DISTRO}" \
-      --skip-keys python3-opentelemetry-api-pip \
+      --skip-keys \
+        "python3-opentelemetry-api-pip \
+         python3-opentelemetry-exporter-otlp-proto-http-pip \
+         python3-opentelemetry-sdk-pip" \
       -y \
     && tar -xjf /tmp/geographiclib/egm96-5.tar.bz2 -C /usr/share/GeographicLib \
     && tar -xjf /tmp/geographiclib/egm96.tar.bz2 -C /usr/share/GeographicLib \

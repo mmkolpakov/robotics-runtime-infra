@@ -168,8 +168,8 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.8.0 |
-| Acceptance harness | `robotics-acceptance-harness` 0.9.1 |
+| Contracts | `robotics-runtime-contracts` 0.9.1 |
+| Acceptance harness | `robotics-acceptance-harness` 0.10.1 |
 
 Base images, package snapshots, and Python artifacts are pinned in
 `Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
@@ -284,6 +284,16 @@ behavior being tested:
 | `compose.time.yaml` | `time-chrony`, `time-ptp` | Export host-owned clock observations as contract-aligned OTLP JSON |
 | `compose.serial.yaml` | `serial-preflight` | Verify one exact stable serial device mapping without starting product code |
 | `compose.can-observation.yaml` | `can-observation` | Receive a host SocketCAN stream without exposing the bus to the container |
+
+The stepped profile advances one physics iteration every 0.2 seconds by
+default. Set `ROBOTICS_STEP_INTERVAL_SEC` to change the pace. Set
+`ROBOTICS_STEPS_PER_TICK` to batch iterations and declare the matching
+`time_policy.max_skipped_steps` in the consuming scenario.
+
+Foundation acceptance uses `/clock` only as the simulation time authority.
+Transport age and loss are measured on the separate reliable
+`/robotics/runtime_probe` stream, so best-effort clock delivery is not treated
+as an application-channel reliability guarantee.
 
 Containers only observe host time, serial identity, and CAN frames; they cannot
 configure the host clock, udev, PTP interface, or physical bus.
