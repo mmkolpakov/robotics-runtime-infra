@@ -146,7 +146,7 @@ statement_subject_digest() {
   printf '%s\n' "${digest}"
 }
 
-assert_bundle_statement() {
+assert_bundle_statement() (
   statement="$1"
   bundle="$2"
   output="$3"
@@ -176,7 +176,7 @@ assert_bundle_statement() {
     "verified DSSE statement does not equal the supplied statement"
   yq -o=json -I=0 '.predicate' "${output}" > "${output}.predicate.json"
   validate_contract "${output}.predicate.json"
-}
+)
 
 verify_keyless_attestation() {
   statement="$1"

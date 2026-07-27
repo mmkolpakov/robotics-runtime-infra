@@ -230,6 +230,40 @@ EOF
   [[ "${integration}" == *"permit comparison accepted a changed predicate"* ]]
 }
 
+@test "DSSE verification cannot overwrite its caller output path" {
+  run bash -c '
+    set -Eeuo pipefail
+    source <(sed "/^command_name=/,\$d" "$1")
+    yq() {
+      case " $* " in
+        *" .mediaType "*)
+          printf "%s\n" "application/vnd.dev.sigstore.bundle.v0.3+json"
+          ;;
+        *" .dsseEnvelope.payloadType "*)
+          printf "%s\n" "application/vnd.in-toto+json"
+          ;;
+        *" .dsseEnvelope.payload "*)
+          printf "%s\n" "e30="
+          ;;
+        *" .predicate "*)
+          printf "%s\n" "{}"
+          ;;
+      esac
+    }
+    validate_contract() { :; }
+    temporary="$(mktemp -d)"
+    trap "rm -rf -- \"${temporary}\"" EXIT
+    output=caller-output
+    assert_bundle_statement \
+      /dev/null \
+      /dev/null \
+      "${temporary}/decoded-statement.json"
+    test "${output}" = caller-output
+  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
+
+  [ "${status}" -eq 0 ]
+}
+
 @test "synthetic target identity is the generated certificate SPKI" {
   run bash -c '
     set -Eeuo pipefail
