@@ -90,10 +90,6 @@ cleanup_owned_host_resources() {
       printf 'failed to stop the owned CAN service: %s\n' "${can_unit}" >&2
       unsafe=1
     }
-    sudo systemctl reset-failed "${can_unit}" >/dev/null 2>&1 || {
-      printf 'failed to reset the owned CAN service: %s\n' "${can_unit}" >&2
-      unsafe=1
-    }
   fi
   if test "${systemd_template_created}" -eq 1; then
     if test ! -e /etc/systemd/system/robotics-can-observation@.service; then

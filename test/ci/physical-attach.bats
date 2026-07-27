@@ -753,6 +753,34 @@ EOF
   [[ "${output}" == *"CAN observation network remains after cleanup"* ]]
 }
 
+@test "CAN cleanup stops the owned unit without resetting an unloaded instance" {
+  run bash -c '
+    set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    can_service_started=1
+    can_unit=robotics-can-observation@vcantest0001.service
+    sudo() {
+      case "$*" in
+        "systemctl stop ${can_unit}")
+          return 0
+          ;;
+        "systemctl is-active --quiet ${can_unit}")
+          return 3
+          ;;
+        *)
+          printf "unexpected privileged command: %s\n" "$*" >&2
+          return 99
+          ;;
+      esac
+    }
+    cleanup_owned_host_resources
+  ' _ "${SCRIPT}"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"unexpected privileged command"* ]]
+}
+
 @test "pre-existing global host resources fail closed before mutation" {
   run bash -c '
     set -Eeuo pipefail
