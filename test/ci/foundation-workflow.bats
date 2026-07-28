@@ -206,6 +206,9 @@ EOF
   run grep -F 'ROBOTICS_MAX_SEGMENT_SIZE_BYTES=2097152' \
     "${ACCEPTANCE_PHASE}"
   [ "${status}" -eq 0 ]
+  run grep -F 'ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200' \
+    "${ACCEPTANCE_PHASE}"
+  [ "${status}" -eq 0 ]
   run grep -F \
     '${ROBOTICS_MAX_SEGMENT_SIZE_BYTES:-1073741824}' \
     "${REPOSITORY_ROOT}/compose.evidence.yaml"

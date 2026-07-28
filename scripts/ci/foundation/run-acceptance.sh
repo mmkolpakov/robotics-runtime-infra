@@ -49,6 +49,7 @@ export ROBOTICS_BAG_DIR="${run_dir}/bags"
 export ROBOTICS_EVIDENCE_DIR="${run_dir}/evidence"
 export ROBOTICS_MAX_BAG_SIZE=1048576
 export ROBOTICS_MAX_SEGMENT_SIZE_BYTES=2097152
+export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
 export ROBOTICS_RECORD_REGEX='^(/clock|/robotics/runtime_probe)$'
 export ROBOTICS_SIMULATION_OCI_DIGEST
 export ROBOTICS_SIMULATION_OCI_REFERENCE
@@ -79,15 +80,34 @@ publish_acceptance_results() {
   sudo cp -a "${run_dir}/results/." "${artifact_dir}/acceptance-results/"
   sudo chown -R "$(id -u):$(id -g)" "${artifact_dir}/acceptance-results"
 }
+publish_failure_evidence() {
+  local destination="${artifact_dir}/acceptance-evidence"
+  local source
+  mkdir -p "${destination}"
+  for source in \
+    "${run_dir}/evidence/metrics.otlp.json" \
+    "${run_dir}/evidence/evidence-index.json"; do
+    if [[ -f "${source}" ]]; then
+      sudo cp "${source}" "${destination}/"
+    fi
+  done
+  sudo chown -R "$(id -u):$(id -g)" "${destination}"
+}
 cleanup() {
+  local status=$?
   foundation_compose_logs \
     "${artifact_dir}/foundation-e2e.log" \
     "${compose[@]}" "${profiles[@]}"
+  if ((status != 0)); then
+    publish_acceptance_results || true
+    publish_failure_evidence || true
+  fi
   if [[ -n "${observer}" ]]; then
     docker logs "${observer}" \
       > "${artifact_dir}/foundation-observer.log" 2>&1 || true
   fi
   foundation_compose_down "${compose[@]}" "${profiles[@]}"
+  return "${status}"
 }
 trap cleanup EXIT
 
