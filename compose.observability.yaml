@@ -4,6 +4,8 @@ x-observability-environment: &observability-environment
   HOME: /tmp
   RCUTILS_COLORIZED_OUTPUT: "0"
   RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+  ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID:?ROBOTICS_DOMAIN_ID is required}"
+  ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
   ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
   ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
 
@@ -67,8 +69,8 @@ services:
     profiles: [observability]
     command: [--config=/etc/otelcol-contrib/config.yaml]
     environment:
-      ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID}"
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID:?ROBOTICS_DOMAIN_ID is required}"
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
     read_only: true
     security_opt:
       - no-new-privileges:true
