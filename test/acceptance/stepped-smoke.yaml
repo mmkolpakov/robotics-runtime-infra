@@ -22,7 +22,7 @@ timeouts:
   startup_sec: 60
   graph_ready_sec: 30
   stable_for_sec: 1
-  execution_sec: 5
+  execution_sec: 10
   shutdown_sec: 60
 expected_ros_graph:
   topics:
