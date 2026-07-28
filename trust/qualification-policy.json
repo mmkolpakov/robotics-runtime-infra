@@ -6,7 +6,7 @@
     "https://github.com/mmkolpakov/robotics-runtime-infra/.github/workflows/foundation-integration.yml@refs/heads/main"
   ],
   "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
-  "trusted_root_sha256": "0ba58f6c09c271f664f0f8c1fa62e2065844ca89a0397c0178ed5188f6096724",
+  "trusted_root_sha256": "8fc40bfc11dcc042f5fa8fa1ab19b1f98f5deef0665455dceb6698c865a0fc3f",
   "required_artifact_kinds": [
     "scenario",
     "runtime_manifest",
