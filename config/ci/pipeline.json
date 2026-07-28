@@ -126,6 +126,17 @@
       "files": ["compose.yaml", "compose.observability.yaml"]
     },
     {
+      "name": "foundation",
+      "files": [
+        "compose.yaml",
+        "compose.foundation.yaml",
+        "compose.stepped.yaml",
+        "compose.record.yaml",
+        "compose.evidence.yaml",
+        "compose.observability.yaml"
+      ]
+    },
+    {
       "name": "sensor-inference-cpu",
       "files": [
         "compose.yaml",

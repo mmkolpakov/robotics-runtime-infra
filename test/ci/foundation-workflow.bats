@@ -3,9 +3,13 @@
 setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   ACCEPTANCE_PHASE="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
+  ACCEPTANCE_ISOLATION_PHASE="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
   RUNTIME_MANIFEST_EMITTER="${REPOSITORY_ROOT}/docker/runtime/emit-runtime-manifest"
   LIBRARY="${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh"
   WORKFLOW="${REPOSITORY_ROOT}/.github/workflows/foundation-integration.yml"
+  FOUNDATION_COMPOSE="${REPOSITORY_ROOT}/compose.foundation.yaml"
+  QUALIFICATION_POLICY="${REPOSITORY_ROOT}/trust/qualification-policy.json"
+  QUALIFICATION_ROOT="${REPOSITORY_ROOT}/trust/qualification.trusted-root.json"
   # shellcheck source=scripts/ci/foundation/lib.sh
   source "${LIBRARY}"
 }
@@ -30,6 +34,17 @@ EOF
   [[ "${output}" == *"unknown foundation project kind"* ]]
 }
 
+@test "local and explicit foundation run identities are collision scoped" {
+  ROBOTICS_FOUNDATION_RUN_ID=review-42 run foundation_run_id
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "review-42" ]
+
+  unset ROBOTICS_FOUNDATION_RUN_ID GITHUB_RUN_ID
+  run foundation_run_id
+  [ "${status}" -eq 0 ]
+  [[ "${output}" =~ ^local-[0-9]+$ ]]
+}
+
 @test "required environment checks identify the missing input" {
   unset FOUNDATION_TEST_REQUIRED
   run foundation_require_env FOUNDATION_TEST_REQUIRED
@@ -52,7 +67,7 @@ EOF
   run awk '/^        run:/ { print }' "${WORKFLOW}"
 
   [ "${status}" -eq 0 ]
-  [ "$(printf '%s\n' "${output}" | wc -l)" -eq 11 ]
+  [ "$(printf '%s\n' "${output}" | wc -l)" -ge 11 ]
   ! printf '%s\n' "${output}" | grep -Ev \
     '^[[:space:]]+run: bash scripts/ci/foundation/[a-z-]+\.sh$'
 }
@@ -61,6 +76,13 @@ EOF
   run grep -E '^[[:space:]]+run:[[:space:]]*[|>]' "${WORKFLOW}"
 
   [ "${status}" -eq 1 ]
+}
+
+@test "workflow path filters include the Zenoh transport qualification implementation" {
+  run grep -c 'test/zenoh/\*\*' "${WORKFLOW}"
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" -eq 2 ]
 }
 
 @test "acceptance phase retains measured telemetry evidence and aggregation" {
@@ -88,13 +110,27 @@ EOF
   [[ "${output}" == *"SECONDS < telemetry_deadline"* ]]
 }
 
+@test "full acceptance isolation uses separate domains artifacts and projects" {
+  run grep -E \
+    'ROBOTICS_FOUNDATION_RUN_ID|ROBOTICS_FOUNDATION_ARTIFACT_DIR|ROS_DOMAIN_ID|GZ_PARTITION|foundation_assert_project_clean' \
+    "${ACCEPTANCE_ISOLATION_PHASE}"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"ROBOTICS_FOUNDATION_RUN_ID"* ]]
+  [[ "${output}" == *"ROBOTICS_FOUNDATION_ARTIFACT_DIR"* ]]
+  [[ "${output}" == *"ROS_DOMAIN_ID"* ]]
+  [[ "${output}" == *"GZ_PARTITION"* ]]
+  [[ "${output}" == *"foundation_assert_project_clean"* ]]
+}
+
 @test "acceptance metrics start after runtime readiness and before observation" {
   local collector_ready_line
   local metrics_line
   local observer_line
 
   collector_ready_line="$(
-    grep -n 'http://127.0.0.1:13133/' "${ACCEPTANCE_PHASE}" |
+    grep -n 'collector_health_address=.*port otel-collector 13133' \
+      "${ACCEPTANCE_PHASE}" |
       cut -d: -f1
   )"
   metrics_line="$(
@@ -187,4 +223,76 @@ EOF
 
   [ "${status}" -eq 0 ]
   [ "$(printf '%s\n' "${output}" | wc -l)" -eq 2 ]
+}
+
+@test "foundation binds the runtime manifest to the mounted Fast DDS profile" {
+  run grep -F -- '-f compose.foundation.yaml' "${ACCEPTANCE_PHASE}"
+  [ "${status}" -eq 0 ]
+  run grep -F \
+    'FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml' \
+    "${FOUNDATION_COMPOSE}"
+  [ "${status}" -eq 0 ]
+  run grep -F \
+    '.data_plane.fastdds_profile_sha256 == $digest' \
+    "${ACCEPTANCE_PHASE}"
+  [ "${status}" -eq 0 ]
+  run grep -F \
+    'other_evidence:fastdds-profile.xml=' \
+    "${ACCEPTANCE_PHASE}"
+  [ "${status}" -eq 0 ]
+}
+
+@test "ordinary foundation CI signs and verifies with real Cosign" {
+  run grep -F \
+    'sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6' \
+    "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+  [ "$(printf '%s\n' "${output}" | wc -l)" -eq 2 ]
+  run grep -F 'cosign-release: v3.1.1' "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+  [ "$(printf '%s\n' "${output}" | wc -l)" -eq 2 ]
+  run grep -F \
+    'bash scripts/ci/foundation/sign-ephemeral-qualification.sh' \
+    "${ACCEPTANCE_PHASE}"
+  [ "${status}" -eq 0 ]
+  run grep -F \
+    'scripts/qualification/verify-bundle' \
+    "${ACCEPTANCE_PHASE}"
+  [ "${status}" -eq 0 ]
+}
+
+@test "trusted keyless qualification is restricted to canonical main" {
+  run grep -F \
+    "github.repository == 'mmkolpakov/robotics-runtime-infra'" \
+    "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+  run grep -F "github.ref == 'refs/heads/main'" "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'id-token: write' "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+  run jq -e '
+    .certificate_identities == [
+      "https://github.com/mmkolpakov/robotics-runtime-infra/.github/workflows/foundation-integration.yml@refs/heads/main"
+    ] and
+    .certificate_oidc_issuer ==
+      "https://token.actions.githubusercontent.com"
+  ' "${QUALIFICATION_POLICY}"
+  [ "${status}" -eq 0 ]
+}
+
+@test "qualification policy pins the distributed Sigstore trusted root" {
+  run jq -e \
+    --arg digest "$(sha256sum "${QUALIFICATION_ROOT}" | cut -d' ' -f1)" \
+    '.trusted_root_sha256 == $digest' \
+    "${QUALIFICATION_POLICY}"
+  [ "${status}" -eq 0 ]
+  run grep -R -E \
+    -- '--certificate-identity-regexp|--insecure-ignore-tlog' \
+    "${REPOSITORY_ROOT}/scripts/ci/foundation/run-keyless-qualification.sh"
+  [ "${status}" -eq 1 ]
+  run grep -R -E \
+    -- '--certificate-identity-regexp' \
+    "${REPOSITORY_ROOT}/scripts/ci/foundation" \
+    "${REPOSITORY_ROOT}/scripts/qualification"
+  [ "${status}" -eq 1 ]
 }

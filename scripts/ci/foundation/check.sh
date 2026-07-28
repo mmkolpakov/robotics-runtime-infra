@@ -15,6 +15,12 @@ mapfile -t scripts < <(
   find scripts/ci/foundation -maxdepth 1 -type f -name '*.sh' -print \
     | LC_ALL=C sort
 )
+scripts+=(
+  scripts/qualification/create-statement
+  scripts/qualification/lib.sh
+  scripts/qualification/verify-bundle
+  test/qualification/real-cosign.sh
+)
 docker run --rm \
   --volume "${root}:/work:ro" \
   --workdir /work \

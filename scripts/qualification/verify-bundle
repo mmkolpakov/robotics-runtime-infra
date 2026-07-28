@@ -10,8 +10,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: verify-bundle
   --bundle PATH
-  --trusted-root PATH
-  --policy PATH
+  (--key PATH | --trusted-root PATH --policy PATH)
   --scenario PATH
   --runtime-manifest DOMAIN=PATH [--runtime-manifest DOMAIN=PATH ...]
   --acceptance-run PATH
@@ -33,6 +32,7 @@ acceptance_run_path=''
 # shellcheck disable=SC2034
 aggregate_path=''
 bundle=''
+verification_key=''
 trusted_root=''
 policy=''
 runtime_manifest_specs=()
@@ -47,6 +47,11 @@ while (($# > 0)); do
     --bundle)
       (($# >= 2)) || usage
       bundle="$2"
+      shift 2
+      ;;
+    --key)
+      (($# >= 2)) || usage
+      verification_key="$2"
       shift 2
       ;;
     --trusted-root)
@@ -115,49 +120,75 @@ qualification_require_command yq
 qualification_require_command base64
 export scenario_path acceptance_run_path aggregate_path
 qualification_require_file "$bundle"
-qualification_require_file "$trusted_root"
-qualification_require_file "$policy"
-qualification_validate_contract "$policy" qualification-policy.v1
-[[ "$(qualification_sha256 "$trusted_root")" == "$(jq -er '.trusted_root_sha256' "$policy")" ]] ||
-  qualification_fail 'trusted root digest does not match qualification policy'
-[[ "$(jq -er '.predicate_type' "$policy")" == "$QUALIFICATION_PREDICATE_TYPE" ]] ||
-  qualification_fail 'qualification policy has an unsupported predicate type'
+if [[ -n "$verification_key" ]]; then
+  [[ -z "$trusted_root" && -z "$policy" ]] ||
+    qualification_fail \
+      '--key is mutually exclusive with --trusted-root and --policy'
+  qualification_require_file "$verification_key"
+else
+  [[ -n "$trusted_root" && -n "$policy" ]] ||
+    qualification_fail \
+      'identity verification requires --trusted-root and --policy'
+  qualification_require_file "$trusted_root"
+  qualification_require_file "$policy"
+  qualification_validate_contract "$policy" qualification-policy.v1
+  [[ "$(qualification_sha256 "$trusted_root")" == \
+    "$(jq -er '.trusted_root_sha256' "$policy")" ]] ||
+    qualification_fail 'trusted root digest does not match qualification policy'
+  [[ "$(jq -er '.predicate_type' "$policy")" == \
+    "$QUALIFICATION_PREDICATE_TYPE" ]] ||
+    qualification_fail 'qualification policy has an unsupported predicate type'
+fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 qualification_prepare "$work"
 qualification_write_statement "$work" "$work/expected-statement.json"
 
-missing_kinds="$(
-  jq -n -r \
-    --slurpfile policy "$policy" \
-    --slurpfile artifacts "$work/artifacts.json" '
-      ($policy[0].required_artifact_kinds -
-        ($artifacts[0] | map(.kind) | unique))[]
-    '
-)"
-[[ -z "$missing_kinds" ]] ||
-  qualification_fail "statement is missing policy-required artifact kinds: $missing_kinds"
-
-issuer="$(jq -er '.certificate_oidc_issuer' "$policy")"
-predicate_type="$(jq -er '.predicate_type' "$policy")"
 aggregate_sha256="$(cat "$work/aggregate-sha256")"
 verified_identity=''
-while IFS= read -r identity; do
-  if cosign verify-blob-attestation \
+if [[ -n "$verification_key" ]]; then
+  cosign verify-blob-attestation \
     --bundle "$bundle" \
-    --trusted-root "$trusted_root" \
-    --certificate-identity "$identity" \
-    --certificate-oidc-issuer "$issuer" \
+    --key "$verification_key" \
+    --insecure-ignore-tlog \
     --digest "$aggregate_sha256" \
     --digestAlg sha256 \
-    --type "$predicate_type" >/dev/null; then
-    verified_identity="$identity"
-    break
-  fi
-done < <(jq -er '.certificate_identities[]' "$policy")
-[[ -n "$verified_identity" ]] ||
-  qualification_fail 'Sigstore verification failed for every trusted certificate identity'
+    --type "$QUALIFICATION_PREDICATE_TYPE" >/dev/null ||
+    qualification_fail 'Sigstore verification failed for the supplied public key'
+  verified_identity="key-sha256:$(qualification_sha256 "$verification_key")"
+else
+  missing_kinds="$(
+    jq -n -r \
+      --slurpfile policy "$policy" \
+      --slurpfile artifacts "$work/artifacts.json" '
+        ($policy[0].required_artifact_kinds -
+          ($artifacts[0] | map(.kind) | unique))[]
+      '
+  )"
+  [[ -z "$missing_kinds" ]] ||
+    qualification_fail \
+      "statement is missing policy-required artifact kinds: $missing_kinds"
+
+  issuer="$(jq -er '.certificate_oidc_issuer' "$policy")"
+  predicate_type="$(jq -er '.predicate_type' "$policy")"
+  while IFS= read -r identity; do
+    if cosign verify-blob-attestation \
+      --bundle "$bundle" \
+      --trusted-root "$trusted_root" \
+      --certificate-identity "$identity" \
+      --certificate-oidc-issuer "$issuer" \
+      --digest "$aggregate_sha256" \
+      --digestAlg sha256 \
+      --type "$predicate_type" >/dev/null; then
+      verified_identity="$identity"
+      break
+    fi
+  done < <(jq -er '.certificate_identities[]' "$policy")
+  [[ -n "$verified_identity" ]] ||
+    qualification_fail \
+      'Sigstore verification failed for every trusted certificate identity'
+fi
 
 [[ "$(yq -r '.mediaType' "$bundle")" == \
   application/vnd.dev.sigstore.bundle.v0.3+json ]] ||

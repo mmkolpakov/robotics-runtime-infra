@@ -7,19 +7,20 @@ source "${script_dir}/lib.sh"
 
 root="$(foundation_repository_root)"
 cd "${root}"
-mkdir -p artifacts
 
-run_id="${GITHUB_RUN_ID:-local}"
+run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 project_a="$(foundation_project_name isolation-a "${run_id}" "${run_attempt}")"
 project_b="$(foundation_project_name isolation-b "${run_id}" "${run_attempt}")"
+artifact_dir="$(foundation_artifact_dir "${root}" "${project_a}")"
+mkdir -p "${artifact_dir}"
 
 cleanup() {
   foundation_compose_cleanup \
-    artifacts/foundation-a.log \
+    "${artifact_dir}/foundation-a.log" \
     docker compose -p "${project_a}"
   foundation_compose_cleanup \
-    artifacts/foundation-b.log \
+    "${artifact_dir}/foundation-b.log" \
     docker compose -p "${project_b}"
 }
 trap cleanup EXIT

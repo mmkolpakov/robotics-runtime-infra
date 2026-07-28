@@ -42,7 +42,7 @@ true.
 
 ### `robotics-runtime-contracts`
 
-- `acceptance-scenario.v2` records the intended execution, expected ROS graph,
+- `acceptance-scenario.v4` records the intended execution, expected ROS graph,
   timing, evidence policy, safety boundary, and measurable assertions.
 - `acceptance-run.v1` binds a run identifier, scenario digest, domains, and
   time authority.
@@ -50,7 +50,7 @@ true.
   accelerator, security, timing, and physical-target facts.
 - `evidence-index.v2` and `mcap-summary.v1` bind retained evidence to media
   type, size, digest, channels, and message statistics.
-- `acceptance-result.v2`, `acceptance-aggregate.v2`, and `causal-chain.v1`
+- `acceptance-result.v4`, `acceptance-aggregate.v2`, and `causal-chain.v1`
   represent scoped verdicts, unevaluated coverage, and cross-domain causal
   observations.
 - `execution-permit.v1` and `execution-verification.v1` bind a physical

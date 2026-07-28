@@ -9,17 +9,22 @@ root="$(foundation_repository_root)"
 cd "${root}"
 
 foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE
+command -v cosign >/dev/null 2>&1 || {
+  printf 'cosign is required for foundation qualification\n' >&2
+  exit 69
+}
 
-run_id="${GITHUB_RUN_ID:-local}"
+run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 project="$(foundation_project_name acceptance "${run_id}" "${run_attempt}")"
-run_dir="${root}/runs/foundation-e2e"
+artifact_dir="$(foundation_artifact_dir "${root}" "${project}")"
+run_dir="${root}/runs/${project}"
 rm -rf "${run_dir}"
 mkdir -p \
   "${run_dir}/bags" \
   "${run_dir}/evidence" \
   "${run_dir}/results" \
-  artifacts
+  "${artifact_dir}"
 cp test/acceptance/stepped-smoke.yaml "${run_dir}/scenario.yaml"
 
 export ROBOTICS_RUN_ID
@@ -55,6 +60,7 @@ ROBOTICS_SIMULATION_OCI_REFERENCE="${SIMULATION_IMAGE}@${ROBOTICS_SIMULATION_OCI
 compose=(
   docker compose -p "${project}"
   -f compose.yaml
+  -f compose.foundation.yaml
   -f compose.stepped.yaml
   -f compose.record.yaml
   -f compose.evidence.yaml
@@ -69,17 +75,17 @@ profiles=(
 )
 observer=""
 publish_acceptance_results() {
-  mkdir -p artifacts/acceptance-results
-  sudo cp -a "${run_dir}/results/." artifacts/acceptance-results/
-  sudo chown -R "$(id -u):$(id -g)" artifacts/acceptance-results
+  mkdir -p "${artifact_dir}/acceptance-results"
+  sudo cp -a "${run_dir}/results/." "${artifact_dir}/acceptance-results/"
+  sudo chown -R "$(id -u):$(id -g)" "${artifact_dir}/acceptance-results"
 }
 cleanup() {
   foundation_compose_logs \
-    artifacts/foundation-e2e.log \
+    "${artifact_dir}/foundation-e2e.log" \
     "${compose[@]}" "${profiles[@]}"
   if [[ -n "${observer}" ]]; then
     docker logs "${observer}" \
-      > artifacts/foundation-observer.log 2>&1 || true
+      > "${artifact_dir}/foundation-observer.log" 2>&1 || true
   fi
   foundation_compose_down "${compose[@]}" "${profiles[@]}"
 }
@@ -88,10 +94,16 @@ trap cleanup EXIT
 "${compose[@]}" --profile stepped --profile record --profile observability \
   up --detach --no-build --wait --wait-timeout 120 \
   simulation simulation-stepper recorder otel-collector
+collector_health_address="$("${compose[@]}" port otel-collector 13133)"
 curl --fail --silent --show-error \
   --retry 10 --retry-connrefused --retry-delay 1 \
-  http://127.0.0.1:13133/
+  "http://${collector_health_address}/"
 "${compose[@]}" --profile acceptance run --rm runtime-manifest
+fastdds_profile="${root}/config/fastdds/udp-only.xml"
+fastdds_profile_sha256="$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)"
+jq -e --arg digest "${fastdds_profile_sha256}" \
+  '.data_plane.fastdds_profile_sha256 == $digest' \
+  "${run_dir}/runtime-manifest.json" >/dev/null
 "${compose[@]}" --profile acceptance --profile observability \
   up --detach --no-build --wait --wait-timeout 30 \
   runtime-probe-publisher runtime-metrics
@@ -132,7 +144,7 @@ test -s "${run_dir}/evidence/metrics.otlp.json"
 "${compose[@]}" --profile evidence run --rm evidence-finalize
 observer_status="$(docker wait "${observer}")"
 publish_acceptance_results
-published_result="artifacts/acceptance-results/acceptance-result.json"
+published_result="${artifact_dir}/acceptance-results/acceptance-result.json"
 if [[ -f "${published_result}" ]]; then
   jq . "${published_result}"
 fi
@@ -158,7 +170,12 @@ mapfile -t mcap_summaries < <(
 )
 test "${#mcap_summaries[@]}" -ge 1
 export ROBOTICS_CONTRACTS_CLI="${root}/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
-qualification_args=(
+[[ "$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)" == \
+  "${fastdds_profile_sha256}" ]] || {
+  printf 'Fast DDS profile changed during the foundation run\n' >&2
+  exit 65
+}
+qualification_inputs=(
   --scenario "${run_dir}/scenario.yaml"
   --runtime-manifest "primary=${run_dir}/runtime-manifest.json"
   --acceptance-run "${run_dir}/acceptance-run.json"
@@ -166,14 +183,25 @@ qualification_args=(
   --aggregate "${run_dir}/results/acceptance-aggregate.json"
   --evidence-index "primary=${run_dir}/evidence/evidence-index.json"
   --evidence "metrics:metrics.otlp.json=${run_dir}/evidence/metrics.otlp.json"
-  --output "${run_dir}/results/qualification-statement.json"
+  --evidence "junit:junit.xml=${run_dir}/results/junit.xml"
+  --evidence "other_evidence:fastdds-profile.xml=${fastdds_profile}"
 )
 for index in "${!mcap_summaries[@]}"; do
-  qualification_args+=(
+  qualification_inputs+=(
     --mcap-summary "primary-${index}=${mcap_summaries[$index]}"
   )
 done
-scripts/qualification/create-statement "${qualification_args[@]}"
+scripts/qualification/create-statement \
+  "${qualification_inputs[@]}" \
+  --output "${run_dir}/results/qualification-statement.json"
+bash scripts/ci/foundation/sign-ephemeral-qualification.sh \
+  "${run_dir}/results/qualification-statement.json" \
+  "${run_dir}/results/qualification.sigstore.json" \
+  "${run_dir}/results/qualification.pub"
+scripts/qualification/verify-bundle \
+  --bundle "${run_dir}/results/qualification.sigstore.json" \
+  --key "${run_dir}/results/qualification.pub" \
+  "${qualification_inputs[@]}"
 
 jq -e '.status == "passed"' \
   "${run_dir}/results/acceptance-result.json"
@@ -200,9 +228,13 @@ jq -e \
 test -s "${run_dir}/results/junit.xml"
 
 publish_acceptance_results
-cp "${run_dir}/runtime-manifest.json" artifacts/
-cp "${run_dir}/acceptance-run.json" artifacts/
-cp "${run_dir}/evidence/evidence-index.json" artifacts/
-cp "${run_dir}/evidence/metrics.otlp.json" artifacts/
-cp "${run_dir}/results/qualification-statement.json" artifacts/
-cp "${mcap_summaries[@]}" artifacts/
+cp "${run_dir}/runtime-manifest.json" "${artifact_dir}/"
+cp "${run_dir}/acceptance-run.json" "${artifact_dir}/"
+cp "${run_dir}/scenario.yaml" "${artifact_dir}/"
+cp "${run_dir}/evidence/evidence-index.json" "${artifact_dir}/"
+cp "${run_dir}/evidence/metrics.otlp.json" "${artifact_dir}/"
+cp "${fastdds_profile}" "${artifact_dir}/fastdds-profile.xml"
+cp "${run_dir}/results/qualification-statement.json" "${artifact_dir}/"
+cp "${run_dir}/results/qualification.sigstore.json" "${artifact_dir}/"
+cp "${run_dir}/results/qualification.pub" "${artifact_dir}/"
+cp "${mcap_summaries[@]}" "${artifact_dir}/"

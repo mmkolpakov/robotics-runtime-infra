@@ -4,49 +4,71 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
+RMW_UNSUPPORTED_SEQUENCE_NUMBER = (1 << 64) - 1
+
+
 @dataclass(frozen=True, slots=True)
 class MessageMeasurement:
     age_ms: float | None
-    loss_ratio: float | None
+    received_delta: int | None
+    lost_delta: int | None
+    sequence_error_delta: int
 
 
 class MessageStream:
-    """Measure transport age and sequence gaps from ROS subscription metadata."""
+    """Measure sequence gaps when one publisher owns the observed channel."""
 
     def __init__(self) -> None:
         self._last_sequence: int | None = None
-        self._received_count = 0
-        self._lost_count = 0
 
-    def observe(self, metadata: Mapping[str, Any]) -> MessageMeasurement:
-        source_timestamp = _positive_int(metadata.get("source_timestamp"))
-        received_timestamp = _positive_int(metadata.get("received_timestamp"))
-        age_ms = None
-        if (
-            source_timestamp is not None
-            and received_timestamp is not None
-            and received_timestamp >= source_timestamp
-        ):
-            age_ms = (received_timestamp - source_timestamp) / 1_000_000
+    def observe(
+        self,
+        metadata: Mapping[str, Any],
+        *,
+        publisher_count: int,
+    ) -> MessageMeasurement:
+        age_ms = source_to_reception_latency_ms(metadata)
+        sequence = _sequence_number(metadata.get("publication_sequence_number"))
+        if publisher_count != 1 or sequence is None:
+            return MessageMeasurement(
+                age_ms=age_ms,
+                received_delta=None,
+                lost_delta=None,
+                sequence_error_delta=1,
+            )
 
-        sequence = _optional_int(metadata.get("publication_sequence_number"))
-        if sequence is None:
-            sequence = _optional_int(metadata.get("reception_sequence_number"))
+        last_sequence = self._last_sequence
+        if last_sequence is not None and sequence <= last_sequence:
+            return MessageMeasurement(
+                age_ms=age_ms,
+                received_delta=0,
+                lost_delta=0,
+                sequence_error_delta=1,
+            )
+        lost_delta = 0
+        if last_sequence is not None:
+            lost_delta = max(sequence - last_sequence - 1, 0)
+        self._last_sequence = sequence
+        return MessageMeasurement(
+            age_ms=age_ms,
+            received_delta=1,
+            lost_delta=lost_delta,
+            sequence_error_delta=0,
+        )
 
-        loss_ratio = None
-        if sequence is not None:
-            if self._last_sequence is not None and sequence > self._last_sequence:
-                self._lost_count += max(sequence - self._last_sequence - 1, 0)
-            if self._last_sequence is None or sequence > self._last_sequence:
-                self._last_sequence = sequence
-            self._received_count += 1
-            loss_ratio = self._lost_count / (self._received_count + self._lost_count)
 
-        return MessageMeasurement(age_ms=age_ms, loss_ratio=loss_ratio)
+def source_to_reception_latency_ms(metadata: Mapping[str, Any]) -> float | None:
+    """Return DDS/RMW source-to-reception latency, or no evidence."""
 
-
-def clock_offset_ms(authority_time_ns: int, observed_time_ns: int) -> float:
-    return abs(observed_time_ns - authority_time_ns) / 1_000_000
+    source_timestamp = _positive_int(metadata.get("source_timestamp"))
+    received_timestamp = _positive_int(metadata.get("received_timestamp"))
+    if (
+        source_timestamp is None
+        or received_timestamp is None
+        or received_timestamp < source_timestamp
+    ):
+        return None
+    return (received_timestamp - source_timestamp) / 1_000_000
 
 
 def _positive_int(value: object) -> int | None:
@@ -60,4 +82,15 @@ def _optional_int(value: object) -> int | None:
     return value
 
 
-__all__ = ["MessageMeasurement", "MessageStream", "clock_offset_ms"]
+def _sequence_number(value: object) -> int | None:
+    sequence = _optional_int(value)
+    if sequence is None or sequence < 0 or sequence == RMW_UNSUPPORTED_SEQUENCE_NUMBER:
+        return None
+    return sequence
+
+
+__all__ = [
+    "MessageMeasurement",
+    "MessageStream",
+    "source_to_reception_latency_ms",
+]

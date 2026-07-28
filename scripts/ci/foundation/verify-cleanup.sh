@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=scripts/ci/foundation/lib.sh
 source "${script_dir}/lib.sh"
 
-run_id="${GITHUB_RUN_ID:-local}"
+run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 
 while IFS= read -r project; do

@@ -1,0 +1,35 @@
+---
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  resource/run:
+    attributes:
+      - key: run.id
+        value: ${env:ROBOTICS_RUN_ID}
+        action: upsert
+      - key: domain.id
+        value: ${env:ROBOTICS_DOMAIN_ID}
+        action: upsert
+      - key: service.namespace
+        value: robotics-runtime
+        action: insert
+  batch:
+    timeout: 100ms
+    send_batch_size: 64
+
+exporters:
+  file/traces:
+    path: ${env:ROBOTICS_TRACE_FILE}
+    format: json
+    flush_interval: 100ms
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resource/run, batch]
+      exporters: [file/traces]

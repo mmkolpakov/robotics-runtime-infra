@@ -1,0 +1,29 @@
+---
+x-foundation-fastdds: &foundation-fastdds
+  environment:
+    FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
+    RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+  volumes:
+    - type: bind
+      source: ./config/fastdds/udp-only.xml
+      target: /etc/robotics/fastdds/udp-only.xml
+      read_only: true
+
+services:
+  simulation:
+    <<: *foundation-fastdds
+
+  recorder:
+    <<: *foundation-fastdds
+
+  acceptance-observer:
+    <<: *foundation-fastdds
+
+  runtime-manifest:
+    <<: *foundation-fastdds
+
+  runtime-probe-publisher:
+    <<: *foundation-fastdds
+
+  runtime-metrics:
+    <<: *foundation-fastdds

@@ -1,5 +1,5 @@
 ---
-schema_version: acceptance-scenario.v3
+schema_version: acceptance-scenario.v4
 scenario_id: org.example.runtime-infra.stepped-smoke
 execution:
   target_environment: simulation
@@ -46,9 +46,9 @@ time_policy:
   step_size_sec: 0.001
   max_skipped_steps: 0
   time_authority_min_samples: 30
-  max_clock_offset_p50_ms: 1
-  max_clock_offset_p95_ms: 2
-  max_clock_offset_ms: 5
+  max_time_authority_delivery_latency_p50_ms: 1
+  max_time_authority_delivery_latency_p95_ms: 2
+  max_time_authority_delivery_latency_ms: 5
 data_plane_policy:
   max_message_age_ms: 100
   max_loss_ratio: 0

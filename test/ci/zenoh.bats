@@ -3,8 +3,8 @@
 setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   COMPOSE_FILE="${REPOSITORY_ROOT}/compose.zenoh.yaml"
-  REPORT_FILTER="${REPOSITORY_ROOT}/config/zenoh/channel-observation.jq"
   RUNNER="${REPOSITORY_ROOT}/test/zenoh/run"
+  FOUNDATION_VALIDATION="${REPOSITORY_ROOT}/scripts/ci/foundation/validate-foundation.sh"
 }
 
 @test "Zenoh bridges allow the typed Trace Context topic" {
@@ -41,32 +41,37 @@ setup() {
   [[ "${output}" == *"ROS_DISTRO: jazzy"* ]]
 }
 
-@test "Zenoh report filter is executable and enforces the delivery threshold" {
-  run jq -n \
-    --arg message_type robotics_observability_msgs/msg/TraceContext \
-    --arg traceparent 00-0123456789abcdef0123456789abcdef-0123456789abcdef-01 \
-    --arg tracestate runtime=zenoh \
-    --argjson sent 20 \
-    --argjson received 20 \
-    --argjson states 20 \
-    --argjson minimum 10 \
-    -f "${REPORT_FILTER}"
+@test "Zenoh runner isolates Compose and report state" {
+  run grep -F \
+    'readonly project_name="robotics-zenoh-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}-${RANDOM}"' \
+    "${RUNNER}"
   [ "${status}" -eq 0 ]
+  run grep -F \
+    'readonly report_dir="${report_root}/${project_name}"' \
+    "${RUNNER}"
+  [ "${status}" -eq 0 ]
+  run grep -E -- '--remove-orphans|rm -rf' "${RUNNER}"
+  [ "${status}" -eq 1 ]
+}
 
-  run jq -e '.status == "passed"' <<<"${output}"
+@test "Zenoh transport qualification has one canonical evaluator and a zero-loss policy" {
+  run grep -F 'robotics-acceptance transport-evaluate' "${COMPOSE_FILE}"
   [ "${status}" -eq 0 ]
-
-  run jq -n \
-    --arg message_type robotics_observability_msgs/msg/TraceContext \
-    --arg traceparent 00-0123456789abcdef0123456789abcdef-0123456789abcdef-01 \
-    --arg tracestate runtime=zenoh \
-    --argjson sent 20 \
-    --argjson received 9 \
-    --argjson states 9 \
-    --argjson minimum 10 \
-    -f "${REPORT_FILTER}"
+  run grep -F '"max_loss_ratio": 0' \
+    "${REPOSITORY_ROOT}/test/zenoh/prepare_qualification.py"
   [ "${status}" -eq 0 ]
-
-  run jq -e '.status == "failed"' <<<"${output}"
+  run grep -F \
+    'test/zenoh/test_transport_qualification.py' \
+    "${FOUNDATION_VALIDATION}"
   [ "${status}" -eq 0 ]
+  run grep -F '.schema_version == "transport-qualification-result.v1"' "${RUNNER}"
+  [ "${status}" -eq 0 ]
+  run grep -F '.verdict.status == "passed"' "${RUNNER}"
+  [ "${status}" -eq 0 ]
+  run grep -E \
+    'acceptance-scenario|acceptance-run|build_acceptance_result|per_domain_result|gazebo_physics' \
+    "${REPOSITORY_ROOT}/test/zenoh/prepare_qualification.py"
+  [ "${status}" -eq 1 ]
+  [ ! -e "${REPOSITORY_ROOT}/config/zenoh/acceptance-scenario.json" ]
+  [ ! -e "${REPOSITORY_ROOT}/config/zenoh/channel-observation.jq" ]
 }

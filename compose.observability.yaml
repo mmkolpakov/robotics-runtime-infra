@@ -85,6 +85,6 @@ services:
         source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
         target: /evidence
     ports:
-      - "127.0.0.1:${ROBOTICS_OTLP_GRPC_PORT:-4317}:4317"
-      - "127.0.0.1:${ROBOTICS_OTLP_HTTP_PORT:-4318}:4318"
-      - "127.0.0.1:${ROBOTICS_OTEL_HEALTH_PORT:-13133}:13133"
+      - "127.0.0.1:${ROBOTICS_OTLP_GRPC_PORT:-}:4317"
+      - "127.0.0.1:${ROBOTICS_OTLP_HTTP_PORT:-}:4318"
+      - "127.0.0.1:${ROBOTICS_OTEL_HEALTH_PORT:-}:13133"

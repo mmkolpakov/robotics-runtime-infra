@@ -3,8 +3,11 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly root
-readonly report_dir="${ROBOTICS_ZENOH_REPORT_DIR:-${root}/artifacts/zenoh}"
-readonly project_name="${COMPOSE_PROJECT_NAME:-robotics-zenoh-$RANDOM}"
+run_id="${ROBOTICS_RUN_ID:-run-$(python3 -c 'import uuid; print(uuid.uuid4())')}"
+readonly run_id
+readonly project_name="robotics-zenoh-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}-${RANDOM}"
+readonly report_root="${ROBOTICS_ZENOH_REPORT_ROOT:-${root}/artifacts/zenoh}"
+readonly report_dir="${report_root}/${project_name}"
 readonly compose=(
   docker compose
   --project-name "${project_name}"
@@ -14,34 +17,58 @@ readonly compose=(
 )
 
 cleanup() {
-  "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+  "${compose[@]}" down --volumes --timeout 10 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-rm -rf "${report_dir}"
-mkdir -p "${report_dir}"
-export ROBOTICS_ZENOH_REPORT_DIR="${report_dir}"
+mkdir -p "${report_root}"
+mkdir "${report_dir}"
+mkdir -p \
+  "${report_dir}/qualification/observations" \
+  "${report_dir}/destination" \
+  "${report_dir}/source"
 export ROBOTICS_HOST_UID="${ROBOTICS_HOST_UID:-$(id -u)}"
 export ROBOTICS_HOST_GID="${ROBOTICS_HOST_GID:-$(id -g)}"
+export ROBOTICS_MESSAGE_COUNT=20
+export ROBOTICS_RUN_ID="${run_id}"
+export ROBOTICS_ZENOH_REPORT_DIR="${report_dir}"
 
 "${compose[@]}" config --quiet
-"${compose[@]}" up \
-  --abort-on-container-exit \
-  --exit-code-from zenoh-subscriber \
+"${compose[@]}" up --detach \
   zenoh-source-plane \
   zenoh-destination-plane \
   zenoh-source-bridge \
   zenoh-destination-bridge \
-  zenoh-subscriber \
-  zenoh-publisher
+  zenoh-source-otel \
+  zenoh-destination-otel \
+  zenoh-subscriber
+
+subscriber_id="$("${compose[@]}" ps --quiet zenoh-subscriber)"
+test -n "${subscriber_id}"
+"${compose[@]}" run --rm --no-deps zenoh-publisher
+subscriber_status="$(docker container wait "${subscriber_id}")"
+test "${subscriber_status}" -eq 0
+"${compose[@]}" run --rm --no-deps zenoh-evaluator
 
 jq -e '
-  .status == "passed"
-  and .source_domain_id == 31
-  and .destination_domain_id == 32
-  and .message_type == "robotics_observability_msgs/msg/TraceContext"
-  and .expected_traceparent == "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
-  and .expected_tracestate == "runtime=zenoh"
-  and .received_messages >= .minimum_messages
-  and .matched_tracestate_messages == .received_messages
-' "${report_dir}/channel-observation.json" >/dev/null
+  .schema_version == "transport-qualification-result.v1"
+  and .verdict.status == "passed"
+  and .verdict.chain_count == 1
+  and .verdict.passed_chain_count == 1
+  and .causal_chains[0].status == "passed"
+  and (.trace_evidence | length) == 2
+  and (.channel_observations | length) == 1
+' "${report_dir}/qualification/transport-qualification.json" >/dev/null
+
+jq -e '
+  .schema_version == "zenoh-channel-observation.v1"
+  and .channel_id == "zenoh.trace-context"
+  and .sent_count == 20
+  and .received_count == 20
+  and .lost_count == 0
+  and .duplicate_count == 0
+  and .out_of_order_count == 0
+  and .loss_ratio == 0
+  and .status == "passed"
+  and (.violations | length) == 0
+' "${report_dir}/qualification/observations/zenoh.trace-context.json" >/dev/null

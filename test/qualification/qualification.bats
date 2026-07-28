@@ -205,6 +205,63 @@ verify_bundle() {
   [[ "$output" == *"one or more documents do not satisfy"* ]]
 }
 
+@test "rejects an unretained Fast DDS profile referenced by a runtime manifest" {
+  mapfile -t args < <(artifact_arguments)
+  jq \
+    '.data_plane.fastdds_profile_sha256 =
+      "0000000000000000000000000000000000000000000000000000000000000000"' \
+    "$TEST_ROOT/artifacts/runtime.json" \
+    >"$TEST_ROOT/artifacts/runtime.with-profile.json"
+  mv "$TEST_ROOT/artifacts/runtime.with-profile.json" \
+    "$TEST_ROOT/artifacts/runtime.json"
+
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    "${args[@]}" --output "$TEST_ROOT/artifacts/missing-profile-statement.json"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"references an absent Fast DDS profile"* ]]
+}
+
+@test "binds a runtime manifest to retained Fast DDS profile bytes" {
+  local profile="$REPOSITORY_ROOT/config/fastdds/udp-only.xml"
+  local profile_sha256
+  profile_sha256="$(sha256 "$profile")"
+  jq --arg digest "$profile_sha256" \
+    '.data_plane.fastdds_profile_sha256 = $digest' \
+    "$TEST_ROOT/artifacts/runtime.json" \
+    >"$TEST_ROOT/artifacts/runtime.with-profile.json"
+  mv "$TEST_ROOT/artifacts/runtime.with-profile.json" \
+    "$TEST_ROOT/artifacts/runtime.json"
+  jq --arg digest "$(sha256 "$TEST_ROOT/artifacts/runtime.json")" \
+    '.runtime_manifest_sha256 = $digest' \
+    "$TEST_ROOT/artifacts/result.json" \
+    >"$TEST_ROOT/artifacts/result.with-runtime.json"
+  mv "$TEST_ROOT/artifacts/result.with-runtime.json" \
+    "$TEST_ROOT/artifacts/result.json"
+  jq --arg digest "$(sha256 "$TEST_ROOT/artifacts/result.json")" \
+    '.per_domain_results[0].result_sha256 = $digest' \
+    "$TEST_ROOT/artifacts/aggregate.json" \
+    >"$TEST_ROOT/artifacts/aggregate.with-result.json"
+  mv "$TEST_ROOT/artifacts/aggregate.with-result.json" \
+    "$TEST_ROOT/artifacts/aggregate.json"
+  mapfile -t args < <(artifact_arguments)
+
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    "${args[@]}" \
+    --evidence "other_evidence:fastdds-profile.xml=$profile" \
+    --output "$TEST_ROOT/artifacts/profile-bound-statement.json"
+
+  [ "$status" -eq 0 ]
+  run jq -e --arg digest "$profile_sha256" '
+    any(
+      .subject[];
+      .name == "evidence/fastdds-profile.xml" and
+      .digest.sha256 == $digest
+    )
+  ' "$TEST_ROOT/artifacts/profile-bound-statement.json"
+  [ "$status" -eq 0 ]
+}
+
 @test "rejects a locally tampered subject after signature verification" {
   create_statement_and_bundle
   printf '{"diagnostics":"tampered"}\n' >"$TEST_ROOT/artifacts/diagnostics.json"

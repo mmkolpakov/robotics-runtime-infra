@@ -27,5 +27,10 @@ uv pip install \
     --robotics-runtime "${root}/foundation/runtime-manifest.yaml" \
     --junitxml "${root}/artifacts/harness.xml"
 )
+dependencies/robotics-acceptance-harness/.venv/bin/pytest \
+  test/zenoh/test_transport_qualification.py \
+  --junitxml "${root}/artifacts/zenoh-transport-qualification.xml"
 ROBOTICS_CONTRACTS_CLI="${contracts_dir}/.venv/bin/robotics-contracts" \
   bats test/qualification/qualification.bats
+ROBOTICS_CONTRACTS_CLI="${contracts_dir}/.venv/bin/robotics-contracts" \
+  bash test/qualification/real-cosign.sh

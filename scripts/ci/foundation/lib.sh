@@ -15,6 +15,29 @@ foundation_require_env() {
   done
 }
 
+foundation_run_id() {
+  if [[ -n "${ROBOTICS_FOUNDATION_RUN_ID:-}" ]]; then
+    printf '%s\n' "${ROBOTICS_FOUNDATION_RUN_ID}"
+  elif [[ -n "${GITHUB_RUN_ID:-}" ]]; then
+    printf '%s\n' "${GITHUB_RUN_ID}"
+  else
+    printf 'local-%s\n' "$$"
+  fi
+}
+
+foundation_artifact_dir() {
+  local root="$1"
+  local project="$2"
+
+  if [[ -n "${ROBOTICS_FOUNDATION_ARTIFACT_DIR:-}" ]]; then
+    printf '%s\n' "${ROBOTICS_FOUNDATION_ARTIFACT_DIR}"
+  elif [[ -n "${GITHUB_RUN_ID:-}" ]]; then
+    printf '%s/artifacts\n' "${root}"
+  else
+    printf '%s/artifacts/%s\n' "${root}" "${project}"
+  fi
+}
+
 foundation_project_name() {
   local kind="$1"
   local run_id="$2"

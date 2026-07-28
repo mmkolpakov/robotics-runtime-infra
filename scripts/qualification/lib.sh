@@ -35,7 +35,7 @@ qualification_resolve_contracts_cli() {
     QUALIFICATION_CONTRACTS_CLI="$PWD/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
   else
     qualification_fail \
-      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.9.1 or newer'
+      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.10.0 or newer'
   fi
 }
 
@@ -198,6 +198,7 @@ qualification_validate_links() {
   local result_domain_id
   local result_sha256
   local runtime_sha256
+  local fastdds_profile_sha256
   local result_domains
   local run_domains
   local runtime_domains
@@ -216,7 +217,7 @@ qualification_validate_links() {
 
   scenario_schema="$(yq -er '.schema_version' "$scenario_path")"
   case "$scenario_schema" in
-    acceptance-scenario.v1 | acceptance-scenario.v2 | acceptance-scenario.v3) ;;
+    acceptance-scenario.v4) ;;
     *) qualification_fail "unsupported scenario contract: $scenario_schema" ;;
   esac
   [[ "$(jq -er '.schema_version' "$acceptance_run_path")" == acceptance-run.v1 ]] ||
@@ -285,6 +286,17 @@ qualification_validate_links() {
     [[ "$(jq -er '.schema_version' "$QUALIFICATION_PATH")" == runtime-manifest.v1 ]] ||
       qualification_fail \
         "runtime manifest $QUALIFICATION_LABEL must declare runtime-manifest.v1"
+    fastdds_profile_sha256="$(
+      jq -r '.data_plane.fastdds_profile_sha256 // empty' "$QUALIFICATION_PATH"
+    )"
+    if [[ -n "$fastdds_profile_sha256" ]] &&
+      ! awk -F '\t' -v digest="$fastdds_profile_sha256" '
+        $1 == "other_evidence" && $3 == digest { found = 1 }
+        END { exit(found ? 0 : 1) }
+      ' "$work/paths.tsv"; then
+      qualification_fail \
+        "runtime manifest $QUALIFICATION_LABEL references an absent Fast DDS profile: $fastdds_profile_sha256"
+    fi
     jq -cn --arg value "$QUALIFICATION_LABEL" '$value' >>"$work/runtime-domains.ndjson"
     jq -cn --arg value "$(qualification_sha256 "$QUALIFICATION_PATH")" '$value' \
       >>"$work/runtime-digests.ndjson"
@@ -295,8 +307,8 @@ qualification_validate_links() {
     qualification_parse_named_file "$specification"
     label="$QUALIFICATION_LABEL"
     path="$QUALIFICATION_PATH"
-    [[ "$(jq -er '.schema_version' "$path")" == acceptance-result.v3 ]] ||
-      qualification_fail "result $label must declare acceptance-result.v3"
+    [[ "$(jq -er '.schema_version' "$path")" == acceptance-result.v4 ]] ||
+      qualification_fail "result $label must declare acceptance-result.v4"
     result_run_id="$(jq -er '.run_id' "$path")"
     result_domain_id="$(jq -er '.domain_id' "$path")"
     [[ "$result_run_id" == "$run_id" ]] ||

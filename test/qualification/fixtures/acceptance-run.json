@@ -3,7 +3,7 @@
   "run_id": "run-c7e6898d-0266-4dde-aed8-7c194eaf241a",
   "created_at": "2026-07-27T07:25:44Z",
   "scenario_id": "org.example.runtime-infra.stepped-smoke",
-  "scenario_sha256": "3269ecbd438c2ee49a7beecd9b329ebdd2f16d6c057570aadb2ced561e51057f",
+  "scenario_sha256": "2cc93d80ee35ddc1be8e53533f323c3bd65de2920267da185806f8fd13753118",
   "time_authority": {
     "kind": "sim_clock",
     "source_id": "gazebo-clock"

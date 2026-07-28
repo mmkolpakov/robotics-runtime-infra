@@ -169,8 +169,8 @@
   "run_id": "run-c7e6898d-0266-4dde-aed8-7c194eaf241a",
   "runtime_manifest_sha256": "5f3b4bc67fe0df78c09eeb47ab432c45f3dd04348689a122374a4d8ed6c2d7f0",
   "scenario_id": "org.example.runtime-infra.stepped-smoke",
-  "scenario_sha256": "3269ecbd438c2ee49a7beecd9b329ebdd2f16d6c057570aadb2ced561e51057f",
-  "schema_version": "acceptance-result.v3",
+  "scenario_sha256": "2cc93d80ee35ddc1be8e53533f323c3bd65de2920267da185806f8fd13753118",
+  "schema_version": "acceptance-result.v4",
   "shutdown": {
     "evidence_index_finalized": true,
     "observer_detached": true,
@@ -180,9 +180,9 @@
   "status": "passed",
   "time_authority_observation": {
     "evidence_sha256": "cd3fd17ea2685562e3f105de4aa1d995dad1be2b3f06da568a695173dbe53100",
-    "max_offset_ms": 0.0,
-    "p50_offset_ms": 0.0,
-    "p95_offset_ms": 0.0,
+    "max_delivery_latency_ms": 0.0,
+    "p50_delivery_latency_ms": 0.0,
+    "p95_delivery_latency_ms": 0.0,
     "sample_count": 150,
     "source_id": "gazebo-clock",
     "window_end_ns": 1785137180914881202,

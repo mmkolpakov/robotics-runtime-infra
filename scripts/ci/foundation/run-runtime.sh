@@ -7,15 +7,15 @@ source "${script_dir}/lib.sh"
 
 root="$(foundation_repository_root)"
 cd "${root}"
-mkdir -p artifacts/test-results
-
-run_id="${GITHUB_RUN_ID:-local}"
+run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 project="$(foundation_project_name runtime "${run_id}" "${run_attempt}")"
+artifact_dir="$(foundation_artifact_dir "${root}" "${project}")"
+mkdir -p "${artifact_dir}/test-results"
 
 cleanup() {
   foundation_compose_cleanup \
-    artifacts/foundation-runtime.log \
+    "${artifact_dir}/foundation-runtime.log" \
     docker compose -p "${project}" --profile test
 }
 trap cleanup EXIT
@@ -32,7 +32,7 @@ status=$?
 set -e
 docker cp \
   "${test_container}:/opt/robotics_ws/build/robotics_runtime_infra/test_results/." \
-  artifacts/test-results/
+  "${artifact_dir}/test-results/"
 docker rm "${test_container}"
 
 cleanup
