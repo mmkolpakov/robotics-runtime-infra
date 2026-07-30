@@ -78,11 +78,15 @@ EOF
   [ "${status}" -eq 1 ]
 }
 
-@test "workflow path filters include the Zenoh transport qualification implementation" {
-  run grep -c 'test/zenoh/\*\*' "${WORKFLOW}"
-
+@test "required workflow reports a check for every pull request and main push" {
+  run grep -E '^  pull_request:$' "${WORKFLOW}"
   [ "${status}" -eq 0 ]
-  [ "${output}" -eq 2 ]
+
+  run grep -E '^  push:$' "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+
+  run grep -E '^[[:space:]]+paths:' "${WORKFLOW}"
+  [ "${status}" -eq 1 ]
 }
 
 @test "acceptance phase retains measured telemetry evidence and aggregation" {
