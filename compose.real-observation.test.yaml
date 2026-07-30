@@ -1,0 +1,107 @@
+---
+x-real-observation-test-runtime: &real-observation-test-runtime
+  image: "${BENCHMARK_IMAGE:-local/robotics-runtime-infra/benchmark:dev}"
+  init: true
+  network_mode: service:edge-attach-data-plane
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 10s
+  tmpfs:
+    - /tmp:mode=1777
+  healthcheck:
+    disable: true
+  depends_on:
+    edge-attach-data-plane:
+      condition: service_started
+
+x-real-observation-test-environment: &real-observation-test-environment
+  FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
+  RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+  RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  ROS_AUTOMATIC_DISCOVERY_RANGE: SUBNET
+  ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+  ROS_LOG_DIR: /tmp/ros-logs
+
+services:
+  physical-permit-preflight:
+    command:
+      - authorize-offline-test
+      - /authorization/execution-permit.json
+      - /authorization/execution-statement.json
+      - /authorization/operator.sigstore.json
+      - /authorization/approver.sigstore.json
+      - /test-keys
+      - /authorization/trust-policy.json
+      - /authorization/execution-request.json
+      - /nonces
+      - /output/execution-verification.json
+      # yamllint disable-line rule:line-length
+      - "${ROBOTICS_COSIGN_IMAGE_DIGEST:?set ROBOTICS_COSIGN_IMAGE_DIGEST to the immutable permit-preflight image digest}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_TEST_KEY_DIR:?set ROBOTICS_TEST_KEY_DIR for the synthetic authorization test}"
+        target: /test-keys
+        read_only: true
+
+  real-observation-test-source:
+    <<: *real-observation-test-runtime
+    profiles: [real-observation-test]
+    command:
+      - ros2
+      - run
+      - demo_nodes_cpp
+      - talker
+      - --ros-args
+      - --enclave
+      - /robotics/telemetry_source
+      - --remap
+      - __node:=robotics_telemetry_source
+      - --remap
+      - chatter:=/robotics/telemetry
+    environment:
+      <<: *real-observation-test-environment
+      ROS_SECURITY_ENABLE: "true"
+      ROS_SECURITY_ENCLAVE_OVERRIDE: /robotics/telemetry_source
+      ROS_SECURITY_KEYSTORE: /security
+      ROS_SECURITY_STRATEGY: Enforce
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/robotics/telemetry_source"
+        target: /security/enclaves/robotics/telemetry_source
+        read_only: true
+
+  real-observation-test-unsecured-source:
+    <<: *real-observation-test-runtime
+    profiles: [real-observation-test-negative]
+    command:
+      - ros2
+      - run
+      - demo_nodes_cpp
+      - talker
+      - --ros-args
+      - --remap
+      - __node:=unsecured_telemetry_source
+      - --remap
+      - chatter:=/robotics/telemetry
+    environment: *real-observation-test-environment
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true

@@ -1,0 +1,28 @@
+{
+  "schema_version": "physical-attach-evidence.v1",
+  "checked_at": "",
+  "identity": {
+    "kind": "x509_spki",
+    "scope": "ci_synthetic_sros2_target",
+    "hardware_identity_verified": false,
+    "sha256": "",
+    "certificate_sha256": ""
+  },
+  "serial": {
+    "transport": "pty",
+    "bidirectional_exchange": true,
+    "host_device": "",
+    "target_device": ""
+  },
+  "can": {
+    "interface": "",
+    "ifindex": 0,
+    "receive_only_gateway": true
+  },
+  "time": {
+    "evidence_sha256": "",
+    "window_sha256": "",
+    "window_run_id": "",
+    "within_policy": true
+  }
+}

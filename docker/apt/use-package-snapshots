@@ -8,19 +8,50 @@ fi
 
 : "${UBUNTU_SNAPSHOT:?UBUNTU_SNAPSHOT is required}"
 
-ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
-if [[ ! -f ${ubuntu_sources} ]]; then
-  printf 'Ubuntu apt source not found: %s\n' "${ubuntu_sources}" >&2
+if [[ ! ${UBUNTU_SNAPSHOT} =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
+  printf 'Invalid Ubuntu snapshot ID: %s\n' "${UBUNTU_SNAPSHOT}" >&2
   exit 1
 fi
 
-snapshot_uri="https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/"
-sed -i -E \
-  -e "s#https?://archive.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
-  -e "s#https?://security.ubuntu.com/ubuntu/#${snapshot_uri}#g" \
-  -e "s#https?://ports.ubuntu.com/ubuntu-ports/#${snapshot_uri}#g" \
-  "${ubuntu_sources}"
-test "$(grep -Fc "${snapshot_uri}" "${ubuntu_sources}")" -eq 2
+ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
+ubuntu_archive_key=/usr/share/keyrings/ubuntu-archive-keyring.gpg
+snapshot_config=/etc/apt/apt.conf.d/50robotics-snapshot
+architecture="$(dpkg --print-architecture)"
+
+case "${architecture}" in
+  amd64|arm64) ;;
+  *)
+    printf 'Unsupported Ubuntu snapshot architecture: %s\n' "${architecture}" >&2
+    exit 1
+    ;;
+esac
+
+if [[ ! -f ${ubuntu_sources} ]]; then
+  printf 'Ubuntu deb822 source not found: %s\n' "${ubuntu_sources}" >&2
+  exit 1
+fi
+
+if [[ ! -r ${ubuntu_archive_key} ]]; then
+  printf 'Ubuntu archive key not found: %s\n' "${ubuntu_archive_key}" >&2
+  exit 1
+fi
+
+cat > "${ubuntu_sources}" <<EOF
+Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}
+Suites: noble noble-updates noble-backports noble-security
+Components: main universe restricted multiverse
+Architectures: ${architecture}
+Signed-By: ${ubuntu_archive_key}
+EOF
+
+printf 'APT::Update::Error-Mode "any";\nAcquire::Retries "3";\n' \
+  > "${snapshot_config}"
+grep -Fx "URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}" \
+  "${ubuntu_sources}" > /dev/null
+grep -Fx "Architectures: ${architecture}" "${ubuntu_sources}" > /dev/null
+apt-config dump | grep -Fx 'APT::Update::Error-Mode "any";' > /dev/null
+apt-config dump | grep -Fx 'Acquire::Retries "3";' > /dev/null
 
 if [[ -z ${ROS_SNAPSHOT:-} ]]; then
   exit 0

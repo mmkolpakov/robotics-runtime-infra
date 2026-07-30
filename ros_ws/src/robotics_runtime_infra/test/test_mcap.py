@@ -59,7 +59,10 @@ class TestMcap(unittest.TestCase):
                 )
                 try:
                     deadline = time.monotonic() + 15
-                    while publisher.get_subscription_count() == 0 and time.monotonic() < deadline:
+                    while (
+                        publisher.get_subscription_count() == 0
+                        and time.monotonic() < deadline
+                    ):
                         rclpy.spin_once(publisher_node, timeout_sec=0.1)
                     self.assertGreater(publisher.get_subscription_count(), 0)
                     for _ in range(20):

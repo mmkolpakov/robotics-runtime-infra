@@ -1,0 +1,10 @@
+{
+  "model_artifact_wrong_hardware": {
+    "observations": {
+      "hardware": {
+        "device_family": "rk3568-npu",
+        "soc": "rk3568"
+      }
+    }
+  }
+}

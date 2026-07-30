@@ -1,0 +1,245 @@
+---
+x-zenoh-probe: &zenoh-probe
+  image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
+  user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [zenoh]
+  environment:
+    HOME: /tmp
+    PYTHONUNBUFFERED: "1"
+    RCUTILS_COLORIZED_OUTPUT: "0"
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ROBOTICS_MESSAGE_COUNT: "20"
+    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+    ROBOTICS_TOPIC: /robotics/trace_context
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+  volumes:
+    - type: bind
+      source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
+      target: /reports
+    - type: bind
+      source: ./test/zenoh
+      target: /opt/robotics/zenoh
+      read_only: true
+  healthcheck:
+    disable: true
+
+x-zenoh-bridge: &zenoh-bridge
+  image: >-
+    eclipse/zenoh-bridge-ros2dds:1.9.0@sha256:5aca6798ae112e390a97788450fd37360ddd72ac092032a25acf9fac17b2d9af
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [zenoh]
+  environment:
+    ROS_DISTRO: jazzy
+  volumes:
+    - type: bind
+      source: ./config/zenoh
+      target: /etc/robotics/zenoh
+      read_only: true
+  healthcheck:
+    disable: true
+
+x-zenoh-otel: &zenoh-otel
+  image: >-
+    otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+  user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
+  command: [--config=/etc/robotics/zenoh/otel-collector.yaml]
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [zenoh]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=32m
+  volumes:
+    - type: bind
+      source: ./config/zenoh
+      target: /etc/robotics/zenoh
+      read_only: true
+    - type: bind
+      source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
+      target: /reports
+  healthcheck:
+    disable: true
+
+services:
+  zenoh-source-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [zenoh]
+    networks: [zenoh-backbone]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  zenoh-destination-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [zenoh]
+    networks: [zenoh-backbone]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  zenoh-source-bridge:
+    <<: *zenoh-bridge
+    network_mode: service:zenoh-source-plane
+    command: [-c, /etc/robotics/zenoh/source.json5]
+    depends_on:
+      zenoh-source-plane:
+        condition: service_started
+
+  zenoh-destination-bridge:
+    <<: *zenoh-bridge
+    network_mode: service:zenoh-destination-plane
+    command: [-c, /etc/robotics/zenoh/destination.json5]
+    depends_on:
+      zenoh-destination-plane:
+        condition: service_started
+      zenoh-source-bridge:
+        condition: service_started
+
+  zenoh-source-otel:
+    <<: *zenoh-otel
+    network_mode: service:zenoh-source-plane
+    environment:
+      ROBOTICS_DOMAIN_ID: zenoh-source
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_TRACE_FILE: /reports/source/traces.otlp.jsonl
+    depends_on:
+      zenoh-source-plane:
+        condition: service_started
+
+  zenoh-destination-otel:
+    <<: *zenoh-otel
+    network_mode: service:zenoh-destination-plane
+    environment:
+      ROBOTICS_DOMAIN_ID: zenoh-destination
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_TRACE_FILE: /reports/destination/traces.otlp.jsonl
+    depends_on:
+      zenoh-destination-plane:
+        condition: service_started
+
+  zenoh-subscriber:
+    <<: *zenoh-probe
+    network_mode: service:zenoh-destination-plane
+    environment:
+      HOME: /tmp
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      PYTHONUNBUFFERED: "1"
+      RCUTILS_COLORIZED_OUTPUT: "0"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROBOTICS_DOMAIN_ID: zenoh-destination
+      ROBOTICS_MESSAGE_COUNT: "20"
+      ROBOTICS_OBSERVATION_PATH: /reports/destination/probe.json
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_TOPIC: /robotics/trace_context
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_DOMAIN_ID: "32"
+    command:
+      - python3
+      - /opt/robotics/zenoh/probe.py
+      - subscribe
+    depends_on:
+      zenoh-destination-bridge:
+        condition: service_started
+      zenoh-destination-otel:
+        condition: service_started
+
+  zenoh-publisher:
+    <<: *zenoh-probe
+    network_mode: service:zenoh-source-plane
+    environment:
+      HOME: /tmp
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      PYTHONUNBUFFERED: "1"
+      RCUTILS_COLORIZED_OUTPUT: "0"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROBOTICS_DOMAIN_ID: zenoh-source
+      ROBOTICS_MESSAGE_COUNT: "20"
+      ROBOTICS_OBSERVATION_PATH: /reports/source/probe.json
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_TOPIC: /robotics/trace_context
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_DOMAIN_ID: "31"
+    command:
+      - python3
+      - /opt/robotics/zenoh/probe.py
+      - publish
+    depends_on:
+      zenoh-source-bridge:
+        condition: service_started
+      zenoh-source-otel:
+        condition: service_started
+      zenoh-subscriber:
+        condition: service_started
+
+  zenoh-evaluator:
+    image: "${OBSERVER_IMAGE:-local/robotics-runtime-infra/acceptance-observer:dev}"
+    user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
+    init: true
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    profiles: [zenoh]
+    environment:
+      HOME: /tmp
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_ZENOH_CONFIG_DIR: /etc/robotics/zenoh
+      ROBOTICS_ZENOH_REPORT_DIR: /reports
+    command:
+      - bash
+      - -euo
+      - pipefail
+      - -c
+      - |
+        python3 /opt/robotics/zenoh/prepare_qualification.py
+        robotics-acceptance transport-evaluate \
+          --run-id "${ROBOTICS_RUN_ID}" \
+          --causal-chain /reports/qualification/causal-chain.json \
+          --channel-contract /reports/qualification/channel.json \
+          --trace zenoh-source=/reports/source/traces.otlp.jsonl \
+          --trace zenoh-destination=/reports/destination/traces.otlp.jsonl \
+          --evidence-index \
+            zenoh-source=/reports/qualification/source-evidence-index.json \
+          --evidence-index \
+            zenoh-destination=/reports/qualification/destination-evidence-index.json \
+          --observation-output /reports/qualification/observations \
+          --output /reports/qualification/transport-qualification.json
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
+        target: /reports
+      - type: bind
+        source: ./config/zenoh
+        target: /etc/robotics/zenoh
+        read_only: true
+      - type: bind
+        source: ./test/zenoh
+        target: /opt/robotics/zenoh
+        read_only: true
+    healthcheck:
+      disable: true
+
+networks:
+  zenoh-backbone:
+    internal: true

@@ -1,0 +1,79 @@
+{
+  "schema_version": "runtime-manifest.v1",
+  "runtime_id": "org.example.controller-hil-runtime",
+  "generated_at": "2026-07-14T12:00:00Z",
+  "oci_image": {
+    "reference": "ghcr.io/example/robotics-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "components": {
+    "contracts_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "harness_revision": "cccccccccccccccccccccccccccccccccccccccc",
+    "infra_revision": "dddddddddddddddddddddddddddddddddddddddd"
+  },
+  "host": {
+    "os": "ubuntu",
+    "os_version": "24.04",
+    "architecture": "x86_64",
+    "kernel": "6.8.0"
+  },
+  "ros": {
+    "distribution": "jazzy",
+    "rmw_implementation": "rmw_fastrtps_cpp"
+  },
+  "render": {
+    "mode": "none",
+    "renderer": "disabled"
+  },
+  "workload": {
+    "kind": "none"
+  },
+  "execution": {
+    "target_environment": "hil",
+    "data_source": "live_target",
+    "plant_backend": "real_hardware",
+    "time_mode": "hardware_realtime",
+    "data_plane_profile": "standard_isolated"
+  },
+  "authorization": {
+    "mode": "verified_execution_permit",
+    "permit_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "execution_verification_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "trust_policy_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "data_plane": {
+    "rmw_implementation": "rmw_fastrtps_cpp",
+    "ipc_namespace": "private:observer",
+    "network_namespace": "external:robotics-edge-attach",
+    "shm_transport": false,
+    "data_sharing": false,
+    "private_ipc": true
+  },
+  "security": {
+    "profile": "sros2_enforce",
+    "strategy": "Enforce",
+    "enclaves": [
+      "/robotics/observer"
+    ],
+    "policy_digests": [
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    ]
+  },
+  "lifecycle_states": [],
+  "physical_targets": [
+    {
+      "target_id": "controller-alpha",
+      "scope": "controller",
+      "identity_kind": "mavlink_system_component",
+      "identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "preflight_evidence_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "stable_device_path": "/dev/robotics/controller-alpha"
+    }
+  ],
+  "clock": {
+    "basis": "system_time",
+    "sync_protocol": "mavlink_timesync",
+    "offset_ms": 0.5,
+    "drift_ppm": 2
+  }
+}

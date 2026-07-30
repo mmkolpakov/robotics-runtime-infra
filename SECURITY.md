@@ -22,3 +22,13 @@ required.
 Published containers are building blocks, not a physical safety system. HIL,
 real hardware, actuator enablement, host device access, network segmentation,
 and key management require a separate reviewed deployment and safety case.
+
+The acceptance observer is independent from the system under observation. Its
+SROS2 enclave is read-only for product interfaces, uses Enforce mode, and is
+tested to reject command publication. A verdict is not accepted when required
+evidence, target identity, or authorization is missing.
+
+Physical execution authorization binds two independent roles, a target
+identity, scenario digest, image digest, validity window, and nonce. A workload
+identity such as a SPIFFE SVID may authenticate the software process but does
+not replace the physical controller identity or preflight evidence.

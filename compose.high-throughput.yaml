@@ -1,13 +1,15 @@
 ---
+x-high-throughput-environment: &high-throughput-environment
+  FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/high-throughput.xml
+  RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+  ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+
 x-high-throughput: &high-throughput
   ipc: service:data-plane
   network_mode: service:data-plane
-  environment:
-    FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/high-throughput.xml
-    RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
-    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
-    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
-    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+  environment: *high-throughput-environment
   volumes:
     - type: bind
       source: ./config/fastdds
@@ -43,6 +45,7 @@ services:
   runtime-manifest:
     <<: *high-throughput
     environment:
+      <<: *high-throughput-environment
       ROBOTICS_DATA_PLANE_PROFILE: local_high_throughput
       ROBOTICS_DATA_SHARING: "false"
       ROBOTICS_IPC_NAMESPACE: compose:data-plane
@@ -52,7 +55,7 @@ services:
 
   data-plane-probe:
     <<: *high-throughput
-    image: "${EDGE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/edge:0.5.0}"
+    image: "${EDGE_IMAGE:-local/robotics-runtime-infra/edge:dev}"
     profiles: [test]
     init: true
     command:

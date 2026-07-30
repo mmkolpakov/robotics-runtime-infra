@@ -27,7 +27,9 @@ def generate_test_description() -> launch.LaunchDescription:
     )
     return launch.LaunchDescription(
         [
-            launch.actions.SetEnvironmentVariable("GZ_PARTITION", f"joint-{os.getpid()}"),
+            launch.actions.SetEnvironmentVariable(
+                "GZ_PARTITION", f"joint-{os.getpid()}"
+            ),
             launch.actions.IncludeLaunchDescription(
                 launch.launch_description_sources.PythonLaunchDescriptionSource(
                     str(launch_file)
@@ -48,7 +50,9 @@ class TestJointMotion(unittest.TestCase):
             if "slider_joint" in message.name:
                 positions.append(message.position[message.name.index("slider_joint")])
 
-        subscription = node.create_subscription(JointState, "/joint_states", receive, 10)
+        subscription = node.create_subscription(
+            JointState, "/joint_states", receive, 10
+        )
         client = ActionClient(
             node,
             FollowJointTrajectory,
@@ -101,7 +105,9 @@ class TestJointMotion(unittest.TestCase):
             self.assertIsNotNone(result_future.result())
 
             deadline = time.monotonic() + 15
-            while (not positions or abs(positions[-1] - initial) <= 0.1) and time.monotonic() < deadline:
+            while (
+                not positions or abs(positions[-1] - initial) <= 0.1
+            ) and time.monotonic() < deadline:
                 rclpy.spin_once(node, timeout_sec=0.5)
             self.assertGreater(abs(positions[-1] - initial), 0.1)
         finally:

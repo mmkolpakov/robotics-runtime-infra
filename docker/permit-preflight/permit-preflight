@@ -1,0 +1,570 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  permit-preflight versions
+  permit-preflight verify-keyless-attestation STATEMENT BUNDLE TRUSTED_ROOT IDENTITY ISSUER
+  permit-preflight verify-offline-test-attestation STATEMENT BUNDLE PUBLIC_KEY
+  permit-preflight authorize PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUSTED_ROOT TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST
+  permit-preflight authorize-offline-test PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE PUBLIC_KEY_DIR TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST
+  permit-preflight materialize-runtime TEMPLATE PERMIT VERIFICATION TRUST_POLICY OUTPUT
+EOF
+  exit 64
+}
+
+sha256_file() {
+  sha256sum "$1" | awk '{print $1}'
+}
+
+validate_contract() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+from robotics_runtime_contracts import validate_document
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    validate_document(json.load(source))
+PY
+}
+
+assert_json_documents_equal() {
+  left_document="$1"
+  right_document="$2"
+  failure_message="$3"
+  LEFT_DOCUMENT="${left_document}" RIGHT_DOCUMENT="${right_document}" \
+    yq --null-input --exit-status \
+      --from-file /usr/share/robotics-runtime/permit-preflight/json-equal.yq \
+      >/dev/null || {
+    printf '%s\n' "${failure_message}" >&2
+    exit 65
+  }
+}
+
+bundle_integrated_time() {
+  bundle="$1"
+  count="$(yq -r '.verificationMaterial.tlogEntries | length' "${bundle}")"
+  test "${count}" = "1" || {
+    printf 'Sigstore bundle must contain exactly one transparency-log entry: %s\n' \
+      "${bundle}" >&2
+    exit 65
+  }
+  integrated_time="$(
+    yq -r '.verificationMaterial.tlogEntries[0].integratedTime' "${bundle}"
+  )"
+  case "${integrated_time}" in
+    '' | *[!0-9]*)
+      printf 'Sigstore bundle has no numeric integrated time: %s\n' \
+        "${bundle}" >&2
+      exit 65
+      ;;
+  esac
+  printf '%s\n' "${integrated_time}"
+}
+
+trusted_issuer() {
+  role="$1"
+  identity="$2"
+  trust_policy="$3"
+  ROLE="${role}" IDENTITY="${identity}" yq -r '
+    [.principals[] |
+      select(.role == strenv(ROLE) and .identity == strenv(IDENTITY))] |
+    select(length == 1) |
+    .[0].issuer
+  ' "${trust_policy}"
+}
+
+require_file() {
+  test -f "$1" && test -r "$1" || {
+    printf 'required file is not readable: %s\n' "$1" >&2
+    exit 66
+  }
+}
+
+require_private_writable_directory() {
+  directory="$1"
+  purpose="$2"
+  parent="$(dirname "${directory}")"
+  test -d "${parent}" && test ! -L "${parent}" || {
+    printf '%s parent must be an existing non-symlink directory: %s\n' \
+      "${purpose}" "${parent}" >&2
+    exit 73
+  }
+  test "$(stat -c '%u' "${parent}")" != "$(id -u)" &&
+    test -z "$(
+      find "${parent}" -maxdepth 0 -perm /022 -print -quit
+    )" || {
+    printf '%s parent must prevent replacement by the preflight identity: %s\n' \
+      "${purpose}" "${parent}" >&2
+    exit 73
+  }
+  test -d "${directory}" && test ! -L "${directory}" &&
+    test -w "${directory}" || {
+    printf '%s must be an existing writable non-symlink directory: %s\n' \
+      "${purpose}" "${directory}" >&2
+    exit 73
+  }
+  test "$(stat -c '%u' "${directory}")" = "$(id -u)" || {
+    printf '%s must be owned by the preflight identity: %s\n' \
+      "${purpose}" "${directory}" >&2
+    exit 73
+  }
+  test -z "$(
+    find "${directory}" -maxdepth 0 -perm /022 -print -quit
+  )" || {
+    printf '%s must not be writable by group or other: %s\n' \
+      "${purpose}" "${directory}" >&2
+    exit 73
+  }
+}
+
+statement_subject_digest() {
+  statement="$1"
+  digest="$(
+    yq -r '
+      [.subject[] |
+        select(.name == "robotics-scenario") |
+        .digest.sha256] |
+      select(length == 1) |
+      .[0]
+    ' "${statement}"
+  )"
+  case "${digest}" in
+    ????????????????????????????????????????????????????????????????)
+      case "${digest}" in
+        *[!a-f0-9]*) digest= ;;
+      esac
+      ;;
+    *) digest= ;;
+  esac
+  test -n "${digest}" || {
+    printf 'statement must contain one lowercase sha256 robotics-scenario subject\n' >&2
+    exit 65
+  }
+  printf '%s\n' "${digest}"
+}
+
+assert_bundle_statement() (
+  statement="$1"
+  bundle="$2"
+  output="$3"
+  test "$(yq -r '.mediaType' "${bundle}")" = \
+    'application/vnd.dev.sigstore.bundle.v0.3+json' || {
+    printf 'unsupported Sigstore bundle media type: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  test "$(yq -r '.dsseEnvelope.payloadType' "${bundle}")" = \
+    'application/vnd.in-toto+json' || {
+    printf 'Sigstore bundle does not contain an in-toto DSSE envelope: %s\n' \
+      "${bundle}" >&2
+    exit 65
+  }
+  payload="$(yq -r '.dsseEnvelope.payload' "${bundle}")"
+  test -n "${payload}" && test "${payload}" != null || {
+    printf 'Sigstore bundle has no DSSE payload: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  printf '%s' "${payload}" | base64 -d > "${output}" || {
+    printf 'Sigstore bundle has an invalid DSSE payload: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  assert_json_documents_equal \
+    "${statement}" \
+    "${output}" \
+    "verified DSSE statement does not equal the supplied statement"
+  yq -o=json -I=0 '.predicate' "${output}" > "${output}.predicate.json"
+  validate_contract "${output}.predicate.json"
+)
+
+verify_keyless_attestation() {
+  statement="$1"
+  bundle="$2"
+  trusted_root="$3"
+  identity="$4"
+  issuer="$5"
+  decoded_statement="$6"
+  digest="$(statement_subject_digest "${statement}")"
+  predicate_type="$(yq -r '.predicateType' "${statement}")"
+  test "${predicate_type}" = \
+    'https://robotics-runtime-contracts.dev/attestations/execution-permit/v1' || {
+    printf 'statement predicate type is not the execution permit contract\n' >&2
+    exit 65
+  }
+  cosign verify-blob-attestation \
+    --bundle "${bundle}" \
+    --trusted-root "${trusted_root}" \
+    --certificate-identity "${identity}" \
+    --certificate-oidc-issuer "${issuer}" \
+    --digest "${digest}" \
+    --digestAlg sha256 \
+    --type "${predicate_type}"
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+}
+
+verify_offline_attestation() {
+  statement="$1"
+  bundle="$2"
+  public_key="$3"
+  decoded_statement="$4"
+  digest="$(statement_subject_digest "${statement}")"
+  predicate_type="$(yq -r '.predicateType' "${statement}")"
+  cosign verify-blob-attestation \
+    --bundle "${bundle}" \
+    --key "${public_key}" \
+    --insecure-ignore-tlog \
+    --digest "${digest}" \
+    --digestAlg sha256 \
+    --type "${predicate_type}" || {
+    printf 'offline attestation signature verification failed: %s\n' \
+      "${bundle}" >&2
+    exit 65
+  }
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+}
+
+authorize_common() {
+  verification_mode="$1"
+  shift
+  test "$#" -eq 10 || usage
+  permit="$1"
+  statement="$2"
+  operator_bundle="$3"
+  approver_bundle="$4"
+  verification_root="$5"
+  trust_policy="$6"
+  request="$7"
+  nonce_dir="$8"
+  output="$9"
+  cosign_image_digest="${10}"
+  execution_policy=/usr/share/robotics-runtime/policy/execution.rego
+
+  for required in \
+    "${permit}" \
+    "${statement}" \
+    "${operator_bundle}" \
+    "${approver_bundle}" \
+    "${trust_policy}" \
+    "${request}" \
+    "${execution_policy}"; do
+    require_file "${required}"
+  done
+  case "${verification_mode}" in
+    keyless)
+      require_file "${verification_root}"
+      ;;
+    offline-test)
+      test -d "${verification_root}" && test ! -L "${verification_root}" || {
+        printf 'offline verification root must be a non-symlink directory\n' >&2
+        exit 66
+      }
+      require_file "${verification_root}/operator.pub"
+      require_file "${verification_root}/approver.pub"
+      ;;
+    *)
+      printf 'unsupported authorization verification mode: %s\n' \
+        "${verification_mode}" >&2
+      exit 64
+      ;;
+  esac
+  case "${cosign_image_digest}" in
+    sha256:????????????????????????????????????????????????????????????????)
+      ;;
+    *)
+      printf 'Cosign image digest must be an immutable sha256 digest\n' >&2
+      exit 65
+      ;;
+  esac
+  test ! -e "${output}" && test ! -L "${output}" || {
+    printf 'authorization output already exists: %s\n' "${output}" >&2
+    exit 73
+  }
+  output_dir="$(dirname "${output}")"
+  require_private_writable_directory \
+    "${output_dir}" \
+    "authorization output directory"
+  require_private_writable_directory "${nonce_dir}" "nonce store"
+
+  work="$(mktemp -d)"
+  output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
+  trap 'rm -rf "${work}"; rm -f "${output_tmp}"' EXIT HUP INT TERM
+
+  validate_contract "${permit}"
+  yq -o=json -I=0 '.predicate' "${statement}" >"${work}/predicate.json"
+  validate_contract "${work}/predicate.json"
+  assert_json_documents_equal \
+    "${permit}" \
+    "${work}/predicate.json" \
+    "statement predicate does not equal the standalone permit"
+
+  operator_identity="$(yq -r '.operator_id' "${permit}")"
+  approver_identity="$(yq -r '.approver_id' "${permit}")"
+  operator_issuer="$(
+    trusted_issuer operator "${operator_identity}" "${trust_policy}"
+  )"
+  approver_issuer="$(
+    trusted_issuer approver "${approver_identity}" "${trust_policy}"
+  )"
+  test -n "${operator_issuer}" && test -n "${approver_issuer}" || {
+    printf 'permit roles do not resolve to unique trusted principals\n' >&2
+    exit 65
+  }
+
+  case "${verification_mode}" in
+    keyless)
+      verify_keyless_attestation \
+        "${statement}" \
+        "${operator_bundle}" \
+        "${verification_root}" \
+        "${operator_identity}" \
+        "${operator_issuer}" \
+        "${work}/operator-statement.json"
+      verify_keyless_attestation \
+        "${statement}" \
+        "${approver_bundle}" \
+        "${verification_root}" \
+        "${approver_identity}" \
+        "${approver_issuer}" \
+        "${work}/approver-statement.json"
+      ;;
+    offline-test)
+      verify_offline_attestation \
+        "${statement}" \
+        "${operator_bundle}" \
+        "${verification_root}/operator.pub" \
+        "${work}/operator-statement.json"
+      verify_offline_attestation \
+        "${statement}" \
+        "${approver_bundle}" \
+        "${verification_root}/approver.pub" \
+        "${work}/approver-statement.json"
+      ;;
+  esac
+
+  operator_integrated_time="$(bundle_integrated_time "${operator_bundle}")"
+  approver_integrated_time="$(bundle_integrated_time "${approver_bundle}")"
+  permit_sha256="$(sha256_file "${permit}")"
+  statement_sha256="$(sha256_file "${statement}")"
+  policy_sha256="$(sha256_file "${execution_policy}")"
+  trust_policy_sha256="$(sha256_file "${trust_policy}")"
+  operator_bundle_sha256="$(sha256_file "${operator_bundle}")"
+  approver_bundle_sha256="$(sha256_file "${approver_bundle}")"
+  cosign_version="$(
+    cosign version --json | yq -r '.gitVersion | sub("^v"; "")'
+  )"
+
+  export \
+    APPROVER_BUNDLE_SHA256="${approver_bundle_sha256}" \
+    APPROVER_IDENTITY="${approver_identity}" \
+    APPROVER_INTEGRATED_TIME="${approver_integrated_time}" \
+    APPROVER_ISSUER="${approver_issuer}" \
+    COSIGN_IMAGE_DIGEST="${cosign_image_digest}" \
+    COSIGN_VERSION="${cosign_version}" \
+    OPERATOR_BUNDLE_SHA256="${operator_bundle_sha256}" \
+    OPERATOR_IDENTITY="${operator_identity}" \
+    OPERATOR_INTEGRATED_TIME="${operator_integrated_time}" \
+    OPERATOR_ISSUER="${operator_issuer}" \
+    PERMIT_FILE="${permit}" \
+    PERMIT_SHA256="${permit_sha256}" \
+    POLICY_SHA256="${policy_sha256}" \
+    REQUEST_FILE="${request}" \
+    STATEMENT_FILE="${statement}" \
+    STATEMENT_SHA256="${statement_sha256}" \
+    TRUST_POLICY_FILE="${trust_policy}" \
+    TRUST_POLICY_SHA256="${trust_policy_sha256}"
+  yq -n -o=json -I=0 '
+    {
+      "permit": load(strenv(PERMIT_FILE)),
+      "statement": load(strenv(STATEMENT_FILE)),
+      "trust_policy": load(strenv(TRUST_POLICY_FILE)),
+      "request": load(strenv(REQUEST_FILE)),
+      "artifacts": {
+        "permit_sha256": strenv(PERMIT_SHA256),
+        "statement_sha256": strenv(STATEMENT_SHA256),
+        "policy_sha256": strenv(POLICY_SHA256),
+        "trust_policy_sha256": strenv(TRUST_POLICY_SHA256),
+        "cosign_version": strenv(COSIGN_VERSION),
+        "cosign_image_digest": strenv(COSIGN_IMAGE_DIGEST)
+      },
+      "verified_signers": [
+        {
+          "role": "operator",
+          "identity": strenv(OPERATOR_IDENTITY),
+          "issuer": strenv(OPERATOR_ISSUER),
+          "bundle_sha256": strenv(OPERATOR_BUNDLE_SHA256),
+          "integrated_time": env(OPERATOR_INTEGRATED_TIME),
+          "transparency_log_verified": true
+        },
+        {
+          "role": "approver",
+          "identity": strenv(APPROVER_IDENTITY),
+          "issuer": strenv(APPROVER_ISSUER),
+          "bundle_sha256": strenv(APPROVER_BUNDLE_SHA256),
+          "integrated_time": env(APPROVER_INTEGRATED_TIME),
+          "transparency_log_verified": true
+        }
+      ]
+    }
+  ' >"${work}/input.json"
+
+  opa eval \
+    --format raw \
+    --data "${execution_policy}" \
+    --input "${work}/input.json" \
+    data.execution.deny >"${work}/denials.json"
+  if test "$(yq -r 'length' "${work}/denials.json")" -ne 0; then
+    yq -r '.[]' "${work}/denials.json" >&2
+    exit 65
+  fi
+  opa eval \
+    --fail \
+    --format raw \
+    --data "${execution_policy}" \
+    --input "${work}/input.json" \
+    data.execution.verification >"${output_tmp}"
+  test -s "${output_tmp}" || {
+    printf 'execution policy did not produce a verification record\n' >&2
+    exit 65
+  }
+  validate_contract "${output_tmp}"
+
+  nonce="$(yq -r '.nonce' "${permit}")"
+  case "${nonce}" in
+    '' | *[!a-f0-9]*)
+      printf 'permit nonce is not a lowercase hexadecimal value\n' >&2
+      exit 65
+      ;;
+  esac
+  nonce_length="${#nonce}"
+  test "${nonce_length}" -ge 32 && test "${nonce_length}" -le 128 || {
+    printf 'permit nonce length is outside the contract bounds\n' >&2
+    exit 65
+  }
+  umask 077
+  mkdir "${nonce_dir}/${nonce}" || {
+    printf 'permit nonce was already consumed: %s\n' "${nonce}" >&2
+    exit 77
+  }
+  printf '%s\n' "${permit_sha256}" >"${nonce_dir}/${nonce}/permit_sha256"
+  chmod 0444 "${nonce_dir}/${nonce}/permit_sha256"
+  chmod 0444 "${output_tmp}"
+  mv "${output_tmp}" "${output}"
+  output_tmp=
+}
+
+command_name="${1:-}"
+case "${command_name}" in
+  versions)
+    test "$#" -eq 1 || usage
+    cosign version
+    opa version
+    yq --version
+    exec python3 -c \
+      'from importlib.metadata import version; print("robotics-runtime-contracts", version("robotics-runtime-contracts"))'
+    ;;
+  verify-keyless-attestation)
+    test "$#" -eq 6 || usage
+    statement="$2"
+    bundle="$3"
+    trusted_root="$4"
+    identity="$5"
+    issuer="$6"
+    require_file "${statement}"
+    require_file "${bundle}"
+    require_file "${trusted_root}"
+    test -n "${identity}" || usage
+    test -n "${issuer}" || usage
+    work="$(mktemp -d)"
+    trap 'rm -rf "${work}"' EXIT HUP INT TERM
+    verify_keyless_attestation \
+      "${statement}" \
+      "${bundle}" \
+      "${trusted_root}" \
+      "${identity}" \
+      "${issuer}" \
+      "${work}/statement.json"
+    ;;
+  authorize)
+    test "$#" -eq 11 || usage
+    shift
+    authorize_common keyless "$@"
+    ;;
+  authorize-offline-test)
+    test "$#" -eq 11 || usage
+    shift
+    authorize_common offline-test "$@"
+    ;;
+  materialize-runtime)
+    test "$#" -eq 6 || usage
+    template="$2"
+    permit="$3"
+    verification="$4"
+    trust_policy="$5"
+    output="$6"
+
+    for required in \
+      "${template}" \
+      "${permit}" \
+      "${verification}" \
+      "${trust_policy}"; do
+      require_file "${required}"
+    done
+    test ! -e "${output}" && test ! -L "${output}" || {
+      printf 'runtime manifest output already exists: %s\n' "${output}" >&2
+      exit 73
+    }
+    output_dir="$(dirname "${output}")"
+    test -d "${output_dir}" && test -w "${output_dir}" || {
+      printf 'runtime manifest output directory is not writable: %s\n' \
+        "${output_dir}" >&2
+      exit 73
+    }
+
+    validate_contract "${template}"
+    validate_contract "${permit}"
+    validate_contract "${verification}"
+    permit_sha256="$(sha256_file "${permit}")"
+    verification_sha256="$(sha256_file "${verification}")"
+    trust_policy_sha256="$(sha256_file "${trust_policy}")"
+    generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
+    trap 'rm -f "${output_tmp}"' EXIT HUP INT TERM
+    GENERATED_AT="${generated_at}" \
+      PERMIT_SHA256="${permit_sha256}" \
+      VERIFICATION_SHA256="${verification_sha256}" \
+      TRUST_POLICY_SHA256="${trust_policy_sha256}" \
+      yq -o=json -I=2 '
+        .generated_at = strenv(GENERATED_AT) |
+        .authorization.mode = "verified_execution_permit" |
+        .authorization.permit_sha256 = strenv(PERMIT_SHA256) |
+        .authorization.execution_verification_sha256 =
+          strenv(VERIFICATION_SHA256) |
+        .authorization.trust_policy_sha256 = strenv(TRUST_POLICY_SHA256)
+      ' "${template}" > "${output_tmp}"
+    validate_contract "${output_tmp}"
+    chmod 0444 "${output_tmp}"
+    mv "${output_tmp}" "${output}"
+    output_tmp=
+    ;;
+  verify-offline-test-attestation)
+    test "$#" -eq 4 || usage
+    statement="$2"
+    bundle="$3"
+    public_key="$4"
+    require_file "${statement}"
+    require_file "${bundle}"
+    require_file "${public_key}"
+    work="$(mktemp -d)"
+    trap 'rm -rf "${work}"' EXIT HUP INT TERM
+    verify_offline_attestation \
+      "${statement}" \
+      "${bundle}" \
+      "${public_key}" \
+      "${work}/statement.json"
+    ;;
+  *)
+    usage
+    ;;
+esac

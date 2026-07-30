@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>robotics_runtime_infra</name>
-  <version>0.5.0</version>
+  <version>0.8.0</version>
   <description>Domain-neutral ROS 2 runtime and Gazebo acceptance checks.</description>
   <maintainer email="184955981+mmkolpakov@users.noreply.github.com">mmkolpakov</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <exec_depend>control_msgs</exec_depend>
+  <depend>control_msgs</depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>gz_ros2_control</exec_depend>
@@ -21,8 +21,14 @@
   <exec_depend>mavlink</exec_depend>
   <exec_depend>mavros</exec_depend>
   <exec_depend>mavros_extras</exec_depend>
-  <exec_depend>moveit</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>moveit_planners_ompl</exec_depend>
+  <exec_depend>moveit_ros_move_group</exec_depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <exec_depend>moveit_simple_controller_manager</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>ros2_control</exec_depend>
   <exec_depend>ros2_controllers</exec_depend>
@@ -40,7 +46,6 @@
   <exec_depend>xacro</exec_depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
-  <test_depend>ament_cmake_ros</test_depend>
   <test_depend>controller_manager_msgs</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>

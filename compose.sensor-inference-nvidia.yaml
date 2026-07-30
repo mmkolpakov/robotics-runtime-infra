@@ -1,0 +1,21 @@
+---
+services:
+  sensor-inference-probe:
+    image: "${SENSOR_INFERENCE_NVIDIA_IMAGE:-local/robotics-runtime-infra/sensor-inference-nvidia:dev}"
+    build:
+      target: sensor-inference-probe
+      args:
+        SENSOR_INFERENCE_BASE: inference-nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      ROBOTICS_EXPECTED_PROVIDER: CUDAExecutionProvider
+      ROBOTICS_SENSOR_TOPIC: /gpu_lidar/scan
+      ROBOTICS_SENSOR_TYPE: laser_scan

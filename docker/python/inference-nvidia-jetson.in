@@ -1,0 +1,8 @@
+flatbuffers==25.12.19
+numpy==1.26.4
+nvidia-cublas==13.5.1.27
+nvidia-cuda-nvrtc==13.3.33
+nvidia-cudnn-cu13==9.23.0.39
+packaging==26.2
+protobuf==7.35.1
+tensorrt-cu13-libs @ https://pypi.nvidia.com/tensorrt-cu13-libs/tensorrt_cu13_libs-11.0.0.114-py3-none-manylinux_2_35_aarch64.whl#sha256=58debb693e0708cf7722868845f3e5286fb9c4d5ac2a1bf3b3806eb4706be39b

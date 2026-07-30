@@ -1,0 +1,62 @@
+---
+services:
+  simulation:
+    command:
+      - ros2
+      - launch
+      - robotics_runtime_infra
+      - camera.launch.py
+
+  sensor-inference-probe:
+    image: "${SENSOR_INFERENCE_IMAGE:-local/robotics-runtime-infra/sensor-inference-cpu:dev}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: sensor-inference-probe
+      args:
+        IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
+        IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
+        IMAGE_VERSION: "${IMAGE_VERSION:-dev}"
+        SENSOR_INFERENCE_BASE: inference-cpu
+        VCS_REF: "${VCS_REF:-local}"
+    profiles: [sensor-inference]
+    init: true
+    ipc: service:data-plane
+    network_mode: service:data-plane
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/high-throughput.xml
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      RCUTILS_COLORIZED_OUTPUT: "0"
+      RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID}"
+      ROBOTICS_EXPECTED_PROVIDER: "${ROBOTICS_EXPECTED_PROVIDER:-CPUExecutionProvider}"
+      ROBOTICS_PROBE_FRAMES: "${ROBOTICS_PROBE_FRAMES:-30}"
+      ROBOTICS_PROBE_REPORT: /reports/sensor-inference.json
+      ROBOTICS_PROBE_TIMEOUT_SEC: "${ROBOTICS_PROBE_TIMEOUT_SEC:-120}"
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_SENSOR_TOPIC: "${ROBOTICS_SENSOR_TOPIC:-/camera/image}"
+      ROBOTICS_SENSOR_TYPE: "${ROBOTICS_SENSOR_TYPE:-image}"
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SENSOR_INFERENCE_REPORT_DIR:-./artifacts/sensor-inference}"
+        target: /reports
+    depends_on:
+      data-plane:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      simulation:
+        condition: service_healthy
+    healthcheck:
+      disable: true

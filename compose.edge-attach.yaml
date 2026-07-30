@@ -1,0 +1,219 @@
+---
+x-edge-attach-observer: &edge-attach-observer
+  image: "${OBSERVER_IMAGE:-local/robotics-runtime-infra/acceptance-observer:dev}"
+  init: true
+  network_mode: service:edge-attach-data-plane
+  read_only: true
+  environment:
+    RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ROS_AUTOMATIC_DISCOVERY_RANGE: SUBNET
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+    ROS_LOG_DIR: /tmp/ros-logs
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 20s
+  tmpfs:
+    - /tmp:mode=1777
+  healthcheck:
+    disable: true
+
+x-permit-runtime: &permit-runtime
+  # yamllint disable-line rule:line-length
+  image: "${PERMIT_PREFLIGHT_IMAGE:-local/robotics-runtime-infra/permit-preflight:dev}"
+  init: true
+  network_mode: none
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  tmpfs:
+    - /tmp:mode=1777
+  healthcheck:
+    disable: true
+
+services:
+  simulation:
+    profiles: [simulation]
+
+  edge-attach-data-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [edge-attach, hil, real-observation]
+    read_only: true
+    networks:
+      - robotics-attach
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true
+
+  edge-attach-observer:
+    <<: *edge-attach-observer
+    profiles: [edge-attach]
+    command:
+      - robotics-acceptance
+      - verify
+      - --scenario
+      - /input/scenario.yaml
+      - --runtime
+      - /input/runtime-manifest.json
+      - --evidence-index
+      - /input/evidence-index.json
+      - --output
+      - /results
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_RUN_INPUT_DIR:-./runs/current/input}"
+        target: /input
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_RESULTS_DIR:-./runs/current/results}"
+        target: /results
+    depends_on:
+      edge-attach-data-plane:
+        condition: service_started
+
+  physical-permit-preflight:
+    <<: *permit-runtime
+    profiles: [hil, real-observation]
+    command:
+      - authorize
+      - /authorization/execution-permit.json
+      - /authorization/execution-statement.json
+      - /authorization/operator.sigstore.json
+      - /authorization/approver.sigstore.json
+      - /authorization/trusted-root.json
+      - /authorization/trust-policy.json
+      - /authorization/execution-request.json
+      - /nonces
+      - /output/execution-verification.json
+      # yamllint disable-line rule:line-length
+      - "${ROBOTICS_COSIGN_IMAGE_DIGEST:?set ROBOTICS_COSIGN_IMAGE_DIGEST to the immutable permit-preflight image digest}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_AUTHORIZATION_DIR:-./runs/current/authorization}"
+        target: /authorization
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_AUTHORIZATION_OUTPUT_DIR:-./runs/current/authorization-output}"
+        target: /output
+      - type: bind
+        source: "${ROBOTICS_NONCE_DIR:-./runs/authorization-nonces}"
+        target: /nonces
+
+  physical-runtime-manifest:
+    <<: *permit-runtime
+    profiles: [hil, real-observation]
+    command:
+      - materialize-runtime
+      - /input/runtime-manifest.input.json
+      - /authorization/execution-permit.json
+      - /output/execution-verification.json
+      - /authorization/trust-policy.json
+      - /output/runtime-manifest.json
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_RUN_INPUT_DIR:-./runs/current/input}"
+        target: /input
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_AUTHORIZATION_DIR:-./runs/current/authorization}"
+        target: /authorization
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_AUTHORIZATION_OUTPUT_DIR:-./runs/current/authorization-output}"
+        target: /output
+    depends_on:
+      physical-permit-preflight:
+        condition: service_completed_successfully
+
+  physical-observer-template:
+    <<: *edge-attach-observer
+    profiles: [_physical-observer-template]
+    command:
+      - robotics-acceptance
+      - verify
+      - --scenario
+      - /input/scenario.yaml
+      - --runtime
+      - /authorization-output/runtime-manifest.json
+      - --permit
+      - /authorization/execution-permit.json
+      - --verification
+      - /authorization-output/execution-verification.json
+      - --evidence-index
+      - /evidence/evidence-index.json
+      - --otel-metrics
+      - /evidence/hardware-time.otlp.json
+      - --output
+      - /results
+    environment:
+      FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
+      RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+      RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROS_AUTOMATIC_DISCOVERY_RANGE: SUBNET
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      ROS_LOG_DIR: /tmp/ros-logs
+      ROS_SECURITY_ENABLE: "true"
+      ROS_SECURITY_ENCLAVE_OVERRIDE: /robotics/observer
+      ROS_SECURITY_KEYSTORE: /security
+      ROS_SECURITY_STRATEGY: Enforce
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_RUN_INPUT_DIR:-./runs/current/input}"
+        target: /input
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_AUTHORIZATION_DIR:-./runs/current/authorization}"
+        target: /authorization
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_AUTHORIZATION_OUTPUT_DIR:-./runs/current/authorization-output}"
+        target: /authorization-output
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
+        target: /evidence
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_RESULTS_DIR:-./runs/current/results}"
+        target: /results
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/public"
+        target: /security/public
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/governance.p7s"
+        target: /security/enclaves/governance.p7s
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_SECURITY_WORK_DIR:-./runs/security}/keystore/enclaves/robotics/observer"
+        target: /security/enclaves/robotics/observer
+        read_only: true
+    depends_on:
+      edge-attach-data-plane:
+        condition: service_started
+      physical-permit-preflight:
+        condition: service_completed_successfully
+      physical-runtime-manifest:
+        condition: service_completed_successfully
+
+  hil-observer:
+    extends:
+      service: physical-observer-template
+    profiles: [hil]
+
+networks:
+  robotics-attach:
+    name: "${ROBOTICS_ATTACH_NETWORK:-robotics-edge-attach}"
+    external: true

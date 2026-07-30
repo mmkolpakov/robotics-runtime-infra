@@ -1,0 +1,69 @@
+---
+x-build-args: &build-args
+  IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
+  IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
+  IMAGE_VERSION: "${IMAGE_VERSION:-dev}"
+  VCS_REF: "${VCS_REF:-local}"
+
+x-nvidia-runtime: &nvidia-runtime
+  init: true
+  network_mode: none
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  inference-nvidia-smoke:
+    <<: *nvidia-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_NVIDIA_IMAGE:-local/robotics-runtime-infra/inference-nvidia:dev}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: inference-nvidia
+      args: *build-args
+    profiles: [nvidia]
+    command:
+      - python3
+      - -c
+      - >-
+        import onnxruntime as ort;
+        assert 'CUDAExecutionProvider' in ort.get_available_providers()
+    healthcheck:
+      disable: true
+
+  provider-conformance-nvidia:
+    <<: *nvidia-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_NVIDIA_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-nvidia:dev}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: provider-conformance
+      args:
+        <<: *build-args
+        PROVIDER_CONFORMANCE_BASE: inference-nvidia
+        PROVIDER_CONFORMANCE_EXPECTED_PROVIDER: CUDAExecutionProvider
+        PROVIDER_CONFORMANCE_TITLE: Robotics NVIDIA provider conformance
+        PROVIDER_CONFORMANCE_DESCRIPTION: >-
+          Hardware release gate for CUDA provider identity, fallback, and tensor parity.
+    profiles: [conformance-nvidia]
+    environment:
+      ROBOTICS_EXPECTED_PROVIDER: CUDAExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/nvidia}"
+        target: /reports
+    healthcheck:
+      disable: true

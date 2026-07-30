@@ -1,0 +1,221 @@
+---
+name: publish-conformance-image
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Hardware qualification target
+        required: true
+        type: choice
+        options:
+          - nvidia-x86
+          - nvidia-simulation-x86
+          - nvidia-sensor-inference-x86
+          - intel-native
+          - intel-wsl
+          - amd-native
+          - jetson-orin
+          - jetson-thor
+      source_sha:
+        description: Full commit SHA from main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-conformance-${{ inputs.target }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+env:
+  # yamllint disable-line rule:line-length
+  BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+  BUILDX_VERSION: v0.35.0
+  # yamllint disable-line rule:line-length
+  BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - name: Resolve publication target
+        id: route
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${DISPATCH_REF}" = refs/heads/main
+          test "${DISPATCH_SHA}" = "${SOURCE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "${SOURCE_SHA}"
+          case "${TARGET}" in
+            nvidia-x86)
+              bake_target=provider-conformance-nvidia
+              image_name=provider-conformance-nvidia-x86
+              platform=linux/amd64
+              ;;
+            nvidia-simulation-x86)
+              bake_target=simulation
+              image_name=qualification-simulation-nvidia-x86
+              platform=linux/amd64
+              ;;
+            nvidia-sensor-inference-x86)
+              bake_target=sensor-inference-nvidia
+              image_name=sensor-inference-nvidia-x86
+              platform=linux/amd64
+              ;;
+            intel-native | intel-wsl)
+              bake_target=provider-conformance-intel
+              image_name="provider-conformance-${TARGET}"
+              platform=linux/amd64
+              ;;
+            amd-native)
+              bake_target=provider-conformance-amd
+              image_name=provider-conformance-amd-native
+              platform=linux/amd64
+              ;;
+            jetson-orin)
+              bake_target=provider-conformance-nvidia-jetson-orin
+              image_name=provider-conformance-jetson-orin
+              platform=linux/arm64
+              ;;
+            jetson-thor)
+              bake_target=provider-conformance-nvidia-jetson-thor
+              image_name=provider-conformance-jetson-thor
+              platform=linux/arm64
+              ;;
+          esac
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "bake_target=${bake_target}"
+            echo "image=ghcr.io/${owner}/robotics-runtime-infra/${image_name}"
+            echo "platform=${platform}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+        with:
+          image: ${{ env.BINFMT_IMAGE }}
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+        with:
+          cache-binary: false
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: |
+            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Set reproducible build metadata
+        id: metadata
+        run: |
+          {
+            echo "created=$(git show --no-patch --format=%cI HEAD)"
+            echo "epoch=$(git show --no-patch --format=%ct HEAD)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build and publish qualification image
+        id: build
+        uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b  # v7.3.0
+        env:
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+        with:
+          source: .
+          files: ./docker-bake.hcl
+          targets: ${{ steps.route.outputs.bake_target }}
+          pull: true
+          push: true
+          provenance: mode=max
+          sbom: true
+          vars: |
+            IMAGE_CREATED=${{ steps.metadata.outputs.created }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            SOURCE_DATE_EPOCH=${{ steps.metadata.outputs.epoch }}
+            VCS_REF=${{ inputs.source_sha }}
+            VERSION=sha-${{ inputs.source_sha }}
+          # yamllint disable rule:line-length
+          set: |
+            ${{ steps.route.outputs.bake_target }}.tags=${{ steps.route.outputs.image }}
+            ${{ steps.route.outputs.bake_target }}.output=type=image,name=${{ steps.route.outputs.image }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+          # yamllint enable rule:line-length
+      - name: Resolve published digest
+        id: digest
+        env:
+          BAKE_METADATA: ${{ steps.build.outputs.metadata }}
+          BAKE_TARGET: ${{ steps.route.outputs.bake_target }}
+        run: |
+          digest="$(
+            jq -er --arg target "${BAKE_TARGET}" \
+              '.[$target]["containerimage.digest"]' <<< "${BAKE_METADATA}"
+          )"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+      - name: Scan the untagged qualification candidate
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          IMAGE: ${{ steps.route.outputs.image }}
+          PLATFORM: ${{ steps.route.outputs.platform }}
+          TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+        run: >-
+          scripts/ci/security/scan-image.sh
+          "${IMAGE}@${DIGEST}"
+          "qualification-${{ inputs.target }}"
+          "${PLATFORM}"
+      - name: Attest and verify publication
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763  # v4.1.1
+        with:
+          subject-name: ${{ steps.route.outputs.image }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+      - name: Verify immutable reference
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.route.outputs.image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --source-digest "${SOURCE_SHA}" \
+            --source-ref refs/heads/main
+          {
+            echo "## Qualification image"
+            echo
+            echo "\`${IMAGE}@${DIGEST}\`"
+            echo
+            echo "Source: \`${SOURCE_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Promote the attested qualification image
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          IMAGE: ${{ steps.route.outputs.image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: >-
+          scripts/ci/release/promote-immutable-tags.sh
+          promote
+          "${IMAGE}"
+          "${DIGEST}"
+          -
+          "${IMAGE}:sha-${SOURCE_SHA}"
+      - name: Upload scan results
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
+        with:
+          sarif_file: artifacts/security
+          category: qualification-${{ inputs.target }}

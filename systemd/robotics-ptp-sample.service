@@ -1,0 +1,23 @@
+[Unit]
+Description=Record one read-only LinuxPTP status sample
+After=ptp4l.service
+ConditionPathExists=/run/robotics-time/ptp4lro
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/pmc -u -b 0 -s /run/robotics-time/ptp4lro "GET TIME_STATUS_NP"
+StandardOutput=append:/run/robotics-time/pmc.log
+StandardError=journal
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0027

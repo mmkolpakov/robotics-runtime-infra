@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$script_dir/lib.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: verify-bundle
+  --bundle PATH
+  (--key PATH | --trusted-root PATH --policy PATH)
+  --scenario PATH
+  --runtime-manifest DOMAIN=PATH [--runtime-manifest DOMAIN=PATH ...]
+  --acceptance-run PATH
+  --result DOMAIN=PATH [--result DOMAIN=PATH ...]
+  --aggregate PATH
+  --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
+  --mcap-summary LABEL=PATH [--mcap-summary LABEL=PATH ...]
+  [--extension-schema URI=PATH ...]
+  [--evidence KIND:LABEL=PATH ...]
+EOF
+  exit 64
+}
+
+# These variables form the sourced library interface.
+# shellcheck disable=SC2034
+scenario_path=''
+# shellcheck disable=SC2034
+acceptance_run_path=''
+# shellcheck disable=SC2034
+aggregate_path=''
+bundle=''
+verification_key=''
+trusted_root=''
+policy=''
+runtime_manifest_specs=()
+result_specs=()
+evidence_index_specs=()
+mcap_summary_specs=()
+optional_evidence_specs=()
+extension_schema_specs=()
+
+while (($# > 0)); do
+  case "$1" in
+    --bundle)
+      (($# >= 2)) || usage
+      bundle="$2"
+      shift 2
+      ;;
+    --key)
+      (($# >= 2)) || usage
+      verification_key="$2"
+      shift 2
+      ;;
+    --trusted-root)
+      (($# >= 2)) || usage
+      trusted_root="$2"
+      shift 2
+      ;;
+    --policy)
+      (($# >= 2)) || usage
+      policy="$2"
+      shift 2
+      ;;
+    --scenario)
+      (($# >= 2)) || usage
+      scenario_path="$2"
+      shift 2
+      ;;
+    --runtime-manifest)
+      (($# >= 2)) || usage
+      runtime_manifest_specs+=("$2")
+      shift 2
+      ;;
+    --acceptance-run)
+      (($# >= 2)) || usage
+      acceptance_run_path="$2"
+      shift 2
+      ;;
+    --result)
+      (($# >= 2)) || usage
+      result_specs+=("$2")
+      shift 2
+      ;;
+    --aggregate)
+      (($# >= 2)) || usage
+      aggregate_path="$2"
+      shift 2
+      ;;
+    --evidence-index)
+      (($# >= 2)) || usage
+      evidence_index_specs+=("$2")
+      shift 2
+      ;;
+    --mcap-summary)
+      (($# >= 2)) || usage
+      mcap_summary_specs+=("$2")
+      shift 2
+      ;;
+    --evidence)
+      (($# >= 2)) || usage
+      optional_evidence_specs+=("$2")
+      shift 2
+      ;;
+    --extension-schema)
+      (($# >= 2)) || usage
+      extension_schema_specs+=("$2")
+      shift 2
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+
+qualification_require_command cosign
+qualification_require_command yq
+qualification_require_command base64
+export scenario_path acceptance_run_path aggregate_path
+qualification_require_file "$bundle"
+if [[ -n "$verification_key" ]]; then
+  [[ -z "$trusted_root" && -z "$policy" ]] ||
+    qualification_fail \
+      '--key is mutually exclusive with --trusted-root and --policy'
+  qualification_require_file "$verification_key"
+else
+  [[ -n "$trusted_root" && -n "$policy" ]] ||
+    qualification_fail \
+      'identity verification requires --trusted-root and --policy'
+  qualification_require_file "$trusted_root"
+  qualification_require_file "$policy"
+  qualification_validate_contract "$policy" qualification-policy.v1
+  [[ "$(qualification_sha256 "$trusted_root")" == \
+    "$(jq -er '.trusted_root_sha256' "$policy")" ]] ||
+    qualification_fail 'trusted root digest does not match qualification policy'
+  [[ "$(jq -er '.predicate_type' "$policy")" == \
+    "$QUALIFICATION_PREDICATE_TYPE" ]] ||
+    qualification_fail 'qualification policy has an unsupported predicate type'
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+qualification_prepare "$work"
+qualification_write_statement "$work" "$work/expected-statement.json"
+
+aggregate_sha256="$(cat "$work/aggregate-sha256")"
+verified_identity=''
+if [[ -n "$verification_key" ]]; then
+  cosign verify-blob-attestation \
+    --bundle "$bundle" \
+    --key "$verification_key" \
+    --insecure-ignore-tlog \
+    --digest "$aggregate_sha256" \
+    --digestAlg sha256 \
+    --type "$QUALIFICATION_PREDICATE_TYPE" >/dev/null ||
+    qualification_fail 'Sigstore verification failed for the supplied public key'
+  verified_identity="key-sha256:$(qualification_sha256 "$verification_key")"
+else
+  missing_kinds="$(
+    jq -n -r \
+      --slurpfile policy "$policy" \
+      --slurpfile artifacts "$work/artifacts.json" '
+        ($policy[0].required_artifact_kinds -
+          ($artifacts[0] | map(.kind) | unique))[]
+      '
+  )"
+  [[ -z "$missing_kinds" ]] ||
+    qualification_fail \
+      "statement is missing policy-required artifact kinds: $missing_kinds"
+
+  issuer="$(jq -er '.certificate_oidc_issuer' "$policy")"
+  predicate_type="$(jq -er '.predicate_type' "$policy")"
+  while IFS= read -r identity; do
+    if cosign verify-blob-attestation \
+      --bundle "$bundle" \
+      --trusted-root "$trusted_root" \
+      --certificate-identity "$identity" \
+      --certificate-oidc-issuer "$issuer" \
+      --digest "$aggregate_sha256" \
+      --digestAlg sha256 \
+      --type "$predicate_type" >/dev/null; then
+      verified_identity="$identity"
+      break
+    fi
+  done < <(jq -er '.certificate_identities[]' "$policy")
+  [[ -n "$verified_identity" ]] ||
+    qualification_fail \
+      'Sigstore verification failed for every trusted certificate identity'
+fi
+
+[[ "$(yq -r '.mediaType' "$bundle")" == \
+  application/vnd.dev.sigstore.bundle.v0.3+json ]] ||
+  qualification_fail 'unsupported Sigstore bundle media type'
+[[ "$(yq -r '.dsseEnvelope.payloadType' "$bundle")" == \
+  application/vnd.in-toto+json ]] ||
+  qualification_fail 'Sigstore bundle does not contain an in-toto DSSE envelope'
+yq -er '.dsseEnvelope.payload' "$bundle" |
+  base64 --decode >"$work/verified-statement.json" ||
+  qualification_fail 'Sigstore bundle contains an invalid DSSE payload'
+qualification_validate_contract "$work/verified-statement.json" qualification-bundle.v1
+
+jq -S -c . "$work/expected-statement.json" >"$work/expected.canonical.json"
+jq -S -c . "$work/verified-statement.json" >"$work/verified.canonical.json"
+cmp --silent "$work/expected.canonical.json" "$work/verified.canonical.json" ||
+  qualification_fail \
+    'authenticated statement does not exactly match local subjects, digests, and classifications'
+
+printf 'qualification bundle verified for %s as %s\n' \
+  "$(cat "$work/run-id")" "$verified_identity"

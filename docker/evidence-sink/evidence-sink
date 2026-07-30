@@ -4,14 +4,24 @@ IFS=$'\n\t'
 
 readonly spool_dir="${EVIDENCE_SPOOL_DIR:-/spool}"
 readonly receipt_dir="${EVIDENCE_RECEIPT_DIR:-/evidence/receipts}"
+readonly summary_dir="${EVIDENCE_SUMMARY_DIR:-/evidence/summaries}"
+readonly state_dir="${EVIDENCE_STATE_DIR:-/evidence/state}"
 readonly index_path="${EVIDENCE_INDEX_PATH:-/evidence/evidence-index.json}"
-readonly run_id="${ROBOTICS_RUN_ID:-local}"
+readonly run_id="${ROBOTICS_RUN_ID:-}"
 readonly retention_class="${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
 readonly evidence_mode="${EVIDENCE_MODE:-local}"
+readonly recording_mode="${ROBOTICS_RECORDING_MODE:-bounded}"
+readonly compression="${ROBOTICS_COMPRESSION:-zstd}"
 
 fail() {
   printf 'evidence-sink: %s\n' "$*" >&2
   exit 1
+}
+
+require_run_id() {
+  [[ -n "$run_id" ]] || fail 'ROBOTICS_RUN_ID is required'
+  [[ "$run_id" =~ ^run-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || \
+    fail 'ROBOTICS_RUN_ID must use canonical run-<uuid4> form'
 }
 
 require_command() {
@@ -31,12 +41,45 @@ segment_index() {
   stem="$(basename "$1" .mcap)"
   index="${stem##*_}"
   [[ "$index" =~ ^[0-9]+$ ]] || fail "MCAP filename must end in _<index>.mcap: $1"
-  printf '%s\n' "$index"
+  printf '%d\n' "$((10#$index))"
+}
+
+update_max_state() {
+  local name="$1" candidate="$2" target current=0 temporary
+  target="${state_dir}/${name}"
+  mkdir -p "$state_dir" || fail 'cannot create evidence state directory'
+  if [[ -r "$target" ]]; then
+    current="$(<"$target")"
+  fi
+  if (( candidate <= current )); then
+    return 0
+  fi
+  temporary="$(mktemp "${state_dir}/.${name}.XXXXXX")" || fail "cannot create ${name} state"
+  printf '%s\n' "$candidate" >"$temporary" || fail "cannot write ${name} state"
+  mv "$temporary" "$target" || fail "cannot publish ${name} state"
+}
+
+observe_spool() {
+  local size_bytes=0 file_size age_sec now mtime
+  now="$(date +%s)"
+  while IFS= read -r -d '' file; do
+    file_size="$(stat -c '%s' "$file")" || fail "cannot stat $file"
+    size_bytes=$(( size_bytes + file_size ))
+    if [[ "$evidence_mode" == s3 ]]; then
+      mtime="$(stat -c '%Y' "$file")" || fail "cannot read mtime for $file"
+      age_sec=$(( now - mtime ))
+      (( age_sec < 0 )) && age_sec=0
+      update_max_state upload-lag-max-sec "$age_sec"
+    fi
+  done < <(find "$spool_dir" -type f -name '*.mcap' -print0)
+  update_max_state spool-peak-size-bytes "$size_bytes"
 }
 
 write_receipt() {
   local file="$1" index="$2" sha256="$3" size_bytes="$4"
-  local uri="$5" upload_status="$6" version_id="${7:-}"
+  local uri="$5" upload_status="$6" version_id="$7"
+  local media_type="$8" summary_path="${9:-}" summary_sha256="${10:-}"
+  local summary_size_bytes="${11:-0}" summary_json=null
   local target temporary
 
   target="${receipt_dir}/${index}-${sha256}.json"
@@ -48,16 +91,29 @@ write_receipt() {
   fi
 
   temporary="$(mktemp "${receipt_dir}/.receipt.XXXXXX")" || fail 'cannot create receipt temporary file'
-  jq -n \
+  if [[ -n "$summary_path" ]]; then
+    summary_json="$(jq -cS -n \
+      --arg uri "file://${summary_path}" \
+      --arg sha256 "$summary_sha256" \
+      --argjson size_bytes "$summary_size_bytes" \
+      '{
+        uri: $uri,
+        sha256: $sha256,
+        size_bytes: $size_bytes,
+        media_type: "application/vnd.robotics.mcap-summary.v1+json"
+      }')"
+  fi
+  jq -cS -n \
     --arg uri "$uri" \
     --arg local_path "$file" \
-    --arg media_type application/mcap \
+    --arg media_type "$media_type" \
     --arg sha256 "$sha256" \
     --arg retention_class "$retention_class" \
     --arg upload_status "$upload_status" \
     --arg version_id "$version_id" \
     --argjson size_bytes "$size_bytes" \
     --argjson segment_index "$index" \
+    --argjson summary "$summary_json" \
     '{
       uri: $uri,
       media_type: $media_type,
@@ -68,6 +124,7 @@ write_receipt() {
       upload_status: $upload_status,
       checksum_verified: true
     }
+    + if $summary == null then {} else {mcap_summary: $summary} end
     + if $upload_status == "local" then {local_path: $local_path}
       else {version_id: $version_id} end' >"$temporary" || fail 'cannot write segment receipt'
   chmod 0444 "$temporary" || fail 'cannot make segment receipt read-only'
@@ -85,6 +142,7 @@ verify_remote_versioning() {
 
 upload_segment() {
   local file="$1" index="$2" sha256="$3" size_bytes="$4"
+  local summary_path="$5" summary_sha256="$6" summary_size_bytes="$7"
   local key remote remote_dir file_name check_list
   local head_json remote_size remote_sha content_type version_id
 
@@ -125,7 +183,8 @@ upload_segment() {
   [[ "$content_type" == application/mcap ]] || fail "remote media type differs for $key"
 
   write_receipt "$file" "$index" "$sha256" "$size_bytes" \
-    "s3://${EVIDENCE_BUCKET}/${key}" confirmed "$version_id"
+    "s3://${EVIDENCE_BUCKET}/${key}" confirmed "$version_id" application/mcap \
+    "$summary_path" "$summary_sha256" "$summary_size_bytes"
 
   if [[ "${EVIDENCE_DELETE_CONFIRMED_LOCAL:-false}" == true ]]; then
     rm -- "$file"
@@ -133,8 +192,8 @@ upload_segment() {
 }
 
 process_segment() {
-  local file="$1" index sha256 size_bytes metadata_json serialized_metadata
-  local duration_ns max_duration_ns
+  local file="$1" index sha256 size_bytes summary_path summary_sha256
+  local summary_size_bytes duration_ns max_duration_ns
   [[ -f "$file" ]] || fail "segment does not exist: $file"
 
   if ! mcap --color never doctor "$file" >/dev/null; then
@@ -148,33 +207,60 @@ process_segment() {
     fail "segment exceeds EVIDENCE_MAX_SEGMENT_SIZE_BYTES: $file"
   fi
 
-  metadata_json="$(mcap --color never get metadata "$file" --name rosbag2)" || \
-    fail "rosbag2 metadata is absent from $file"
-  serialized_metadata="$(jq -er '.serialized_metadata' <<<"$metadata_json")" || \
-    fail "serialized rosbag2 metadata is absent from $file"
-  duration_ns="$(yq -er '.duration.nanoseconds' <<<"$serialized_metadata")" || \
-    fail "segment duration is absent from $file"
+  mkdir -p "$receipt_dir" "$summary_dir" || fail 'cannot create evidence directories'
+  summary_path="${summary_dir}/${index}-${sha256}.mcap-summary.json"
+  if [[ ! -e "$summary_path" ]]; then
+    mcap-summary "$file" "$summary_path" || fail "cannot summarize $file"
+  fi
+  summary_sha256="$(sha256sum "$summary_path" | cut -d' ' -f1)" || \
+    fail "cannot hash summary for $file"
+  summary_size_bytes="$(stat -c '%s' "$summary_path")" || \
+    fail "cannot stat summary for $file"
+  jq -e --arg sha256 "$sha256" \
+    '.source_sha256 == $sha256 and .compressions == ["zstd"]' \
+    "$summary_path" >/dev/null || fail "MCAP summary policy differs for $file"
+  duration_ns="$(jq -er \
+    '.statistics.message_end_time_ns - .statistics.message_start_time_ns' \
+    "$summary_path")" || fail "segment duration is absent from $file"
   max_duration_ns=$(( ${EVIDENCE_MAX_SEGMENT_DURATION_SEC:-60} * 1000000000 ))
   if (( duration_ns > max_duration_ns )); then
     fail "segment exceeds EVIDENCE_MAX_SEGMENT_DURATION_SEC: $file"
   fi
 
-  mkdir -p "$receipt_dir" || fail 'cannot create receipt directory'
   if [[ -e "${receipt_dir}/${index}-${sha256}.json" ]]; then
     return 0
   fi
   if [[ "$evidence_mode" == local ]]; then
     write_receipt "$file" "$index" "$sha256" "$size_bytes" \
-      "file://${file}" local
+      "file://${file}" local "" application/mcap \
+      "$summary_path" "$summary_sha256" "$summary_size_bytes"
   elif [[ "$evidence_mode" == s3 ]]; then
-    upload_segment "$file" "$index" "$sha256" "$size_bytes"
+    upload_segment "$file" "$index" "$sha256" "$size_bytes" \
+      "$summary_path" "$summary_sha256" "$summary_size_bytes"
   else
     fail "unsupported EVIDENCE_MODE: $evidence_mode"
   fi
 }
 
+register_artifact() {
+  local file="$1" media_type="$2" index="$3" sha256 size_bytes
+  [[ -f "$file" ]] || fail "artifact does not exist: $file"
+  [[ "$file" == /* ]] || fail 'artifact path must be absolute'
+  [[ "$index" =~ ^[0-9]+$ ]] || fail 'artifact index must be a non-negative integer'
+  case "$media_type" in
+    application/json|application/x-ndjson|application/junit+xml|text/plain|application/vnd.in-toto+json) ;;
+    *) fail "unsupported artifact media type: $media_type" ;;
+  esac
+  sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
+  size_bytes="$(stat -c '%s' "$file")" || fail "cannot stat $file"
+  mkdir -p "$receipt_dir" || fail 'cannot create receipt directory'
+  write_receipt "$file" "$index" "$sha256" "$size_bytes" \
+    "file://${file}" local "" "$media_type"
+}
+
 scan_segments() {
   local file status=0
+  observe_spool
   while IFS= read -r -d '' file; do
     process_segment "$file" || status=$?
     if (( status != 0 && status != 75 )); then
@@ -185,12 +271,12 @@ scan_segments() {
 }
 
 finalize_index() {
-  local segments temporary
+  local segments temporary spool_peak upload_lag upload_mode remote_sink
   scan_segments
   if find "$spool_dir" -type f -name '*.mcap' -print -quit | grep -q .; then
-    while IFS= read -r file; do
+    while IFS= read -r -d '' file; do
       process_segment "$file" || fail "unclosed or invalid segment: $file"
-    done < <(find "$spool_dir" -type f -name '*.mcap' | sort)
+    done < <(find "$spool_dir" -type f -name '*.mcap' -print0 | sort -z)
   fi
   compgen -G "${receipt_dir}/*.json" >/dev/null || fail 'no segment receipts exist'
 
@@ -202,15 +288,38 @@ finalize_index() {
   mkdir -p "$(dirname "$index_path")"
   temporary="$(mktemp "$(dirname "$index_path")/.evidence-index.XXXXXX")" || \
     fail 'cannot create evidence-index temporary file'
-  jq -n \
+  spool_peak="$(cat "${state_dir}/spool-peak-size-bytes" 2>/dev/null || printf '0')"
+  upload_lag="$(cat "${state_dir}/upload-lag-max-sec" 2>/dev/null || printf '0')"
+  if [[ "$evidence_mode" == s3 ]]; then
+    upload_mode=closed_segments_during_run
+    remote_sink=true
+  else
+    upload_mode=local_only
+    remote_sink=false
+  fi
+  jq -cS -n \
     --arg run_id "$run_id" \
     --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg recording_mode "$recording_mode" \
+    --arg compression "$compression" \
+    --arg upload_mode "$upload_mode" \
+    --argjson remote_sink "$remote_sink" \
+    --argjson spool_peak "$spool_peak" \
+    --argjson upload_lag "$upload_lag" \
     --argjson segments "$segments" \
     '{
-      schema_version: "evidence-index.v1",
+      schema_version: "evidence-index.v2",
       run_id: $run_id,
       generated_at: $generated_at,
       finalized: true,
+      policy_observation: {
+        recording_mode: $recording_mode,
+        compression: $compression,
+        upload_mode: $upload_mode,
+        remote_sink_used: $remote_sink,
+        spool_peak_size_bytes: $spool_peak,
+        upload_lag_max_sec: $upload_lag
+      },
       segments: $segments
     }' >"$temporary" || fail 'cannot write evidence index'
   chmod 0444 "$temporary" || fail 'cannot make evidence index read-only'
@@ -231,23 +340,32 @@ watch_segments() {
   done
 }
 
-for command in mcap rclone aws jq yq sha256sum inotifywait; do
+for command in mcap mcap-summary rclone aws jq yq sha256sum inotifywait; do
   require_command "$command"
 done
 
 case "${1:-watch}" in
   watch)
+    require_run_id
     watch_segments
     ;;
   segment)
     [[ $# -eq 2 ]] || fail 'usage: evidence-sink segment FILE'
+    require_run_id
     process_segment "$2"
     ;;
   finalize)
+    require_run_id
     finalize_index
+    ;;
+  artifact)
+    [[ $# -eq 4 ]] || fail 'usage: evidence-sink artifact FILE MEDIA_TYPE INDEX'
+    require_run_id
+    register_artifact "$2" "$3" "$4"
     ;;
   versions)
     mcap --version
+    python3 -c 'import mcap; print(mcap.__version__)'
     rclone version | head -n 1
     aws --version
     yq --version

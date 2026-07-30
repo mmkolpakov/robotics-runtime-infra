@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from hashlib import file_digest
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+
+from mcap.reader import make_reader
+
+
+def summarize(source: Path) -> dict[str, object]:
+    with source.open("rb") as stream:
+        source_sha256 = file_digest(stream, "sha256").hexdigest()
+        stream.seek(0)
+        summary = make_reader(stream, validate_crcs=True).get_summary()
+    if summary is None or summary.statistics is None:
+        raise ValueError("MCAP has no Summary Statistics record")
+    if not summary.chunk_indexes:
+        raise ValueError("MCAP has no Chunk Index records")
+
+    statistics = summary.statistics
+    channels = []
+    for channel_id, channel in sorted(
+        summary.channels.items(), key=lambda item: item[1].topic
+    ):
+        schema = summary.schemas.get(channel.schema_id)
+        if schema is None or not schema.name:
+            raise ValueError(f"channel {channel_id} has no named schema")
+        channels.append(
+            {
+                "topic": channel.topic,
+                "message_encoding": channel.message_encoding,
+                "schema_name": schema.name,
+                "message_count": statistics.channel_message_counts.get(channel_id, 0),
+            }
+        )
+    compressions = sorted({chunk.compression for chunk in summary.chunk_indexes})
+    if not all(compressions):
+        raise ValueError("MCAP contains an uncompressed chunk")
+
+    return {
+        "schema_version": "mcap-summary.v1",
+        "source_sha256": source_sha256,
+        "compressions": compressions,
+        "statistics": {
+            "message_count": statistics.message_count,
+            "schema_count": statistics.schema_count,
+            "channel_count": statistics.channel_count,
+            "attachment_count": statistics.attachment_count,
+            "metadata_count": statistics.metadata_count,
+            "chunk_count": statistics.chunk_count,
+            "message_start_time_ns": statistics.message_start_time,
+            "message_end_time_ns": statistics.message_end_time,
+        },
+        "channels": channels,
+    }
+
+
+def write_canonical(document: dict[str, object], destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        newline="\n",
+        dir=destination.parent,
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temporary:
+        json.dump(document, temporary, sort_keys=True, separators=(",", ":"))
+        temporary.write("\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    temporary_path.chmod(0o444)
+    os.replace(temporary_path, destination)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Extract a deterministic MCAP footer summary."
+    )
+    parser.add_argument("source", type=Path)
+    parser.add_argument("destination", type=Path)
+    arguments = parser.parse_args()
+    write_canonical(summarize(arguments.source), arguments.destination)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

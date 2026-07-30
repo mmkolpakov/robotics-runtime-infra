@@ -1,0 +1,26 @@
+---
+services:
+  provider-conformance-rknn-rk3588:
+    image: "${RKNN_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-rknn-rk3588:dev}"
+    platform: linux/arm64
+    profiles: [rknn-rk3588]
+    init: true
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    devices:
+      - "${ROBOTICS_RKNN_DEVICE:-/dev/dri/renderD129}:/dev/dri/renderD129:rw"
+    group_add:
+      - "${ROBOTICS_RKNN_RENDER_GID:?set ROBOTICS_RKNN_RENDER_GID to the render device group ID}"
+    volumes:
+      - type: bind
+        source: /proc/device-tree/compatible
+        target: /run/host/device-tree-compatible
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    healthcheck:
+      disable: true

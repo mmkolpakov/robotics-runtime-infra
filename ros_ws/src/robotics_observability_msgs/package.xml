@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>robotics_observability_msgs</name>
+  <version>0.8.0</version>
+  <description>Bounded W3C Trace Context carrier for ROS 2 application messages.</description>
+  <maintainer email="184955981+mmkolpakov@users.noreply.github.com">mmkolpakov</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

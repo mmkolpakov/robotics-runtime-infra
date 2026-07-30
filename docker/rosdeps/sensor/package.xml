@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>robotics_sensor_runtime_dependencies</name>
-  <version>0.5.0</version>
+  <version>0.8.0</version>
   <description>Portable camera and image transport dependencies for ROS 2.</description>
   <maintainer email="184955981+mmkolpakov@users.noreply.github.com">mmkolpakov</maintainer>
   <license>MIT</license>

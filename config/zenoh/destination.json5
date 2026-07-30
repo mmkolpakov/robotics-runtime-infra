@@ -1,0 +1,31 @@
+{
+  id: "2",
+  mode: "client",
+  connect: {
+    endpoints: ["tcp/zenoh-source-plane:7447"],
+  },
+  scouting: {
+    multicast: {
+      enabled: false,
+    },
+    gossip: {
+      enabled: false,
+    },
+  },
+  plugins: {
+    ros2dds: {
+      nodename: "trace_context_destination_bridge",
+      domain: 32,
+      ros_automatic_discovery_range: "LOCALHOST",
+      allow: {
+        publishers: ["^/robotics/trace_context$"],
+        subscribers: ["^/robotics/trace_context$"],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+      reliable_routes_blocking: true,
+    },
+  },
+}

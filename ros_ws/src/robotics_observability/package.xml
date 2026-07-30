@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>robotics_observability</name>
+  <version>0.8.0</version>
+  <description>OpenTelemetry propagation and runtime measurements for ROS 2.</description>
+  <maintainer email="184955981+mmkolpakov@users.noreply.github.com">mmkolpakov</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>python3-opentelemetry-api-pip</exec_depend>
+  <exec_depend>python3-opentelemetry-exporter-otlp-proto-http-pip</exec_depend>
+  <exec_depend>python3-opentelemetry-sdk-pip</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>robotics_observability_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,45 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/grpc-go-cli/2026-07-27",
+  "author": "mmkolpakov",
+  "timestamp": "2026-07-27T06:37:49Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "GHSA-hrxh-6v49-42gf"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/sigstore/cosign/v3@v3.1.1",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/google.golang.org/grpc@v1.81.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The supported Cosign entrypoints are signing and verification clients. They do not start an xDS RBAC authorization engine or an HTTP/2 gRPC server."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-hrxh-6v49-42gf"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/open-policy-agent/opa",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/google.golang.org/grpc@v1.81.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The permit preflight runs OPA only through local version, formatting, and evaluation commands. It does not start an OPA server, an xDS RBAC authorization engine, or an HTTP/2 gRPC server."
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+[Unit]
+Description=Read-only SocketCAN observation gateway for %i
+Documentation=https://github.com/linux-can/can-utils/blob/v2025.01/canlogserver.c
+After=network-online.target
+Wants=network-online.target
+AssertPathExists=/sys/class/net/%i
+StartLimitIntervalSec=30s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/canlogserver -p 28700 %i
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+KillMode=control-group
+DynamicUser=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+DevicePolicy=closed
+IPAddressDeny=any
+IPAddressAllow=172.30.247.0/28
+IPAccounting=yes
+SocketBindAllow=ipv4:tcp:28700
+SocketBindDeny=any
+PrivateDevices=yes
+PrivateMounts=yes
+PrivateTmp=yes
+PrivateUsers=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectSystem=strict
+KeyringMode=private
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_CAN AF_INET
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+TasksMax=16
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

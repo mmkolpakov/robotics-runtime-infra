@@ -1,0 +1,12 @@
+[Unit]
+Description=Sample read-only LinuxPTP status once per second
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=1s
+AccuracySec=100ms
+RandomizedDelaySec=0
+Unit=robotics-ptp-sample.service
+
+[Install]
+WantedBy=timers.target

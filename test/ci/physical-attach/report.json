@@ -1,0 +1,13 @@
+{
+  "schema_version": "physical-attach-ci.v1",
+  "authorization": {
+    "ci_equivalent": "two-key-cosign-rekor-opa",
+    "production_keyless_entrypoint": "command-contract-only"
+  },
+  "target_identity": {
+    "kind": "x509_spki",
+    "scope": "ci_synthetic_sros2_target",
+    "hardware_identity_verified": false
+  },
+  "cases": []
+}

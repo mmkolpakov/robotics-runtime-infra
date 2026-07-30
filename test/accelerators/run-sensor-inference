@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly root
+readonly accelerator="${ROBOTICS_ACCELERATOR:-cpu}"
+readonly report_dir="${ROBOTICS_SENSOR_INFERENCE_REPORT_DIR:-${root}/artifacts/sensor-inference}"
+readonly evidence_dir="${ROBOTICS_EVIDENCE_DIR:-${root}/artifacts/sensor-inference/evidence}"
+readonly project_name="${COMPOSE_PROJECT_NAME:-robotics-sensor-inference-$RANDOM}"
+
+compose_files=(
+  --file "${root}/compose.yaml"
+  --file "${root}/compose.observability.yaml"
+  --file "${root}/compose.high-throughput.yaml"
+  --file "${root}/compose.sensor-inference.yaml"
+)
+profiles=(--profile observability --profile sensor-inference)
+expected_provider=CPUExecutionProvider
+maximum_p95_ms="${ROBOTICS_MAXIMUM_P95_MS:-1000}"
+minimum_rate_hz="${ROBOTICS_MINIMUM_RATE_HZ:-1}"
+
+rm -rf "${report_dir}"
+mkdir -p "${report_dir}" "${evidence_dir}"
+
+case "${accelerator}" in
+  cpu)
+    ;;
+  nvidia)
+    compose_files+=(
+      --file "${root}/compose.nvidia-sim.yaml"
+      --file "${root}/compose.sensor-inference-nvidia.yaml"
+    )
+    profiles+=(--profile nvidia-simulation)
+    expected_provider=CUDAExecutionProvider
+    maximum_p95_ms="${ROBOTICS_MAXIMUM_P95_MS:-100}"
+    minimum_rate_hz="${ROBOTICS_MINIMUM_RATE_HZ:-5}"
+    nvidia-smi \
+      --query-gpu=name,driver_version,compute_cap \
+      --format=csv,noheader \
+      > "${report_dir}/device.csv"
+    ;;
+  *)
+    printf 'unsupported accelerator: %s\n' "${accelerator}" >&2
+    exit 2
+    ;;
+esac
+
+readonly compose=(
+  docker compose
+  --project-name "${project_name}"
+  "${compose_files[@]}"
+  "${profiles[@]}"
+)
+
+cleanup() {
+  "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+export ROBOTICS_DOMAIN_ID="${ROBOTICS_DOMAIN_ID:-qualification-domain}"
+export ROBOTICS_EVIDENCE_DIR="${evidence_dir}"
+export ROBOTICS_EXPECTED_PROVIDER="${expected_provider}"
+export ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:-run-00000000-0000-4000-8000-000000000000}"
+export ROBOTICS_SENSOR_INFERENCE_REPORT_DIR="${report_dir}"
+
+"${compose[@]}" config --quiet
+up_options=()
+if [[ "${ROBOTICS_BUILD_IMAGES:-1}" == "1" ]]; then
+  up_options+=(--build)
+else
+  up_options+=(--no-build)
+fi
+"${compose[@]}" up \
+  "${up_options[@]}" \
+  --abort-on-container-exit \
+  --exit-code-from sensor-inference-probe \
+  data-plane otel-collector simulation sensor-inference-probe
+
+test -s "${report_dir}/sensor-inference.json"
+test -s "${evidence_dir}/metrics.otlp.json"
+test -s "${evidence_dir}/traces.otlp.jsonl"
+jq -e \
+  --arg provider "${expected_provider}" \
+  --argjson maximum_p95_ms "${maximum_p95_ms}" \
+  --argjson minimum_rate_hz "${minimum_rate_hz}" '
+    .status == "passed"
+    and .provider == $provider
+    and .session_providers[0] == $provider
+    and .received_frames >= 30
+    and .inference_count == .received_frames
+    and .latency_ms.p95 <= $maximum_p95_ms
+    and .observed_rate_hz >= $minimum_rate_hz
+  ' "${report_dir}/sensor-inference.json" >/dev/null

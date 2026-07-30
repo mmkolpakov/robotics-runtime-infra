@@ -1,0 +1,22 @@
+{
+  "schema_version": "qualification-policy.v1",
+  "policy_id": "github-main-qualification",
+  "predicate_type": "https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1",
+  "certificate_identities": [
+    "https://github.com/mmkolpakov/robotics-runtime-infra/.github/workflows/foundation-integration.yml@refs/heads/main"
+  ],
+  "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
+  "trusted_root_sha256": "8fc40bfc11dcc042f5fa8fa1ab19b1f98f5deef0665455dceb6698c865a0fc3f",
+  "required_artifact_kinds": [
+    "scenario",
+    "runtime_manifest",
+    "acceptance_run",
+    "domain_result",
+    "acceptance_aggregate",
+    "evidence_index",
+    "mcap_summary",
+    "metrics",
+    "junit",
+    "other_evidence"
+  ]
+}

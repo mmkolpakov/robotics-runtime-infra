@@ -4,6 +4,11 @@
   durability: volatile
   history: keep_last
   depth: 10
+/robotics/runtime_probe:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 100
 /camera/image:
   reliability: best_effort
   durability: volatile

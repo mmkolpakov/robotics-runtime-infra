@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<robot name="joint_motion_probe">
+  <group name="slider">
+    <joint name="slider_joint"/>
+  </group>
+  <group_state name="home" group="slider">
+    <joint name="slider_joint" value="0"/>
+  </group_state>
+  <group_state name="extended" group="slider">
+    <joint name="slider_joint" value="0.3"/>
+  </group_state>
+  <disable_collisions link1="base_link" link2="slider_link" reason="Adjacent"/>
+</robot>

@@ -1,0 +1,10 @@
+{
+  "schema_version": "physical-attach-time-window.v1",
+  "run_id": "test-run",
+  "workflow_run_id": "local",
+  "workflow_run_attempt": "1",
+  "source_revision": "local",
+  "started_at_unix_nano": "1784999999000000000",
+  "finished_at_unix_nano": "1785000001000000000",
+  "evidence_sha256": "fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2"
+}

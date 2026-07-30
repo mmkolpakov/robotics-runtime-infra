@@ -1,6 +1,6 @@
 ---
 x-evidence: &evidence
-  image: "${EVIDENCE_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/evidence-sink:0.5.0}"
+  image: "${EVIDENCE_IMAGE:-local/robotics-runtime-infra/evidence-sink:dev}"
   init: true
   read_only: true
   environment:
@@ -11,13 +11,16 @@ x-evidence: &evidence
     EVIDENCE_BUCKET: "${EVIDENCE_BUCKET:-}"
     EVIDENCE_DELETE_CONFIRMED_LOCAL: "${EVIDENCE_DELETE_CONFIRMED_LOCAL:-false}"
     EVIDENCE_MAX_SEGMENT_DURATION_SEC: "${ROBOTICS_MAX_BAG_DURATION:-60}"
-    EVIDENCE_MAX_SEGMENT_SIZE_BYTES: "${ROBOTICS_MAX_BAG_SIZE:-1073741824}"
+    EVIDENCE_MAX_SEGMENT_SIZE_BYTES: >-
+      ${ROBOTICS_MAX_SEGMENT_SIZE_BYTES:-1073741824}
     EVIDENCE_MODE: "${EVIDENCE_MODE:-local}"
     EVIDENCE_PREFIX: "${EVIDENCE_PREFIX:-}"
     RCLONE_CONFIG: /dev/null
     RCLONE_REMOTE: "${RCLONE_REMOTE:-evidence}"
     ROBOTICS_RETENTION_CLASS: "${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
-    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:-local}"
+    ROBOTICS_COMPRESSION: zstd
+    ROBOTICS_RECORDING_MODE: "${ROBOTICS_RECORDING_MODE:-bounded}"
+    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
   security_opt:
     - no-new-privileges:true
   cap_drop:

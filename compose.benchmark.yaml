@@ -1,6 +1,6 @@
 ---
 x-benchmark: &benchmark
-  image: "${BENCHMARK_IMAGE:-ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.5.0}"
+  image: "${BENCHMARK_IMAGE:-local/robotics-runtime-infra/benchmark:dev}"
   profiles: [benchmark]
   init: true
   ipc: service:data-plane

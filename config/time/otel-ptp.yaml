@@ -1,0 +1,72 @@
+---
+receivers:
+  file_log/ptp:
+    include: [/input/pmc.log]
+    start_at: beginning
+    poll_interval: 100ms
+    multiline:
+      line_start_pattern: '^sending: GET TIME_STATUS_NP$'
+
+processors:
+  resource/clock:
+    attributes:
+      - key: robotics.clock.sync_protocol
+        action: upsert
+        value: ptp
+      - key: robotics.clock.source
+        action: upsert
+        value: pmc
+
+connectors:
+  signal_to_metrics/ptp:
+    error_mode: propagate
+    logs:
+      - name: robotics.hardware.clock.offset
+        unit: ms
+        conditions: &ptp-synchronized
+          - >-
+            IsMatch(log.body, "(?m)^\\s*gmPresent\\s+true\\s*$")
+        gauge:
+          value: >-
+            Double(ExtractPatterns(log.body,
+            "(?m)^\\s*master_offset\\s+(?P<value>-?[0-9]+)\\s*$")["value"])
+            / 1000000.0
+      - name: robotics.hardware.clock.drift
+        unit: ppm
+        conditions: *ptp-synchronized
+        gauge:
+          value: >-
+            Double(ExtractPatterns(log.body,
+            "(?m)^\\s*cumulativeScaledRateOffset\\s+(?P<value>[+-]?[0-9]+(?:\\.[0-9]+)?)\\s*$")["value"])
+            * 1000000.0
+      - name: robotics.hardware.message.age
+        unit: ms
+        conditions: *ptp-synchronized
+        gauge:
+          value: >-
+            Double(UnixNano(Now()) - UnixNano(log.observed_time)) / 1000000.0
+      - name: robotics.hardware.clock.monotonic
+        unit: "1"
+        conditions: *ptp-synchronized
+        gauge:
+          value: "1"
+
+exporters:
+  file/contract:
+    path: /evidence/hardware-time.otlp.json
+    format: json
+    append: false
+    flush_interval: 100ms
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    logs:
+      receivers: [file_log/ptp]
+      processors: [resource/clock]
+      exporters: [signal_to_metrics/ptp]
+    metrics:
+      receivers: [signal_to_metrics/ptp]
+      exporters: [file/contract]

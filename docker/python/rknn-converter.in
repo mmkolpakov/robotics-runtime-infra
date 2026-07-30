@@ -1,0 +1,5 @@
+numpy==1.26.4
+onnx==1.18.0
+rknn-toolkit2 @ https://raw.githubusercontent.com/airockchip/rknn-toolkit2/42aa1d426c0a9e0869b6374edba009f7208a1926/rknn-toolkit2/packages/x86_64/rknn_toolkit2-2.3.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl#sha256=504d7fcf6a792dfa874e25155de0afb5d6650f04a1a0d49b0886934bec4741ef
+setuptools==80.10.2
+torch @ https://download-r2.pytorch.org/whl/cpu/torch-2.4.0%2Bcpu-cp312-cp312-linux_x86_64.whl#sha256=78dbf5f2789933a7ea2dabeead4daa44679b1e0d8eb35ddb7071c8ab7b181eb3

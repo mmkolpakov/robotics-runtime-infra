@@ -1,0 +1,91 @@
+{
+  "model_artifact_tensorrt": {
+    "manifest": {
+      "schema_version": "model-artifact-manifest.v1",
+      "artifact_id": "fixture.tensorrt.detector",
+      "source": {
+        "uri": "oci://registry.example.com/models/detector@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "media_type": "application/onnx",
+        "opset": 19,
+        "inputs": [
+          {
+            "name": "images",
+            "element_type": "float32",
+            "shape": [1, 3, 640, 640]
+          }
+        ],
+        "outputs": [
+          {
+            "name": "detections",
+            "element_type": "float32",
+            "shape": [1, "candidates", 6]
+          }
+        ]
+      },
+      "target": {
+        "format": "tensorrt_engine",
+        "uri": "oci://registry.example.com/models/detector-trt@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "media_type": "application/vnd.nvidia.tensorrt.engine",
+        "runtime_family": "onnxruntime_tensorrt",
+        "runtime_version": "1.27.0",
+        "execution_provider": "TensorrtExecutionProvider",
+        "target_architecture": "aarch64",
+        "precision": "float16"
+      },
+      "build": {
+        "tool": "TensorRT",
+        "tool_version": "11.0.0",
+        "tool_source_revision": "cccccccccccccccccccccccccccccccccccccccc",
+        "builder_image_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "parameters": {
+          "workspace_mib": 2048
+        }
+      },
+      "numerical_conformance": {
+        "report_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "reference_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sample_dataset_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "absolute_tolerance": 0.001,
+        "relative_tolerance": 0.01,
+        "passed": true
+      },
+      "compatibility": {
+        "portable": false,
+        "hardware": [
+          {
+            "vendor": "nvidia",
+            "device_family": "Jetson Orin",
+            "soc": "tegra234",
+            "compute_capability": "8.7",
+            "driver_version": "590.00"
+          }
+        ]
+      }
+    },
+    "observations": {
+      "source_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "target_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "conformance_report": {
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "reference_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "passed",
+        "executed_providers": ["TensorrtExecutionProvider"],
+        "fallback_count": 0
+      },
+      "runtime": {
+        "family": "onnxruntime_tensorrt",
+        "version": "1.27.0",
+        "architecture": "aarch64"
+      },
+      "hardware": {
+        "vendor": "nvidia",
+        "device_family": "Jetson Orin",
+        "soc": "tegra234",
+        "compute_capability": "8.7",
+        "driver_version": "590.00"
+      }
+    }
+  }
+}

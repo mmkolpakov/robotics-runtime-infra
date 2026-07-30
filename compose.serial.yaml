@@ -1,0 +1,20 @@
+---
+services:
+  simulation:
+    profiles: [simulation]
+
+  serial-device-preflight:
+    image: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
+    profiles: [serial-preflight]
+    init: true
+    network_mode: none
+    read_only: true
+    command: [test, -c, /dev/robotics/target]
+    devices:
+      - "${ROBOTICS_SERIAL_DEVICE:?set stable serial device path}:/dev/robotics/target:r"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      disable: true

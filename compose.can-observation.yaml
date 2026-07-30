@@ -1,0 +1,42 @@
+---
+services:
+  simulation:
+    profiles: [simulation]
+
+  can-observation-client:
+    # yamllint disable-line rule:line-length
+    image: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
+    profiles: [can-observation]
+    init: true
+    stdin_open: true
+    read_only: true
+    user: "65534:65534"
+    command:
+      - nc
+      - -w
+      - "30"
+      - "172.30.247.1"
+      - "28700"
+    environment:
+      ROBOTICS_CAN_OBSERVATION_ENDPOINT: 172.30.247.1:28700
+    networks:
+      - robotics-can-observation
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 5s
+    healthcheck:
+      disable: true
+
+networks:
+  robotics-can-observation:
+    name: robotics-can-observation
+    internal: true
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: robotics-can
+    ipam:
+      config:
+        - subnet: 172.30.247.0/28
+          gateway: 172.30.247.1

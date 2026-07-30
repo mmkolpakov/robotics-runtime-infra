@@ -1,0 +1,112 @@
+---
+x-build-args: &build-args
+  IMAGE_CREATED: "${IMAGE_CREATED:-1970-01-01T00:00:00Z}"
+  IMAGE_SOURCE: "${IMAGE_SOURCE:-https://github.com/mmkolpakov/robotics-runtime-infra}"
+  IMAGE_VERSION: "${IMAGE_VERSION:-dev}"
+  VCS_REF: "${VCS_REF:-local}"
+
+x-intel-runtime: &intel-runtime
+  init: true
+  network_mode: none
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-intel-image: &intel-image
+  # yamllint disable-line rule:line-length
+  image: "${INFERENCE_INTEL_IMAGE:-local/robotics-runtime-infra/inference-intel:dev}"
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: inference-intel
+    args: *build-args
+
+x-intel-conformance: &intel-conformance
+  <<: *intel-runtime
+  # yamllint disable-line rule:line-length
+  image: "${INFERENCE_INTEL_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-intel:dev}"
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: provider-conformance
+    args:
+      <<: *build-args
+      PROVIDER_CONFORMANCE_BASE: inference-intel
+      PROVIDER_CONFORMANCE_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+      PROVIDER_CONFORMANCE_TITLE: Robotics Intel provider conformance
+      PROVIDER_CONFORMANCE_DESCRIPTION: >-
+        Hardware gate for explicit OpenVINO device identity, fallback, and tensor parity.
+  environment:
+    ROBOTICS_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+    ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+    ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+  healthcheck:
+    disable: true
+
+services:
+  inference-intel-cpu-smoke:
+    <<: [*intel-runtime, *intel-image]
+    profiles: [intel-cpu]
+    command:
+      - python3
+      - -c
+      - >-
+        import onnxruntime as ort;
+        assert 'OpenVINOExecutionProvider' in ort.get_available_providers()
+    healthcheck:
+      disable: true
+
+  provider-conformance-intel-cpu:
+    <<: *intel-conformance
+    profiles: [conformance-intel-cpu]
+    environment:
+      ROBOTICS_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_OPTIONS: '{"device_type":"CPU"}'
+      ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/intel-cpu}"
+        target: /reports
+
+  provider-conformance-intel-gpu-linux:
+    <<: *intel-conformance
+    profiles: [conformance-intel-gpu-linux]
+    devices:
+      # yamllint disable-line rule:line-length
+      - "${ROBOTICS_INTEL_RENDER_DEVICE:-/dev/dri/renderD128}:${ROBOTICS_INTEL_RENDER_DEVICE:-/dev/dri/renderD128}:rw"
+    group_add:
+      - "${ROBOTICS_RENDER_GID:-109}"
+    environment:
+      ROBOTICS_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_OPTIONS: '{"device_type":"GPU"}'
+      ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/intel-gpu-linux}"
+        target: /reports
+
+  provider-conformance-intel-gpu-wsl:
+    <<: *intel-conformance
+    profiles: [conformance-intel-gpu-wsl]
+    devices:
+      - /dev/dxg:/dev/dxg
+    environment:
+      LD_LIBRARY_PATH: /usr/lib/wsl/lib
+      ROBOTICS_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_OPTIONS: '{"device_type":"GPU"}'
+      ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: /usr/lib/wsl
+        target: /usr/lib/wsl
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/intel-gpu-wsl}"
+        target: /reports

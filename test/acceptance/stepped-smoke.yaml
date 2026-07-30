@@ -1,4 +1,5 @@
-schema_version: acceptance-scenario.v2
+---
+schema_version: acceptance-scenario.v4
 scenario_id: org.example.runtime-infra.stepped-smoke
 execution:
   target_environment: simulation
@@ -10,19 +11,32 @@ execution:
   time_mode: simulation_stepped
   data_plane_profile: standard_isolated
   security_profile: none
+authorization:
+  mode: none
+forbidden_ros_graph:
+  topics: []
+  services: []
+  actions: []
 seed: 42
 timeouts:
   startup_sec: 60
   graph_ready_sec: 30
   stable_for_sec: 1
-  execution_sec: 5
-  shutdown_sec: 30
+  execution_sec: 10
+  shutdown_sec: 60
 expected_ros_graph:
   topics:
     - name: /clock
       type: rosgraph_msgs/msg/Clock
+      qos_profile: sensor_data
       min_publishers: 1
       min_subscribers: 0
+      first_message_timeout_sec: 10
+    - name: /robotics/runtime_probe
+      type: std_msgs/msg/UInt64
+      qos_profile: system_default
+      min_publishers: 1
+      min_subscribers: 1
       first_message_timeout_sec: 10
   services: []
   actions: []
@@ -30,6 +44,11 @@ expected_ros_graph:
 assertions: []
 time_policy:
   step_size_sec: 0.001
+  max_skipped_steps: 0
+  time_authority_min_samples: 30
+  max_time_authority_delivery_latency_p50_ms: 2
+  max_time_authority_delivery_latency_p95_ms: 5
+  max_time_authority_delivery_latency_ms: 100
 data_plane_policy:
   max_message_age_ms: 100
   max_loss_ratio: 0
@@ -37,10 +56,10 @@ data_plane_policy:
   data_sharing: false
   private_ipc: false
 evidence_policy:
-  topics: [/clock]
+  topics: [/clock, /robotics/runtime_probe]
   recording_mode: bounded
   compression: zstd
-  max_segment_size_bytes: 1048576
+  max_segment_size_bytes: 2097152
   max_segment_duration_sec: 30
   max_spool_size_bytes: 10485760
   spool_high_watermark_ratio: 0.8

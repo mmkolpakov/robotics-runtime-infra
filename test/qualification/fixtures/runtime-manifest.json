@@ -1,0 +1,70 @@
+{
+  "schema_version": "runtime-manifest.v1",
+  "runtime_id": "org.example.local-runtime",
+  "generated_at": "2026-07-27T07:26:11Z",
+  "oci_image": {
+    "reference": "local/robotics-runtime-infra/simulation:foundation@sha256:ca3aa770c7c1feef64c7141819d4463c40671feaa9d74b1cba65522f01998531",
+    "digest": "sha256:ca3aa770c7c1feef64c7141819d4463c40671feaa9d74b1cba65522f01998531"
+  },
+  "components": {
+    "contracts_revision": "3f6474d3c52d1990d2b65dd4dc43e00bf4f96ded",
+    "harness_revision": "d705b749c0b370f2d707cd65fec6edf358120784",
+    "infra_revision": "e95859e4be4bdb3d317b60138efbd4296774a6db"
+  },
+  "host": {
+    "os": "ubuntu",
+    "os_version": "24.04",
+    "architecture": "x86_64",
+    "kernel": "6.17.0-1020-azure"
+  },
+  "ros": {
+    "distribution": "jazzy",
+    "rmw_implementation": "rmw_fastrtps_cpp"
+  },
+  "render": {
+    "mode": "software",
+    "renderer": "software-forced"
+  },
+  "workload": {
+    "kind": "none"
+  },
+  "execution": {
+    "target_environment": "simulation",
+    "data_source": "gazebo",
+    "plant_backend": "gazebo_physics",
+    "time_mode": "simulation_stepped",
+    "data_plane_profile": "standard_isolated"
+  },
+  "authorization": {
+    "mode": "none"
+  },
+  "data_plane": {
+    "rmw_implementation": "rmw_fastrtps_cpp",
+    "ipc_namespace": "container-isolated",
+    "network_namespace": "compose-private",
+    "shm_transport": false,
+    "data_sharing": false,
+    "private_ipc": false
+  },
+  "security": {
+    "profile": "none",
+    "strategy": "none",
+    "enclaves": [],
+    "policy_digests": []
+  },
+  "lifecycle_states": [],
+  "physical_targets": [],
+  "clock": {
+    "basis": "ros_time",
+    "sync_protocol": "sim_clock",
+    "offset_ms": 0,
+    "drift_ppm": 0
+  },
+  "gazebo": {
+    "collection": "harmonic",
+    "version": "8.11.0",
+    "libraries": {
+      "gz-sim": "8.11.0"
+    }
+  }
+}
