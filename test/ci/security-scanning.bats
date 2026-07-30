@@ -174,10 +174,31 @@ EOF
   [ "${status}" -eq 0 ]
   run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136' Dockerfile
   [ "${status}" -eq 0 ]
-  [ "$(grep -Fc 'https://snapshot.ubuntu.com/ubuntu/20260726T000000Z/' Dockerfile)" -eq 4 ]
+  run grep -F \
+    'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
+    docker/apt/use-package-snapshots
+  [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"linux-libc-dev=${LINUX_LIBC_DEV_VERSION}"' Dockerfile)" -eq 2 ]
   run grep -F 'default = "20260726T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
   run grep -F 'default = "6.8.0-136.136"' docker-bake.hcl
   [ "${status}" -eq 0 ]
+}
+
+@test "CA bootstrap uses signed snapshot APT instead of remote package ADD" {
+  run grep -F 'ARG OPENSSL_VERSION=3.0.13-0ubuntu3.11' Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run grep -F 'ARG CA_CERTIFICATES_VERSION=20260601~24.04.1' Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run grep -F \
+    'COPY --chmod=0555 docker/apt/use-package-snapshots' \
+    Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run grep -E \
+    'ADD .*https://snapshot\.ubuntu\.com/ubuntu/.+\.deb' \
+    Dockerfile
+  [ "${status}" -eq 1 ]
 }
