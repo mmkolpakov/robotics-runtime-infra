@@ -14,7 +14,7 @@
         "/^Dockerfile$/"
       ],
       "matchStrings": [
-        "ARG YQ_REVISION=(?<currentDigest>[a-f0-9]{40})\\nARG YQ_VERSION=(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+        "ARG YQ_REVISION=(?<currentDigest>[a-f0-9]{40})\\nARG YQ_BASE_VERSION=(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
       ],
       "depNameTemplate": "mikefarah/yq",
       "datasourceTemplate": "github-tags",
@@ -30,6 +30,13 @@
         "github-actions"
       ],
       "rangeStrategy": "pin"
+    },
+    {
+      "description": "Do not restore yq releases affected by CVE-2026-56852",
+      "matchDepNames": [
+        "mikefarah/yq"
+      ],
+      "allowedVersions": ">=4.53.4"
     }
   ]
 }

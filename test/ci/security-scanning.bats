@@ -208,3 +208,27 @@ EOF
     Dockerfile
   [ "${status}" -eq 1 ]
 }
+
+@test "source-built yq contains the fixed text normalization dependency" {
+  run grep -F \
+    'ARG YQ_REVISION=0520a6fc904f2acdc188477e99d3720949268a1e' \
+    Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run grep -F 'ARG YQ_BASE_VERSION=v4.53.3' Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run grep -F 'ARG YQ_X_TEXT_VERSION=v0.40.0' Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run grep -F \
+    'test "$(go -C "${YQ_SOURCE}" list -m -f' \
+    Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run jq -e \
+    '.packageRules[] | select(.matchDepNames == ["mikefarah/yq"]) |
+      .allowedVersions == ">=4.53.4"' \
+    renovate.json
+  [ "${status}" -eq 0 ]
+}

@@ -237,16 +237,18 @@ RUN --mount=type=cache,id=opa-v1.18.2-mod,target=/go/pkg/mod,sharing=locked \
       "upstream_delta=3f0256edb298a5ebaff9adf1a34584a53278d051" \
       > /out/source.txt
 
-# Rebuild the exact yq release source with the patched Go toolchain. The
-# upstream release binary was built with a Go standard library below 1.26.5.
+# Rebuild yq from its verified upstream dependency-update commit. The latest
+# release still contains golang.org/x/text below the security-fixed version.
 FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS yq
 ARG TARGETOS
 ARG TARGETARCH
-ARG YQ_REVISION=1b9b4ac5187171d2e5e3129be0cfa827c7f9d53d
-ARG YQ_VERSION=v4.53.3
+ARG YQ_REVISION=0520a6fc904f2acdc188477e99d3720949268a1e
+ARG YQ_BASE_VERSION=v4.53.3
+ARG YQ_X_TEXT_VERSION=v0.40.0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     YQ_MODULE="github.com/mikefarah/yq/v4"; \
+    YQ_BUILD_VERSION="${YQ_BASE_VERSION}+commit.${YQ_REVISION:0:7}"; \
     YQ_MODULE_VERSION="$(go list -m -f '{{.Version}}' \
       "${YQ_MODULE}@${YQ_REVISION}")"; \
     go mod download "${YQ_MODULE}@${YQ_MODULE_VERSION}"; \
@@ -254,6 +256,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       "${YQ_MODULE}@${YQ_MODULE_VERSION}")"; \
     go -C "${YQ_SOURCE}" mod download; \
     go -C "${YQ_SOURCE}" mod verify; \
+    test "$(go -C "${YQ_SOURCE}" list -m -f '{{.Version}}' \
+      golang.org/x/text)" = "${YQ_X_TEXT_VERSION}"; \
     CGO_ENABLED=0 \
       GOOS="${TARGETOS}" \
       GOARCH="${TARGETARCH}" \
@@ -261,7 +265,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -trimpath \
       -ldflags "-s -w \
         -X github.com/mikefarah/yq/v4/cmd.GitCommit=${YQ_REVISION} \
-        -X github.com/mikefarah/yq/v4/cmd.GitDescribe=${YQ_VERSION}" \
+        -X github.com/mikefarah/yq/v4/cmd.GitDescribe=${YQ_BUILD_VERSION}" \
       -o /out/yq \
       .; \
     install -m 0444 "${YQ_SOURCE}/LICENSE" /out/YQ-LICENSE
