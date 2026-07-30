@@ -87,7 +87,8 @@ EOF
   run jq -e '
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and (.statements | length) == 53
+    and .version == 2
+    and (.statements | length) == 54
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -98,6 +99,10 @@ EOF
       and .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
       and .status == "not_affected"
       and .justification == "vulnerable_code_not_present"
+    )
+    and any(
+      .statements[];
+      .vulnerability.name == "CVE-2026-53175"
     )
   ' security/vex/linux-libc-dev.openvex.json
   [ "${status}" -eq 0 ]

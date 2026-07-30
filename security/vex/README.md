@@ -41,6 +41,7 @@ file.
 References:
 
 - [Ubuntu package description](https://packages.ubuntu.com/noble-updates/linux-libc-dev)
+- [CVE-2026-53175](https://nvd.nist.gov/vuln/detail/CVE-2026-53175)
 - [GHSA-hrxh-6v49-42gf](https://github.com/advisories/GHSA-hrxh-6v49-42gf)
 - [OpenVEX specification](https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md)
 - [Trivy local VEX files](https://trivy.dev/docs/v0.72/guide/supply-chain/vex/file/)
