@@ -27,6 +27,7 @@ FROM ${UV_IMAGE} AS uv
 FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${COSIGN_IMAGE} AS cosign
+FROM ${ROS_BASE_IMAGE} AS ca-bootstrap
 
 FROM scratch AS cosign-license
 ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
@@ -272,9 +273,13 @@ ARG OPENSSL_VERSION
 ARG CA_CERTIFICATES_VERSION
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --from=ca-bootstrap \
+  /etc/ssl/certs/ca-certificates.crt \
+  /etc/ssl/certs/ca-certificates.crt
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 
-RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+RUN test -s /etc/ssl/certs/ca-certificates.crt \
+    && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
     && apt-get install -y --no-install-recommends \

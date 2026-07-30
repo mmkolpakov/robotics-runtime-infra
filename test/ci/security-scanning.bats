@@ -197,6 +197,12 @@ EOF
     Dockerfile
   [ "${status}" -eq 0 ]
 
+  run grep -F 'FROM ${ROS_BASE_IMAGE} AS ca-bootstrap' Dockerfile
+  [ "${status}" -eq 0 ]
+
+  run grep -F 'COPY --from=ca-bootstrap' Dockerfile
+  [ "${status}" -eq 0 ]
+
   run grep -E \
     'ADD .*https://snapshot\.ubuntu\.com/ubuntu/.+\.deb' \
     Dockerfile
