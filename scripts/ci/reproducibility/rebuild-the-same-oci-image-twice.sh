@@ -16,11 +16,12 @@ export VCS_REF="${GITHUB_SHA}"
 export VERSION=reproducibility
 build=(
   docker buildx bake
+  "--allow=fs.write=${work_dir}"
   --file docker-bake.hcl
   evidence-sink
+  --provenance=false
   --set evidence-sink.no-cache=true
   --set evidence-sink.platform=linux/amd64
-  --set evidence-sink.provenance=false
 )
 "${build[@]}" --set \
   "evidence-sink.output=type=oci,dest=${work_dir}/first.tar,rewrite-timestamp=true"
