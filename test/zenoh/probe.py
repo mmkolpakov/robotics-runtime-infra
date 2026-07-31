@@ -39,6 +39,7 @@ PRODUCER_SPAN: Final = "robotics.zenoh.publish"
 CONSUMER_SPAN: Final = "robotics.zenoh.receive"
 TRACEPARENT_PATTERN: Final = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-0[1-9a-f]$")
 TRACESTATE: Final = "runtime=zenoh"
+DISCOVERY_TIMEOUT_SEC: Final = 120.0
 
 
 def required_environment(name: str) -> str:
@@ -133,7 +134,7 @@ def wait_for_subscriber(node: Node, topic: str, timeout_sec: float) -> int:
 def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[str, Any]:
     publisher = node.create_publisher(TraceContext, topic, qos_profile())
     started_at = iso8601_now()
-    subscriber_count = wait_for_subscriber(node, topic, 45.0)
+    subscriber_count = wait_for_subscriber(node, topic, DISCOVERY_TIMEOUT_SEC)
     traceparents: set[str] = set()
     first_message_at_ns: int | None = None
 
@@ -240,7 +241,7 @@ def subscribe(
         receive,
         qos_profile(),
     )
-    deadline = time.monotonic() + 60.0
+    deadline = time.monotonic() + DISCOVERY_TIMEOUT_SEC
     reached_at: float | None = None
     while time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.1)

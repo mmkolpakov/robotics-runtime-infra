@@ -172,10 +172,8 @@ jobs:
         run: scripts/ci/integration/verify-cpu-provider-identity-and-tensor-parity.sh
       - name: Run ROS and Gazebo acceptance tests
         run: scripts/ci/integration/run-ros-and-gazebo-acceptance-tests.sh
-      - name: Verify paused MCAP playback
-        run: scripts/ci/integration/verify-paused-mcap-playback.sh
-      - name: Verify playback readiness fails closed
-        run: scripts/ci/integration/verify-playback-readiness-fails-closed.sh
+      - name: Verify MCAP playback
+        run: scripts/ci/integration/verify-mcap-playback.sh
       - name: Verify the local high-throughput profile
         run: scripts/ci/integration/verify-the-local-high-throughput-profile.sh
       - name: Verify cross-domain Trace Context transport

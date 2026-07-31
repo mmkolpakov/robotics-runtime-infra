@@ -11,7 +11,6 @@ x-jetson-build: &jetson-build
   additional_contexts:
     # yamllint disable-line rule:line-length
     onnxruntime-source: "https://github.com/microsoft/onnxruntime.git?tag=v1.27.0&checksum=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5"
-  args: *build-args
 
 x-jetson-runtime: &jetson-runtime
   init: true

@@ -1,0 +1,23 @@
+---
+services:
+  time-fixture:
+    image: "${HOST_IO_FIXTURE_IMAGE}"
+    init: true
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_TIME_SOCKET_DIR}"
+        target: /run/robotics-time
+      - type: bind
+        source: "${ROBOTICS_CHRONY_FIXTURE_CONFIG}"
+        target: /etc/chrony/chrony.conf
+        read_only: true
+    healthcheck:
+      test: [CMD-SHELL, "test -S /run/robotics-time/chronyd.sock"]
+      interval: 1s
+      timeout: 1s
+      retries: 30

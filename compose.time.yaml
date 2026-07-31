@@ -14,10 +14,6 @@ x-time-evidence: &time-evidence
     - /tmp:rw,noexec,nosuid,nodev,size=16m
   healthcheck:
     disable: true
-  volumes:
-    - type: bind
-      source: "${ROBOTICS_TIME_EVIDENCE_DIR:-./runs/current/evidence}"
-      target: /evidence
 
 services:
   simulation:

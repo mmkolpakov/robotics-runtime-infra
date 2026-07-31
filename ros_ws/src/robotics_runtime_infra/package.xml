@@ -10,6 +10,7 @@
 
   <depend>control_msgs</depend>
   <exec_depend>controller_manager</exec_depend>
+  <exec_depend>curl</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>gz_ros2_control</exec_depend>
   <exec_depend>image_transport</exec_depend>
@@ -29,6 +30,7 @@
   <exec_depend>python3-opencv</exec_depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>ros2_control</exec_depend>
   <exec_depend>ros2_controllers</exec_depend>

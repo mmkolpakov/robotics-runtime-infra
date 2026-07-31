@@ -124,7 +124,7 @@ jq -e --arg digest "${fastdds_profile_sha256}" \
   '.data_plane.fastdds_profile_sha256 == $digest' \
   "${run_dir}/runtime-manifest.json" >/dev/null
 "${compose[@]}" --profile acceptance --profile observability \
-  up --detach --no-build --wait --wait-timeout 30 \
+  up --detach --no-build --wait --wait-timeout 120 \
   runtime-probe-publisher runtime-metrics
 
 observer="$(

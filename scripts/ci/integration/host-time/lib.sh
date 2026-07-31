@@ -15,11 +15,6 @@ export HOST_TIME_PTP_UNSYNC_EVIDENCE="${HOST_TIME_WORK}/ptp-unsync"
 export HOST_TIME_OTEL_IMAGE="otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa"
 
 host_time_cleanup() {
-  docker rm --force \
-    host-chronyd host-chrony-otel host-ptp-otel \
-    host-chronyd-unsync host-chrony-otel-unsync \
-    host-ptp-otel-unsync \
-    >/dev/null 2>&1 || true
   sudo rm -rf "${HOST_TIME_WORK}"
 }
 
@@ -30,21 +25,7 @@ host_time_wait_for_evidence() {
     test -s "${path}" && return 0
     sleep 1
   done
-  local container
-  for container in "$@"; do
-    docker logs "${container}" >&2 || true
-  done
-  return 1
-}
-
-host_time_wait_for_socket() {
-  local path="$1"
-  local container="$2"
-  for _ in {1..30}; do
-    docker exec "${container}" test -S "${path}" && return 0
-    sleep 1
-  done
-  docker logs "${container}" >&2 || true
+  "$@" logs --no-color >&2 || true
   return 1
 }
 

@@ -1,4 +1,14 @@
 ---
+x-zenoh-probe-environment: &zenoh-probe-environment
+  HOME: /tmp
+  PYTHONUNBUFFERED: "1"
+  RCUTILS_COLORIZED_OUTPUT: "0"
+  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+  ROBOTICS_MESSAGE_COUNT: "20"
+  ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+  ROBOTICS_TOPIC: /robotics/trace_context
+  ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+
 x-zenoh-probe: &zenoh-probe
   image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
   user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
@@ -8,15 +18,7 @@ x-zenoh-probe: &zenoh-probe
   cap_drop:
     - ALL
   profiles: [zenoh]
-  environment:
-    HOME: /tmp
-    PYTHONUNBUFFERED: "1"
-    RCUTILS_COLORIZED_OUTPUT: "0"
-    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
-    ROBOTICS_MESSAGE_COUNT: "20"
-    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
-    ROBOTICS_TOPIC: /robotics/trace_context
-    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+  environment: *zenoh-probe-environment
   volumes:
     - type: bind
       source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
@@ -138,22 +140,26 @@ services:
     <<: *zenoh-probe
     network_mode: service:zenoh-destination-plane
     environment:
-      HOME: /tmp
+      <<: *zenoh-probe-environment
       OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
-      PYTHONUNBUFFERED: "1"
-      RCUTILS_COLORIZED_OUTPUT: "0"
-      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
       ROBOTICS_DOMAIN_ID: zenoh-destination
-      ROBOTICS_MESSAGE_COUNT: "20"
       ROBOTICS_OBSERVATION_PATH: /reports/destination/probe.json
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
-      ROBOTICS_TOPIC: /robotics/trace_context
-      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
       ROS_DOMAIN_ID: "32"
     command:
       - python3
       - /opt/robotics/zenoh/probe.py
       - subscribe
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent --show-error --max-time 2
+          'http://127.0.0.1:8000/@/local/ros2/route/topic/sub/robotics/trace_context'
+          | jq -e 'any(.[]; .value.is_active == true)' >/dev/null
+      interval: 1s
+      timeout: 3s
+      retries: 120
+      start_period: 2s
     depends_on:
       zenoh-destination-bridge:
         condition: service_started
@@ -164,17 +170,10 @@ services:
     <<: *zenoh-probe
     network_mode: service:zenoh-source-plane
     environment:
-      HOME: /tmp
+      <<: *zenoh-probe-environment
       OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
-      PYTHONUNBUFFERED: "1"
-      RCUTILS_COLORIZED_OUTPUT: "0"
-      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
       ROBOTICS_DOMAIN_ID: zenoh-source
-      ROBOTICS_MESSAGE_COUNT: "20"
       ROBOTICS_OBSERVATION_PATH: /reports/source/probe.json
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
-      ROBOTICS_TOPIC: /robotics/trace_context
-      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
       ROS_DOMAIN_ID: "31"
     command:
       - python3
