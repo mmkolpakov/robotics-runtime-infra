@@ -403,8 +403,8 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
     && apt-get install -y --no-install-recommends jq python3 \
-    && test "$(/usr/local/bin/cosign version --json | jq -er '.gitVersion')" = \
-      "v${COSIGN_VERSION}" \
+    && test "$(/usr/local/bin/cosign version --json | jq -er '.gitVersion | ltrimstr("v")')" = \
+      "${COSIGN_VERSION}" \
     && uv venv --no-cache --python /usr/bin/python3 /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
@@ -415,7 +415,7 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && python3 -B -c \
+    && /opt/venv/bin/python -B -c \
       "from robotics_runtime_contracts import schema_names; assert 'execution-permit.v1' in schema_names() and 'execution-verification.v1' in schema_names()" \
     && groupadd --gid 10002 preflight \
     && useradd \
@@ -504,7 +504,7 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && python3 -B -c "from mcap.reader import make_reader" \
+    && /opt/venv/bin/python -B -c "from mcap.reader import make_reader" \
     && rm -f /usr/local/bin/uv /usr/local/bin/uvx \
     && groupadd --gid 10001 evidence \
     && useradd --uid 10001 --gid 10001 --create-home evidence \
