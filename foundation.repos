@@ -7,4 +7,4 @@ repositories:
   robotics-acceptance-harness:
     type: git
     url: https://github.com/mmkolpakov/robotics-acceptance-harness.git
-    version: 3cdb1a2d616c2f6cd01368bbd94df2bb980e713a
+    version: 2350390b1de2bb678641c956ad7baa2eaa223498
