@@ -32,7 +32,7 @@ setup() {
     ! (require_sha256_digest \
       "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" \
       verifier)
-  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
+  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/core.sh"
 
   [ "${status}" -eq 0 ]
 }
@@ -59,7 +59,7 @@ setup() {
       "${temporary}/bundle.json" \
       "${temporary}/decoded-statement.json"
     test "${output}" = caller-output
-  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
+  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/core.sh"
 
   [ "${status}" -eq 0 ]
 }
@@ -723,19 +723,18 @@ setup() {
 
 @test "only the isolated offline verifier may bypass the transparency log" {
   run bash -ceu '
-    script="$1"
-    keyless="$(
-      sed -n \
-        "/^verify_keyless_attestation()/,/^verify_offline_attestation()/p" \
-        "${script}"
-    )"
-    offline="$(
-      sed -n \
-        "/^verify_offline_attestation()/,/^authorize_common()/p" \
-        "${script}"
-    )"
-    ! grep -F -- "--insecure-ignore-tlog" <<<"${keyless}"
-    grep -F -- "--insecure-ignore-tlog" <<<"${offline}"
-  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
+    production="$1"
+    core="$2"
+    ci="$3"
+    ! grep -F -- "--insecure-ignore-tlog" "${production}" "${core}"
+    ! grep -F -- "authorize-offline-test" "${production}" "${core}"
+    ! grep -F -- "verify-offline-test-attestation" "${production}" "${core}"
+    grep -F -- "--insecure-ignore-tlog" "${ci}"
+    grep -F -- "authorize-offline-test" "${ci}"
+    grep -F -- "verify-offline-test-attestation" "${ci}"
+  ' _ \
+    "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight" \
+    "${REPOSITORY_ROOT}/docker/permit-preflight/core.sh" \
+    "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight-ci"
   [ "${status}" -eq 0 ]
 }

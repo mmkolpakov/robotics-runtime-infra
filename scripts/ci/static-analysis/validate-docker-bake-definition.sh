@@ -14,6 +14,20 @@ mapfile -t bake_targets < <(
 ((${#bake_targets[@]} > 0))
 
 bake_plan="$("${bake[@]}" --print "${bake_targets[@]}")"
+release_plan="$("${bake[@]}" --print release)"
+cpu_plan="$("${bake[@]}" --print cpu)"
+ci_only_plan="$("${bake[@]}" --print ci-only)"
+jq -e '
+  (.target | has("permit-preflight")) and
+  (.target | has("permit-preflight-ci") | not)
+' <<<"${release_plan}" >/dev/null
+jq -e '
+  (.target | has("permit-preflight")) and
+  (.target | has("permit-preflight-ci") | not)
+' <<<"${cpu_plan}" >/dev/null
+jq -e '
+  (.target | keys) == ["permit-preflight-ci"]
+' <<<"${ci_only_plan}" >/dev/null
 selected_targets="$(
   printf '%s\n' "${bake_targets[@]}" |
     jq -Rsc 'split("\n") | map(select(length > 0))'

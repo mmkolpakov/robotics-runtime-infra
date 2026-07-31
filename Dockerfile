@@ -346,7 +346,7 @@ USER 65532:65532
 ENTRYPOINT ["/opa"]
 CMD ["version"]
 
-FROM ubuntu-ca AS permit-preflight
+FROM ubuntu-ca AS permit-preflight-base
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
@@ -380,6 +380,7 @@ RUN case "${COSIGN_IMAGE}" in \
       *) ;; \
     esac \
     && install -d -m 0555 \
+      /usr/local/lib/robotics-runtime \
       /usr/share/licenses/cosign \
       /usr/share/robotics-runtime \
     && printf '%s\n' "${cosign_image_digest}" \
@@ -438,7 +439,8 @@ COPY --chmod=0444 docker/permit-preflight/render-policy-input.jq \
   /usr/share/robotics-runtime/policy/render-policy-input.jq
 COPY --chmod=0444 trust/qualification.trusted-root.json \
   /usr/share/robotics-runtime/trust/sigstore-trusted-root.json
-COPY --chmod=0555 docker/permit-preflight/permit-preflight /usr/local/bin/permit-preflight
+COPY --chmod=0444 docker/permit-preflight/core.sh \
+  /usr/local/lib/robotics-runtime/permit-preflight-core.sh
 
 RUN chmod 0555 \
       /usr/share/robotics-runtime/policy \
@@ -450,11 +452,26 @@ WORKDIR /work
 RUN test -r /usr/share/robotics-runtime/policy/execution.rego \
     && opa fmt --list --fail /usr/share/robotics-runtime/policy/execution.rego
 
+FROM permit-preflight-base AS permit-preflight
+
+COPY --chmod=0555 docker/permit-preflight/permit-preflight /usr/local/bin/permit-preflight
+
 ENTRYPOINT ["/usr/local/bin/permit-preflight"]
 CMD ["versions"]
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["/usr/local/bin/permit-preflight", "versions"]
+
+FROM permit-preflight AS permit-preflight-ci
+
+COPY --chmod=0555 docker/permit-preflight/permit-preflight-ci \
+  /usr/local/bin/permit-preflight-ci
+
+ENTRYPOINT ["/usr/local/bin/permit-preflight-ci"]
+CMD ["versions"]
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD ["/usr/local/bin/permit-preflight-ci", "versions"]
 
 FROM ubuntu-ca AS evidence-sink
 

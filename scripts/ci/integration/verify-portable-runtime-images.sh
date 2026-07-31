@@ -11,6 +11,12 @@ docker compose --profile test run --rm --no-deps inference-cpu-smoke
 docker run --rm "${OBSERVER_IMAGE}" robotics-acceptance --version
 docker run --rm "${EVIDENCE_IMAGE}" versions
 docker run --rm "${PERMIT_PREFLIGHT_IMAGE}" versions
+docker run --rm "${PERMIT_PREFLIGHT_CI_IMAGE}" versions
+docker run --rm --entrypoint sh "${PERMIT_PREFLIGHT_IMAGE}" -c \
+  "! grep -R -E \
+    'authorize-offline-test|verify-offline-test-attestation|--insecure-ignore-tlog' \
+    /usr/local/bin/permit-preflight \
+    /usr/local/lib/robotics-runtime/permit-preflight-core.sh"
 docker run --rm --entrypoint cat "${HOST_IO_FIXTURE_IMAGE}" \
   /usr/share/robotics-runtime/host-io-fixture-packages.tsv \
   > "${actual_packages}"

@@ -152,9 +152,9 @@ generate_role_keys() {
   local key_dir="${work_root}/keys"
   mkdir -p "${key_dir}"
   chmod 0777 "${key_dir}"
-  cosign_run "${key_dir}" generate-key-pair --output-key-prefix operator
-  cosign_run "${key_dir}" generate-key-pair --output-key-prefix approver
-  cosign_run "${key_dir}" signing-config create \
+  permit_ci_cosign "${key_dir}" generate-key-pair --output-key-prefix operator
+  permit_ci_cosign "${key_dir}" generate-key-pair --output-key-prefix approver
+  permit_ci_cosign "${key_dir}" signing-config create \
     --with-default-services \
     --no-default-fulcio \
     --no-default-oidc \
@@ -168,12 +168,12 @@ sign_role() {
 
   chmod 0777 "${case_dir}"
 
-  cosign_run "${work_root}" attest-blob --yes \
+  permit_ci_cosign "${work_root}" attest-blob --yes \
     --key "keys/${role}.key" \
     --signing-config keys/signing-config.json \
     --bundle "$(basename "${case_dir}")/${role}.sigstore.json" \
     --statement "$(basename "${case_dir}")/execution-statement.json"
-  permit_chmod \
+  permit_ci_chmod \
     "${work_root}" \
     0444 \
     "$(basename "${case_dir}")/${role}.sigstore.json"
@@ -235,7 +235,7 @@ run_offline_preflight() {
   local case_mount
 
   case_mount="$(work_mount_path "${case_dir}")"
-  permit_run "${work_root}" authorize-offline-test \
+  permit_ci_run "${work_root}" authorize-offline-test \
     /work/keys \
     "${case_mount}/execution-permit.json" \
     "${case_mount}/execution-statement.json" \

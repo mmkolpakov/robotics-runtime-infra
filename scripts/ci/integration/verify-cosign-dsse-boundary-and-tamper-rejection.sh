@@ -13,7 +13,7 @@ cosign=(
   --volume "${work}:/work"
   --workdir /work
   --entrypoint /usr/local/bin/cosign
-  "${PERMIT_PREFLIGHT_IMAGE}"
+  "${PERMIT_PREFLIGHT_CI_IMAGE}"
 )
 "${cosign[@]}" signing-config create \
   --no-default-fulcio \
@@ -29,7 +29,7 @@ cosign=(
   --statement statement.json
 docker run --rm \
   --volume "${work}:/work:ro" \
-  "${PERMIT_PREFLIGHT_IMAGE}" \
+  "${PERMIT_PREFLIGHT_CI_IMAGE}" \
   verify-offline-test-attestation \
   /work/statement.json \
   /work/operator.sigstore.json \
@@ -38,7 +38,7 @@ jq '.predicate.permit_id = "tampered"' \
   "${work}/statement.json" > "${work}/tampered-statement.json"
 if docker run --rm \
   --volume "${work}:/work:ro" \
-  "${PERMIT_PREFLIGHT_IMAGE}" \
+  "${PERMIT_PREFLIGHT_CI_IMAGE}" \
   verify-offline-test-attestation \
   /work/tampered-statement.json \
   /work/operator.sigstore.json \
@@ -49,13 +49,13 @@ fi
 docker run --rm \
   --volume "${work}:/work:ro" \
   --entrypoint /usr/bin/jq \
-  "${PERMIT_PREFLIGHT_IMAGE}" \
+  "${PERMIT_PREFLIGHT_CI_IMAGE}" \
   '.dsseEnvelope.payload += "A"' \
   /work/operator.sigstore.json \
   > "${work}/tampered-operator.sigstore.json"
 if docker run --rm \
   --volume "${work}:/work:ro" \
-  "${PERMIT_PREFLIGHT_IMAGE}" \
+  "${PERMIT_PREFLIGHT_CI_IMAGE}" \
   verify-offline-test-attestation \
   /work/statement.json \
   /work/tampered-operator.sigstore.json \

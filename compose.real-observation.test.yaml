@@ -28,6 +28,7 @@ x-real-observation-test-environment: &real-observation-test-environment
 
 services:
   physical-permit-preflight:
+    image: "${PERMIT_PREFLIGHT_CI_IMAGE:?set PERMIT_PREFLIGHT_CI_IMAGE for synthetic authorization tests}"
     command:
       - authorize-offline-test
       - /test-keys

@@ -13,6 +13,7 @@ ci_set_compose_fixture_env() {
   export ROBOTICS_RUNTIME_MODE="${ROBOTICS_RUNTIME_MODE:-source}"
   export ROBOTICS_CHRONY_IDENTITY="${ROBOTICS_CHRONY_IDENTITY:-100:101}"
   export ROBOTICS_DOMAIN_ID="${ROBOTICS_DOMAIN_ID:-0}"
+  export PERMIT_PREFLIGHT_CI_IMAGE="${PERMIT_PREFLIGHT_CI_IMAGE:-local/robotics-runtime-infra/permit-preflight-ci:dev}"
   export ROBOTICS_PTP_SAMPLE_FILE="${ROBOTICS_PTP_SAMPLE_FILE:-./test/time/pmc.fixture}"
   export ROBOTICS_RKNN_RENDER_GID="${ROBOTICS_RKNN_RENDER_GID:-65534}"
   export ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:-run-ci-compose}"

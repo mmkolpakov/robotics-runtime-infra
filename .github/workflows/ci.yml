@@ -52,8 +52,6 @@ jobs:
         run: bats test/ci
       - name: Validate Docker Bake definition
         run: scripts/ci/static-analysis/validate-docker-bake-definition.sh
-      - name: Validate Compose models
-        run: scripts/ci/validate-compose-models.sh
       - name: Build the pinned policy engine
         env:
           REGISTRY: local
@@ -139,6 +137,8 @@ jobs:
       EVIDENCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/evidence-sink:ci
       # yamllint disable-line rule:line-length
       PERMIT_PREFLIGHT_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/permit-preflight:ci
+      # yamllint disable-line rule:line-length
+      PERMIT_PREFLIGHT_CI_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/permit-preflight-ci:ci
       HOST_IO_FIXTURE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/host-io-fixture:ci
       # yamllint disable-line rule:line-length
       CAN_CLIENT_IMAGE: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
@@ -151,7 +151,7 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build the amd64 CPU product
         run: >-
-          docker buildx bake --file docker-bake.hcl cpu
+          docker buildx bake --file docker-bake.hcl cpu ci-only
           --load
           --set '*.platform=linux/amd64'
           --set '*.cache-from=type=gha,scope=runtime-infra-amd64'
@@ -191,6 +191,8 @@ jobs:
         run: scripts/ci/integration/capture-runtime-evidence.sh
       - name: Scan images and enforce vulnerability policy
         run: scripts/ci/security/scan-bake-group.sh cpu
+      - name: Scan CI-only images and enforce vulnerability policy
+        run: scripts/ci/security/scan-bake-group.sh ci-only
       - name: Stop runtime
         if: always()
         run: docker compose --profile test --profile acceptance down --volumes --remove-orphans

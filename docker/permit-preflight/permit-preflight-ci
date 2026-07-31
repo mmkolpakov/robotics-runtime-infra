@@ -1,0 +1,93 @@
+#!/bin/sh
+set -eu
+
+# shellcheck source=docker/permit-preflight/core.sh
+. /usr/local/lib/robotics-runtime/permit-preflight-core.sh
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  permit-preflight-ci verify-offline-test-attestation STATEMENT BUNDLE PUBLIC_KEY
+  permit-preflight-ci authorize-offline-test PUBLIC_KEY_DIR PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUST_POLICY REQUEST NONCE_DIR OUTPUT
+EOF
+  exit 64
+}
+
+verify_offline_attestation() {
+  statement="$1"
+  bundle="$2"
+  public_key="$3"
+  decoded_statement="$4"
+  assert_single_json_document "${statement}"
+  assert_single_json_document "${bundle}"
+  digest="$(statement_subject_digest "${statement}")"
+  predicate_type="$(execution_permit_predicate_type "${statement}")"
+  cosign verify-blob-attestation \
+    --bundle "${bundle}" \
+    --key "${public_key}" \
+    --insecure-ignore-tlog \
+    --digest "${digest}" \
+    --digestAlg sha256 \
+    --type "${predicate_type}" || {
+    printf 'offline attestation signature verification failed: %s\n' \
+      "${bundle}" >&2
+    exit 65
+  }
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+}
+
+verify_role_attestation() {
+  test "$#" -eq 6 || usage
+  role="$1"
+  statement="$2"
+  bundle="$3"
+  decoded_statement="$6"
+  case "${role}" in
+    operator | approver) ;;
+    *) usage ;;
+  esac
+  verify_offline_attestation \
+    "${statement}" \
+    "${bundle}" \
+    "${offline_key_dir}/${role}.pub" \
+    "${decoded_statement}"
+}
+
+command_name="${1:-}"
+case "${command_name}" in
+  authorize-offline-test)
+    test "$#" -eq 10 || usage
+    shift
+    offline_key_dir="$1"
+    shift
+    test -d "${offline_key_dir}" && test ! -L "${offline_key_dir}" || {
+      printf 'offline key directory must be a non-symlink directory\n' >&2
+      exit 66
+    }
+    require_file "${offline_key_dir}/operator.pub"
+    require_file "${offline_key_dir}/approver.pub"
+    authorize_common "$@"
+    ;;
+  verify-offline-test-attestation)
+    test "$#" -eq 4 || usage
+    statement="$2"
+    bundle="$3"
+    public_key="$4"
+    require_file "${statement}"
+    require_file "${bundle}"
+    require_file "${public_key}"
+    work="$(mktemp -d)"
+    trap 'rm -rf "${work}"' EXIT HUP INT TERM
+    verify_offline_attestation \
+      "${statement}" \
+      "${bundle}" \
+      "${public_key}" \
+      "${work}/statement.json"
+    ;;
+  versions | authorize | materialize-runtime)
+    exec /usr/local/bin/permit-preflight "$@"
+    ;;
+  *)
+    usage
+    ;;
+esac

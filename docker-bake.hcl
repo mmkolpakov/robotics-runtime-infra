@@ -86,6 +86,10 @@ group "cpu" {
   ]
 }
 
+group "ci-only" {
+  targets = ["permit-preflight-ci"]
+}
+
 group "multiarch" {
   targets = [
     "edge-runtime",
@@ -112,17 +116,6 @@ group "release" {
     "benchmark-runtime",
     "evidence-sink",
     "permit-preflight",
-  ]
-}
-
-group "conformance" {
-  targets = [
-    "provider-conformance-cpu",
-    "provider-conformance-amd",
-    "provider-conformance-intel",
-    "provider-conformance-nvidia",
-    "provider-conformance-nvidia-jetson-orin",
-    "provider-conformance-nvidia-jetson-thor",
   ]
 }
 
@@ -418,13 +411,6 @@ target "rknn-source-verification" {
   platforms = ["linux/amd64"]
 }
 
-target "rknn-converter" {
-  inherits  = ["_rknn"]
-  target    = "rknn-converter"
-  platforms = ["linux/amd64"]
-  tags      = ["${REGISTRY}/robotics-runtime-infra/rknn-converter:${VERSION}"]
-}
-
 target "rknn-converter-verification" {
   inherits  = ["_rknn"]
   target    = "rknn-converter-verification"
@@ -491,6 +477,17 @@ target "permit-preflight" {
   target    = "permit-preflight"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight:${VERSION}"]
+  args = {
+    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_VERSION = COSIGN_VERSION
+  }
+}
+
+target "permit-preflight-ci" {
+  inherits  = ["_common"]
+  target    = "permit-preflight-ci"
+  platforms = ["linux/amd64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight-ci:${VERSION}"]
   args = {
     COSIGN_IMAGE   = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
