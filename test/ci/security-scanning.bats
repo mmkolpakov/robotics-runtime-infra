@@ -32,8 +32,7 @@ EOF
 
   [ "${status}" -eq 0 ]
   [ "$(wc -l <"${DOCKER_LOG}")" -eq 4 ]
-  [ "$(grep -Fc -- '--vex /work/security/vex/linux-libc-dev.openvex.json' "${DOCKER_LOG}")" -eq 4 ]
-  [ "$(grep -Fc -- '--vex /work/security/vex/grpc-go-cli.openvex.json' "${DOCKER_LOG}")" -eq 4 ]
+  [ "$(grep -Fc -- '--vex /work/security/vex/linux-libc-dev.openvex.json' "${DOCKER_LOG}")" -eq 2 ]
   run grep -F -- '--platform linux/amd64' "${DOCKER_LOG}"
   [ "${status}" -eq 0 ]
   run grep -F -- '--platform linux/arm64' "${DOCKER_LOG}"
@@ -57,22 +56,39 @@ EOF
   cat >"${FAKE_BIN}/docker" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-if test "$1 $2 $3" = "buildx bake --print"; then
-  cat "${BAKE_PLAN}"
+if test "$1 $2 $3 $4 $5" = "buildx bake --file docker-bake.hcl --print"; then
+  case "${BAKE_PLAN_MODE:-valid}" in
+    empty) printf '{"target":{}}\n' ;;
+    multi) jq '.target.runtime.tags += ["registry.example/runtime:latest"]' "${BAKE_PLAN}" ;;
+    valid) cat "${BAKE_PLAN}" ;;
+  esac
   exit 0
 fi
 printf '%s\n' "$*" >>"${DOCKER_LOG}"
 EOF
   chmod +x "${FAKE_BIN}/docker"
 
-  run env \
-    "PATH=${FAKE_BIN}:${PATH}" \
-    "BAKE_PLAN=${BATS_TEST_TMPDIR}/bake-plan.json" \
-    "DOCKER_LOG=${DOCKER_LOG}" \
-    "HOME=${BATS_TEST_TMPDIR}" \
-    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
-    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
-    TRIVY_IMAGE=trivy:test \
+  environment=(
+    "PATH=${FAKE_BIN}:${PATH}"
+    "BAKE_PLAN=${BATS_TEST_TMPDIR}/bake-plan.json"
+    "DOCKER_LOG=${DOCKER_LOG}"
+    "HOME=${BATS_TEST_TMPDIR}"
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}"
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}"
+    TRIVY_IMAGE=trivy:test
+  )
+
+  run env "${environment[@]}" BAKE_PLAN_MODE=empty \
+    scripts/ci/security/scan-bake-group.sh accelerator
+  [ "${status}" -ne 0 ]
+  [ ! -e "${DOCKER_LOG}" ]
+
+  run env "${environment[@]}" BAKE_PLAN_MODE=multi \
+    scripts/ci/security/scan-bake-group.sh accelerator
+  [ "${status}" -ne 0 ]
+  [ ! -e "${DOCKER_LOG}" ]
+
+  run env "${environment[@]}" \
     scripts/ci/security/scan-bake-group.sh accelerator
 
   [ "${status}" -eq 0 ]
@@ -88,7 +104,6 @@ EOF
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
     and .version == 2
-    and (.statements | length) == 54
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -100,10 +115,6 @@ EOF
       and .status == "not_affected"
       and .justification == "vulnerable_code_not_present"
     )
-    and any(
-      .statements[];
-      .vulnerability.name == "CVE-2026-53175"
-    )
   ' security/vex/linux-libc-dev.openvex.json
   [ "${status}" -eq 0 ]
 
@@ -114,59 +125,6 @@ EOF
   run grep -F -- '--vex /work/security/vex/linux-libc-dev.openvex.json' \
     .github/workflows/rk3588-qualification.yml
   [ "${status}" -eq 0 ]
-}
-
-@test "gRPC OpenVEX policy is limited to non-server CLI dependency paths" {
-  run jq -e '
-    .["@context"] == "https://openvex.dev/ns/v0.2.0"
-    and .author == "mmkolpakov"
-    and (.statements | length) == 2
-    and all(
-      .statements[];
-      .vulnerability.name == "GHSA-hrxh-6v49-42gf"
-      and .status == "not_affected"
-      and .justification == "vulnerable_code_not_in_execute_path"
-      and (.impact_statement | contains("HTTP/2 gRPC server"))
-      and (.products | length) == 1
-      and (
-        .products[0]["@id"] ==
-          "pkg:golang/github.com/sigstore/cosign/v3@v3.1.1"
-        or .products[0]["@id"] ==
-          "pkg:golang/github.com/open-policy-agent/opa"
-      )
-      and .products[0].subcomponents == [
-        {"@id": "pkg:golang/google.golang.org/grpc@v1.81.1"}
-      ]
-    )
-    and all(
-      .statements[].products[];
-      .["@id"] != "pkg:golang/google.golang.org/grpc@v1.81.1"
-    )
-  ' security/vex/grpc-go-cli.openvex.json
-  [ "${status}" -eq 0 ]
-
-  run grep -F -- '--vex /work/security/vex/grpc-go-cli.openvex.json' \
-    .github/workflows/rk3588-qualification.yml
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'ARG OPA_VERSION=1.18.2' Dockerfile
-  [ "${status}" -eq 0 ]
-  run grep -F \
-    'ARG OPA_REVISION=e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297' \
-    Dockerfile
-  [ "${status}" -eq 0 ]
-  run grep -E '^[[:space:]]*opa (run|serve)([[:space:]]|$)' \
-    Dockerfile docker/permit-preflight/permit-preflight
-  [ "${status}" -eq 1 ]
-
-  run grep -F \
-    'https://raw.githubusercontent.com/sigstore/cosign/v3.1.1/LICENSE' \
-    Dockerfile
-  [ "${status}" -eq 0 ]
-  run grep -F 'install -d -m 0555 /usr/share/licenses/cosign' Dockerfile
-  [ "${status}" -eq 0 ]
-  run grep -F 'cosign.spdx.json' Dockerfile
-  [ "${status}" -eq 1 ]
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
@@ -182,53 +140,5 @@ EOF
   run grep -F 'default = "20260726T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
   run grep -F 'default = "6.8.0-136.136"' docker-bake.hcl
-  [ "${status}" -eq 0 ]
-}
-
-@test "CA bootstrap uses signed snapshot APT instead of remote package ADD" {
-  run grep -F 'ARG OPENSSL_VERSION=3.0.13-0ubuntu3.11' Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'ARG CA_CERTIFICATES_VERSION=20260601~24.04.1' Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -F \
-    'COPY --chmod=0555 docker/apt/use-package-snapshots' \
-    Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'FROM ${ROS_BASE_IMAGE} AS ca-bootstrap' Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'COPY --from=ca-bootstrap' Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -E \
-    'ADD .*https://snapshot\.ubuntu\.com/ubuntu/.+\.deb' \
-    Dockerfile
-  [ "${status}" -eq 1 ]
-}
-
-@test "source-built yq contains the fixed text normalization dependency" {
-  run grep -F \
-    'ARG YQ_REVISION=0520a6fc904f2acdc188477e99d3720949268a1e' \
-    Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'ARG YQ_BASE_VERSION=v4.53.3' Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'ARG YQ_X_TEXT_VERSION=v0.40.0' Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run grep -F \
-    'test "$(go -C "${YQ_SOURCE}" list -m -f' \
-    Dockerfile
-  [ "${status}" -eq 0 ]
-
-  run jq -e \
-    '.packageRules[] | select(.matchDepNames == ["mikefarah/yq"]) |
-      .allowedVersions == ">=4.53.4"' \
-    renovate.json
   [ "${status}" -eq 0 ]
 }

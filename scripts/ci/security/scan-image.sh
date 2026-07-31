@@ -46,7 +46,6 @@ trivy=(
   --config /work/trivy.yaml
   --ignorefile /work/.trivyignore
   --vex /work/security/vex/linux-libc-dev.openvex.json
-  --vex /work/security/vex/grpc-go-cli.openvex.json
 )
 
 for platform in "${platforms[@]}"; do
@@ -63,15 +62,18 @@ for platform in "${platforms[@]}"; do
     platform_args=(--platform "${platform}")
     platform_id="${platform//\//-}"
   fi
+  raw_report="/reports/${report_id}-${platform_id}.json"
   "${trivy[@]}" \
     "${platform_args[@]}" \
+    --format json \
+    --output "${raw_report}" \
+    "${image}"
+  docker run --rm \
+    --volume "${security_artifact_dir}:/reports" \
+    "${TRIVY_IMAGE}" convert \
     --format sarif \
     --output "/reports/${report_id}-${platform_id}.sarif" \
-    "${image}"
-  "${trivy[@]}" \
-    "${platform_args[@]}" \
-    --skip-db-update \
     --severity HIGH,CRITICAL \
     --exit-code 1 \
-    "${image}"
+    "${raw_report}"
 done

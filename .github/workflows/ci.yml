@@ -20,19 +20,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # yamllint disable-line rule:line-length
-  BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-  BUILDX_VERSION: v0.35.0
-  # yamllint disable-line rule:line-length
-  BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a
   ROBOTICS_RKNN_RENDER_GID: "65534"
   HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
   # yamllint disable-line rule:line-length
-  ORAS_IMAGE: ghcr.io/oras-project/oras:v1.3.3@sha256:a4c54befd87d0366e0ba3ac3a9536a5288c8a3735acd3b635cdace59a2c559c8
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
   ROBOTICS_CONTRACTS_REQUIREMENT: >-
     robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.10.0/robotics_runtime_contracts-0.10.0-py3-none-any.whl#sha256=11ac76149087e68388302d7301b2226982315a6620b6bd275aa6bc8834cc133f
+    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.11.0/robotics_runtime_contracts-0.11.0-py3-none-any.whl#sha256=71e156210b0f16571b9f734926b84f0516100e30bea46369ae798371990bb5b9
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -45,11 +39,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
           version: "0.11.28"
@@ -60,7 +50,7 @@ jobs:
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture
-        run: scripts/ci/static-analysis/test-workflow-architecture.sh
+        run: bats test/ci
       - name: Validate Docker Bake definition
         run: scripts/ci/static-analysis/validate-docker-bake-definition.sh
       - name: Validate Compose models
@@ -69,7 +59,9 @@ jobs:
         env:
           REGISTRY: local
           VERSION: ci
-        run: scripts/ci/static-analysis/build-the-pinned-policy-engine.sh
+        run: |
+          docker buildx bake --file docker-bake.hcl policy-tooling --load --set '*.platform=linux/amd64'
+          docker run --rm local/robotics-runtime-infra/policy-tooling:ci version
       - name: Verify policy format and unit tests
         run: scripts/ci/static-analysis/verify-policy-format-and-tests.sh
       - name: Verify execution authorization policy
@@ -84,20 +76,26 @@ jobs:
         run: scripts/ci/static-analysis/verify-scenario-policy.sh
       - name: Verify hardware workflow policy
         run: scripts/ci/static-analysis/verify-hardware-workflow-policy.sh
-      - name: Verify model artifact policy
-        run: scripts/ci/static-analysis/verify-model-artifact-policy.sh
-      - name: Verify OCI model artifact linkage
-        run: scripts/ci/static-analysis/verify-oci-model-artifact-linkage.sh
       - name: Lint shell entrypoints
         run: scripts/ci/static-analysis/lint-shell-entrypoints.sh
       - name: Lint Dockerfile
-        run: scripts/ci/static-analysis/lint-dockerfile.sh
+        run: >-
+          docker run --rm
+          --volume "${PWD}:/work:ro"
+          --workdir /work
+          "${HADOLINT_IMAGE}"
+          /bin/hadolint --config .hadolint.yaml Dockerfile docker/rknn.Dockerfile
       - name: Validate Renovate configuration
-        run: scripts/ci/static-analysis/validate-renovate-configuration.sh
+        run: >-
+          docker run --rm
+          --volume "${PWD}:/work:ro"
+          --workdir /work
+          "${RENOVATE_IMAGE}"
+          renovate-config-validator --strict renovate.json
       - name: Audit GitHub Actions
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/ci/static-analysis/audit-github-actions.sh
+        run: uvx --from zizmor==1.26.1 zizmor --pedantic .github
   compose-version:
     name: compose-${{ matrix.version }}
     runs-on: ubuntu-24.04
@@ -116,7 +114,9 @@ jobs:
       - name: Verify Compose version
         env:
           EXPECTED_COMPOSE_VERSION: ${{ matrix.version }}
-        run: scripts/ci/compose-version/verify-compose-version.sh
+        run: >-
+          test "v$(docker compose version --short | sed 's/^v//')" =
+          "${EXPECTED_COMPOSE_VERSION}"
       - name: Validate every Compose model
         run: scripts/ci/validate-compose-models.sh
   integration:
@@ -133,6 +133,8 @@ jobs:
       # yamllint disable-line rule:line-length
       INFERENCE_CPU_CONFORMANCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/provider-conformance-cpu:ci
       # yamllint disable-line rule:line-length
+      SENSOR_INFERENCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/sensor-inference-cpu:ci
+      # yamllint disable-line rule:line-length
       OBSERVER_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/acceptance-observer:ci
       BENCHMARK_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/benchmark:ci
       EVIDENCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/evidence-sink:ci
@@ -145,15 +147,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
       - name: Build the amd64 CPU product
-        run: scripts/ci/integration/build-the-amd64-cpu-product.sh
+        run: >-
+          docker buildx bake --file docker-bake.hcl cpu
+          --load
+          --set '*.platform=linux/amd64'
+          --set '*.cache-from=type=gha,scope=runtime-infra-amd64'
+          --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-amd64'
       - name: Verify portable runtime images
         run: scripts/ci/integration/verify-portable-runtime-images.sh
       - name: Verify host time evidence
@@ -181,9 +184,6 @@ jobs:
       - name: Benchmark the supported ROS data planes
         run: scripts/ci/integration/benchmark-the-supported-ros-data-planes.sh
       - name: Verify SROS2 enforcement
-        env:
-          # Configuration-only fixture; production uses the verified image digest.
-          ROBOTICS_COSIGN_IMAGE_DIGEST: sha256:4444444444444444444444444444444444444444444444444444444444444444
         run: scripts/ci/integration/verify-sros2-enforcement.sh
       - name: Verify versioned S3 evidence
         run: scripts/ci/integration/verify-versioned-s3-evidence.sh
@@ -191,7 +191,7 @@ jobs:
         if: always()
         run: scripts/ci/integration/capture-runtime-evidence.sh
       - name: Scan images and enforce vulnerability policy
-        run: scripts/ci/integration/scan-images-and-enforce-vulnerability-policy.sh
+        run: scripts/ci/security/scan-bake-group.sh cpu
       - name: Stop runtime
         if: always()
         run: docker compose --profile test --profile acceptance down --volumes --remove-orphans
@@ -221,15 +221,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
       - name: Build the NVIDIA runtime image
-        run: scripts/ci/nvidia-image/build-the-nvidia-runtime-image.sh
+        run: >-
+          docker buildx bake --file docker-bake.hcl nvidia
+          --load
+          --set '*.platform=linux/amd64'
+          --set '*.cache-from=type=gha,scope=runtime-infra-nvidia-amd64'
+          --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-nvidia-amd64'
       - name: Verify the ONNX Runtime GPU ABI
         run: scripts/ci/nvidia-image/verify-the-onnx-runtime-gpu-abi.sh
       - name: Scan NVIDIA runtime images
@@ -249,21 +250,21 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - name: Verify pinned NVIDIA base manifests
         run: scripts/ci/nvidia-jetson-supply-chain/verify-pinned-nvidia-base-manifests.sh
       - name: Verify the ONNX Runtime source pin
         run: scripts/ci/nvidia-jetson-supply-chain/verify-the-onnx-runtime-source-pin.sh
       - name: Resolve and verify the ONNX Runtime source context
-        run: scripts/ci/nvidia-jetson-supply-chain/resolve-and-verify-the-onnx-runtime-source-context.sh
+        run: >-
+          docker buildx bake --file docker-bake.hcl onnxruntime-jetson-source-verification
+          --set '*.output=type=cacheonly'
+          --set '*.cache-from=type=gha,scope=runtime-infra-onnxruntime-source'
+          --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-onnxruntime-source'
       - name: Verify the Jetson runtime lock
         run: scripts/ci/nvidia-jetson-supply-chain/verify-the-jetson-runtime-lock.sh
       - name: Validate the Jetson build graph
-        run: docker buildx bake --print nvidia-jetson >/dev/null
+        run: docker buildx bake --file docker-bake.hcl --print nvidia-jetson >/dev/null
 
   rknn-supply-chain:
     runs-on: ubuntu-24.04
@@ -272,15 +273,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - name: Verify the RKNN source and dependency policy
         run: scripts/ci/rknn-supply-chain/verify-the-rknn-source-and-dependency-policy.sh
       - name: Run the official RKNN conversion fixture
-        run: scripts/ci/rknn-supply-chain/run-the-official-rknn-conversion-fixture.sh
+        run: >-
+          docker buildx bake --file docker-bake.hcl rknn-converter-verification
+          --set '*.output=type=cacheonly'
   rknn-arm64-image:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
@@ -291,15 +290,15 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - name: Require the native ARM64 runner
         run: test "$(uname -m)" = aarch64
       - name: Build the RK3588 runtime without publishing vendor artifacts
-        run: scripts/ci/rknn-arm64-image/build-the-rk3588-runtime-without-publishing-vendor-artifacts.sh
+        run: >-
+          docker buildx bake --file docker-bake.hcl
+          inference-rknn-rk3588
+          provider-conformance-rknn-rk3588
+          --set '*.output=type=docker'
       - name: Scan RK3588 runtime images
         run: scripts/ci/security/scan-bake-group.sh rknn
       - name: Upload RK3588 scan results
@@ -320,11 +319,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
           version: "0.11.28"
@@ -334,9 +329,15 @@ jobs:
       - name: Verify the locked AMD wheel
         run: scripts/ci/amd-supply-chain/verify-the-locked-amd-wheel.sh
       - name: Validate the AMD build graph
-        run: docker buildx bake --print amd >/dev/null
+        run: docker buildx bake --file docker-bake.hcl --print amd >/dev/null
       - name: Build the AMD runtime and conformance images
-        run: scripts/ci/amd-supply-chain/build-the-amd-runtime-and-conformance-images.sh
+        run: >-
+          docker buildx bake --file docker-bake.hcl amd
+          --set '*.platform=linux/amd64'
+          --set '*.output=type=docker'
+          --set 'inference-amd.cache-from=type=gha,scope=runtime-infra-amd-amd64'
+          --set 'provider-conformance-amd.cache-from=type=gha,scope=runtime-infra-amd-amd64'
+          --set 'provider-conformance-amd.cache-to=type=gha,mode=max,scope=runtime-infra-amd-amd64'
       - name: Scan AMD runtime images
         run: scripts/ci/security/scan-bake-group.sh amd
       - name: Upload AMD scan results
@@ -361,15 +362,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
       - name: Build the Intel runtime and conformance images
-        run: scripts/ci/intel-image/build-the-intel-runtime-and-conformance-images.sh
+        run: >-
+          docker buildx bake --file docker-bake.hcl intel
+          --load
+          --set '*.platform=linux/amd64'
+          --set '*.cache-from=type=gha,scope=runtime-infra-intel-amd64'
+          --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-intel-amd64'
       - name: Verify OpenVINO CPU execution without fallback
         run: scripts/ci/intel-image/verify-openvino-cpu-execution-without-fallback.sh
       - name: Scan Intel runtime images
@@ -392,19 +394,24 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+      - uses: ./.github/actions/setup-buildx
         with:
-          image: ${{ env.BINFMT_IMAGE }}
-          platforms: arm64
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+          qemu: "true"
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
-      - name: Build every portable target for ARM64
-        run: scripts/ci/portable-arm64/build-every-portable-target-for-arm64.sh
+      - name: Build and scan every portable target for ARM64
+        run: >-
+          scripts/ci/security/scan-bake-group.sh multiarch linux/arm64
+          --set '*.cache-from=type=gha,scope=runtime-infra-arm64'
+          --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
+      - name: Upload portable ARM64 scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-portable-arm64-${{ github.sha }}
+          path: artifacts/security/
+          if-no-files-found: error
+          retention-days: 7
   reproducibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -412,11 +419,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - name: Rebuild the same OCI image twice
         run: scripts/ci/reproducibility/rebuild-the-same-oci-image-twice.sh
   ci:
@@ -436,20 +439,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
       - name: Require every CI gate
         env:
-          STATIC_RESULT: ${{ needs.static-analysis.result }}
-          COMPOSE_RESULT: ${{ needs.compose-version.result }}
-          INTEGRATION_RESULT: ${{ needs.integration.result }}
-          AMD_RESULT: ${{ needs.amd-supply-chain.result }}
-          INTEL_RESULT: ${{ needs.intel-image.result }}
-          NVIDIA_RESULT: ${{ needs.nvidia-image.result }}
-          NVIDIA_JETSON_RESULT: ${{ needs.nvidia-jetson-supply-chain.result }}
-          RKNN_RESULT: ${{ needs.rknn-supply-chain.result }}
-          RKNN_ARM64_RESULT: ${{ needs.rknn-arm64-image.result }}
-          ARM64_RESULT: ${{ needs.portable-arm64.result }}
-          REPRO_RESULT: ${{ needs.reproducibility.result }}
-        run: scripts/ci/ci/require-every-ci-gate.sh
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: printf '%s\n' "${NEEDS_JSON}" | jq -e 'all(.[]; .result == "success")'

@@ -30,17 +30,15 @@ services:
   physical-permit-preflight:
     command:
       - authorize-offline-test
+      - /test-keys
       - /authorization/execution-permit.json
       - /authorization/execution-statement.json
       - /authorization/operator.sigstore.json
       - /authorization/approver.sigstore.json
-      - /test-keys
       - /authorization/trust-policy.json
       - /authorization/execution-request.json
       - /nonces
       - /output/execution-verification.json
-      # yamllint disable-line rule:line-length
-      - "${ROBOTICS_COSIGN_IMAGE_DIGEST:?set ROBOTICS_COSIGN_IMAGE_DIGEST to the immutable permit-preflight image digest}"
     volumes:
       - type: bind
         source: "${ROBOTICS_TEST_KEY_DIR:?set ROBOTICS_TEST_KEY_DIR for the synthetic authorization test}"

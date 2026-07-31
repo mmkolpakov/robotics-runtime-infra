@@ -29,9 +29,8 @@ cp test/acceptance/stepped-smoke.yaml "${run_dir}/scenario.yaml"
 
 export ROBOTICS_RUN_ID
 ROBOTICS_RUN_ID="$(
-  scripts/create-acceptance-run \
+  dependencies/robotics-acceptance-harness/.venv/bin/robotics-acceptance create-run \
     --scenario "${run_dir}/scenario.yaml" \
-    --scenario-id org.example.runtime-infra.stepped-smoke \
     --output "${run_dir}/acceptance-run.json" \
     --domain primary=observer \
     --time-authority sim_clock \
@@ -132,24 +131,14 @@ observer="$(
   "${compose[@]}" --profile acceptance run --detach \
     --name "${project}-observer" --no-deps acceptance-observer
 )"
-sleep 2
-telemetry_duration="$(
-  docker run --rm \
-    --entrypoint /usr/local/bin/yq \
-    --volume "${run_dir}/scenario.yaml:/scenario.yaml:ro" \
-    "${EVIDENCE_IMAGE}" \
-    -r \
-    '.timeouts.graph_ready_sec +
-     .timeouts.stable_for_sec +
-     .timeouts.execution_sec + 3' \
-    /scenario.yaml
-)"
-if ! [[ "${telemetry_duration}" =~ ^[1-9][0-9]*$ ]]; then
-  printf 'invalid telemetry duration: %s\n' "${telemetry_duration}" >&2
-  exit 2
-fi
-telemetry_deadline=$((SECONDS + telemetry_duration))
-while ((SECONDS < telemetry_deadline)); do
+measurement_complete="${run_dir}/measurement-complete"
+while [[ ! -f "${measurement_complete}" ]]; do
+  if [[ "$(docker inspect --format '{{.State.Running}}' "${observer}")" != true ]]; then
+    observer_status="$(docker wait "${observer}")"
+    printf 'acceptance observer exited before completing measurement: %s\n' \
+      "${observer_status}" >&2
+    exit 70
+  fi
   sleep 1
 done
 "${compose[@]}" --profile acceptance --profile observability stop \

@@ -18,11 +18,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # yamllint disable-line rule:line-length
-  BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-  BUILDX_VERSION: v0.35.0
-  # yamllint disable-line rule:line-length
-  BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
 
 jobs:
@@ -73,9 +68,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
       - name: Resolve the declarative release plan
         id: plan
         run: scripts/ci/release/prepare-plan.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-plan-${{ github.ref_name }}
+          path: artifacts/release-plan.json
+          if-no-files-found: error
+          retention-days: 30
 
   candidate:
     needs: prepare
@@ -98,16 +100,9 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+      - uses: ./.github/actions/setup-buildx
         with:
-          image: ${{ env.BINFMT_IMAGE }}
-          platforms: arm64
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          cache-binary: false
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+          qemu: ${{ contains(matrix.platforms, 'linux/arm64') }}
       - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
         with:
           version: v5.3.1
@@ -117,12 +112,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Set reproducible build metadata
-        id: build-metadata
-        run: |
-          {
-            echo "created=$(git show --no-patch --format=%cI HEAD)"
-            echo "epoch=$(git show --no-patch --format=%ct HEAD)"
-          } >> "$GITHUB_OUTPUT"
+        run: scripts/ci/set-build-metadata.sh
       - name: Build an untagged candidate by digest
         id: build
         uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b  # v7.3.0
@@ -137,10 +127,7 @@ jobs:
           provenance: mode=max
           sbom: true
           vars: |
-            IMAGE_CREATED=${{ steps.build-metadata.outputs.created }}
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
-            SOURCE_DATE_EPOCH=${{ steps.build-metadata.outputs.epoch }}
-            VCS_REF=${{ github.sha }}
             VERSION=${{ needs.prepare.outputs.version }}
           # Preserve Bake contexts and publish no mutable or SemVer tag yet.
           # yamllint disable rule:line-length
@@ -198,7 +185,11 @@ jobs:
           gh attestation verify
           "oci://${IMAGE_NAME}@${DIGEST}"
           --repo "${GITHUB_REPOSITORY}"
+          --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-image.yml"
           --source-digest "${GITHUB_SHA}"
+          --source-ref "${GITHUB_REF}"
+          --deny-self-hosted-runners
+          --bundle-from-oci
       - name: Record the immutable candidate
         env:
           CANDIDATE_ENVIRONMENT_VARIABLE: ${{ matrix.environment_variable }}
@@ -240,17 +231,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
-        with:
-          cache-binary: false
-          version: ${{ env.BUILDX_VERSION }}
-          driver-opts: |
-            image=${{ env.BUILDKIT_IMAGE }}
+      - uses: ./.github/actions/setup-buildx
       - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
+        with:
+          name: release-plan-${{ github.ref_name }}
+          path: artifacts
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
         with:
           pattern: candidate-*-${{ github.ref_name }}
@@ -259,7 +249,7 @@ jobs:
       - name: Promote the complete verified set
         run: >-
           scripts/ci/release/promote-candidates.sh
-          config/ci/release-images.json
+          artifacts/release-plan.json
           candidate-artifacts/release-candidates
           "${{ needs.prepare.outputs.version }}"
           artifacts/release

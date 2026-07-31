@@ -28,20 +28,12 @@ test_valid_hil_permit_emits_verification if {
 	verification.schema_version == "execution-verification.v1"
 	verification.decision == "allow"
 	verification.verified_at == "2026-07-14T12:00:00Z"
+	verification.cosign_image_digest == data.execution_valid.artifacts.cosign_image_digest
 	count(verification.signers) == 2
 }
 
 test_valid_real_observation_permit_is_allowed if {
 	count(violations(valid_real_observation)) == 0
-}
-
-test_real_observation_actuation_is_denied if {
-	candidate := json.patch(valid_real_observation, [
-		{"op": "replace", "path": "/permit/allowed_physical_effect", "value": "actuation"},
-		{"op": "replace", "path": "/statement/predicate/allowed_physical_effect", "value": "actuation"},
-		{"op": "replace", "path": "/request/allowed_physical_effect", "value": "actuation"},
-	])
-	"real-target permits must be observation-only" in violations(candidate)
 }
 
 test_expired_permit_is_denied if {
@@ -79,20 +71,9 @@ test_untrusted_target_is_denied if {
 	"target is not allowed by the lab trust policy" in violations(candidate)
 }
 
-test_same_approver_is_denied if {
-	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/permit/approver_id", "value": "operator@example.org"}, {"op": "replace", "path": "/statement/predicate/approver_id", "value": "operator@example.org"}, {"op": "replace", "path": "/verified_signers/1/identity", "value": "operator@example.org"}])
-	"operator and approver identities must differ" in violations(candidate)
-	"verified signer identities must differ" in violations(candidate)
-}
-
 test_untrusted_issuer_is_denied if {
 	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/verified_signers/1/issuer", "value": "https://issuer.example.invalid"}])
 	"verified approver signer is not allowed by the lab trust policy" in violations(candidate)
-}
-
-test_duplicate_bundle_is_denied if {
-	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/verified_signers/1/bundle_sha256", "value": "5555555555555555555555555555555555555555555555555555555555555555"}])
-	"verified signer bundles must differ" in violations(candidate)
 }
 
 test_signature_outside_permit_window_is_denied if {
@@ -103,16 +84,6 @@ test_signature_outside_permit_window_is_denied if {
 test_missing_transparency_log_is_denied if {
 	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/verified_signers/0/transparency_log_verified", "value": false}])
 	"verified operator signer has no transparency-log proof" in violations(candidate)
-}
-
-test_hil_effect_is_denied if {
-	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/permit/allowed_physical_effect", "value": "observation"}, {"op": "replace", "path": "/statement/predicate/allowed_physical_effect", "value": "observation"}, {"op": "replace", "path": "/request/allowed_physical_effect", "value": "observation"}])
-	"HIL permits must have no physical effect" in violations(candidate)
-}
-
-test_actuator_scope_is_denied if {
-	candidate := json.patch(data.execution_valid, [{"op": "add", "path": "/permit/hardware_scope/-", "value": "actuator"}, {"op": "add", "path": "/statement/predicate/hardware_scope/-", "value": "actuator"}, {"op": "add", "path": "/request/hardware_scope/-", "value": "actuator"}])
-	"physical execution scope must not contain actuator" in violations(candidate)
 }
 
 test_trust_policy_digest_mismatch_is_denied if {

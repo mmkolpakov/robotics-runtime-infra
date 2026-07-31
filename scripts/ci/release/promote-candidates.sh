@@ -17,6 +17,7 @@ output_dir="$4"
 
 [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]
 [[ "${GITHUB_SHA:?GITHUB_SHA is required}" =~ ^[a-f0-9]{40}$ ]]
+[[ "${GITHUB_REF:?GITHUB_REF is required}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]
 short_sha="${GITHUB_SHA:0:12}"
 test -d "${candidate_dir}"
 
@@ -34,7 +35,11 @@ test "${actual_ids}" = "${expected_ids}" || {
 }
 
 mkdir -p "${output_dir}/digests" "${output_dir}/promotion"
-printf 'ROBOTICS_RUNTIME_MODE=released\n' >"${output_dir}/release.env"
+{
+  printf 'ROBOTICS_RUNTIME_MODE=released\n'
+  printf 'ROBOTICS_RELEASE_SOURCE_SHA=%s\n' "${GITHUB_SHA}"
+  printf 'ROBOTICS_RELEASE_SOURCE_REF=%s\n' "${GITHUB_REF}"
+} >"${output_dir}/release.env"
 : >"${output_dir}/release-notes.md"
 : >"${output_dir}/promotion/plan.jsonl"
 {
@@ -112,10 +117,6 @@ while IFS= read -r row; do
   printf '%s=%s:%s@%s\n' \
     "${environment_variable}" "${image}" "${version}" "${digest}" \
     >>"${output_dir}/release.env"
-  if test "${id}" = permit-preflight; then
-    printf 'ROBOTICS_COSIGN_IMAGE_DIGEST=%s\n' "${digest}" \
-      >>"${output_dir}/release.env"
-  fi
   printf '%s:%s@%s\n' "${image}" "${version}" "${digest}" \
     >"${output_dir}/digests/${id}.txt"
   printf -- "- \`%s:%s@%s\`\n" "${image}" "${version}" "${digest}" \

@@ -168,8 +168,8 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.10.0 |
-| Acceptance harness | `robotics-acceptance-harness` 0.11.0 |
+| Contracts | `robotics-runtime-contracts` 0.11.0 |
+| Acceptance harness | `robotics-acceptance-harness` 0.12.0 |
 
 Base images, package snapshots, and Python artifacts are pinned in
 `Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
@@ -467,8 +467,8 @@ this repository.
 ## Build and Verify Changes
 
 ```bash
-docker buildx bake --print cpu
-docker buildx bake cpu --load --set '*.platform=linux/amd64'
+docker buildx bake --file docker-bake.hcl --print cpu
+docker buildx bake --file docker-bake.hcl cpu --load --set '*.platform=linux/amd64'
 docker compose --profile test --profile acceptance config --quiet
 docker compose up --detach --no-build --wait simulation
 docker compose --profile test run --rm --no-deps test
@@ -489,7 +489,6 @@ closed when immutable receipt permissions are applied.
 - [Runtime image lock](docs/runtime-lock.md)
 - [Supply-chain assurance](docs/supply-chain.md)
 - [Qualification bundles](docs/qualification.md)
-- [SORA evidence boundary](docs/sora-evidence-mapping.md)
 - [Architecture decisions](docs/decisions/README.md)
 
 ## Scope and Safety

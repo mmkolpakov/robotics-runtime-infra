@@ -8,6 +8,5 @@ mkdir -p tmp
 ci_opa fmt --list --fail policy
 ci_opa test \
   policy \
-  test/policy/model_artifact \
   test/policy/execution \
   --fail-on-empty

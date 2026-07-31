@@ -1,0 +1,13 @@
+{
+  "acceptance-observer": "OBSERVER_IMAGE",
+  "benchmark-runtime": "BENCHMARK_IMAGE",
+  "edge-runtime": "EDGE_IMAGE",
+  "evidence-sink": "EVIDENCE_IMAGE",
+  "inference-cpu": "INFERENCE_CPU_IMAGE",
+  "inference-intel": "INFERENCE_INTEL_IMAGE",
+  "permit-preflight": "PERMIT_PREFLIGHT_IMAGE",
+  "provider-conformance-cpu": "INFERENCE_CPU_CONFORMANCE_IMAGE",
+  "sensor-inference-cpu": "SENSOR_INFERENCE_IMAGE",
+  "sensor-runtime": "SENSOR_IMAGE",
+  "simulation": "SIMULATION_IMAGE"
+}

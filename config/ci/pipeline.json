@@ -1,28 +1,4 @@
 {
-  "bake_targets": [
-    "default",
-    "cpu",
-    "sensor-inference-cpu",
-    "edge-smoke",
-    "inference-cpu-smoke",
-    "runtime-manifest",
-    "sensor-smoke",
-    "test",
-    "multiarch",
-    "conformance",
-    "amd",
-    "intel",
-    "nvidia",
-    "inference-nvidia-verification",
-    "nvidia-jetson",
-    "onnxruntime-jetson-source-verification",
-    "onnxruntime-jetson-build-dependencies",
-    "onnxruntime-jetson-wheel",
-    "rknn",
-    "rknn-converter",
-    "policy-tooling",
-    "host-io-test"
-  ],
   "compose_models": [
     {
       "name": "base",

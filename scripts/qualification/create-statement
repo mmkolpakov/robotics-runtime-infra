@@ -26,80 +26,8 @@ EOF
   exit 64
 }
 
-# These variables form the sourced library interface.
-# shellcheck disable=SC2034
-scenario_path=''
-# shellcheck disable=SC2034
-acceptance_run_path=''
-# shellcheck disable=SC2034
-aggregate_path=''
 output=''
-runtime_manifest_specs=()
-result_specs=()
-evidence_index_specs=()
-mcap_summary_specs=()
-optional_evidence_specs=()
-extension_schema_specs=()
-
-while (($# > 0)); do
-  case "$1" in
-    --scenario)
-      (($# >= 2)) || usage
-      scenario_path="$2"
-      shift 2
-      ;;
-    --runtime-manifest)
-      (($# >= 2)) || usage
-      runtime_manifest_specs+=("$2")
-      shift 2
-      ;;
-    --acceptance-run)
-      (($# >= 2)) || usage
-      acceptance_run_path="$2"
-      shift 2
-      ;;
-    --result)
-      (($# >= 2)) || usage
-      result_specs+=("$2")
-      shift 2
-      ;;
-    --aggregate)
-      (($# >= 2)) || usage
-      aggregate_path="$2"
-      shift 2
-      ;;
-    --evidence-index)
-      (($# >= 2)) || usage
-      evidence_index_specs+=("$2")
-      shift 2
-      ;;
-    --mcap-summary)
-      (($# >= 2)) || usage
-      mcap_summary_specs+=("$2")
-      shift 2
-      ;;
-    --evidence)
-      (($# >= 2)) || usage
-      optional_evidence_specs+=("$2")
-      shift 2
-      ;;
-    --extension-schema)
-      (($# >= 2)) || usage
-      extension_schema_specs+=("$2")
-      shift 2
-      ;;
-    --output)
-      (($# >= 2)) || usage
-      output="$2"
-      shift 2
-      ;;
-    *)
-      usage
-      ;;
-  esac
-done
-
-[[ -n "$output" ]] || usage
+qualification_parse_cli create "$@"
 export scenario_path acceptance_run_path aggregate_path
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT HUP INT TERM

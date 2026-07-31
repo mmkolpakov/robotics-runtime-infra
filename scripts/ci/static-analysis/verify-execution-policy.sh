@@ -16,6 +16,6 @@ ci_opa eval \
   --input tmp/execution-valid-input.json \
   'data.execution.verification with time.now_ns as time.parse_rfc3339_ns("2026-07-14T12:00:00Z")' \
   > tmp/execution-verification.json
-ci_validate_contract_documents "" \
+ci_validate_contract_documents \
   tmp/execution-permit.json \
   tmp/execution-verification.json

@@ -9,23 +9,23 @@ trap 'rm -rf -- "${work_dir}"' EXIT
 
 created="$(git show --no-patch --format=%cI HEAD)"
 epoch="$(git show --no-patch --format=%ct HEAD)"
+export IMAGE_CREATED="${created}"
+export IMAGE_SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+export SOURCE_DATE_EPOCH="${epoch}"
+export VCS_REF="${GITHUB_SHA}"
+export VERSION=reproducibility
 build=(
-  docker buildx build
-  --no-cache
-  --platform linux/amd64
-  --target evidence-sink
-  --provenance=false
-  --build-arg "IMAGE_CREATED=${created}"
-  --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-  --build-arg "IMAGE_VERSION=reproducibility"
-  --build-arg "SOURCE_DATE_EPOCH=${epoch}"
-  --build-arg "VCS_REF=${GITHUB_SHA}"
-  .
+  docker buildx bake
+  --file docker-bake.hcl
+  evidence-sink
+  --set evidence-sink.no-cache=true
+  --set evidence-sink.platform=linux/amd64
+  --set evidence-sink.provenance=false
 )
-"${build[@]}" --output \
-  "type=oci,dest=${work_dir}/first.tar,rewrite-timestamp=true"
-"${build[@]}" --output \
-  "type=oci,dest=${work_dir}/second.tar,rewrite-timestamp=true"
+"${build[@]}" --set \
+  "evidence-sink.output=type=oci,dest=${work_dir}/first.tar,rewrite-timestamp=true"
+"${build[@]}" --set \
+  "evidence-sink.output=type=oci,dest=${work_dir}/second.tar,rewrite-timestamp=true"
 first_digest="$(
   tar -xOf "${work_dir}/first.tar" index.json |
     jq -er '.manifests[0].digest'

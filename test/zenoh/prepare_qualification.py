@@ -34,7 +34,7 @@ def required_environment(name: str) -> str:
 def load_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
-        raise RuntimeError(f"{path} must contain a JSON object")
+        raise TypeError(f"{path} must contain a JSON object")
     return value
 
 
@@ -44,10 +44,6 @@ def parse_timestamp(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise RuntimeError(f"timestamp {value!r} has no timezone")
     return parsed.astimezone(UTC)
-
-
-def iso8601(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def sha256(path: Path) -> str:
@@ -151,57 +147,6 @@ def validate_probe(
         raise RuntimeError(f"{domain_id} probe timestamps are reversed")
 
 
-def local_segment(path: Path, media_type: str, index: int) -> dict[str, Any]:
-    local_path = path.resolve().as_posix()
-    if os.name == "nt":
-        local_path = f"/{local_path}"
-    return {
-        "uri": path.resolve().as_uri(),
-        "local_path": local_path,
-        "media_type": media_type,
-        "sha256": sha256(path),
-        "size_bytes": path.stat().st_size,
-        "retention_class": "pull-request-7d",
-        "segment_index": index,
-        "upload_status": "local",
-        "checksum_verified": True,
-    }
-
-
-def write_evidence_index(
-    *,
-    path: Path,
-    run_id: str,
-    generated_at: datetime,
-    trace_path: Path,
-    observation_path: Path,
-) -> Path:
-    segments = [
-        local_segment(trace_path, "application/x-ndjson", 0),
-        local_segment(observation_path, "application/json", 1),
-    ]
-    return write_contract_json(
-        {
-            "schema_version": "evidence-index.v2",
-            "run_id": run_id,
-            "generated_at": iso8601(generated_at),
-            "finalized": True,
-            "policy_observation": {
-                "recording_mode": "bounded",
-                "compression": "zstd",
-                "upload_mode": "local_only",
-                "remote_sink_used": False,
-                "spool_peak_size_bytes": sum(
-                    int(segment["size_bytes"]) for segment in segments
-                ),
-                "upload_lag_max_sec": 0,
-            },
-            "segments": segments,
-        },
-        path,
-    )
-
-
 def main() -> None:
     run_id = required_environment("ROBOTICS_RUN_ID")
     report_dir = Path(required_environment("ROBOTICS_ZENOH_REPORT_DIR")).resolve()
@@ -250,8 +195,6 @@ def main() -> None:
 
     output_dir = report_dir / "qualification"
     output_dir.mkdir(parents=True, exist_ok=True)
-    generated_at = datetime.now(UTC)
-
     channel_path = write_contract_json(
         {
             "schema_version": "zenoh-channel.v1",
@@ -329,21 +272,6 @@ def main() -> None:
             "broken_relationship_status": "failed",
         },
         output_dir / "causal-chain.json",
-    )
-
-    write_evidence_index(
-        path=output_dir / "source-evidence-index.json",
-        run_id=run_id,
-        generated_at=generated_at,
-        trace_path=source_trace,
-        observation_path=source_observation_path,
-    )
-    write_evidence_index(
-        path=output_dir / "destination-evidence-index.json",
-        run_id=run_id,
-        generated_at=generated_at,
-        trace_path=destination_trace,
-        observation_path=destination_observation_path,
     )
 
 

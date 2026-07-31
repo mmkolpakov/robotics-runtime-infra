@@ -174,6 +174,29 @@ verify_bundle() {
   [[ "$output" == *'qualification bundle verified'* ]]
 }
 
+@test "rejects a scenario outside the canonical v4 contract" {
+  sed -i \
+    's/schema_version: acceptance-scenario.v4/schema_version: acceptance-scenario.v3/' \
+    "$TEST_ROOT/artifacts/scenario.yaml"
+  mapfile -t args < <(artifact_arguments)
+
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    "${args[@]}" --output "$TEST_ROOT/artifacts/statement.json"
+
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"does not satisfy acceptance-scenario.v4"* ]]
+}
+
+@test "rejects a multi-document Sigstore bundle" {
+  create_statement_and_bundle
+  printf '%s\n' '{}' >>"$TEST_ROOT/artifacts/bundle.json"
+
+  run verify_bundle
+
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"expected exactly one JSON document"* ]]
+}
+
 @test "produces a byte-for-byte deterministic canonical statement" {
   create_statement_and_bundle
   cp "$TEST_ROOT/artifacts/statement.json" "$TEST_ROOT/artifacts/statement.first.json"

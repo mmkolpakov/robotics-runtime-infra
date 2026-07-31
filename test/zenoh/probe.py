@@ -24,9 +24,6 @@ from opentelemetry.trace import (
     TraceState,
     set_span_in_context,
 )
-from opentelemetry.trace.propagation.tracecontext import (
-    TraceContextTextMapPropagator,
-)
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -34,6 +31,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
+from robotics_observability import extract_context, inject_context
 from robotics_observability_msgs.msg import TraceContext
 
 MESSAGE_TYPE: Final = "robotics_observability_msgs/msg/TraceContext"
@@ -41,7 +39,6 @@ PRODUCER_SPAN: Final = "robotics.zenoh.publish"
 CONSUMER_SPAN: Final = "robotics.zenoh.receive"
 TRACEPARENT_PATTERN: Final = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-0[1-9a-f]$")
 TRACESTATE: Final = "runtime=zenoh"
-PROPAGATOR: Final = TraceContextTextMapPropagator()
 
 
 def required_environment(name: str) -> str:
@@ -151,7 +148,6 @@ def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[st
         )
         parent_context = set_span_in_context(NonRecordingSpan(parent))
         message_id = f"zenoh-{trace_id:032x}"
-        carrier: dict[str, str] = {}
         with tracer.start_as_current_span(
             PRODUCER_SPAN,
             context=parent_context,
@@ -164,19 +160,14 @@ def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[st
                 "messaging.operation.type": "send",
             },
         ):
-            PROPAGATOR.inject(carrier)
-            traceparent = carrier.get("traceparent", "")
-            tracestate = carrier.get("tracestate", "")
+            message = inject_context()
+            traceparent = message.traceparent
+            tracestate = message.tracestate
             if not TRACEPARENT_PATTERN.fullmatch(traceparent):
                 raise RuntimeError(f"invalid injected traceparent {traceparent!r}")
             if tracestate != TRACESTATE:
                 raise RuntimeError(f"invalid injected tracestate {tracestate!r}")
-            publisher.publish(
-                TraceContext(
-                    traceparent=traceparent,
-                    tracestate=tracestate,
-                )
-            )
+            publisher.publish(message)
             if first_message_at_ns is None:
                 first_message_at_ns = time.time_ns()
             traceparents.add(traceparent)
@@ -219,12 +210,7 @@ def subscribe(
             raise RuntimeError(f"invalid received traceparent {message.traceparent!r}")
         if message.tracestate != TRACESTATE:
             raise RuntimeError(f"invalid received tracestate {message.tracestate!r}")
-        context = PROPAGATOR.extract(
-            {
-                "traceparent": message.traceparent,
-                "tracestate": message.tracestate,
-            }
-        )
+        context = extract_context(message)
         parent = trace.get_current_span(context).get_span_context()
         if not parent.is_valid or not parent.is_remote:
             raise RuntimeError("received Trace Context did not produce a remote parent")

@@ -14,16 +14,103 @@ acquire_host_lock() {
   }
 }
 
-verify_permit_image_digest() {
-  local actual
-  actual="$(
-    docker image inspect "${PERMIT_PREFLIGHT_IMAGE}" --format '{{.Id}}'
-  )"
-  test "${ROBOTICS_COSIGN_IMAGE_DIGEST}" = "${actual}" || {
-    printf 'ROBOTICS_COSIGN_IMAGE_DIGEST does not identify %s\n' \
-      "${PERMIT_PREFLIGHT_IMAGE}" >&2
+verify_released_verifier_provenance() {
+  local canonical_repository
+  local evidence_tmp
+  local signer_workflow
+
+  canonical_repository="mmkolpakov/robotics-runtime-infra"
+  signer_workflow="${canonical_repository}/.github/workflows/release-image.yml"
+  [[ "${ROBOTICS_RELEASE_SOURCE_SHA}" =~ ^[a-f0-9]{40}$ ]] || {
+    printf 'ROBOTICS_RELEASE_SOURCE_SHA is not a Git commit digest\n' >&2
     return 65
   }
+  [[ "${ROBOTICS_RELEASE_SOURCE_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || {
+    printf 'ROBOTICS_RELEASE_SOURCE_REF is not a release tag ref\n' >&2
+    return 65
+  }
+  test -n "${GH_TOKEN:-}" || {
+    printf 'GH_TOKEN is required to verify released image provenance\n' >&2
+    return 69
+  }
+
+  ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE="${work_root}/verifier-attestation.json"
+  evidence_tmp="${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}.tmp"
+  umask 077
+  gh attestation verify "oci://${PERMIT_PREFLIGHT_IMAGE}" \
+    --repo "${canonical_repository}" \
+    --signer-workflow "${signer_workflow}" \
+    --source-digest "${ROBOTICS_RELEASE_SOURCE_SHA}" \
+    --source-ref "${ROBOTICS_RELEASE_SOURCE_REF}" \
+    --deny-self-hosted-runners \
+    --bundle-from-oci \
+    --format json >"${evidence_tmp}"
+  jq -e 'type == "array" and length > 0' "${evidence_tmp}" >/dev/null || {
+    printf 'verifier provenance evidence is empty or malformed\n' >&2
+    rm -f "${evidence_tmp}"
+    return 65
+  }
+  chmod 0444 "${evidence_tmp}"
+  mv "${evidence_tmp}" "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
+  export ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE
+}
+
+verify_verifier_image_digest() {
+  local actual
+  local name_and_tag
+  local reference_digest
+  local trusted_release_repository
+
+  trusted_release_repository="ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight"
+
+  case "${ROBOTICS_RUNTIME_MODE}" in
+    released | source)
+      ;;
+    *)
+      printf 'unsupported ROBOTICS_RUNTIME_MODE: %s\n' \
+        "${ROBOTICS_RUNTIME_MODE}" >&2
+      return 64
+      ;;
+  esac
+
+  case "${PERMIT_PREFLIGHT_IMAGE}" in
+    *@sha256:*)
+      test "${ROBOTICS_RUNTIME_MODE}" = released || {
+        printf 'digest-pinned verifier images require released runtime mode\n' >&2
+        return 65
+      }
+      reference_digest="${PERMIT_PREFLIGHT_IMAGE##*@}"
+      [[ "${reference_digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+        printf 'permit-preflight image reference has a malformed digest\n' >&2
+        return 65
+      }
+      name_and_tag="${PERMIT_PREFLIGHT_IMAGE%@*}"
+      case "${name_and_tag}" in
+        "${trusted_release_repository}" | "${trusted_release_repository}":*)
+          ;;
+        *)
+          printf 'released verifier image is outside the trusted repository: %s\n' \
+            "${PERMIT_PREFLIGHT_IMAGE}" >&2
+          return 65
+          ;;
+      esac
+      verify_released_verifier_provenance
+      docker image inspect "${PERMIT_PREFLIGHT_IMAGE}" >/dev/null
+      ;;
+    *)
+      test "${ROBOTICS_RUNTIME_MODE}" = source || {
+        printf 'released physical attach requires a digest-pinned verifier image\n' >&2
+        return 65
+      }
+      actual="$(
+        docker image inspect "${PERMIT_PREFLIGHT_IMAGE}" --format '{{.Id}}'
+      )"
+      PERMIT_PREFLIGHT_IMAGE="${actual}"
+      ;;
+  esac
+  export \
+    PERMIT_PREFLIGHT_IMAGE \
+    ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE
 }
 
 validate_physical_compose_model() {

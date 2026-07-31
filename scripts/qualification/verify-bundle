@@ -24,102 +24,17 @@ EOF
   exit 64
 }
 
-# These variables form the sourced library interface.
-# shellcheck disable=SC2034
-scenario_path=''
-# shellcheck disable=SC2034
-acceptance_run_path=''
-# shellcheck disable=SC2034
-aggregate_path=''
 bundle=''
 verification_key=''
 trusted_root=''
 policy=''
-runtime_manifest_specs=()
-result_specs=()
-evidence_index_specs=()
-mcap_summary_specs=()
-optional_evidence_specs=()
-extension_schema_specs=()
-
-while (($# > 0)); do
-  case "$1" in
-    --bundle)
-      (($# >= 2)) || usage
-      bundle="$2"
-      shift 2
-      ;;
-    --key)
-      (($# >= 2)) || usage
-      verification_key="$2"
-      shift 2
-      ;;
-    --trusted-root)
-      (($# >= 2)) || usage
-      trusted_root="$2"
-      shift 2
-      ;;
-    --policy)
-      (($# >= 2)) || usage
-      policy="$2"
-      shift 2
-      ;;
-    --scenario)
-      (($# >= 2)) || usage
-      scenario_path="$2"
-      shift 2
-      ;;
-    --runtime-manifest)
-      (($# >= 2)) || usage
-      runtime_manifest_specs+=("$2")
-      shift 2
-      ;;
-    --acceptance-run)
-      (($# >= 2)) || usage
-      acceptance_run_path="$2"
-      shift 2
-      ;;
-    --result)
-      (($# >= 2)) || usage
-      result_specs+=("$2")
-      shift 2
-      ;;
-    --aggregate)
-      (($# >= 2)) || usage
-      aggregate_path="$2"
-      shift 2
-      ;;
-    --evidence-index)
-      (($# >= 2)) || usage
-      evidence_index_specs+=("$2")
-      shift 2
-      ;;
-    --mcap-summary)
-      (($# >= 2)) || usage
-      mcap_summary_specs+=("$2")
-      shift 2
-      ;;
-    --evidence)
-      (($# >= 2)) || usage
-      optional_evidence_specs+=("$2")
-      shift 2
-      ;;
-    --extension-schema)
-      (($# >= 2)) || usage
-      extension_schema_specs+=("$2")
-      shift 2
-      ;;
-    *)
-      usage
-      ;;
-  esac
-done
-
+qualification_parse_cli verify "$@"
 qualification_require_command cosign
-qualification_require_command yq
 qualification_require_command base64
 export scenario_path acceptance_run_path aggregate_path
 qualification_require_file "$bundle"
+jq --slurp --exit-status 'length == 1' "$bundle" >/dev/null ||
+  qualification_fail "expected exactly one JSON document: $bundle"
 if [[ -n "$verification_key" ]]; then
   [[ -z "$trusted_root" && -z "$policy" ]] ||
     qualification_fail \
@@ -190,13 +105,13 @@ else
       'Sigstore verification failed for every trusted certificate identity'
 fi
 
-[[ "$(yq -r '.mediaType' "$bundle")" == \
+[[ "$(jq -r '.mediaType' "$bundle")" == \
   application/vnd.dev.sigstore.bundle.v0.3+json ]] ||
   qualification_fail 'unsupported Sigstore bundle media type'
-[[ "$(yq -r '.dsseEnvelope.payloadType' "$bundle")" == \
+[[ "$(jq -r '.dsseEnvelope.payloadType' "$bundle")" == \
   application/vnd.in-toto+json ]] ||
   qualification_fail 'Sigstore bundle does not contain an in-toto DSSE envelope'
-yq -er '.dsseEnvelope.payload' "$bundle" |
+jq -er '.dsseEnvelope.payload' "$bundle" |
   base64 --decode >"$work/verified-statement.json" ||
   qualification_fail 'Sigstore bundle contains an invalid DSSE payload'
 qualification_validate_contract "$work/verified-statement.json" qualification-bundle.v1

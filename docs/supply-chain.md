@@ -24,3 +24,26 @@ already attested image and does not rebuild it.
 
 The level is reassessed per release against the current
 [SLSA specification](https://slsa.dev/spec/).
+
+## Policy tooling
+
+| Tool | Supply-chain rule |
+| --- | --- |
+| Cosign | `permit-preflight` copies the binary from the digest-pinned Chainguard image in `docker-bake.hcl` and verifies its declared version during the build. GitHub-hosted foundation jobs use the SHA-pinned official installer action for the same version. |
+| OPA | BuildKit resolves the official multi-platform static image by immutable registry digest. |
+| yq | Docker rebuilds a verified upstream commit because the latest release still pins `golang.org/x/text` below the security-fixed version. The build checks the exact dependency version. |
+
+`policy-tooling` is a CI-only build target. It is not a product runtime image
+and is not published by the release inventory. Product images, including
+`permit-preflight`, pass the ordinary SBOM, provenance, and vulnerability
+gates.
+
+Released physical runs accept `permit-preflight` only from the canonical
+repository at an OCI digest. Before local use, `gh attestation verify` binds
+that digest to the release workflow, source commit, source tag, and a
+GitHub-hosted runner. The Sigstore root used for execution authorization is
+embedded read-only in the verified image.
+
+Renovate may propose digest changes, but changes to tool versions or upstream
+revisions require review and the complete build, policy, signature, tamper,
+SBOM, and vulnerability checks.

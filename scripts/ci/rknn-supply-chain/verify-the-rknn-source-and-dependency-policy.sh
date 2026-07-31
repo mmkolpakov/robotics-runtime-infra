@@ -16,5 +16,5 @@ if grep -Eq '^(nvidia-|triton==)' \
   echo "RKNN runtime lock contains a prohibited GPU package" >&2
   exit 1
 fi
-docker buildx bake rknn-source-verification \
+docker buildx bake --file docker-bake.hcl rknn-source-verification \
   --set '*.output=type=cacheonly'

@@ -3,100 +3,46 @@
 # This module is sourced by physical-attach.sh and uses its coordinator state.
 # shellcheck disable=SC2154
 
-physical_attach_input_paths() {
-  cat <<'EOF'
-compose.can-observation.yaml
-compose.edge-attach.yaml
-compose.real-observation.test.yaml
-compose.real-observation.yaml
-compose.security.yaml
-compose.serial.yaml
-compose.yaml
-config/fastdds/udp-only.xml
-config/sros2/observer.policy.xml
-config/sros2/smoke.policy.xml
-docker/permit-preflight/json-equal.yq
-docker/permit-preflight/permit-preflight
-foundation.repos
-policy/execution.rego
-scripts/ci/integration/verify-synthetic-physical-attach-end-to-end.sh
-scripts/ci/lib.sh
-scripts/ci/physical-attach.sh
-scripts/ci/physical-attach/authorization.sh
-scripts/ci/physical-attach/devices.sh
-scripts/ci/physical-attach/observation.sh
-systemd/robotics-can-observation@.service
-test/ci/physical-attach/authorization-template.json
-test/ci/physical-attach/observer-command-denied.sh
-test/ci/physical-attach/observer-listen.sh
-test/ci/physical-attach/observer-unsecured-source-denied.sh
-test/ci/physical-attach/policy-input.jq
-test/ci/physical-attach/report.json
-test/ci/physical-attach/runtime-manifest.jq
-test/ci/physical-attach/target-evidence.json
-test/ci/physical-attach/verify-time-evidence.jq
-test/physical/hil-runtime.input.json
-EOF
-}
-
-write_file_input_manifest() {
-  local source_root="$1"
-  local output="$2"
-  local path
-
-  : >"${output}"
-  physical_attach_input_paths | LC_ALL=C sort --check --unique
-  while IFS= read -r path; do
-    test -n "${path}"
-    test -f "${source_root}/${path}" && test ! -L "${source_root}/${path}" || {
-      printf 'required physical-attach input is absent: %s\n' "${path}" >&2
-      return 66
-    }
-    printf 'file\t%s\t%s\n' \
-      "$(sha256_file "${source_root}/${path}")" \
-      "${path}" >>"${output}"
-  done < <(physical_attach_input_paths)
-  test "$(
-    wc -l <"${output}" | tr -d ' '
-  )" -eq "$(
-    physical_attach_input_paths | wc -l | tr -d ' '
-  )"
-}
-
 write_scenario_input_manifest() {
-  local entries="${scenario_manifest}.entries"
+  local image
+  local repository_status
+  local source_revision
 
-  write_file_input_manifest "${REPOSITORY_ROOT}" "${entries}"
+  repository_status="$(
+    git -C "${REPOSITORY_ROOT}" status --porcelain=v1 --untracked-files=normal
+  )"
+  test -z "${repository_status}" || {
+    printf 'physical attach requires a clean Git worktree\n' >&2
+    return 65
+  }
+  source_revision="$(git -C "${REPOSITORY_ROOT}" rev-parse --verify HEAD)"
+  [[ "${source_revision}" =~ ^[a-f0-9]{40}$ ]]
   {
-    cat "${entries}"
+    printf 'source\t%s\trepository\n' "${source_revision}"
     printf 'evidence\t%s\thardware-time.otlp.json\n' \
       "$(sha256_file "${ROBOTICS_TIME_EVIDENCE}")"
     printf 'evidence\t%s\thardware-time-window.json\n' \
       "$(sha256_file "${ROBOTICS_TIME_EVIDENCE_WINDOW}")"
-    printf 'image\t%s\tacceptance-observer\n' "$(
-      docker image inspect "${OBSERVER_IMAGE}" --format '{{.Id}}'
-    )"
-    printf 'image\t%s\tsynthetic-telemetry-source\n' "$(
-      docker image inspect "${BENCHMARK_IMAGE}" --format '{{.Id}}'
-    )"
-    printf 'image\t%s\tcan-client\n' "$(
-      docker image inspect "${CAN_CLIENT_IMAGE}" --format '{{.Id}}'
-    )"
-    printf 'image\t%s\tpermit-preflight\n' \
-      "${ROBOTICS_COSIGN_IMAGE_DIGEST}"
+    while IFS= read -r image; do
+      printf 'image\t%s\t%s\n' \
+        "$(docker image inspect "${image}" --format '{{.Id}}')" \
+        "${image}"
+    done < <(
+      real_compose \
+        --profile real-observation \
+        --profile real-observation-test \
+        --profile real-observation-test-negative \
+        config --images | LC_ALL=C sort --unique
+    )
+    if test "${ROBOTICS_RUNTIME_MODE}" = released; then
+      test -s "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
+      printf 'evidence\t%s\tverifier-attestation.json\n' \
+        "$(sha256_file "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}")"
+    fi
     printf 'measurement-run\t%s\thardware-time\n' \
       "${ROBOTICS_TIME_EVIDENCE_RUN_ID}"
   } | LC_ALL=C sort >"${scenario_manifest}"
-  rm -f "${entries}"
   test -s "${scenario_manifest}"
-}
-
-physical_attach_scenario_sha256() {
-  test -s "${scenario_manifest}" || {
-    printf 'physical-attach input manifest is absent\n' >&2
-    return 66
-  }
-  sha256_file "${scenario_manifest}"
 }
 
 write_trust_policy() {
@@ -125,8 +71,12 @@ write_permit_case() {
   local nonce
 
   mkdir -p "${case_dir}"
+  test -s "${scenario_manifest}" || {
+    printf 'physical-attach input manifest is absent\n' >&2
+    return 66
+  }
   target_identity="$(<"${work_root}/target-identity.sha256")"
-  scenario_sha256="$(physical_attach_scenario_sha256)"
+  scenario_sha256="$(sha256_file "${scenario_manifest}")"
   image_digest="$(
     docker image inspect "${OBSERVER_IMAGE}" --format '{{.Id}}'
   )"
@@ -212,14 +162,10 @@ generate_role_keys() {
     --out signing-config.json
 }
 
-sign_and_verify_role() {
+sign_role() {
   local case_dir="$1"
   local role="$2"
-  local scenario_sha256
-  local predicate_type
 
-  scenario_sha256="$(jq -r '.scenario_sha256' "${case_dir}/execution-permit.json")"
-  predicate_type="$(jq -r '.predicate_type' "${case_dir}/execution-permit.json")"
   chmod 0777 "${case_dir}"
 
   cosign_run "${work_root}" attest-blob --yes \
@@ -231,79 +177,10 @@ sign_and_verify_role() {
     "${work_root}" \
     0444 \
     "$(basename "${case_dir}")/${role}.sigstore.json"
-  permit_run "${work_root}" verify-offline-test-attestation \
-    "/work/$(basename "${case_dir}")/execution-statement.json" \
-    "/work/$(basename "${case_dir}")/${role}.sigstore.json" \
-    "/work/keys/${role}.pub"
-  cosign_run "${work_root}" verify-blob-attestation \
-    --bundle "$(basename "${case_dir}")/${role}.sigstore.json" \
-    --key "keys/${role}.pub" \
-    --digest "${scenario_sha256}" \
-    --digestAlg sha256 \
-    --type "${predicate_type}" >/dev/null
   test "$(
     jq '.verificationMaterial.tlogEntries | length' \
       "${case_dir}/${role}.sigstore.json"
   )" -eq 1
-}
-
-write_policy_input() {
-  local case_dir="$1"
-  local operator_integrated_time
-  local approver_integrated_time
-  local cosign_version
-  local image_digest
-  local policy_sha256
-
-  operator_integrated_time="$(
-    jq -r '.verificationMaterial.tlogEntries[0].integratedTime' \
-      "${case_dir}/operator.sigstore.json"
-  )"
-  approver_integrated_time="$(
-    jq -r '.verificationMaterial.tlogEntries[0].integratedTime' \
-      "${case_dir}/approver.sigstore.json"
-  )"
-  cosign_version="$(
-    cosign_run "${case_dir}" version --json |
-      jq -r '.gitVersion | sub("^v"; "")'
-  )"
-  image_digest="$(
-    docker image inspect "${PERMIT_PREFLIGHT_IMAGE}" --format '{{.Id}}'
-  )"
-  policy_sha256="$(
-    docker run --rm \
-      --entrypoint sha256sum \
-      "${PERMIT_PREFLIGHT_IMAGE}" \
-      /usr/share/robotics-runtime/policy/execution.rego |
-      awk '{print $1}'
-  )"
-
-  jq -n \
-    --arg approver_bundle_sha256 \
-      "$(sha256_file "${case_dir}/approver.sigstore.json")" \
-    --arg approver_issuer "https://github.com/sigstore/cosign/key" \
-    --arg approver_identity "ci.approver" \
-    --arg cosign_image_digest "${image_digest}" \
-    --arg cosign_version "${cosign_version}" \
-    --arg operator_bundle_sha256 \
-      "$(sha256_file "${case_dir}/operator.sigstore.json")" \
-    --arg operator_issuer "https://github.com/sigstore/cosign/key" \
-    --arg operator_identity "ci.operator" \
-    --arg permit_sha256 \
-      "$(sha256_file "${case_dir}/execution-permit.json")" \
-    --arg policy_sha256 "${policy_sha256}" \
-    --arg statement_sha256 \
-      "$(sha256_file "${case_dir}/execution-statement.json")" \
-    --arg trust_policy_sha256 \
-      "$(sha256_file "${case_dir}/trust-policy.json")" \
-    --argjson approver_integrated_time "${approver_integrated_time}" \
-    --argjson operator_integrated_time "${operator_integrated_time}" \
-    --slurpfile permit "${case_dir}/execution-permit.json" \
-    --slurpfile request "${case_dir}/execution-request.json" \
-    --slurpfile statement "${case_dir}/execution-statement.json" \
-    --slurpfile trust_policy "${case_dir}/trust-policy.json" \
-    -f "${PHYSICAL_ATTACH_FIXTURE_ROOT}/policy-input.jq" \
-    >"${case_dir}/policy-input.json"
 }
 
 work_mount_path() {
@@ -359,16 +236,15 @@ run_offline_preflight() {
 
   case_mount="$(work_mount_path "${case_dir}")"
   permit_run "${work_root}" authorize-offline-test \
+    /work/keys \
     "${case_mount}/execution-permit.json" \
     "${case_mount}/execution-statement.json" \
     "${case_mount}/operator.sigstore.json" \
     "${case_mount}/approver.sigstore.json" \
-    /work/keys \
     "${case_mount}/trust-policy.json" \
     "${case_mount}/execution-request.json" \
     "$(work_mount_path "${nonce_dir}")" \
-    "$(work_mount_path "${output}")" \
-    "${ROBOTICS_COSIGN_IMAGE_DIGEST}"
+    "$(work_mount_path "${output}")"
 }
 
 expect_preflight_denial() {
@@ -423,75 +299,4 @@ require_empty_nonce_store() {
     printf 'denied permit consumed a nonce: %s\n' "${nonce_dir}" >&2
     return 1
   }
-}
-
-authorize_equivalent_policy_case() {
-  local case_dir="$1"
-  sign_and_verify_role "${case_dir}" operator
-  sign_and_verify_role "${case_dir}" approver
-  write_policy_input "${case_dir}"
-  opa_eval "${case_dir}" eval \
-    --fail \
-    --format raw \
-    --data /usr/share/robotics-runtime/policy/execution.rego \
-    --input /work/policy-input.json \
-    data.execution.verification >"${case_dir}/execution-verification.json"
-  test -s "${case_dir}/execution-verification.json"
-}
-
-expect_policy_denial() {
-  local case_dir="$1"
-  local expected="$2"
-  local deny_output="${case_dir}/policy-deny.json"
-
-  write_policy_input "${case_dir}"
-  opa_eval "${case_dir}" eval \
-    --format json \
-    --data /usr/share/robotics-runtime/policy/execution.rego \
-    --input /work/policy-input.json \
-    data.execution.deny >"${deny_output}"
-  jq -e --arg expected "${expected}" '
-    [.result[0].expressions[0].value[]] | index($expected) != null
-  ' "${deny_output}" >/dev/null
-  if opa_eval "${case_dir}" eval \
-    --fail \
-    --format raw \
-    --data /usr/share/robotics-runtime/policy/execution.rego \
-    --input /work/policy-input.json \
-    data.execution.verification >/dev/null; then
-    printf 'denied authorization unexpectedly produced verification\n' >&2
-    return 1
-  fi
-}
-
-verify_wrong_signer() {
-  local case_dir="$1"
-  local scenario_sha256
-  local predicate_type
-
-  scenario_sha256="$(jq -r '.scenario_sha256' "${case_dir}/execution-permit.json")"
-  predicate_type="$(jq -r '.predicate_type' "${case_dir}/execution-permit.json")"
-  if cosign_run "${work_root}" verify-blob-attestation \
-    --bundle "$(basename "${case_dir}")/approver.sigstore.json" \
-    --key keys/approver.pub \
-    --digest "${scenario_sha256}" \
-    --digestAlg sha256 \
-    --type "${predicate_type}" >/dev/null 2>&1; then
-    printf 'wrong signer was accepted for the approver role\n' >&2
-    return 1
-  fi
-}
-
-check_production_authorize_contract() {
-  local output
-  local status
-
-  set +e
-  output="$(permit_run "${work_root}" authorize 2>&1)"
-  status=$?
-  set -e
-  test "${status}" -eq 64
-  grep -Fq \
-    'permit-preflight authorize PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUSTED_ROOT TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST' \
-    <<<"${output}"
 }

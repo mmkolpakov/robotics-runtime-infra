@@ -7,10 +7,9 @@ certificate verification remain delegated to Cosign.
 ## Prerequisites
 
 - Bash 5 or newer
-- Cosign 3.1.1
+- Cosign 3.1.2
 - jq 1.6 or newer
-- yq 4.53 or newer
-- robotics-runtime-contracts 0.10.0 or newer
+- robotics-runtime-contracts 0.11.0 or newer
 
 `ROBOTICS_CONTRACTS_CLI` may point to an executable from an isolated
 installation. Otherwise, the scripts resolve `robotics-contracts` from `PATH`
@@ -49,9 +48,9 @@ cosign attest-blob \
 
 The generated statement is deterministic for unchanged inputs. Its
 `generated_at` value comes from the supplied aggregate; the producer does not
-insert its own wall-clock timestamp. Base domain aggregation uses
-`acceptance-aggregate.v1`; a completed cross-domain trace evaluation supplies
-`acceptance-aggregate.v2`.
+insert its own wall-clock timestamp. Both base domain aggregation and completed
+cross-domain trace evaluation use `acceptance-aggregate.v3`; the verdict status
+records whether causality has been evaluated.
 
 The foundation acceptance path also records
 `config/fastdds/udp-only.xml` as `other_evidence`. The same file is mounted into

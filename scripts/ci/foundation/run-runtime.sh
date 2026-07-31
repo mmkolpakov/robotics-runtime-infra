@@ -37,4 +37,5 @@ docker rm "${test_container}"
 
 cleanup
 trap - EXIT
+foundation_assert_project_clean "${project}"
 exit "${status}"

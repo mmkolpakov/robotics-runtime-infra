@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from opentelemetry.context import Context
 from opentelemetry.propagators.textmap import Getter
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
@@ -42,17 +40,4 @@ def extract_context(message: TraceContext, context: Context | None = None) -> Co
     )
 
 
-def as_mapping(message: TraceContext) -> Mapping[str, str]:
-    """Return the non-empty wire fields for diagnostics and tests."""
-
-    return {
-        key: value
-        for key, value in (
-            ("traceparent", message.traceparent),
-            ("tracestate", message.tracestate),
-        )
-        if value
-    }
-
-
-__all__ = ["as_mapping", "extract_context", "inject_context"]
+__all__ = ["extract_context", "inject_context"]

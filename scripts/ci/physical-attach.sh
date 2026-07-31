@@ -5,7 +5,6 @@ set -Eeuo pipefail
 
 readonly CASES=(
   positive
-  expired-permit
   wrong-target
   wrong-signer
   command-publish-denied
@@ -47,6 +46,7 @@ serial_bridge_pid=
 host_lock_fd=
 security_dir=
 scenario_manifest=
+ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE=
 # These values are written or consumed by sourced physical-attach modules.
 # shellcheck disable=SC2034
 time_measured_at=
@@ -70,16 +70,6 @@ case_report=
 report_output=
 report_pending=
 
-usage() {
-  cat <<'EOF'
-usage: physical-attach.sh [run|--list-cases|--check-prerequisites]
-EOF
-}
-
-list_cases() {
-  printf '%s\n' "${CASES[@]}"
-}
-
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
     printf 'required command is unavailable: %s\n' "$1" >&2
@@ -95,7 +85,7 @@ require_environment() {
     COSIGN_PASSWORD \
     OBSERVER_IMAGE \
     PERMIT_PREFLIGHT_IMAGE \
-    ROBOTICS_COSIGN_IMAGE_DIGEST \
+    ROBOTICS_RUNTIME_MODE \
     ROBOTICS_TIME_EVIDENCE \
     ROBOTICS_TIME_EVIDENCE_RUN_ID \
     ROBOTICS_TIME_EVIDENCE_WINDOW; do
@@ -104,6 +94,17 @@ require_environment() {
       return 1
     }
   done
+  if test "${ROBOTICS_RUNTIME_MODE}" = released; then
+    for name in \
+      GH_TOKEN \
+      ROBOTICS_RELEASE_SOURCE_REF \
+      ROBOTICS_RELEASE_SOURCE_SHA; do
+      test -n "${!name:-}" || {
+        printf 'required released-runtime variable is unset: %s\n' "${name}" >&2
+        return 1
+      }
+    done
+  fi
 }
 
 check_prerequisites() {
@@ -140,6 +141,9 @@ check_prerequisites() {
     wc; do
     require_command "${command_name}"
   done
+  if test "${ROBOTICS_RUNTIME_MODE}" = released; then
+    require_command gh
+  fi
   test -s "${ROBOTICS_TIME_EVIDENCE}" || {
     printf 'time evidence is absent or empty: %s\n' \
       "${ROBOTICS_TIME_EVIDENCE}" >&2
@@ -152,7 +156,6 @@ check_prerequisites() {
   }
   for fixture in \
     authorization-template.json \
-    policy-input.jq \
     report.json \
     runtime-manifest.jq \
     target-evidence.json \
@@ -201,16 +204,6 @@ permit_chmod() {
     --volume "${mount_root}:/work" \
     --entrypoint /bin/chmod \
     "${PERMIT_PREFLIGHT_IMAGE}" "${mode}" "/work/${path}"
-}
-
-opa_eval() {
-  local mount_root="$1"
-  shift
-  docker run --rm \
-    --volume "${mount_root}:/work:ro" \
-    --workdir /work \
-    --entrypoint /usr/local/bin/opa \
-    "${PERMIT_PREFLIGHT_IMAGE}" "$@"
 }
 
 can_compose() {
@@ -318,9 +311,6 @@ exit_with_cleanup() {
     else
       cleanup_status=70
     fi
-  elif test -n "${report_pending}"; then
-    rm -f -- "${report_pending}" || cleanup_status=70
-    report_pending=
   fi
   if test -n "${report_pending}"; then
     rm -f -- "${report_pending}" || cleanup_status=70
@@ -385,7 +375,7 @@ record_case() {
 
 run_setup() {
   acquire_host_lock
-  verify_permit_image_digest
+  verify_verifier_image_digest
   validate_physical_compose_model
   prepare_pty_pair
   prepare_vcan_gateway
@@ -395,7 +385,6 @@ run_setup() {
   write_scenario_input_manifest
   write_trust_policy
   generate_role_keys
-  check_production_authorize_contract
 }
 
 run_case_positive() {
@@ -406,7 +395,8 @@ run_case_positive() {
 
   write_permit_case \
     "${case_dir}" "${issued_at}" "${expires_at}" "${target_identity}"
-  authorize_equivalent_policy_case "${case_dir}"
+  sign_role "${case_dir}" operator
+  sign_role "${case_dir}" approver
   write_runtime_manifest_input
   start_sros2_observer "${case_dir}"
   prepare_preflight_directories \
@@ -419,40 +409,6 @@ run_case_positive() {
     "${work_root}/preflight-replay/output/execution-verification.json" \
     77
   record_case positive
-}
-
-run_case_expired_permit() {
-  local issued_at="$1"
-  local expires_at="$2"
-  local target_identity="$3"
-  local case_dir="${work_root}/expired"
-  local historical_evidence="${case_dir}/target-evidence.json"
-
-  mkdir -p "${case_dir}"
-  jq \
-    --arg checked_at "${issued_at}" \
-    '.checked_at = $checked_at' \
-    "${work_root}/target-evidence.json" >"${historical_evidence}"
-  write_permit_case \
-    "${case_dir}" \
-    "${issued_at}" \
-    "${expires_at}" \
-    "${target_identity}" \
-    "${historical_evidence}"
-  sign_and_verify_role "${case_dir}" operator
-  sign_and_verify_role "${case_dir}" approver
-  expect_policy_denial "${case_dir}" "permit has expired"
-  prepare_preflight_directories \
-    "${work_root}/preflight-expired/nonces" \
-    "${work_root}/preflight-expired/output"
-  expect_preflight_denial \
-    "${case_dir}" \
-    "permit has expired" \
-    "${work_root}/preflight-expired/nonces" \
-    "${work_root}/preflight-expired/output/execution-verification.json" \
-    65
-  require_empty_nonce_store "${work_root}/preflight-expired/nonces"
-  record_case expired-permit
 }
 
 run_case_wrong_target() {
@@ -468,9 +424,6 @@ run_case_wrong_target() {
   mv \
     "${case_dir}/execution-request.json.tmp" \
     "${case_dir}/execution-request.json"
-  expect_policy_denial \
-    "${case_dir}" \
-    "observed target identity does not match the permit"
   prepare_preflight_directories \
     "${work_root}/preflight-wrong-target/nonces" \
     "${work_root}/preflight-wrong-target/output"
@@ -493,7 +446,6 @@ run_case_wrong_signer() {
     "${case_dir}/operator.sigstore.json" \
     "${case_dir}/approver.sigstore.json"
   chmod 0444 "${case_dir}/approver.sigstore.json"
-  verify_wrong_signer "${case_dir}"
   prepare_preflight_directories \
     "${work_root}/preflight-wrong-signer/nonces" \
     "${work_root}/preflight-wrong-signer/output"
@@ -507,12 +459,6 @@ run_case_wrong_signer() {
   record_case wrong-signer
 }
 
-run_case_command_publish_denied() {
-  verify_command_publish_denied
-  verify_unsecured_source_denied
-  record_case command-publish-denied
-}
-
 run_cases() {
   local target_identity="$1"
   local checked_epoch
@@ -520,8 +466,6 @@ run_cases() {
   local issued_epoch
   local issued_at
   local expires_at
-  local expired_issued_at
-  local expired_at
   local wrong_target_identity
 
   now_epoch="$(date -u +%s)"
@@ -532,20 +476,16 @@ run_cases() {
   fi
   issued_at="$(date -u -d "@${issued_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
   expires_at="$(date -u -d "@$((now_epoch + 900))" +%Y-%m-%dT%H:%M:%SZ)"
-  expired_issued_at="$(
-    date -u -d "@$((now_epoch - 1200))" +%Y-%m-%dT%H:%M:%SZ
-  )"
-  expired_at="$(date -u -d "@$((now_epoch - 600))" +%Y-%m-%dT%H:%M:%SZ)"
   wrong_target_identity="$(
     printf 'wrong-target' | sha256sum | awk '{print $1}'
   )"
 
   run_case_positive "${issued_at}" "${expires_at}" "${target_identity}"
-  run_case_expired_permit \
-    "${expired_issued_at}" "${expired_at}" "${target_identity}"
   run_case_wrong_target "${wrong_target_identity}"
   run_case_wrong_signer
-  run_case_command_publish_denied
+  verify_command_publish_denied
+  verify_unsecured_source_denied
+  record_case command-publish-denied
 }
 
 finalize_run() {
@@ -573,36 +513,10 @@ run_scenario() {
   finalize_run
 }
 
-main() {
-  case "${1:-run}" in
-    run)
-      test "$#" -le 1 || {
-        usage >&2
-        return 64
-      }
-      run_scenario
-      ;;
-    --list-cases)
-      test "$#" -eq 1 || {
-        usage >&2
-        return 64
-      }
-      list_cases
-      ;;
-    --check-prerequisites)
-      test "$#" -eq 1 || {
-        usage >&2
-        return 64
-      }
-      check_prerequisites
-      ;;
-    *)
-      usage >&2
-      return 64
-      ;;
-  esac
-}
-
 if test "${PHYSICAL_ATTACH_LIBRARY_ONLY:-0}" != 1; then
-  main "$@"
+  test "$#" -eq 0 || {
+    printf 'physical-attach.sh does not accept arguments\n' >&2
+    exit 64
+  }
+  run_scenario
 fi

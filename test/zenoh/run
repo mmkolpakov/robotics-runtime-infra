@@ -25,6 +25,7 @@ mkdir -p "${report_root}"
 mkdir "${report_dir}"
 mkdir -p \
   "${report_dir}/qualification/observations" \
+  "${report_dir}/qualification/evidence-spool" \
   "${report_dir}/destination" \
   "${report_dir}/source"
 export ROBOTICS_HOST_UID="${ROBOTICS_HOST_UID:-$(id -u)}"
@@ -48,6 +49,12 @@ test -n "${subscriber_id}"
 "${compose[@]}" run --rm --no-deps zenoh-publisher
 subscriber_status="$(docker container wait "${subscriber_id}")"
 test "${subscriber_status}" -eq 0
+evidence=("${compose[@]}" run --rm --no-deps zenoh-evidence)
+"${evidence[@]}" artifact /reports/source/traces.otlp.jsonl application/x-ndjson 0
+"${evidence[@]}" artifact /reports/source/probe.json application/json 1
+"${evidence[@]}" artifact /reports/destination/traces.otlp.jsonl application/x-ndjson 2
+"${evidence[@]}" artifact /reports/destination/probe.json application/json 3
+"${evidence[@]}" finalize
 "${compose[@]}" run --rm --no-deps zenoh-evaluator
 
 jq -e '

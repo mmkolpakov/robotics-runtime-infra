@@ -7,7 +7,10 @@ ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0a
 ARG RCLONE_IMAGE=rclone/rclone:sha-c99b2d1@sha256:6a2839db9d74eb6f6c9904bb264e40a1a64f831058c9d34908c65feed74664b4
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
-ARG COSIGN_IMAGE=cgr.dev/chainguard/cosign@sha256:609ca1d6f7434cdacb8597870990b3689ec1a83a462b26b6aeb05d55a1acfe7e
+ARG OPA_IMAGE=openpolicyagent/opa:1.19.0-static@sha256:2f42ca765bb739b40fc23ee625b3287012acdf8120ad4fcbdab68433a17be144
+# Policy targets receive the qualified reference from Docker Bake.
+ARG COSIGN_IMAGE=scratch
+ARG COSIGN_VERSION
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -26,12 +29,19 @@ ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 FROM ${UV_IMAGE} AS uv
 FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
+FROM ${OPA_IMAGE} AS opa
 FROM ${COSIGN_IMAGE} AS cosign
 FROM ${ROS_BASE_IMAGE} AS ca-bootstrap
 
 FROM scratch AS cosign-license
+ARG COSIGN_VERSION
 ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
-  https://raw.githubusercontent.com/sigstore/cosign/v3.1.1/LICENSE \
+  https://raw.githubusercontent.com/sigstore/cosign/v${COSIGN_VERSION}/LICENSE \
+  /LICENSE
+
+FROM scratch AS opa-license
+ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
+  https://raw.githubusercontent.com/open-policy-agent/opa/1e32c796e8979b1bda2f768138500b1deb95ff24/LICENSE \
   /LICENSE
 
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
@@ -183,62 +193,7 @@ ADD --checksum=sha256:a6adb750d17c8eb3c50a5b063115c762ffe57724cfbd45cc38e5abe823
   https://github.com/intel/compute-runtime/releases/download/24.48.31907.7/libigdgmm12_22.5.4_amd64.deb \
   /packages/libigdgmm12_22.5.4_amd64.deb
 
-# Build the exact OPA release with the upstream oras-go security update. The
-# v1.18.2 release image predates Go 1.26.5 and oras-go v2.6.2.
-FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS opa
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ARG TARGETOS
-ARG TARGETARCH
-ARG OPA_REVISION=e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297
-ARG OPA_SOURCE_DATE_EPOCH=1782998040
-ARG OPA_VERSION=1.18.2
-# hadolint ignore=DL3022
-COPY --from=opa-source / /src/opa
-WORKDIR /src/opa
-RUN --mount=type=cache,id=opa-v1.18.2-mod,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,id=opa-v1.18.2-build,target=/root/.cache/go-build,sharing=locked \
-    test "$(sed -n 's/^module //p' go.mod)" = \
-      "github.com/open-policy-agent/opa" \
-    && test "$(sed -n 's/^var Version = \"\(.*\)\"/\1/p' v1/version/version.go)" = \
-      "${OPA_VERSION}" \
-    && test "$(cat .go-version)" = "1.26.4" \
-    && test "$(sed -n 's#^[[:space:]]*oras.land/oras-go/v2 v##p' go.mod)" = \
-      "2.6.1" \
-    && test "${OPA_REVISION}" = \
-      "e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297" \
-    && test "${OPA_SOURCE_DATE_EPOCH}" = "1782998040" \
-    && go get oras.land/oras-go/v2@v2.6.2 \
-    && test "$(sed -n 's#^[[:space:]]*oras.land/oras-go/v2 v##p' go.mod)" = \
-      "2.6.2" \
-    && test "$(sed -n 's#^[[:space:]]*golang.org/x/sync v##p' go.mod)" = \
-      "0.22.0" \
-    && go mod download \
-    && go mod verify \
-    && CGO_ENABLED=0 go test -mod=readonly ./v1/download \
-    && CGO_ENABLED=0 \
-      GOOS="${TARGETOS}" \
-      GOARCH="${TARGETARCH}" \
-      go build \
-        -mod=readonly \
-        -trimpath \
-        -ldflags "-buildid= -s -w \
-          -X github.com/open-policy-agent/opa/v1/version.Vcs=${OPA_REVISION} \
-          -X github.com/open-policy-agent/opa/v1/version.Timestamp=2026-07-02T13:14:00Z \
-          -X github.com/open-policy-agent/opa/v1/version.Hostname=release" \
-        -o /out/opa \
-        . \
-    && install -m 0444 LICENSE /out/LICENSE \
-    && cp go.mod go.sum /out/ \
-    && printf '%s\n' \
-      "opa=v${OPA_VERSION}" \
-      "revision=${OPA_REVISION}" \
-      "go=$(go version | awk '{print $3}')" \
-      "security_delta=oras.land/oras-go/v2@v2.6.2,golang.org/x/sync@v0.22.0" \
-      "upstream_delta=3f0256edb298a5ebaff9adf1a34584a53278d051" \
-      > /out/source.txt
-
-# Rebuild yq from its verified upstream dependency-update commit. The latest
-# release still contains golang.org/x/text below the security-fixed version.
+# The latest release still contains golang.org/x/text below the fixed version.
 FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS yq
 ARG TARGETOS
 ARG TARGETARCH
@@ -248,7 +203,7 @@ ARG YQ_X_TEXT_VERSION=v0.40.0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     YQ_MODULE="github.com/mikefarah/yq/v4"; \
-    YQ_BUILD_VERSION="${YQ_BASE_VERSION}+commit.${YQ_REVISION}"; \
+    YQ_BUILD_VERSION="${YQ_BASE_VERSION}+commit.${YQ_REVISION:0:7}"; \
     YQ_MODULE_VERSION="$(go list -m -f '{{.Version}}' \
       "${YQ_MODULE}@${YQ_REVISION}")"; \
     go mod download "${YQ_MODULE}@${YQ_MODULE_VERSION}"; \
@@ -387,8 +342,8 @@ LABEL org.opencontainers.image.title="Robotics policy tooling" \
       org.opencontainers.image.source="${IMAGE_SOURCE}" \
       org.opencontainers.image.licenses="Apache-2.0 AND MIT"
 
-COPY --from=opa /out/opa /opa
-COPY --from=opa /out/LICENSE /LICENSE
+COPY --from=opa /opa /opa
+COPY --from=opa-license /LICENSE /LICENSE
 COPY --from=yq /out/yq /yq
 COPY --from=yq /out/YQ-LICENSE /YQ-LICENSE
 USER 65532:65532
@@ -401,6 +356,8 @@ ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
+ARG COSIGN_IMAGE
+ARG COSIGN_VERSION
 
 LABEL org.opencontainers.image.title="Robotics execution permit preflight" \
       org.opencontainers.image.description="Exact-identity Sigstore bundle verification for physical runtime permits." \
@@ -415,16 +372,28 @@ ARG UBUNTU_SNAPSHOT
 ENV HOME=/home/preflight \
     PATH="/opt/venv/bin:${PATH}"
 
-RUN install -d -m 0555 /usr/share/licenses/cosign
+RUN case "${COSIGN_IMAGE}" in \
+      *@sha256:????????????????????????????????????????????????????????????????) ;; \
+      *) printf 'COSIGN_IMAGE must be digest-pinned\n' >&2; exit 65 ;; \
+    esac \
+    && cosign_image_digest="${COSIGN_IMAGE##*@}" \
+    && case "${cosign_image_digest#sha256:}" in \
+      *[!a-f0-9]*) \
+        printf 'COSIGN_IMAGE digest must be lowercase hexadecimal\n' >&2; \
+        exit 65 ;; \
+      *) ;; \
+    esac \
+    && install -d -m 0555 \
+      /usr/share/licenses/cosign \
+      /usr/share/robotics-runtime \
+    && printf '%s\n' "${cosign_image_digest}" \
+      > /usr/share/robotics-runtime/cosign-image-digest \
+    && chmod 0444 /usr/share/robotics-runtime/cosign-image-digest
 COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
 COPY --from=cosign-license --chmod=0444 /LICENSE \
   /usr/share/licenses/cosign/LICENSE
-COPY --from=opa /out/opa /usr/local/bin/opa
-COPY --from=opa /out/LICENSE /usr/share/licenses/opa/LICENSE
-COPY --from=opa /out/source.txt /usr/share/robotics-runtime/opa-source.txt
-COPY --from=opa /out/go.mod /usr/share/robotics-runtime/opa-go.mod
-COPY --from=opa /out/go.sum /usr/share/robotics-runtime/opa-go.sum
-COPY --from=yq /out/yq /usr/local/bin/yq
+COPY --from=opa /opa /usr/local/bin/opa
+COPY --from=opa-license /LICENSE /usr/share/licenses/opa/LICENSE
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY docker/python/permit-preflight.lock /tmp/python/permit-preflight.lock
@@ -433,7 +402,9 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
-    && apt-get install -y --no-install-recommends python3 \
+    && apt-get install -y --no-install-recommends jq python3 \
+    && test "$(/usr/local/bin/cosign version --json | jq -er '.gitVersion')" = \
+      "v${COSIGN_VERSION}" \
     && uv venv --no-cache --python /usr/bin/python3 /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
@@ -457,6 +428,9 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && rm -rf \
       /home/preflight/.cache \
       /tmp/python \
+      /usr/local/bin/uv \
+      /usr/local/bin/uvx \
+      /usr/local/sbin/use-package-snapshots \
       /var/cache/ldconfig/aux-cache \
       /var/lib/apt/lists/* \
       /var/log/apt/* \
@@ -464,13 +438,15 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       /var/log/dpkg.log
 
 COPY --chmod=0444 policy/execution.rego /usr/share/robotics-runtime/policy/execution.rego
-COPY --chmod=0444 docker/permit-preflight/json-equal.yq \
-  /usr/share/robotics-runtime/permit-preflight/json-equal.yq
+COPY --chmod=0444 docker/permit-preflight/render-policy-input.jq \
+  /usr/share/robotics-runtime/policy/render-policy-input.jq
+COPY --chmod=0444 trust/qualification.trusted-root.json \
+  /usr/share/robotics-runtime/trust/sigstore-trusted-root.json
 COPY --chmod=0555 docker/permit-preflight/permit-preflight /usr/local/bin/permit-preflight
 
 RUN chmod 0555 \
-      /usr/share/robotics-runtime/permit-preflight \
-      /usr/share/robotics-runtime/policy
+      /usr/share/robotics-runtime/policy \
+      /usr/share/robotics-runtime/trust
 
 USER preflight
 WORKDIR /work
@@ -545,7 +521,6 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
 
 COPY --from=mcap /mcap /usr/local/bin/mcap
 COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
-COPY --from=yq /out/yq /usr/local/bin/yq
 COPY --from=aws-cli /usr/local/aws-cli /usr/local/aws-cli
 RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws
 
@@ -812,25 +787,13 @@ RUN install -D -m 0644 /tmp/rocm.asc /etc/apt/keyrings/rocm.asc \
       > /etc/apt/preferences.d/rocm-pin-600 \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-      "hip-runtime-amd=${HIP_DEB_VERSION}" \
-    && apt-get clean \
-    && apt-get install -y --no-install-recommends \
       "hip-dev=${HIP_DEB_VERSION}" \
-    && apt-get clean \
-    && apt-get install -y --no-install-recommends \
+      "hip-runtime-amd=${HIP_DEB_VERSION}" \
       "hipblaslt=${HIPBLASLT_DEB_VERSION}" \
-    && apt-get clean \
-    && apt-get install -y --no-install-recommends \
-      "rocblas=${ROCBLAS_DEB_VERSION}" \
-    && apt-get clean \
-    && apt-get install -y --no-install-recommends \
-      "rocrand=${ROCRAND_DEB_VERSION}" \
-    && apt-get clean \
-    && apt-get install -y --no-install-recommends \
-      "miopen-hip=${MIOPEN_DEB_VERSION}" \
-    && apt-get clean \
-    && apt-get install -y --no-install-recommends \
       "migraphx=${MIGRAPHX_DEB_VERSION}" \
+      "miopen-hip=${MIOPEN_DEB_VERSION}" \
+      "rocblas=${ROCBLAS_DEB_VERSION}" \
+      "rocrand=${ROCRAND_DEB_VERSION}" \
     && apt-get clean \
     && uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
@@ -911,21 +874,6 @@ USER ubuntu
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["python3", "-c", "import onnxruntime as ort; assert 'CUDAExecutionProvider' in ort.get_available_providers()"]
 
-FROM inference-nvidia AS inference-nvidia-verification
-
-USER root
-
-RUN test -s /usr/share/licenses/nvidia/NGC-DL-CONTAINER-LICENSE \
-    && python3 -B -c \
-      "import onnxruntime as ort; providers = ort.get_available_providers(); assert 'CUDAExecutionProvider' in providers, providers" \
-    && ! command -v nvcc \
-    && test ! -e /usr/local/cuda/include/cuda.h \
-    && test -z "$(find /usr/include -name 'NvInfer*.h' -print -quit)"
-
-USER ubuntu
-
-HEALTHCHECK NONE
-
 FROM edge-runtime AS inference-nvidia-jetson-base
 
 USER root
@@ -981,6 +929,9 @@ LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson inference runtime" 
 
 USER ubuntu
 
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD ["python3", "-c", "import onnxruntime as ort; assert 'TensorrtExecutionProvider' in ort.get_available_providers()"]
+
 FROM inference-nvidia-jetson-base AS inference-nvidia-jetson-orin
 
 ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat_orin:${LD_LIBRARY_PATH}" \
@@ -988,18 +939,12 @@ ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat_orin:${LD_LIBRARY_PATH}" \
 
 LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Orin inference runtime"
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD ["python3", "-c", "import onnxruntime as ort; assert 'TensorrtExecutionProvider' in ort.get_available_providers()"]
-
 FROM inference-nvidia-jetson-base AS inference-nvidia-jetson-thor
 
 ENV LD_LIBRARY_PATH="/usr/local/cuda-13.3/compat:${LD_LIBRARY_PATH}" \
     ROBOTICS_NVIDIA_JETSON_FAMILY=thor
 
 LABEL org.opencontainers.image.title="Robotics NVIDIA Jetson Thor inference runtime"
-
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD ["python3", "-c", "import onnxruntime as ort; assert 'TensorrtExecutionProvider' in ort.get_available_providers()"]
 
 FROM ${PROVIDER_CONFORMANCE_BASE} AS provider-conformance
 

@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 cd "${root}"
 
 docker buildx bake \
+  --file docker-bake.hcl \
   simulation acceptance-observer evidence-sink \
   --load \
   --set '*.platform=linux/amd64' \

@@ -340,7 +340,7 @@ watch_segments() {
   done
 }
 
-for command in mcap mcap-summary rclone aws jq yq sha256sum inotifywait; do
+for command in mcap mcap-summary rclone aws jq sha256sum inotifywait; do
   require_command "$command"
 done
 
@@ -368,7 +368,6 @@ case "${1:-watch}" in
     python3 -c 'import mcap; print(mcap.__version__)'
     rclone version | head -n 1
     aws --version
-    yq --version
     ;;
   *)
     fail "unknown command: $1"
