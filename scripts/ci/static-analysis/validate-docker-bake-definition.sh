@@ -9,7 +9,29 @@ bake=(docker buildx bake --file docker-bake.hcl)
 
 mapfile -t bake_targets < <(
   "${bake[@]}" --list=type=targets,format=json |
-    jq -er '.[].name'
+    jq -er '.[] | select(.group != true) | .name'
 )
 ((${#bake_targets[@]} > 0))
-"${bake[@]}" --check "${bake_targets[@]}"
+
+bake_plan="$("${bake[@]}" --print "${bake_targets[@]}")"
+selected_targets="$(
+  printf '%s\n' "${bake_targets[@]}" |
+    jq -Rsc 'split("\n") | map(select(length > 0))'
+)"
+mapfile -t checkable_targets < <(
+  jq -er --argjson selected "${selected_targets}" '
+    .target
+    | to_entries[]
+    | select(.key as $name | $selected | index($name))
+    | select(
+        [
+          (.value.contexts // {} | to_entries[].value)
+          | select(type == "string" and startswith("target:"))
+        ]
+        | length == 0
+      )
+    | .key
+  ' <<<"${bake_plan}"
+)
+((${#checkable_targets[@]} > 0))
+"${bake[@]}" --check "${checkable_targets[@]}"

@@ -42,6 +42,9 @@ jobs:
         with:
           version: "0.11.28"
           enable-cache: false
+      - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43  # 4.0.0
+        with:
+          bats-version: "1.14.0"
       - uses: ./.github/actions/setup-buildx
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:

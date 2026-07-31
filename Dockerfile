@@ -203,7 +203,7 @@ ARG YQ_X_TEXT_VERSION=v0.40.0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     YQ_MODULE="github.com/mikefarah/yq/v4"; \
-    YQ_BUILD_VERSION="${YQ_BASE_VERSION}+commit.${YQ_REVISION:0:7}"; \
+    YQ_BUILD_VERSION="${YQ_BASE_VERSION}+commit.$(printf '%.7s' "${YQ_REVISION}")"; \
     YQ_MODULE_VERSION="$(go list -m -f '{{.Version}}' \
       "${YQ_MODULE}@${YQ_REVISION}")"; \
     go mod download "${YQ_MODULE}@${YQ_MODULE_VERSION}"; \
