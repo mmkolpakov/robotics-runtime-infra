@@ -32,6 +32,12 @@ test_valid_hil_permit_emits_verification if {
 	count(verification.signers) == 2
 }
 
+test_denied_permit_emits_no_verification if {
+	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/request/scenario_sha256", "value": "7777777777777777777777777777777777777777777777777777777777777777"}])
+	verification := execution.verification with input as candidate with time.now_ns as fixed_now
+	verification == null
+}
+
 test_valid_real_observation_permit_is_allowed if {
 	count(violations(valid_real_observation)) == 0
 }

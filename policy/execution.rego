@@ -9,6 +9,8 @@ request := object.get(input, "request", {})
 artifacts := object.get(input, "artifacts", {})
 signers := object.get(input, "verified_signers", [])
 
+default verification := null
+
 deny contains "statement must use in-toto Statement v1" if {
 	object.get(statement, "_type", "") != "https://in-toto.io/Statement/v1"
 }

@@ -370,7 +370,7 @@ authorize_common() {
     --data "${execution_policy}" \
     --input "${work}/input.json" \
     '{"denials": data.execution.deny,
-      "verification": object.get(data.execution, "verification", null)}' \
+      "verification": data.execution.verification}' \
     >"${work}/decision.json"
   if test "$(jq -r '.denials | length' "${work}/decision.json")" -ne 0; then
     jq -r '.denials[]' "${work}/decision.json" >&2
