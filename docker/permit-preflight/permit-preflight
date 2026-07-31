@@ -340,7 +340,7 @@ authorize_common() {
   operator_bundle_sha256="$(sha256_file "${operator_bundle}")"
   approver_bundle_sha256="$(sha256_file "${approver_bundle}")"
   cosign_version="$(
-    cosign version --json | jq -r '.gitVersion | sub("^v"; "")'
+    cosign version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]'
   )"
 
   jq -c -n \

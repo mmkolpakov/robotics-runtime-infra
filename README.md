@@ -164,12 +164,12 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | AMD inference candidate | ONNX Runtime MIGraphX 1.23.2 with ROCm 7.2.4 |
 | Jetson inference candidate | JetPack 7.2 host; source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11 |
 | RK3588 inference candidate | RKNN Toolkit2 and RKNN Runtime 2.3.2 |
-| Evidence format | rosbag2 MCAP and MCAP CLI 0.2.0 |
+| Evidence format | rosbag2 MCAP and MCAP CLI 0.3.0 |
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
 | Contracts | `robotics-runtime-contracts` 0.11.0 |
-| Acceptance harness | `robotics-acceptance-harness` 0.12.0 |
+| Acceptance harness | `robotics-acceptance-harness` 0.12.1 |
 
 Base images, package snapshots, and Python artifacts are pinned in
 `Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
