@@ -95,7 +95,7 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
       # yamllint disable-line rule:line-length
-      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/${{ matrix.repository }}
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/${{ matrix.id }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -132,7 +132,7 @@ jobs:
           # Preserve Bake contexts and publish no mutable or SemVer tag yet.
           # yamllint disable rule:line-length
           set: |
-            ${{ matrix.target }}.platform=${{ matrix.platforms_csv }}
+            ${{ matrix.target }}.platform=${{ join(matrix.platforms, ',') }}
             ${{ matrix.target }}.tags=${{ env.IMAGE_NAME }}
             ${{ matrix.target }}.output=type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           # yamllint enable rule:line-length
@@ -165,7 +165,7 @@ jobs:
         env:
           CANDIDATE_ID: ${{ matrix.id }}
           DIGEST: ${{ steps.digest.outputs.digest }}
-          PLATFORMS: ${{ matrix.platforms_csv }}
+          PLATFORMS: ${{ join(matrix.platforms, ',') }}
         run: >-
           scripts/ci/security/scan-image.sh
           "${IMAGE_NAME}@${DIGEST}"
@@ -194,7 +194,7 @@ jobs:
         env:
           CANDIDATE_ENVIRONMENT_VARIABLE: ${{ matrix.environment_variable }}
           CANDIDATE_ID: ${{ matrix.id }}
-          CANDIDATE_PLATFORMS: ${{ matrix.platforms_csv }}
+          CANDIDATE_PLATFORMS: ${{ join(matrix.platforms, ',') }}
           DIGEST: ${{ steps.digest.outputs.digest }}
         run: >-
           scripts/ci/release/record-candidate.sh
@@ -247,11 +247,13 @@ jobs:
           path: candidate-artifacts
           merge-multiple: true
       - name: Promote the complete verified set
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: >-
           scripts/ci/release/promote-candidates.sh
           artifacts/release-plan.json
           candidate-artifacts/release-candidates
-          "${{ needs.prepare.outputs.version }}"
+          "${VERSION}"
           artifacts/release
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:

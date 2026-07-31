@@ -52,7 +52,6 @@ verify_released_verifier_provenance() {
   }
   chmod 0444 "${evidence_tmp}"
   mv "${evidence_tmp}" "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
-  export ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE
 }
 
 verify_verifier_image_digest() {

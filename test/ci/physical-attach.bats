@@ -41,7 +41,6 @@ setup() {
   run bash -c '
     set -Eeuo pipefail
     source <(sed "/^command_name=/,\$d" "$1")
-    validate_contract() { :; }
     temporary="$(mktemp -d)"
     trap "rm -rf -- \"${temporary}\"" EXIT
     printf "%s\n" "{}" >"${temporary}/statement.json"

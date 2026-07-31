@@ -151,11 +151,12 @@ jobs:
           DIGEST: ${{ steps.digest.outputs.digest }}
           IMAGE: ${{ steps.route.outputs.image }}
           PLATFORM: ${{ steps.route.outputs.platform }}
+          REPORT_NAME: qualification-${{ inputs.target }}
           TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
         run: >-
           scripts/ci/security/scan-image.sh
           "${IMAGE}@${DIGEST}"
-          "qualification-${{ inputs.target }}"
+          "${REPORT_NAME}"
           "${PLATFORM}"
       - name: Attest and verify publication
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763  # v4.1.1

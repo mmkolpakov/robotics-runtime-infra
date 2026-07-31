@@ -24,7 +24,7 @@ setup() {
     (.include | length) == $expected_count and
     ([.include[].id] | length == (unique | length)) and
     ([.include[].environment_variable] | length == (unique | length)) and
-    any(.include[]; .id == "simulation" and .platforms_csv == "linux/amd64") and
+    any(.include[]; .id == "simulation" and .platforms == ["linux/amd64"]) and
     any(.include[];
       .id == "provider-conformance-cpu" and
       .environment_variable == "INFERENCE_CPU_CONFORMANCE_IMAGE"
@@ -102,13 +102,12 @@ setup() {
   while IFS= read -r row; do
     id="$(jq -r '.id' <<<"${row}")"
     environment_variable="$(jq -r '.environment_variable' <<<"${row}")"
-    repository="$(jq -r '.repository' <<<"${row}")"
     platforms="$(jq -r '.platforms | join(",")' <<<"${row}")"
     digest="sha256:$(printf '%s' "${id}" | sha256sum | cut -d' ' -f1)"
     scripts/ci/release/record-candidate.sh \
       "${id}" \
       "${environment_variable}" \
-      "ghcr.io/test-owner/robotics-runtime-infra/${repository}" \
+      "ghcr.io/test-owner/robotics-runtime-infra/${id}" \
       "${digest}" \
       "${platforms}" \
       "${candidate_dir}/${id}.json"

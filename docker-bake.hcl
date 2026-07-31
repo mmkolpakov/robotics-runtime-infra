@@ -167,10 +167,6 @@ group "rknn" {
   ]
 }
 
-group "host-io-test" {
-  targets = ["host-io-fixture"]
-}
-
 target "_common" {
   context    = "."
   dockerfile = "Dockerfile"
@@ -327,23 +323,13 @@ target "onnxruntime-jetson-source-verification" {
   platforms = ["linux/amd64"]
 }
 
-target "onnxruntime-jetson-build-dependencies" {
-  inherits  = ["_common"]
-  target    = "onnxruntime-jetson-build-dependencies"
-  platforms = ["linux/arm64"]
-}
-
 target "_nvidia-jetson" {
   inherits  = ["_onnxruntime-jetson-source"]
   platforms = ["linux/arm64"]
   args = {
+    ONNXRUNTIME_SOURCE            = ONNXRUNTIME_SOURCE
     ONNXRUNTIME_SOURCE_DATE_EPOCH = ONNXRUNTIME_SOURCE_DATE_EPOCH
   }
-}
-
-target "onnxruntime-jetson-wheel" {
-  inherits = ["_nvidia-jetson"]
-  target   = "onnxruntime-jetson-wheel"
 }
 
 target "inference-nvidia-jetson-orin" {

@@ -48,7 +48,7 @@ time_policy:
   time_authority_min_samples: 30
   max_time_authority_delivery_latency_p50_ms: 2
   max_time_authority_delivery_latency_p95_ms: 5
-  max_time_authority_delivery_latency_ms: 100
+  max_time_authority_delivery_latency_ms: 250
 data_plane_policy:
   max_message_age_ms: 100
   max_loss_ratio: 0

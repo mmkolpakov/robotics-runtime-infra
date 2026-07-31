@@ -26,10 +26,9 @@ EOF
   exit 64
 }
 
-output=''
 qualification_parse_cli create "$@"
-export scenario_path acceptance_run_path aggregate_path
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 qualification_prepare "$work"
+# shellcheck disable=SC2154
 qualification_write_statement "$work" "$output"

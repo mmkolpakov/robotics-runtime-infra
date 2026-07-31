@@ -49,11 +49,10 @@ mkdir -p "${output_dir}/digests" "${output_dir}/promotion"
 
 while IFS= read -r row; do
   id="$(jq -r '.id' <<<"${row}")"
-  repository="$(jq -r '.repository' <<<"${row}")"
   environment_variable="$(jq -r '.environment_variable' <<<"${row}")"
   platforms="$(jq -c '.platforms' <<<"${row}")"
   record="${candidate_dir}/${id}.json"
-  image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/robotics-runtime-infra/${repository}"
+  image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/robotics-runtime-infra/${id}"
 
   jq -e \
     --arg environment_variable "${environment_variable}" \
@@ -74,12 +73,10 @@ while IFS= read -r row; do
     --arg environment_variable "${environment_variable}" \
     --arg id "${id}" \
     --arg image "${image}" \
-    --arg repository "${repository}" \
     --arg version "${version}" \
     --arg sha_tag "sha-${short_sha}" '
       {
         id: $id,
-        repository: $repository,
         environment_variable: $environment_variable,
         image: $image,
         digest: $digest,

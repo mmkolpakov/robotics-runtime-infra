@@ -55,23 +55,16 @@ assert_json_documents_equal() {
 
 bundle_integrated_time() {
   bundle="$1"
-  count="$(jq -r '.verificationMaterial.tlogEntries | length' "${bundle}")"
-  test "${count}" = "1" || {
-    printf 'Sigstore bundle must contain exactly one transparency-log entry: %s\n' \
+  jq -er '
+    .verificationMaterial.tlogEntries |
+    select(length == 1) |
+    .[0].integratedTime | tostring |
+    select(test("^[0-9]+$"))
+  ' "${bundle}" || {
+    printf 'Sigstore bundle requires one numeric transparency-log time: %s\n' \
       "${bundle}" >&2
     exit 65
   }
-  integrated_time="$(
-    jq -r '.verificationMaterial.tlogEntries[0].integratedTime' "${bundle}"
-  )"
-  case "${integrated_time}" in
-    '' | *[!0-9]*)
-      printf 'Sigstore bundle has no numeric integrated time: %s\n' \
-        "${bundle}" >&2
-      exit 65
-      ;;
-  esac
-  printf '%s\n' "${integrated_time}"
 }
 
 trusted_issuer() {
@@ -132,28 +125,17 @@ require_private_writable_directory() {
 
 statement_subject_digest() {
   statement="$1"
-  digest="$(
-    jq -r '
+  jq -er '
       [.subject[] |
         select(.name == "robotics-scenario") |
         .digest.sha256] |
       select(length == 1) |
-      .[0]
-    ' "${statement}"
-  )"
-  case "${digest}" in
-    ????????????????????????????????????????????????????????????????)
-      case "${digest}" in
-        *[!a-f0-9]*) digest= ;;
-      esac
-      ;;
-    *) digest= ;;
-  esac
-  test -n "${digest}" || {
+      .[0] |
+      select(type == "string" and test("^[a-f0-9]{64}$"))
+    ' "${statement}" || {
     printf 'statement must contain one lowercase sha256 robotics-scenario subject\n' >&2
     exit 65
   }
-  printf '%s\n' "${digest}"
 }
 
 assert_bundle_statement() (

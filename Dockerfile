@@ -10,7 +10,6 @@ ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7
 ARG OPA_IMAGE=openpolicyagent/opa:1.19.0-static@sha256:2f42ca765bb739b40fc23ee625b3287012acdf8120ad4fcbdab68433a17be144
 # Policy targets receive the qualified reference from Docker Bake.
 ARG COSIGN_IMAGE=scratch
-ARG COSIGN_VERSION
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -115,7 +114,7 @@ RUN dpkg --install /tmp/cuda-packages/*.deb \
 
 FROM onnxruntime-jetson-build-dependencies AS onnxruntime-jetson-wheel-build
 
-ARG ONNXRUNTIME_SOURCE_REVISION=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5
+ARG ONNXRUNTIME_SOURCE
 ARG ONNXRUNTIME_SOURCE_DATE_EPOCH=1781277122
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -126,10 +125,11 @@ WORKDIR /src/onnxruntime
 
 RUN --mount=type=cache,id=onnxruntime-1.27.0-cuda13.3-trt11-arm64-build,target=/src/onnxruntime/build/Linux,sharing=locked \
     --mount=type=cache,id=onnxruntime-1.27.0-arm64-pip,target=/root/.cache/pip,sharing=locked \
-    test "$(cat /src/onnxruntime/VERSION_NUMBER)" = "1.27.0" \
+    source_revision="${ONNXRUNTIME_SOURCE##*checksum=}" \
+    && source_revision="${source_revision%%&*}" \
+    && [[ "${source_revision}" =~ ^[0-9a-f]{40}$ ]] \
+    && test "$(cat /src/onnxruntime/VERSION_NUMBER)" = "1.27.0" \
     && test -f /src/onnxruntime/cmake/external/onnx/CMakeLists.txt \
-    && test "${ONNXRUNTIME_SOURCE_REVISION}" = \
-      "8f0278c77bf44b0cc83c098c6c722b92a36ac4b5" \
     && SOURCE_DATE_EPOCH="${ONNXRUNTIME_SOURCE_DATE_EPOCH}" \
       ./build.sh \
         --config Release \
@@ -158,15 +158,11 @@ RUN --mount=type=cache,id=onnxruntime-1.27.0-cuda13.3-trt11-arm64-build,target=/
     && install -m 0444 LICENSE /out/LICENSE \
     && printf '%s\n' \
       "onnxruntime=v1.27.0" \
-      "revision=${ONNXRUNTIME_SOURCE_REVISION}" \
+      "revision=${source_revision}" \
       "cuda_architectures=87-real;110-real" \
       > /out/source.txt \
     && sha256sum /out/*.whl \
       | sed 's#  /out/#  #' > /out/SHA256SUMS
-
-FROM scratch AS onnxruntime-jetson-wheel
-
-COPY --from=onnxruntime-jetson-wheel-build /out /
 
 FROM ${UBUNTU_BASE_IMAGE} AS rocm-signing-key
 ADD --checksum=sha256:2de99e2354646a90d9903e2a669fc4e36b02c1bbff7075c481e12d7edab2c88b \
@@ -403,7 +399,7 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
     && apt-get install -y --no-install-recommends jq python3 \
-    && test "$(/usr/local/bin/cosign version --json | jq -er '.gitVersion | ltrimstr("v")')" = \
+    && test "$(/usr/local/bin/cosign version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]')" = \
       "${COSIGN_VERSION}" \
     && uv venv --no-cache --python /usr/bin/python3 /opt/venv \
     && uv pip install \

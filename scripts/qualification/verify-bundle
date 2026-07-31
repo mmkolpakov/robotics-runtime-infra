@@ -24,14 +24,10 @@ EOF
   exit 64
 }
 
-bundle=''
-verification_key=''
-trusted_root=''
-policy=''
 qualification_parse_cli verify "$@"
 qualification_require_command cosign
 qualification_require_command base64
-export scenario_path acceptance_run_path aggregate_path
+# shellcheck disable=SC2154
 qualification_require_file "$bundle"
 jq --slurp --exit-status 'length == 1' "$bundle" >/dev/null ||
   qualification_fail "expected exactly one JSON document: $bundle"

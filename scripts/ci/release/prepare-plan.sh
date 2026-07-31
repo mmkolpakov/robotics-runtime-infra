@@ -38,7 +38,6 @@ jq -e -n \
           {
             id: $repository,
             target: .key,
-            repository: $repository,
             environment_variable: $environment[.key],
             platforms: $platforms
           }
@@ -60,12 +59,7 @@ jq -e -n \
 mv "${manifest_tmp}" "${manifest}"
 
 matrix="$(
-  jq -c '{
-    include: [
-      .images[] |
-      . + {platforms_csv: (.platforms | join(","))}
-    ]
-  }' "${manifest}"
+  jq -c '{include: .images}' "${manifest}"
 )"
 {
   printf 'matrix=%s\n' "${matrix}"
