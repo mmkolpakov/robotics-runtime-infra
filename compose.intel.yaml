@@ -13,15 +13,6 @@ x-intel-runtime: &intel-runtime
   cap_drop:
     - ALL
 
-x-intel-image: &intel-image
-  # yamllint disable-line rule:line-length
-  image: "${INFERENCE_INTEL_IMAGE:-local/robotics-runtime-infra/inference-intel:dev}"
-  build:
-    context: .
-    dockerfile: Dockerfile
-    target: inference-intel
-    args: *build-args
-
 x-intel-conformance: &intel-conformance
   <<: *intel-runtime
   # yamllint disable-line rule:line-length
@@ -45,18 +36,6 @@ x-intel-conformance: &intel-conformance
     disable: true
 
 services:
-  inference-intel-cpu-smoke:
-    <<: [*intel-runtime, *intel-image]
-    profiles: [intel-cpu]
-    command:
-      - python3
-      - -c
-      - >-
-        import onnxruntime as ort;
-        assert 'OpenVINOExecutionProvider' in ort.get_available_providers()
-    healthcheck:
-      disable: true
-
   provider-conformance-intel-cpu:
     <<: *intel-conformance
     profiles: [conformance-intel-cpu]

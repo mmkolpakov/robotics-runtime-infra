@@ -16,24 +16,6 @@ x-amd-runtime: &amd-runtime
     - "amd.com/gpu=${ROBOTICS_AMD_GPU:-0}"
 
 services:
-  inference-amd-smoke:
-    <<: *amd-runtime
-    image: "${INFERENCE_AMD_IMAGE:-local/robotics-runtime-infra/inference-amd:dev}"
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: inference-amd
-      args: *build-args
-    profiles: [amd]
-    command:
-      - python3
-      - -c
-      - >-
-        import onnxruntime as ort;
-        assert 'MIGraphXExecutionProvider' in ort.get_available_providers()
-    healthcheck:
-      disable: true
-
   provider-conformance-amd:
     <<: *amd-runtime
     # yamllint disable-line rule:line-length

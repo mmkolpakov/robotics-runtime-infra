@@ -84,6 +84,7 @@ require_environment() {
     CAN_CLIENT_IMAGE \
     COSIGN_PASSWORD \
     OBSERVER_IMAGE \
+    PERMIT_PREFLIGHT_CI_IMAGE \
     PERMIT_PREFLIGHT_IMAGE \
     ROBOTICS_RUNTIME_MODE \
     ROBOTICS_TIME_EVIDENCE \
@@ -175,16 +176,16 @@ sha256_file() {
   sha256sum "$1" | awk '{print $1}'
 }
 
-permit_run() {
+permit_ci_run() {
   local mount_root="$1"
   shift
   docker run --rm \
     --volume "${mount_root}:/work" \
     --workdir /work \
-    "${PERMIT_PREFLIGHT_IMAGE}" "$@"
+    "${PERMIT_PREFLIGHT_CI_IMAGE}" "$@"
 }
 
-cosign_run() {
+permit_ci_cosign() {
   local mount_root="$1"
   shift
   docker run --rm \
@@ -192,10 +193,10 @@ cosign_run() {
     --volume "${mount_root}:/work" \
     --workdir /work \
     --entrypoint /usr/local/bin/cosign \
-    "${PERMIT_PREFLIGHT_IMAGE}" "$@"
+    "${PERMIT_PREFLIGHT_CI_IMAGE}" "$@"
 }
 
-permit_chmod() {
+permit_ci_chmod() {
   local mount_root="$1"
   local mode="$2"
   local path="$3"
@@ -203,7 +204,7 @@ permit_chmod() {
     --user 0 \
     --volume "${mount_root}:/work" \
     --entrypoint /bin/chmod \
-    "${PERMIT_PREFLIGHT_IMAGE}" "${mode}" "/work/${path}"
+    "${PERMIT_PREFLIGHT_CI_IMAGE}" "${mode}" "/work/${path}"
 }
 
 can_compose() {

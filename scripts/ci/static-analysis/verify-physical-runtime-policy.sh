@@ -22,6 +22,14 @@ docker compose \
   -f compose.real-observation.yaml \
   --profile real-observation \
   config --format json --output tmp/real-observation-compose.json
+docker compose \
+  -f compose.yaml \
+  -f compose.edge-attach.yaml \
+  -f compose.real-observation.yaml \
+  -f compose.real-observation.test.yaml \
+  --profile real-observation \
+  --profile real-observation-test \
+  config --format json --output tmp/real-observation-test-compose.json
 jq -e '
   (.services | keys | sort) == [
     "edge-attach-data-plane",
@@ -93,6 +101,10 @@ jq -e '
     "physical-runtime-manifest"
   ].condition == "service_completed_successfully"
 ' tmp/real-observation-compose.json >/dev/null
+jq -e --arg ci_image "${PERMIT_PREFLIGHT_CI_IMAGE}" '
+  .services["physical-permit-preflight"].image == $ci_image and
+  .services["physical-runtime-manifest"].image != $ci_image
+' tmp/real-observation-test-compose.json >/dev/null
 test "$(
   ci_policy_deny_count \
     policy/compose.rego compose tmp/edge-attach-compose.json
@@ -103,4 +115,8 @@ test "$(
 test "$(
   ci_policy_deny_count \
     policy/compose.rego compose tmp/real-observation-compose.json
+)" -eq 0
+test "$(
+  ci_policy_deny_count \
+    policy/compose.rego compose tmp/real-observation-test-compose.json
 )" -eq 0

@@ -21,25 +21,6 @@ x-nvidia-runtime: &nvidia-runtime
             capabilities: [gpu]
 
 services:
-  inference-nvidia-smoke:
-    <<: *nvidia-runtime
-    # yamllint disable-line rule:line-length
-    image: "${INFERENCE_NVIDIA_IMAGE:-local/robotics-runtime-infra/inference-nvidia:dev}"
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: inference-nvidia
-      args: *build-args
-    profiles: [nvidia]
-    command:
-      - python3
-      - -c
-      - >-
-        import onnxruntime as ort;
-        assert 'CUDAExecutionProvider' in ort.get_available_providers()
-    healthcheck:
-      disable: true
-
   provider-conformance-nvidia:
     <<: *nvidia-runtime
     # yamllint disable-line rule:line-length
