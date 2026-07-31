@@ -11,11 +11,8 @@ run_case() (
     -f compose.yaml
     -f compose.playback.yaml
   )
-  cleanup() {
-    "${compose[@]}" --profile playback --profile test \
-      down --volumes --remove-orphans || true
-  }
-  trap cleanup EXIT
+  trap '"${compose[@]}" --profile playback --profile test
+    down --volumes --remove-orphans || true' EXIT
 
   export ROS_DOMAIN_ID="${domain_id}"
   if ((expect_failure)); then

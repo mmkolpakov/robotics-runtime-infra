@@ -32,6 +32,11 @@ run_chrony_case() (
   local evidence_dir="$4"
   local expected="$5"
   local compose=(
+    env
+    "ROBOTICS_CHRONY_FIXTURE_CONFIG=${config}"
+    ROBOTICS_CHRONY_IDENTITY=100:101
+    "ROBOTICS_TIME_EVIDENCE_DIR=${evidence_dir}"
+    "ROBOTICS_TIME_SOCKET_DIR=${socket_dir}"
     docker compose
     --project-name "host-time-${name}-${GITHUB_RUN_ID:-local}"
     --file compose.yaml
@@ -40,10 +45,6 @@ run_chrony_case() (
     --profile time-chrony
   )
   trap '"${compose[@]}" down --volumes --remove-orphans || true' EXIT
-  export ROBOTICS_CHRONY_FIXTURE_CONFIG="${config}"
-  export ROBOTICS_CHRONY_IDENTITY=100:101
-  export ROBOTICS_TIME_EVIDENCE_DIR="${evidence_dir}"
-  export ROBOTICS_TIME_SOCKET_DIR="${socket_dir}"
 
   "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 \
     time-fixture time-evidence-chrony
@@ -63,6 +64,10 @@ run_ptp_case() (
   local evidence_dir="$3"
   local expected="$4"
   local compose=(
+    env
+    ROBOTICS_CHRONY_IDENTITY=100:101
+    "ROBOTICS_PTP_SAMPLE_FILE=${sample}"
+    "ROBOTICS_TIME_EVIDENCE_DIR=${evidence_dir}"
     docker compose
     --project-name "host-time-${name}-${GITHUB_RUN_ID:-local}"
     --file compose.yaml
@@ -70,9 +75,6 @@ run_ptp_case() (
     --profile time-ptp
   )
   trap '"${compose[@]}" down --volumes --remove-orphans || true' EXIT
-  export ROBOTICS_CHRONY_IDENTITY=100:101
-  export ROBOTICS_PTP_SAMPLE_FILE="${sample}"
-  export ROBOTICS_TIME_EVIDENCE_DIR="${evidence_dir}"
 
   "${compose[@]}" up --detach --no-build time-evidence-ptp
   host_time_wait_for_evidence \
