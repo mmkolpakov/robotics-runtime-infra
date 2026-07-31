@@ -48,10 +48,9 @@ if docker run --rm \
 fi
 docker run --rm \
   --volume "${work}:/work:ro" \
-  --entrypoint /usr/local/bin/yq \
+  --entrypoint /usr/bin/jq \
   "${PERMIT_PREFLIGHT_IMAGE}" \
-  --output-format json \
-  '.dsseEnvelope.payload = (.dsseEnvelope.payload + "A")' \
+  '.dsseEnvelope.payload += "A"' \
   /work/operator.sigstore.json \
   > "${work}/tampered-operator.sigstore.json"
 if docker run --rm \

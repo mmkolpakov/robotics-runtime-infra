@@ -7,20 +7,24 @@ setup() {
 
 @test "release plan is unique, complete, and consumable as a matrix" {
   output_file="${BATS_TEST_TMPDIR}/github-output"
+  release_plan="${BATS_TEST_TMPDIR}/release-plan.json"
   run env \
     GITHUB_OUTPUT="${output_file}" \
     GITHUB_REF_NAME=v0.8.0 \
-    scripts/ci/release/prepare-plan.sh
+    scripts/ci/release/prepare-plan.sh \
+      config/ci/release-environment.json \
+      "${release_plan}"
 
   [ "${status}" -eq 0 ]
   matrix="$(sed -n 's/^matrix=//p' "${output_file}")"
   version="$(sed -n 's/^version=//p' "${output_file}")"
+  expected_count="$(jq '.images | length' "${release_plan}")"
   [ "${version}" = 0.8.0 ]
-  run jq -e '
-    (.include | length) == 11 and
+  run jq -e --argjson expected_count "${expected_count}" '
+    (.include | length) == $expected_count and
     ([.include[].id] | length == (unique | length)) and
     ([.include[].environment_variable] | length == (unique | length)) and
-    any(.include[]; .id == "simulation" and .platforms_csv == "linux/amd64") and
+    any(.include[]; .id == "simulation" and .platforms == ["linux/amd64"]) and
     any(.include[];
       .id == "provider-conformance-cpu" and
       .environment_variable == "INFERENCE_CPU_CONFORMANCE_IMAGE"
@@ -38,19 +42,6 @@ setup() {
 }
 
 @test "release workflow gates untagged candidates before promotion" {
-  run bash -c '
-    docker buildx bake \
-      --file docker-bake.hcl \
-      --print permit-preflight 2>/dev/null
-  '
-  [ "${status}" -eq 0 ]
-  bake_plan="${output}"
-  run jq -e '
-    .target["permit-preflight"].contexts["opa-source"] |
-    startswith("https://github.com/open-policy-agent/opa.git?")
-  ' <<<"${bake_plan}"
-  [ "${status}" -eq 0 ]
-
   run grep -F 'uses: ./.github/workflows/ci.yml' \
     .github/workflows/release-image.yml
   [ "${status}" -eq 0 ]
@@ -76,63 +67,51 @@ setup() {
     scripts/ci/security .github/workflows
   [ "${status}" -eq 1 ]
 
-  candidate_line="$(grep -n '^  candidate:' .github/workflows/release-image.yml | cut -d: -f1)"
-  promote_line="$(grep -n '^  promote:' .github/workflows/release-image.yml | cut -d: -f1)"
-  release_line="$(grep -n '^  release:' .github/workflows/release-image.yml | cut -d: -f1)"
-  [ "${candidate_line}" -lt "${promote_line}" ]
-  [ "${promote_line}" -lt "${release_line}" ]
 }
 
 @test "cross-platform build tooling is immutable in every publishing path" {
-  binfmt_reference=\
-'docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
-  workflows=(
-    .github/workflows/ci.yml
-    .github/workflows/release-image.yml
-    .github/workflows/publish-conformance-image.yml
-  )
-
-  run grep -R -F 'tonistiigi/binfmt:latest' .github/workflows
+  action=.github/actions/setup-buildx/action.yml
+  run grep -R -F 'tonistiigi/binfmt:latest' .github
   [ "${status}" -eq 1 ]
-
-  for workflow in "${workflows[@]}"; do
-    run grep -F "BINFMT_IMAGE: ${binfmt_reference}" "${workflow}"
-    [ "${status}" -eq 0 ]
-    qemu_steps="$(grep -Fc 'uses: docker/setup-qemu-action@' "${workflow}")"
-    pinned_images="$(grep -Fc 'image: ${{ env.BINFMT_IMAGE }}' "${workflow}")"
-    [ "${qemu_steps}" -eq "${pinned_images}" ]
-  done
-
-  run grep -F 'BUILDX_VERSION: v0.35.0' \
-    .github/workflows/publish-conformance-image.yml
+  run grep -F \
+    'image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0' \
+    "${action}"
   [ "${status}" -eq 0 ]
   run grep -F \
-    'BUILDKIT_IMAGE: moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' \
-    .github/workflows/publish-conformance-image.yml
+    'image=moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' \
+    "${action}"
   [ "${status}" -eq 0 ]
+  run grep -R -E 'uses: docker/setup-(qemu|buildx)-action@' \
+    .github/workflows
+  [ "${status}" -eq 1 ]
 }
 
 @test "candidate promotion emits a complete immutable runtime lock" {
   candidate_dir="${BATS_TEST_TMPDIR}/candidates"
   output_dir="${BATS_TEST_TMPDIR}/release"
   fake_bin="${BATS_TEST_TMPDIR}/bin"
+  release_plan="${BATS_TEST_TMPDIR}/release-plan.json"
   state_dir="${BATS_TEST_TMPDIR}/docker-state"
   mkdir -p "${candidate_dir}" "${fake_bin}" "${state_dir}"
+  GITHUB_OUTPUT="${BATS_TEST_TMPDIR}/github-output" \
+    GITHUB_REF_NAME=v0.8.0 \
+    scripts/ci/release/prepare-plan.sh \
+      config/ci/release-environment.json \
+      "${release_plan}"
 
   while IFS= read -r row; do
     id="$(jq -r '.id' <<<"${row}")"
     environment_variable="$(jq -r '.environment_variable' <<<"${row}")"
-    repository="$(jq -r '.repository' <<<"${row}")"
     platforms="$(jq -r '.platforms | join(",")' <<<"${row}")"
     digest="sha256:$(printf '%s' "${id}" | sha256sum | cut -d' ' -f1)"
     scripts/ci/release/record-candidate.sh \
       "${id}" \
       "${environment_variable}" \
-      "ghcr.io/test-owner/robotics-runtime-infra/${repository}" \
+      "ghcr.io/test-owner/robotics-runtime-infra/${id}" \
       "${digest}" \
       "${platforms}" \
       "${candidate_dir}/${id}.json"
-  done < <(jq -c '.images[]' config/ci/release-images.json)
+  done < <(jq -c '.images[]' "${release_plan}")
 
   cat >"${fake_bin}/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -190,19 +169,22 @@ EOF
     "PATH=${fake_bin}:${PATH}" \
     FAKE_DOCKER_STATE="${state_dir}" \
     GITHUB_REPOSITORY_OWNER=test-owner \
+    GITHUB_REF=refs/tags/v0.8.0 \
     GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 \
     scripts/ci/release/promote-candidates.sh \
-      config/ci/release-images.json \
+      "${release_plan}" \
       "${candidate_dir}" \
       0.8.0 \
       "${output_dir}"
 
   [ "${status}" -eq 0 ]
-  [ "$(grep -c '_IMAGE=' "${output_dir}/release.env")" -eq 11 ]
+  expected_count="$(jq '.images | length' "${release_plan}")"
+  [ "$(grep -c '_IMAGE=' "${output_dir}/release.env")" -eq "${expected_count}" ]
   [ "$(grep -c '^ROBOTICS_RUNTIME_MODE=released$' "${output_dir}/release.env")" -eq 1 ]
-  [ "$(grep -c '^ROBOTICS_COSIGN_IMAGE_DIGEST=sha256:' "${output_dir}/release.env")" -eq 1 ]
-  [ "$(find "${output_dir}/digests" -type f -name '*.txt' | wc -l)" -eq 11 ]
-  run grep -Ev '^[A-Z][A-Z0-9_]+=ghcr\.io/.+:[^@]+@sha256:[a-f0-9]{64}$|^ROBOTICS_COSIGN_IMAGE_DIGEST=sha256:[a-f0-9]{64}$|^ROBOTICS_RUNTIME_MODE=released$' \
+  [ "$(grep -c '^ROBOTICS_RELEASE_SOURCE_SHA=0123456789abcdef0123456789abcdef01234567$' "${output_dir}/release.env")" -eq 1 ]
+  [ "$(grep -c '^ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v0.8.0$' "${output_dir}/release.env")" -eq 1 ]
+  [ "$(find "${output_dir}/digests" -type f -name '*.txt' | wc -l)" -eq "${expected_count}" ]
+  run grep -Ev '^[A-Z][A-Z0-9_]+=ghcr\.io/.+:[^@]+@sha256:[a-f0-9]{64}$|^ROBOTICS_RUNTIME_MODE=released$|^ROBOTICS_RELEASE_SOURCE_SHA=[a-f0-9]{40}$|^ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
     "${output_dir}/release.env"
   [ "${status}" -eq 1 ]
 

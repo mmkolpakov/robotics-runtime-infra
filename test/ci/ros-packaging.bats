@@ -72,12 +72,19 @@ setup() {
 
   for launch_file in \
     ros_ws/src/robotics_runtime_infra/launch/headless.launch.py \
-    ros_ws/src/robotics_runtime_infra/launch/camera.launch.py \
-    ros_ws/src/robotics_runtime_infra/launch/gpu_lidar.launch.py \
     ros_ws/src/robotics_runtime_infra/launch/joint_motion.launch.py; do
     run grep -F 'clock_bridge.yaml' "${launch_file}"
     [ "${status}" -eq 0 ]
     run grep -F '/clock@rosgraph_msgs/msg/Clock' "${launch_file}"
+    [ "${status}" -eq 1 ]
+  done
+
+  for launch_file in \
+    ros_ws/src/robotics_runtime_infra/launch/camera.launch.py \
+    ros_ws/src/robotics_runtime_infra/launch/gpu_lidar.launch.py; do
+    run grep -F 'headless.launch.py' "${launch_file}"
+    [ "${status}" -eq 0 ]
+    run grep -F 'clock_bridge.yaml' "${launch_file}"
     [ "${status}" -eq 1 ]
   done
 

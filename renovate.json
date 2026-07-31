@@ -9,12 +9,23 @@
   "customManagers": [
     {
       "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker-bake\\.hcl$/"
+      ],
+      "matchStrings": [
+        "variable \"COSIGN_IMAGE\" \\{\\s+default = \"(?<depName>cgr\\.dev/chainguard/cosign):(?<currentValue>latest)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
       "description": "Track the source-built yq release and commit together",
       "managerFilePatterns": [
         "/^Dockerfile$/"
       ],
       "matchStrings": [
-        "ARG YQ_REVISION=(?<currentDigest>[a-f0-9]{40})\\nARG YQ_VERSION=(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+        "ARG YQ_REVISION=(?<currentDigest>[a-f0-9]{40})\\nARG YQ_BASE_VERSION=(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
       ],
       "depNameTemplate": "mikefarah/yq",
       "datasourceTemplate": "github-tags",
@@ -30,6 +41,27 @@
         "github-actions"
       ],
       "rangeStrategy": "pin"
+    },
+    {
+      "description": "Qualify every Chainguard Cosign rebuild",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "cgr.dev/chainguard/cosign"
+      ],
+      "minimumReleaseAge": "0 days",
+      "automerge": false,
+      "labels": [
+        "supply-chain"
+      ]
+    },
+    {
+      "description": "Do not restore yq releases affected by CVE-2026-56852",
+      "matchDepNames": [
+        "mikefarah/yq"
+      ],
+      "allowedVersions": ">=4.53.4"
     }
   ]
 }

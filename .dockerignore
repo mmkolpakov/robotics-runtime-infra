@@ -27,6 +27,8 @@
 !probes/**
 !policy/
 !policy/execution.rego
+!trust/
+!trust/qualification.trusted-root.json
 !docker/runtime/
 !docker/runtime/**
 !test/

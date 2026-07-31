@@ -5,10 +5,9 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   permit-preflight versions
-  permit-preflight verify-keyless-attestation STATEMENT BUNDLE TRUSTED_ROOT IDENTITY ISSUER
   permit-preflight verify-offline-test-attestation STATEMENT BUNDLE PUBLIC_KEY
-  permit-preflight authorize PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUSTED_ROOT TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST
-  permit-preflight authorize-offline-test PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE PUBLIC_KEY_DIR TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST
+  permit-preflight authorize PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUST_POLICY REQUEST NONCE_DIR OUTPUT
+  permit-preflight authorize-offline-test PUBLIC_KEY_DIR PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUST_POLICY REQUEST NONCE_DIR OUTPUT
   permit-preflight materialize-runtime TEMPLATE PERMIT VERIFICATION TRUST_POLICY OUTPUT
 EOF
   exit 64
@@ -19,25 +18,36 @@ sha256_file() {
 }
 
 validate_contract() {
-  python3 - "$1" <<'PY'
-import json
-import sys
+  robotics-contracts validate --quiet "$1"
+}
 
-from robotics_runtime_contracts import validate_document
+assert_single_json_document() {
+  document="$1"
+  jq --slurp --exit-status 'length == 1' "${document}" >/dev/null || {
+    printf 'expected exactly one JSON document: %s\n' "${document}" >&2
+    exit 65
+  }
+}
 
-with open(sys.argv[1], encoding="utf-8") as source:
-    validate_document(json.load(source))
-PY
+require_sha256_digest() {
+  digest="$1"
+  description="$2"
+  printf '%s\n' "${digest}" | grep -Eq '^sha256:[a-f0-9]{64}$' || {
+    printf '%s must be an immutable sha256 digest\n' "${description}" >&2
+    exit 65
+  }
 }
 
 assert_json_documents_equal() {
   left_document="$1"
   right_document="$2"
   failure_message="$3"
-  LEFT_DOCUMENT="${left_document}" RIGHT_DOCUMENT="${right_document}" \
-    yq --null-input --exit-status \
-      --from-file /usr/share/robotics-runtime/permit-preflight/json-equal.yq \
-      >/dev/null || {
+  jq --null-input --exit-status \
+    --slurpfile left "${left_document}" \
+    --slurpfile right "${right_document}" \
+    '($left | length) == 1 and
+     ($right | length) == 1 and
+     $left[0] == $right[0]' >/dev/null || {
     printf '%s\n' "${failure_message}" >&2
     exit 65
   }
@@ -45,32 +55,25 @@ assert_json_documents_equal() {
 
 bundle_integrated_time() {
   bundle="$1"
-  count="$(yq -r '.verificationMaterial.tlogEntries | length' "${bundle}")"
-  test "${count}" = "1" || {
-    printf 'Sigstore bundle must contain exactly one transparency-log entry: %s\n' \
+  jq -er '
+    .verificationMaterial.tlogEntries |
+    select(length == 1) |
+    .[0].integratedTime | tostring |
+    select(test("^[0-9]+$"))
+  ' "${bundle}" || {
+    printf 'Sigstore bundle requires one numeric transparency-log time: %s\n' \
       "${bundle}" >&2
     exit 65
   }
-  integrated_time="$(
-    yq -r '.verificationMaterial.tlogEntries[0].integratedTime' "${bundle}"
-  )"
-  case "${integrated_time}" in
-    '' | *[!0-9]*)
-      printf 'Sigstore bundle has no numeric integrated time: %s\n' \
-        "${bundle}" >&2
-      exit 65
-      ;;
-  esac
-  printf '%s\n' "${integrated_time}"
 }
 
 trusted_issuer() {
   role="$1"
   identity="$2"
   trust_policy="$3"
-  ROLE="${role}" IDENTITY="${identity}" yq -r '
+  jq -r --arg role "${role}" --arg identity "${identity}" '
     [.principals[] |
-      select(.role == strenv(ROLE) and .identity == strenv(IDENTITY))] |
+      select(.role == $role and .identity == $identity)] |
     select(length == 1) |
     .[0].issuer
   ' "${trust_policy}"
@@ -122,46 +125,35 @@ require_private_writable_directory() {
 
 statement_subject_digest() {
   statement="$1"
-  digest="$(
-    yq -r '
+  jq -er '
       [.subject[] |
         select(.name == "robotics-scenario") |
         .digest.sha256] |
       select(length == 1) |
-      .[0]
-    ' "${statement}"
-  )"
-  case "${digest}" in
-    ????????????????????????????????????????????????????????????????)
-      case "${digest}" in
-        *[!a-f0-9]*) digest= ;;
-      esac
-      ;;
-    *) digest= ;;
-  esac
-  test -n "${digest}" || {
+      .[0] |
+      select(type == "string" and test("^[a-f0-9]{64}$"))
+    ' "${statement}" || {
     printf 'statement must contain one lowercase sha256 robotics-scenario subject\n' >&2
     exit 65
   }
-  printf '%s\n' "${digest}"
 }
 
 assert_bundle_statement() (
   statement="$1"
   bundle="$2"
   output="$3"
-  test "$(yq -r '.mediaType' "${bundle}")" = \
+  test "$(jq -r '.mediaType' "${bundle}")" = \
     'application/vnd.dev.sigstore.bundle.v0.3+json' || {
     printf 'unsupported Sigstore bundle media type: %s\n' "${bundle}" >&2
     exit 65
   }
-  test "$(yq -r '.dsseEnvelope.payloadType' "${bundle}")" = \
+  test "$(jq -r '.dsseEnvelope.payloadType' "${bundle}")" = \
     'application/vnd.in-toto+json' || {
     printf 'Sigstore bundle does not contain an in-toto DSSE envelope: %s\n' \
       "${bundle}" >&2
     exit 65
   }
-  payload="$(yq -r '.dsseEnvelope.payload' "${bundle}")"
+  payload="$(jq -r '.dsseEnvelope.payload' "${bundle}")"
   test -n "${payload}" && test "${payload}" != null || {
     printf 'Sigstore bundle has no DSSE payload: %s\n' "${bundle}" >&2
     exit 65
@@ -174,8 +166,6 @@ assert_bundle_statement() (
     "${statement}" \
     "${output}" \
     "verified DSSE statement does not equal the supplied statement"
-  yq -o=json -I=0 '.predicate' "${output}" > "${output}.predicate.json"
-  validate_contract "${output}.predicate.json"
 )
 
 verify_keyless_attestation() {
@@ -185,8 +175,10 @@ verify_keyless_attestation() {
   identity="$4"
   issuer="$5"
   decoded_statement="$6"
+  assert_single_json_document "${statement}"
+  assert_single_json_document "${bundle}"
   digest="$(statement_subject_digest "${statement}")"
-  predicate_type="$(yq -r '.predicateType' "${statement}")"
+  predicate_type="$(jq -r '.predicateType' "${statement}")"
   test "${predicate_type}" = \
     'https://robotics-runtime-contracts.dev/attestations/execution-permit/v1' || {
     printf 'statement predicate type is not the execution permit contract\n' >&2
@@ -208,8 +200,10 @@ verify_offline_attestation() {
   bundle="$2"
   public_key="$3"
   decoded_statement="$4"
+  assert_single_json_document "${statement}"
+  assert_single_json_document "${bundle}"
   digest="$(statement_subject_digest "${statement}")"
-  predicate_type="$(yq -r '.predicateType' "${statement}")"
+  predicate_type="$(jq -r '.predicateType' "${statement}")"
   cosign verify-blob-attestation \
     --bundle "${bundle}" \
     --key "${public_key}" \
@@ -226,19 +220,20 @@ verify_offline_attestation() {
 
 authorize_common() {
   verification_mode="$1"
-  shift
-  test "$#" -eq 10 || usage
+  verification_root="$2"
+  shift 2
+  test "$#" -eq 8 || usage
   permit="$1"
   statement="$2"
   operator_bundle="$3"
   approver_bundle="$4"
-  verification_root="$5"
-  trust_policy="$6"
-  request="$7"
-  nonce_dir="$8"
-  output="$9"
-  cosign_image_digest="${10}"
+  trust_policy="$5"
+  request="$6"
+  nonce_dir="$7"
+  output="$8"
   execution_policy=/usr/share/robotics-runtime/policy/execution.rego
+  policy_input_filter=/usr/share/robotics-runtime/policy/render-policy-input.jq
+  cosign_image_digest_file=/usr/share/robotics-runtime/cosign-image-digest
 
   for required in \
     "${permit}" \
@@ -247,7 +242,9 @@ authorize_common() {
     "${approver_bundle}" \
     "${trust_policy}" \
     "${request}" \
-    "${execution_policy}"; do
+    "${execution_policy}" \
+    "${policy_input_filter}" \
+    "${cosign_image_digest_file}"; do
     require_file "${required}"
   done
   case "${verification_mode}" in
@@ -268,14 +265,10 @@ authorize_common() {
       exit 64
       ;;
   esac
-  case "${cosign_image_digest}" in
-    sha256:????????????????????????????????????????????????????????????????)
-      ;;
-    *)
-      printf 'Cosign image digest must be an immutable sha256 digest\n' >&2
-      exit 65
-      ;;
-  esac
+  assert_single_json_document "${trust_policy}"
+  assert_single_json_document "${request}"
+  cosign_image_digest="$(cat "${cosign_image_digest_file}")"
+  require_sha256_digest "${cosign_image_digest}" "embedded Cosign image digest"
   test ! -e "${output}" && test ! -L "${output}" || {
     printf 'authorization output already exists: %s\n' "${output}" >&2
     exit 73
@@ -291,15 +284,11 @@ authorize_common() {
   trap 'rm -rf "${work}"; rm -f "${output_tmp}"' EXIT HUP INT TERM
 
   validate_contract "${permit}"
-  yq -o=json -I=0 '.predicate' "${statement}" >"${work}/predicate.json"
+  jq -c '.predicate' "${statement}" >"${work}/predicate.json"
   validate_contract "${work}/predicate.json"
-  assert_json_documents_equal \
-    "${permit}" \
-    "${work}/predicate.json" \
-    "statement predicate does not equal the standalone permit"
 
-  operator_identity="$(yq -r '.operator_id' "${permit}")"
-  approver_identity="$(yq -r '.approver_id' "${permit}")"
+  operator_identity="$(jq -r '.operator_id' "${permit}")"
+  approver_identity="$(jq -r '.approver_id' "${permit}")"
   operator_issuer="$(
     trusted_issuer operator "${operator_identity}" "${trust_policy}"
   )"
@@ -351,96 +340,50 @@ authorize_common() {
   operator_bundle_sha256="$(sha256_file "${operator_bundle}")"
   approver_bundle_sha256="$(sha256_file "${approver_bundle}")"
   cosign_version="$(
-    cosign version --json | yq -r '.gitVersion | sub("^v"; "")'
+    cosign version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]'
   )"
 
-  export \
-    APPROVER_BUNDLE_SHA256="${approver_bundle_sha256}" \
-    APPROVER_IDENTITY="${approver_identity}" \
-    APPROVER_INTEGRATED_TIME="${approver_integrated_time}" \
-    APPROVER_ISSUER="${approver_issuer}" \
-    COSIGN_IMAGE_DIGEST="${cosign_image_digest}" \
-    COSIGN_VERSION="${cosign_version}" \
-    OPERATOR_BUNDLE_SHA256="${operator_bundle_sha256}" \
-    OPERATOR_IDENTITY="${operator_identity}" \
-    OPERATOR_INTEGRATED_TIME="${operator_integrated_time}" \
-    OPERATOR_ISSUER="${operator_issuer}" \
-    PERMIT_FILE="${permit}" \
-    PERMIT_SHA256="${permit_sha256}" \
-    POLICY_SHA256="${policy_sha256}" \
-    REQUEST_FILE="${request}" \
-    STATEMENT_FILE="${statement}" \
-    STATEMENT_SHA256="${statement_sha256}" \
-    TRUST_POLICY_FILE="${trust_policy}" \
-    TRUST_POLICY_SHA256="${trust_policy_sha256}"
-  yq -n -o=json -I=0 '
-    {
-      "permit": load(strenv(PERMIT_FILE)),
-      "statement": load(strenv(STATEMENT_FILE)),
-      "trust_policy": load(strenv(TRUST_POLICY_FILE)),
-      "request": load(strenv(REQUEST_FILE)),
-      "artifacts": {
-        "permit_sha256": strenv(PERMIT_SHA256),
-        "statement_sha256": strenv(STATEMENT_SHA256),
-        "policy_sha256": strenv(POLICY_SHA256),
-        "trust_policy_sha256": strenv(TRUST_POLICY_SHA256),
-        "cosign_version": strenv(COSIGN_VERSION),
-        "cosign_image_digest": strenv(COSIGN_IMAGE_DIGEST)
-      },
-      "verified_signers": [
-        {
-          "role": "operator",
-          "identity": strenv(OPERATOR_IDENTITY),
-          "issuer": strenv(OPERATOR_ISSUER),
-          "bundle_sha256": strenv(OPERATOR_BUNDLE_SHA256),
-          "integrated_time": env(OPERATOR_INTEGRATED_TIME),
-          "transparency_log_verified": true
-        },
-        {
-          "role": "approver",
-          "identity": strenv(APPROVER_IDENTITY),
-          "issuer": strenv(APPROVER_ISSUER),
-          "bundle_sha256": strenv(APPROVER_BUNDLE_SHA256),
-          "integrated_time": env(APPROVER_INTEGRATED_TIME),
-          "transparency_log_verified": true
-        }
-      ]
-    }
-  ' >"${work}/input.json"
+  jq -c -n \
+    --arg approver_bundle_sha256 "${approver_bundle_sha256}" \
+    --arg approver_identity "${approver_identity}" \
+    --argjson approver_integrated_time "${approver_integrated_time}" \
+    --arg approver_issuer "${approver_issuer}" \
+    --arg cosign_image_digest "${cosign_image_digest}" \
+    --arg cosign_version "${cosign_version}" \
+    --arg operator_bundle_sha256 "${operator_bundle_sha256}" \
+    --arg operator_identity "${operator_identity}" \
+    --argjson operator_integrated_time "${operator_integrated_time}" \
+    --arg operator_issuer "${operator_issuer}" \
+    --arg permit_sha256 "${permit_sha256}" \
+    --arg policy_sha256 "${policy_sha256}" \
+    --arg statement_sha256 "${statement_sha256}" \
+    --arg trust_policy_sha256 "${trust_policy_sha256}" \
+    --slurpfile permit "${permit}" \
+    --slurpfile request "${request}" \
+    --slurpfile statement "${statement}" \
+    --slurpfile trust_policy "${trust_policy}" \
+    -f "${policy_input_filter}" \
+    >"${work}/input.json"
 
   opa eval \
     --format raw \
     --data "${execution_policy}" \
     --input "${work}/input.json" \
-    data.execution.deny >"${work}/denials.json"
-  if test "$(yq -r 'length' "${work}/denials.json")" -ne 0; then
-    yq -r '.[]' "${work}/denials.json" >&2
+    '{"denials": data.execution.deny,
+      "verification": data.execution.verification}' \
+    >"${work}/decision.json"
+  if test "$(jq -r '.denials | length' "${work}/decision.json")" -ne 0; then
+    jq -r '.denials[]' "${work}/decision.json" >&2
     exit 65
   fi
-  opa eval \
-    --fail \
-    --format raw \
-    --data "${execution_policy}" \
-    --input "${work}/input.json" \
-    data.execution.verification >"${output_tmp}"
-  test -s "${output_tmp}" || {
+  jq -ce '.verification | select(. != null)' \
+    "${work}/decision.json" >"${output_tmp}" || {
     printf 'execution policy did not produce a verification record\n' >&2
     exit 65
   }
   validate_contract "${output_tmp}"
 
-  nonce="$(yq -r '.nonce' "${permit}")"
-  case "${nonce}" in
-    '' | *[!a-f0-9]*)
-      printf 'permit nonce is not a lowercase hexadecimal value\n' >&2
-      exit 65
-      ;;
-  esac
-  nonce_length="${#nonce}"
-  test "${nonce_length}" -ge 32 && test "${nonce_length}" -le 128 || {
-    printf 'permit nonce length is outside the contract bounds\n' >&2
-    exit 65
-  }
+  nonce="$(jq -r '.nonce' "${permit}")"
   umask 077
   mkdir "${nonce_dir}/${nonce}" || {
     printf 'permit nonce was already consumed: %s\n' "${nonce}" >&2
@@ -459,41 +402,24 @@ case "${command_name}" in
     test "$#" -eq 1 || usage
     cosign version
     opa version
-    yq --version
+    jq --version
     exec python3 -c \
       'from importlib.metadata import version; print("robotics-runtime-contracts", version("robotics-runtime-contracts"))'
     ;;
-  verify-keyless-attestation)
-    test "$#" -eq 6 || usage
-    statement="$2"
-    bundle="$3"
-    trusted_root="$4"
-    identity="$5"
-    issuer="$6"
-    require_file "${statement}"
-    require_file "${bundle}"
-    require_file "${trusted_root}"
-    test -n "${identity}" || usage
-    test -n "${issuer}" || usage
-    work="$(mktemp -d)"
-    trap 'rm -rf "${work}"' EXIT HUP INT TERM
-    verify_keyless_attestation \
-      "${statement}" \
-      "${bundle}" \
-      "${trusted_root}" \
-      "${identity}" \
-      "${issuer}" \
-      "${work}/statement.json"
-    ;;
   authorize)
-    test "$#" -eq 11 || usage
+    test "$#" -eq 9 || usage
     shift
-    authorize_common keyless "$@"
+    authorize_common \
+      keyless \
+      /usr/share/robotics-runtime/trust/sigstore-trusted-root.json \
+      "$@"
     ;;
   authorize-offline-test)
-    test "$#" -eq 11 || usage
+    test "$#" -eq 10 || usage
     shift
-    authorize_common offline-test "$@"
+    verification_root="$1"
+    shift
+    authorize_common offline-test "${verification_root}" "$@"
     ;;
   materialize-runtime)
     test "$#" -eq 6 || usage
@@ -510,6 +436,7 @@ case "${command_name}" in
       "${trust_policy}"; do
       require_file "${required}"
     done
+    assert_single_json_document "${trust_policy}"
     test ! -e "${output}" && test ! -L "${output}" || {
       printf 'runtime manifest output already exists: %s\n' "${output}" >&2
       exit 73
@@ -531,17 +458,17 @@ case "${command_name}" in
 
     output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
     trap 'rm -f "${output_tmp}"' EXIT HUP INT TERM
-    GENERATED_AT="${generated_at}" \
-      PERMIT_SHA256="${permit_sha256}" \
-      VERIFICATION_SHA256="${verification_sha256}" \
-      TRUST_POLICY_SHA256="${trust_policy_sha256}" \
-      yq -o=json -I=2 '
-        .generated_at = strenv(GENERATED_AT) |
+    jq \
+      --arg generated_at "${generated_at}" \
+      --arg permit_sha256 "${permit_sha256}" \
+      --arg verification_sha256 "${verification_sha256}" \
+      --arg trust_policy_sha256 "${trust_policy_sha256}" '
+        .generated_at = $generated_at |
         .authorization.mode = "verified_execution_permit" |
-        .authorization.permit_sha256 = strenv(PERMIT_SHA256) |
+        .authorization.permit_sha256 = $permit_sha256 |
         .authorization.execution_verification_sha256 =
-          strenv(VERIFICATION_SHA256) |
-        .authorization.trust_policy_sha256 = strenv(TRUST_POLICY_SHA256)
+          $verification_sha256 |
+        .authorization.trust_policy_sha256 = $trust_policy_sha256
       ' "${template}" > "${output_tmp}"
     validate_contract "${output_tmp}"
     chmod 0444 "${output_tmp}"

@@ -47,12 +47,6 @@ foundation_project_name() {
     runtime)
       printf 'foundation-%s-%s\n' "${run_id}" "${run_attempt}"
       ;;
-    isolation-a)
-      printf 'foundation-a-%s-%s\n' "${run_id}" "${run_attempt}"
-      ;;
-    isolation-b)
-      printf 'foundation-b-%s-%s\n' "${run_id}" "${run_attempt}"
-      ;;
     acceptance)
       printf 'foundation-e2e-%s-%s\n' "${run_id}" "${run_attempt}"
       ;;
@@ -61,16 +55,6 @@ foundation_project_name() {
       return 2
       ;;
   esac
-}
-
-foundation_project_names() {
-  local run_id="$1"
-  local run_attempt="$2"
-  local kind
-
-  for kind in runtime isolation-a isolation-b acceptance; do
-    foundation_project_name "${kind}" "${run_id}" "${run_attempt}"
-  done
 }
 
 foundation_compose_cleanup() {

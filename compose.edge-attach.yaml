@@ -87,13 +87,10 @@ services:
       - /authorization/execution-statement.json
       - /authorization/operator.sigstore.json
       - /authorization/approver.sigstore.json
-      - /authorization/trusted-root.json
       - /authorization/trust-policy.json
       - /authorization/execution-request.json
       - /nonces
       - /output/execution-verification.json
-      # yamllint disable-line rule:line-length
-      - "${ROBOTICS_COSIGN_IMAGE_DIGEST:?set ROBOTICS_COSIGN_IMAGE_DIGEST to the immutable permit-preflight image digest}"
     volumes:
       - type: bind
         source: "${ROBOTICS_AUTHORIZATION_DIR:-./runs/current/authorization}"

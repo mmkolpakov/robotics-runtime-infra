@@ -50,12 +50,20 @@ variable "RKNN_SOURCE" {
   default = "https://github.com/airockchip/rknn-toolkit2.git?tag=v2.3.2&checksum=42aa1d426c0a9e0869b6374edba009f7208a1926"
 }
 
-variable "OPA_SOURCE" {
-  default = "https://github.com/open-policy-agent/opa.git?tag=v1.18.2&checksum=e695c9ef8edb0f8b9f13d014d7bc8a7fbcc57297"
+variable "COSIGN_IMAGE" {
+  default = "cgr.dev/chainguard/cosign:latest@sha256:f3161bc5cc63d55c1a19bc6a26e30db2e528e84bf154b91dbf8f79dce91d3ca7"
+  validation {
+    condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
+    error_message = "COSIGN_IMAGE must pin the qualified Chainguard image by digest."
+  }
 }
 
-variable "OPA_SOURCE_DATE_EPOCH" {
-  default = "1782998040"
+variable "COSIGN_VERSION" {
+  default = "3.1.2"
+  validation {
+    condition = COSIGN_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", COSIGN_VERSION)
+    error_message = "COSIGN_VERSION must be a semantic version."
+  }
 }
 
 group "default" {
@@ -68,6 +76,7 @@ group "cpu" {
     "edge-runtime",
     "sensor-runtime",
     "inference-cpu",
+    "provider-conformance-cpu",
     "sensor-inference-cpu",
     "acceptance-observer",
     "benchmark-runtime",
@@ -87,6 +96,22 @@ group "multiarch" {
     "evidence-sink",
     "permit-preflight",
     "host-io-fixture",
+  ]
+}
+
+group "release" {
+  targets = [
+    "simulation",
+    "edge-runtime",
+    "sensor-runtime",
+    "inference-cpu",
+    "provider-conformance-cpu",
+    "sensor-inference-cpu",
+    "inference-intel",
+    "acceptance-observer",
+    "benchmark-runtime",
+    "evidence-sink",
+    "permit-preflight",
   ]
 }
 
@@ -140,10 +165,6 @@ group "rknn" {
     "inference-rknn-rk3588",
     "provider-conformance-rknn-rk3588",
   ]
-}
-
-group "host-io-test" {
-  targets = ["host-io-fixture"]
 }
 
 target "_common" {
@@ -266,12 +287,6 @@ target "inference-nvidia" {
   tags      = ["${REGISTRY}/robotics-runtime-infra/inference-nvidia:${VERSION}"]
 }
 
-target "inference-nvidia-verification" {
-  inherits  = ["_common"]
-  target    = "inference-nvidia-verification"
-  platforms = ["linux/amd64"]
-}
-
 target "provider-conformance-nvidia" {
   inherits  = ["_common"]
   target    = "provider-conformance"
@@ -308,23 +323,13 @@ target "onnxruntime-jetson-source-verification" {
   platforms = ["linux/amd64"]
 }
 
-target "onnxruntime-jetson-build-dependencies" {
-  inherits  = ["_common"]
-  target    = "onnxruntime-jetson-build-dependencies"
-  platforms = ["linux/arm64"]
-}
-
 target "_nvidia-jetson" {
   inherits  = ["_onnxruntime-jetson-source"]
   platforms = ["linux/arm64"]
   args = {
+    ONNXRUNTIME_SOURCE            = ONNXRUNTIME_SOURCE
     ONNXRUNTIME_SOURCE_DATE_EPOCH = ONNXRUNTIME_SOURCE_DATE_EPOCH
   }
-}
-
-target "onnxruntime-jetson-wheel" {
-  inherits = ["_nvidia-jetson"]
-  target   = "onnxruntime-jetson-wheel"
 }
 
 target "inference-nvidia-jetson-orin" {
@@ -474,26 +479,20 @@ target "evidence-sink" {
   tags      = ["${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"]
 }
 
-target "_permit-sources" {
-  inherits = ["_common"]
-  args = {
-    OPA_SOURCE_DATE_EPOCH = OPA_SOURCE_DATE_EPOCH
-  }
-  contexts = {
-    "opa-source" = OPA_SOURCE
-  }
-}
-
 target "policy-tooling" {
-  inherits  = ["_permit-sources"]
+  inherits  = ["_common"]
   target    = "policy-tooling"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/policy-tooling:${VERSION}"]
 }
 
 target "permit-preflight" {
-  inherits  = ["_permit-sources"]
+  inherits  = ["_common"]
   target    = "permit-preflight"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight:${VERSION}"]
+  args = {
+    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_VERSION = COSIGN_VERSION
+  }
 }

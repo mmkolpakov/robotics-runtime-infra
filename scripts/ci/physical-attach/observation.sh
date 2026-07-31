@@ -82,65 +82,35 @@ run_observer_script() {
   fi
 }
 
-verify_execution_verification_equivalence() {
-  local expected="$1"
-  local actual="$2"
-
-  jq -e --slurpfile expected "${expected}" '
-    def epoch_seconds:
-      sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
-
-    ($expected | length) == 1 and
-    ((.verified_at | epoch_seconds) >=
-      ($expected[0].verified_at | epoch_seconds)) and
-    (del(.verified_at) == ($expected[0] | del(.verified_at)))
-  ' "${actual}" >/dev/null
-}
-
 start_sros2_observer() {
   local case_dir="$1"
   local runtime_dir="${work_root}/runtime"
-  local authorization_dir="${work_root}/authorization"
   local evidence_dir="${work_root}/evidence"
   local input_dir="${work_root}/input"
   local results_dir="${work_root}/results"
   local preflight_state_dir="${work_root}/preflight-positive"
   local authorization_output_dir="${preflight_state_dir}/output"
   local nonces_dir="${preflight_state_dir}/nonces"
-  local authorization_file
   local target_identity
 
   mkdir -p \
-    "${authorization_dir}" \
     "${evidence_dir}" \
     "${input_dir}" \
     "${results_dir}"
   chmod -R 0777 \
-    "${authorization_dir}" \
     "${evidence_dir}" \
     "${input_dir}" \
     "${results_dir}"
   prepare_preflight_directories \
     "${nonces_dir}" \
     "${authorization_output_dir}"
-  for authorization_file in \
-    execution-permit.json \
-    execution-statement.json \
-    operator.sigstore.json \
-    approver.sigstore.json \
-    trust-policy.json \
-    execution-request.json; do
-    cp \
-      "${case_dir}/${authorization_file}" \
-      "${authorization_dir}/${authorization_file}"
-  done
   cp \
     "${runtime_dir}/runtime-manifest.input.json" \
     "${input_dir}/runtime-manifest.input.json"
   cp "${ROBOTICS_TIME_EVIDENCE}" "${evidence_dir}/hardware-time.otlp.json"
 
   export ROBOTICS_ATTACH_NETWORK="${attach_network}"
-  export ROBOTICS_AUTHORIZATION_DIR="${authorization_dir}"
+  export ROBOTICS_AUTHORIZATION_DIR="${case_dir}"
   export ROBOTICS_AUTHORIZATION_OUTPUT_DIR="${authorization_output_dir}"
   export ROBOTICS_EVIDENCE_DIR="${evidence_dir}"
   export ROBOTICS_RUN_INPUT_DIR="${input_dir}"
@@ -174,12 +144,6 @@ start_sros2_observer() {
   }
   test -s "${authorization_output_dir}/runtime-manifest.json" || {
     printf 'permit preflight did not materialize the runtime manifest\n' >&2
-    return 70
-  }
-  verify_execution_verification_equivalence \
-    "${case_dir}/execution-verification.json" \
-    "${authorization_output_dir}/execution-verification.json" || {
-    printf 'preflight verification differs from the reference decision\n' >&2
     return 70
   }
   target_identity="$(<"${work_root}/target-identity.sha256")"

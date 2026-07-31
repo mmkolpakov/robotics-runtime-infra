@@ -188,6 +188,32 @@ services:
       zenoh-subscriber:
         condition: service_started
 
+  zenoh-evidence:
+    image: "${EVIDENCE_IMAGE:-local/robotics-runtime-infra/evidence-sink:dev}"
+    user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
+    init: true
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    profiles: [zenoh]
+    environment:
+      EVIDENCE_INDEX_PATH: /reports/qualification/evidence-index.json
+      EVIDENCE_RECEIPT_DIR: /reports/qualification/evidence-receipts
+      EVIDENCE_SPOOL_DIR: /reports/qualification/evidence-spool
+      EVIDENCE_STATE_DIR: /reports/qualification/evidence-state
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
+        target: /reports
+    healthcheck:
+      disable: true
+
   zenoh-evaluator:
     image: "${OBSERVER_IMAGE:-local/robotics-runtime-infra/acceptance-observer:dev}"
     user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
@@ -218,9 +244,9 @@ services:
           --trace zenoh-source=/reports/source/traces.otlp.jsonl \
           --trace zenoh-destination=/reports/destination/traces.otlp.jsonl \
           --evidence-index \
-            zenoh-source=/reports/qualification/source-evidence-index.json \
+            zenoh-source=/reports/qualification/evidence-index.json \
           --evidence-index \
-            zenoh-destination=/reports/qualification/destination-evidence-index.json \
+            zenoh-destination=/reports/qualification/evidence-index.json \
           --observation-output /reports/qualification/observations \
           --output /reports/qualification/transport-qualification.json
     tmpfs:

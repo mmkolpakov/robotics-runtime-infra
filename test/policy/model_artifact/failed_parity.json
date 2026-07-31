@@ -1,9 +1,0 @@
-{
-  "model_artifact_failed_parity": {
-    "observations": {
-      "conformance_report": {
-        "status": "failed"
-      }
-    }
-  }
-}

@@ -10,10 +10,7 @@ safe_workflow := {
 		"if": "github.ref == 'refs/heads/main'",
 		"runs-on": ["self-hosted", "linux", "robotics-hardware"],
 		"environment": {"name": "accelerator-lab"},
-		"steps": [{
-			"uses": "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-			"with": {"persist-credentials": false},
-		}],
+		"steps": [{"uses": "./.github/actions/setup-buildx"}],
 	}},
 }
 

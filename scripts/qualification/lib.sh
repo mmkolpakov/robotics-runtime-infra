@@ -23,6 +23,109 @@ qualification_sha256() {
   sha256sum "$1" | cut -d' ' -f1
 }
 
+# Assigns sourced-library state consumed by the two qualification entrypoints.
+# shellcheck disable=SC2034
+qualification_parse_cli() {
+  local mode="$1"
+  shift
+  [[ "$mode" == create || "$mode" == verify ]] || qualification_fail "invalid CLI mode: $mode"
+
+  scenario_path=''
+  acceptance_run_path=''
+  aggregate_path=''
+  output=''
+  bundle=''
+  verification_key=''
+  trusted_root=''
+  policy=''
+  runtime_manifest_specs=()
+  result_specs=()
+  evidence_index_specs=()
+  mcap_summary_specs=()
+  optional_evidence_specs=()
+  extension_schema_specs=()
+
+  while (($# > 0)); do
+    case "$1" in
+      --bundle)
+        [[ "$mode" == verify && $# -ge 2 ]] || usage
+        bundle="$2"
+        shift 2
+        ;;
+      --key)
+        [[ "$mode" == verify && $# -ge 2 ]] || usage
+        verification_key="$2"
+        shift 2
+        ;;
+      --trusted-root)
+        [[ "$mode" == verify && $# -ge 2 ]] || usage
+        trusted_root="$2"
+        shift 2
+        ;;
+      --policy)
+        [[ "$mode" == verify && $# -ge 2 ]] || usage
+        policy="$2"
+        shift 2
+        ;;
+      --scenario)
+        (($# >= 2)) || usage
+        scenario_path="$2"
+        shift 2
+        ;;
+      --runtime-manifest)
+        (($# >= 2)) || usage
+        runtime_manifest_specs+=("$2")
+        shift 2
+        ;;
+      --acceptance-run)
+        (($# >= 2)) || usage
+        acceptance_run_path="$2"
+        shift 2
+        ;;
+      --result)
+        (($# >= 2)) || usage
+        result_specs+=("$2")
+        shift 2
+        ;;
+      --aggregate)
+        (($# >= 2)) || usage
+        aggregate_path="$2"
+        shift 2
+        ;;
+      --evidence-index)
+        (($# >= 2)) || usage
+        evidence_index_specs+=("$2")
+        shift 2
+        ;;
+      --mcap-summary)
+        (($# >= 2)) || usage
+        mcap_summary_specs+=("$2")
+        shift 2
+        ;;
+      --evidence)
+        (($# >= 2)) || usage
+        optional_evidence_specs+=("$2")
+        shift 2
+        ;;
+      --extension-schema)
+        (($# >= 2)) || usage
+        extension_schema_specs+=("$2")
+        shift 2
+        ;;
+      --output)
+        [[ "$mode" == create && $# -ge 2 ]] || usage
+        output="$2"
+        shift 2
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+
+  [[ "$mode" == verify || -n "$output" ]] || usage
+}
+
 qualification_resolve_contracts_cli() {
   if [[ -n "${ROBOTICS_CONTRACTS_CLI:-}" ]]; then
     [[ -x "$ROBOTICS_CONTRACTS_CLI" ]] ||
@@ -35,7 +138,7 @@ qualification_resolve_contracts_cli() {
     QUALIFICATION_CONTRACTS_CLI="$PWD/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
   else
     qualification_fail \
-      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.10.0 or newer'
+      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.11.0 or newer'
   fi
 }
 
@@ -207,24 +310,18 @@ qualification_validate_links() {
   local local_results
   local referenced_mcap
   local local_mcap
-  local scenario_schema
   local aggregate_schema
   local contract_documents=(
-    "$scenario_path"
     "$acceptance_run_path"
     "$aggregate_path"
   )
 
-  scenario_schema="$(yq -er '.schema_version' "$scenario_path")"
-  case "$scenario_schema" in
-    acceptance-scenario.v4) ;;
-    *) qualification_fail "unsupported scenario contract: $scenario_schema" ;;
-  esac
+  qualification_validate_contract "$scenario_path" acceptance-scenario.v4
   [[ "$(jq -er '.schema_version' "$acceptance_run_path")" == acceptance-run.v1 ]] ||
     qualification_fail 'acceptance run must declare acceptance-run.v1'
   aggregate_schema="$(jq -er '.schema_version' "$aggregate_path")"
   case "$aggregate_schema" in
-    acceptance-aggregate.v1 | acceptance-aggregate.v2) ;;
+    acceptance-aggregate.v3) ;;
     *) qualification_fail "unsupported aggregate contract: $aggregate_schema" ;;
   esac
   # The caller owns these arrays; this file is a sourced command library.
@@ -430,7 +527,6 @@ qualification_prepare() {
 
   qualification_require_command jq
   qualification_require_command sha256sum
-  qualification_require_command yq
   qualification_resolve_contracts_cli
   [[ -n "$scenario_path" ]] || qualification_fail '--scenario is required'
   [[ -n "$acceptance_run_path" ]] || qualification_fail '--acceptance-run is required'

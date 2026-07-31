@@ -10,3 +10,7 @@ grep -Fq 'tensorrt-cu13-libs @' "${lock}"
 grep -Fq \
   'sha256=58debb693e0708cf7722868845f3e5286fb9c4d5ac2a1bf3b3806eb4706be39b' \
   "${lock}"
+curl --fail --location --silent --show-error \
+  https://pypi.org/pypi/onnxruntime-gpu/1.27.0/json \
+  | jq -e \
+    '[.urls[].filename | select(test("manylinux.*aarch64"))] | length == 0'

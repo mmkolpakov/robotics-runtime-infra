@@ -12,10 +12,15 @@ jq -e '
   all(.[];
     (.name | type == "string" and length > 0) and
     (.files | type == "array" and length > 0) and
+    .files[0] == "compose.yaml" and
     all(.files[]; type == "string" and endswith(".yaml"))
   ) and
   ([.[].name] | length == (unique | length))
 ' "${manifest}" >/dev/null
+
+diff -u \
+  <(find . -maxdepth 1 -type f -name 'compose*.yaml' -printf '%f\n' | sort) \
+  <(jq -r '.compose_models[].files[]' "${manifest}" | sort --unique)
 
 ci_set_compose_fixture_env
 

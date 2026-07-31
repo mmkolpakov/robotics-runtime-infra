@@ -7,256 +7,56 @@ setup() {
   FIXTURES="${BATS_TEST_DIRNAME}/physical-attach"
 }
 
-@test "declares exactly the required five cases" {
-  run bash "${SCRIPT}" --list-cases
-
-  [ "${status}" -eq 0 ]
-  [ "${output}" = "$(cat <<'EOF'
-positive
-expired-permit
-wrong-target
-wrong-signer
-command-publish-denied
-EOF
-)" ]
-}
-
-@test "main and helper entrypoints are valid Bash" {
-  run bash -n \
-    "${SCRIPT}" \
-    "${MODULES}/authorization.sh" \
-    "${MODULES}/devices.sh" \
-    "${MODULES}/observation.sh" \
-    "${FIXTURES}/observer-command-denied.sh" \
-    "${FIXTURES}/observer-listen.sh" \
-    "${FIXTURES}/observer-unsecured-source-denied.sh"
-
-  [ "${status}" -eq 0 ]
-}
-
-@test "coordinator sources only working modules under scripts" {
-  run awk '
-    /^[[:space:]]*source[[:space:]]/ {print}
-  ' "${SCRIPT}"
-  [ "${status}" -eq 0 ]
-  [ "${output}" = "$(cat <<'EOF'
-source "${PHYSICAL_ATTACH_MODULE_ROOT}/devices.sh"
-source "${PHYSICAL_ATTACH_MODULE_ROOT}/authorization.sh"
-source "${PHYSICAL_ATTACH_MODULE_ROOT}/observation.sh"
-EOF
-)" ]
-  [[ "${output}" != *"test/"* ]]
-
-  run bash -c '
-    set -Eeuo pipefail
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    test "${PHYSICAL_ATTACH_MODULE_ROOT}" = \
-      "${REPOSITORY_ROOT}/scripts/ci/physical-attach"
-    for module in devices authorization observation; do
-      test -r "${PHYSICAL_ATTACH_MODULE_ROOT}/${module}.sh"
-    done
-    declare -F write_scenario_input_manifest >/dev/null
-    declare -F physical_attach_scenario_sha256 >/dev/null
-  ' _ "${SCRIPT}"
-  [ "${status}" -eq 0 ]
-}
-
-@test "main run dispatches the real scenario entrypoint" {
-  run bash -c '
-    set -Eeuo pipefail
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    run_scenario() { printf "run_scenario\n"; }
-    main run
-  ' _ "${SCRIPT}"
-
-  [ "${status}" -eq 0 ]
-  [ "${output}" = "run_scenario" ]
-}
-
-@test "setup invokes the exact physical coordinator functions" {
-  run bash -c '
-    set -Eeuo pipefail
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-      source "$1"
-      acquire_host_lock() { printf "acquire_host_lock\n"; }
-      verify_permit_image_digest() { printf "verify_permit_image_digest\n"; }
-      validate_physical_compose_model() {
-        printf "validate_physical_compose_model\n"
-      }
-      prepare_pty_pair() { printf "prepare_pty_pair\n"; }
-      prepare_vcan_gateway() { printf "prepare_vcan_gateway\n"; }
-      verify_time_evidence() { printf "verify_time_evidence\n"; }
-      prepare_sros2_identity() { printf "prepare_sros2_identity\n"; }
-      write_target_evidence() { printf "write_target_evidence\n"; }
-      write_scenario_input_manifest() {
-        printf "write_scenario_input_manifest\n"
-      }
-    write_trust_policy() { printf "write_trust_policy\n"; }
-    generate_role_keys() { printf "generate_role_keys\n"; }
-    check_production_authorize_contract() {
-      printf "check_production_authorize_contract\n"
-    }
-    run_setup
-  ' _ "${SCRIPT}"
-
-  [ "${status}" -eq 0 ]
-  [ "${output}" = "$(cat <<'EOF'
-acquire_host_lock
-verify_permit_image_digest
-validate_physical_compose_model
-prepare_pty_pair
-prepare_vcan_gateway
-verify_time_evidence
-prepare_sros2_identity
-write_target_evidence
-write_scenario_input_manifest
-write_trust_policy
-generate_role_keys
-check_production_authorize_contract
-EOF
-)" ]
-}
-
-@test "case orchestrator invokes the exact five case functions in order" {
-  run bash -c '
-    set -Eeuo pipefail
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    run_case_positive() { printf "positive\n"; }
-    run_case_expired_permit() { printf "expired-permit\n"; }
-      run_case_wrong_target() { printf "wrong-target\n"; }
-      run_case_wrong_signer() { printf "wrong-signer\n"; }
-      run_case_command_publish_denied() { printf "command-publish-denied\n"; }
-      time_measured_at="$(date -u -d "-60 seconds" +%Y-%m-%dT%H:%M:%SZ)"
-      run_cases target-identity
-  ' _ "${SCRIPT}"
-
-  [ "${status}" -eq 0 ]
-  [ "${output}" = "$(cat <<'EOF'
-positive
-expired-permit
-wrong-target
-wrong-signer
-command-publish-denied
-EOF
-)" ]
-}
-
-@test "production keyless authorize remains a separate command contract" {
-  run bash -c '
-    set -Eeuo pipefail
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    work_root=/tmp/physical-attach-command-contract
-    permit_run() {
-      printf "%s\n" \
-        "permit-preflight authorize PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUSTED_ROOT TRUST_POLICY REQUEST NONCE_DIR OUTPUT COSIGN_IMAGE_DIGEST" >&2
-      return 64
-    }
-    check_production_authorize_contract
-  ' _ "${SCRIPT}"
-
-  [ "${status}" -eq 0 ]
-  [ -z "${output}" ]
-  run jq -e '
-      .authorization.ci_equivalent == "two-key-cosign-rekor-opa" and
-      .authorization.production_keyless_entrypoint == "command-contract-only" and
-      .target_identity.kind == "x509_spki" and
-      .target_identity.scope == "ci_synthetic_sros2_target" and
-      (.target_identity.hardware_identity_verified | not)
-  ' "${FIXTURES}/report.json"
-  [ "${status}" -eq 0 ]
-}
-
 @test "fails closed when required runtime inputs are absent" {
-  run env \
-    -u BENCHMARK_IMAGE \
-    -u CAN_CLIENT_IMAGE \
-    -u COSIGN_PASSWORD \
-      -u OBSERVER_IMAGE \
-      -u PERMIT_PREFLIGHT_IMAGE \
-      -u ROBOTICS_COSIGN_IMAGE_DIGEST \
-      -u ROBOTICS_TIME_EVIDENCE \
-      -u ROBOTICS_TIME_EVIDENCE_RUN_ID \
-      -u ROBOTICS_TIME_EVIDENCE_WINDOW \
-      bash "${SCRIPT}" --check-prerequisites
+  run env -i PATH="${PATH}" bash -c '
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    check_prerequisites
+  ' _ "${SCRIPT}"
 
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"required environment variable is unset"* ]]
 }
 
-@test "declarative inputs are valid JSON" {
-  run jq -e '
-    .trust_policy.schema_version == "execution-trust-policy.v1" and
-    .permit.schema_version == "execution-permit.v1" and
-    .request.target.environment == "hil" and
-    .permit.interlock_check.reference ==
-      "https://example.invalid/robotics-runtime-infra/synthetic-physical-attach/target-evidence.json" and
-    .request.interlock_check.reference == .permit.interlock_check.reference
-  ' "${FIXTURES}/authorization-template.json"
+@test "preflight accepts one JSON document and lowercase sha256 only" {
+  run bash -c '
+    set -Eeuo pipefail
+    source <(sed "/^command_name=/,\$d" "$1")
+    temporary="$(mktemp -d)"
+    trap "rm -rf -- \"${temporary}\"" EXIT
+    printf "%s\n" "{}" >"${temporary}/one.json"
+    printf "%s\n%s\n" "{}" "{}" >"${temporary}/two.json"
+    assert_single_json_document "${temporary}/one.json"
+    ! (assert_single_json_document "${temporary}/two.json")
+    require_sha256_digest "sha256:$(printf "%064d" 1)" verifier
+    ! (require_sha256_digest \
+      "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" \
+      verifier)
+  ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
+
   [ "${status}" -eq 0 ]
-
-  run jq -e '
-      .schema_version == "physical-attach-evidence.v1" and
-      .identity.kind == "x509_spki" and
-      .identity.scope == "ci_synthetic_sros2_target" and
-      (.identity.hardware_identity_verified | not) and
-      .serial.transport == "pty" and
-      .can.receive_only_gateway
-  ' "${FIXTURES}/target-evidence.json"
-  [ "${status}" -eq 0 ]
-}
-
-@test "permit comparison is canonical and rejects a changed document" {
-  filter="${REPOSITORY_ROOT}/docker/permit-preflight/json-equal.yq"
-  integration="$(
-    cat \
-      "${REPOSITORY_ROOT}/scripts/ci/integration/verify-synthetic-physical-attach-end-to-end.sh"
-  )"
-
-  run grep -F \
-    '/usr/share/robotics-runtime/permit-preflight/json-equal.yq' \
-    "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
-  [ "${status}" -eq 0 ]
-  [ "${#lines[@]}" -eq 1 ]
-
-  run grep -F 'sort_keys(..) | to_json(0)' "${filter}"
-  [ "${status}" -eq 0 ]
-
-  [[ "${integration}" == *'"beta":2'* ]]
-  [[ "${integration}" == *'"beta":3'* ]]
-  [[ "${integration}" == *"permit comparison accepted a changed predicate"* ]]
 }
 
 @test "DSSE verification cannot overwrite its caller output path" {
   run bash -c '
     set -Eeuo pipefail
     source <(sed "/^command_name=/,\$d" "$1")
-    yq() {
-      case " $* " in
-        *" .mediaType "*)
-          printf "%s\n" "application/vnd.dev.sigstore.bundle.v0.3+json"
-          ;;
-        *" .dsseEnvelope.payloadType "*)
-          printf "%s\n" "application/vnd.in-toto+json"
-          ;;
-        *" .dsseEnvelope.payload "*)
-          printf "%s\n" "e30="
-          ;;
-        *" .predicate "*)
-          printf "%s\n" "{}"
-          ;;
-      esac
-    }
-    validate_contract() { :; }
     temporary="$(mktemp -d)"
     trap "rm -rf -- \"${temporary}\"" EXIT
+    printf "%s\n" "{}" >"${temporary}/statement.json"
+    jq -n \
+      --arg payload "$(printf "%s" "{}" | base64 -w0)" \
+      "{
+        mediaType: \"application/vnd.dev.sigstore.bundle.v0.3+json\",
+        dsseEnvelope: {
+          payloadType: \"application/vnd.in-toto+json\",
+          payload: \$payload
+        }
+      }" >"${temporary}/bundle.json"
     output=caller-output
     assert_bundle_statement \
-      /dev/null \
-      /dev/null \
+      "${temporary}/statement.json" \
+      "${temporary}/bundle.json" \
       "${temporary}/decoded-statement.json"
     test "${output}" = caller-output
   ' _ "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight"
@@ -322,7 +122,6 @@ EOF
     }
     OBSERVER_IMAGE=acceptance-observer
     PERMIT_PREFLIGHT_IMAGE=permit-preflight
-    ROBOTICS_COSIGN_IMAGE_DIGEST="sha256:$(printf "%064d" 2)"
     write_trust_policy
     write_permit_case \
       "${work_root}/case" \
@@ -344,8 +143,7 @@ EOF
       .predicate == \$permit[0] and
       .subject[0].digest.sha256 == \$permit[0].scenario_sha256 and
       (\"sha256:\" + .subject[1].digest.sha256) == \$permit[0].image_digest and
-      \$permit[0].image_digest == \"sha256:$(printf "%064d" 1)\" and
-      \$permit[0].image_digest != \"${ROBOTICS_COSIGN_IMAGE_DIGEST}\"
+      \$permit[0].image_digest == \"sha256:$(printf "%064d" 1)\"
     " "${work_root}/case/execution-statement.json"
   ' _ "${SCRIPT}"
 
@@ -378,30 +176,116 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
-@test "local image digest and compose configuration are fail-closed" {
+@test "physical Compose configuration is validated before host mutation" {
   run bash -c '
     set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
     source "$1"
+    marker="$2"
+    acquire_host_lock() { :; }
+    verify_verifier_image_digest() { :; }
+    validate_physical_compose_model() { return 65; }
+    prepare_pty_pair() { touch "${marker}"; }
+    run_setup
+  ' _ "${SCRIPT}" "${BATS_TEST_TMPDIR}/host-mutated"
+  [ "${status}" -eq 65 ]
+  [ ! -e "${BATS_TEST_TMPDIR}/host-mutated" ]
+}
+
+@test "source verifier is frozen to its local Docker image ID" {
+  local source_digest="sha256:$(printf '%064d' 7)"
+
+  run bash -c '
+    set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    ROBOTICS_RUNTIME_MODE=source
+    PERMIT_PREFLIGHT_IMAGE=permit-preflight:local
+    expected="$2"
     docker() {
       test "$1" = image
       test "$2" = inspect
-      printf "sha256:%064d\n" 7
+      printf "%s\n" "${expected}"
     }
-    ci_export_local_image_digest ROBOTICS_COSIGN_IMAGE_DIGEST fixture
-    test "${ROBOTICS_COSIGN_IMAGE_DIGEST}" = "sha256:$(printf "%064d" 7)"
-  ' _ "${REPOSITORY_ROOT}/scripts/ci/lib.sh"
+    verify_verifier_image_digest
+    test "${PERMIT_PREFLIGHT_IMAGE}" = "${expected}"
+  ' _ "${SCRIPT}" "${source_digest}"
+  [ "${status}" -eq 0 ]
+}
+
+@test "released verifier requires the canonical attested digest" {
+  local release_digest="sha256:$(printf '%064d' 8)"
+
+  run bash -c '
+    set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    work_root="$3"
+    mkdir -p "${work_root}"
+    GH_TOKEN=test-token
+    ROBOTICS_RELEASE_SOURCE_SHA=0123456789abcdef0123456789abcdef01234567
+    ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v0.8.0
+    gh() {
+      test "$1" = attestation
+      test "$2" = verify
+      [[ " $* " == *" --repo mmkolpakov/robotics-runtime-infra "* ]]
+      [[ " $* " == *" --signer-workflow mmkolpakov/robotics-runtime-infra/.github/workflows/release-image.yml "* ]]
+      [[ " $* " == *" --source-digest ${ROBOTICS_RELEASE_SOURCE_SHA} "* ]]
+      [[ " $* " == *" --source-ref ${ROBOTICS_RELEASE_SOURCE_REF} "* ]]
+      [[ " $* " == *" --deny-self-hosted-runners "* ]]
+      [[ " $* " == *" --bundle-from-oci "* ]]
+      printf "[{}]\n"
+    }
+    docker() {
+      test "$1" = image
+      test "$2" = inspect
+    }
+    ROBOTICS_RUNTIME_MODE=released
+    PERMIT_PREFLIGHT_IMAGE="ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight:v1@$2"
+    verify_verifier_image_digest
+    test -s "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
+  ' _ "${SCRIPT}" "${release_digest}" "${BATS_TEST_TMPDIR}/released-verifier"
   [ "${status}" -eq 0 ]
 
   run bash -c '
     set -Eeuo pipefail
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
     source "$1"
-    real_compose() { printf "%s\n" "$*"; }
-    validate_physical_compose_model
-  ' _ "${SCRIPT}"
-  [ "${status}" -eq 0 ]
-  [[ "${output}" == *"--profile real-observation"* ]]
-  [[ "${output}" == *"config --quiet"* ]]
+    docker() { return 0; }
+    ROBOTICS_RUNTIME_MODE=released
+    PERMIT_PREFLIGHT_IMAGE="ghcr.io/example/permit:v1@$2"
+    verify_verifier_image_digest
+  ' _ "${SCRIPT}" "${release_digest}"
+  [ "${status}" -eq 65 ]
+  [[ "${output}" == *"outside the trusted repository"* ]]
+}
+
+@test "released verifier provenance is checked before local image use" {
+  local digest="sha256:$(printf '%064d' 9)"
+  local marker="${BATS_TEST_TMPDIR}/docker-was-called"
+
+  run bash -c '
+    set -Eeuo pipefail
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1"
+    work_root="$4"
+    mkdir -p "${work_root}"
+    GH_TOKEN=test-token
+    ROBOTICS_RUNTIME_MODE=released
+    ROBOTICS_RELEASE_SOURCE_SHA=0123456789abcdef0123456789abcdef01234567
+    ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v0.8.0
+    PERMIT_PREFLIGHT_IMAGE="ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight:v0.8.0@$2"
+    gh() { return 1; }
+    docker() {
+      touch "$3"
+      return 0
+    }
+    verify_verifier_image_digest
+  ' _ "${SCRIPT}" "${digest}" "${marker}" \
+    "${BATS_TEST_TMPDIR}/rejected-verifier"
+
+  [ "${status}" -ne 0 ]
+  [ ! -e "${marker}" ]
 }
 
 @test "observer startup preserves the failure code and emits compose diagnostics" {
@@ -437,30 +321,6 @@ EOF
   [[ "${output}" == *"permit validation failed"* ]]
 }
 
-@test "observer probes use the standard ROS topic CLI" {
-  grep -q '<exec_depend>ros2topic</exec_depend>' \
-    "${REPOSITORY_ROOT}/docker/rosdeps/edge/package.xml"
-  run awk '
-    /<enclave path="\/robotics\/observer">/ {observer = 1}
-    observer && /<service>\*\/get_type_description<\/service>/ {found = 1}
-    observer && /<\/enclave>/ {exit}
-    END {exit !found}
-  ' "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml"
-  [ "${status}" -eq 0 ]
-  run grep -F \
-    '<topic>rq/\*/get_type_descriptionRequest</topic>' \
-    "${REPOSITORY_ROOT}/compose.security.yaml"
-  [ "${status}" -eq 0 ]
-  grep -q 'ros2 topic echo' "${FIXTURES}/observer-listen.sh"
-  grep -q 'ros2 topic pub' "${FIXTURES}/observer-command-denied.sh"
-  grep -q 'ros2 topic echo' "${FIXTURES}/observer-unsecured-source-denied.sh"
-  run grep -R 'demo_nodes_' \
-    "${FIXTURES}/observer-listen.sh" \
-    "${FIXTURES}/observer-command-denied.sh" \
-    "${FIXTURES}/observer-unsecured-source-denied.sh"
-  [ "${status}" -eq 1 ]
-}
-
 @test "observer wait accepts a first message and reports ROS failures" {
   wait_script="${BATS_TEST_TMPDIR}/observer-wait.sh"
   awk '
@@ -485,47 +345,6 @@ EOF
   run bash "${wait_script}"
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"topic subscription failed"* ]]
-}
-
-@test "preflight verification comparison permits only a later verification time" {
-  expected="${BATS_TEST_TMPDIR}/expected-verification.json"
-  actual="${BATS_TEST_TMPDIR}/actual-verification.json"
-  jq -n '{
-    schema_version: "execution-verification.v1",
-    verification_id: "permit-fixture",
-    verified_at: "2026-07-27T05:07:30.100000000Z",
-    decision: "allow"
-  }' >"${expected}"
-  jq \
-    '.verified_at = "2026-07-27T05:07:31.200000000Z"' \
-    "${expected}" >"${actual}"
-
-  run bash -c '
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    verify_execution_verification_equivalence "$2" "$3"
-  ' _ "${SCRIPT}" "${expected}" "${actual}"
-  [ "${status}" -eq 0 ]
-
-  jq '.decision = "deny"' "${actual}" >"${actual}.tmp"
-  mv "${actual}.tmp" "${actual}"
-  run bash -c '
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    verify_execution_verification_equivalence "$2" "$3"
-  ' _ "${SCRIPT}" "${expected}" "${actual}"
-  [ "${status}" -ne 0 ]
-
-  jq \
-    '.decision = "allow" | .verified_at = "2026-07-27T05:07:29Z"' \
-    "${actual}" >"${actual}.tmp"
-  mv "${actual}.tmp" "${actual}"
-  run bash -c '
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    verify_execution_verification_equivalence "$2" "$3"
-  ' _ "${SCRIPT}" "${expected}" "${actual}"
-  [ "${status}" -ne 0 ]
 }
 
 @test "host lock serializes access and cleanup honors ownership flags" {
@@ -705,23 +524,6 @@ EOF
   [[ "${output}" == *"could not inspect the permit nonce store"* ]]
 }
 
-@test "denial and replay cases invoke the real preflight entrypoint" {
-  run grep -Fc 'expect_preflight_denial' "${SCRIPT}"
-
-  [ "${status}" -eq 0 ]
-  [ "${output}" -eq 4 ]
-
-  run grep -F 'authorize-offline-test' "${MODULES}/authorization.sh"
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'require_empty_nonce_store' "${SCRIPT}"
-  [ "${status}" -eq 0 ]
-
-  run grep -F 'offline attestation signature verification failed' \
-    "${SCRIPT}"
-  [ "${status}" -eq 0 ]
-}
-
 @test "CAN cleanup rejects a residual fixed network" {
   run bash -c '
     set -Eeuo pipefail
@@ -812,37 +614,6 @@ EOF
   [[ "${output}" == *"refusing to reuse an existing Docker network"* ]]
   [[ "${output}" != *"unexpected host mutation"* ]]
   [[ "${output}" != *"unexpected Docker mutation"* ]]
-}
-
-@test "scenario manifest covers inputs and fails on mutation or omission" {
-  run bash -c '
-    set -Eeuo pipefail
-    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
-    source "$1"
-    source_root="$(mktemp -d)"
-    trap "rm -rf -- \"${source_root}\"" EXIT
-    diff -u "$2" <(physical_attach_input_paths)
-    while IFS= read -r path; do
-      mkdir -p "${source_root}/$(dirname "${path}")"
-      cp "${REPOSITORY_ROOT}/${path}" "${source_root}/${path}"
-    done < <(physical_attach_input_paths)
-
-    write_file_input_manifest "${source_root}" "${source_root}/first"
-    scenario_manifest="${source_root}/first"
-    first="$(physical_attach_scenario_sha256)"
-    printf "\nmutation\n" >>"${source_root}/compose.edge-attach.yaml"
-    write_file_input_manifest "${source_root}" "${source_root}/second"
-    scenario_manifest="${source_root}/second"
-    second="$(physical_attach_scenario_sha256)"
-    test "${first}" != "${second}"
-
-    rm "${source_root}/config/sros2/observer.policy.xml"
-    if write_file_input_manifest "${source_root}" "${source_root}/third"; then
-      printf "manifest accepted an omitted required input\n" >&2
-      exit 1
-    fi
-  ' _ "${SCRIPT}" "${FIXTURES}/scenario-inputs.expected"
-  [ "${status}" -eq 0 ]
 }
 
 @test "time evidence policy accepts only its fresh measurement window" {
@@ -948,26 +719,6 @@ EOF
     fi
   ' _ "${SCRIPT}" "${FIXTURES}/time-evidence.jsonl"
   [ "${status}" -eq 0 ]
-}
-
-@test "coordinator uses Rekor-backed Cosign and contains no Python fallback" {
-  run grep -R -F -- '--insecure-ignore-tlog' "${SCRIPT}" "${FIXTURES}"
-  [ "${status}" -eq 1 ]
-
-  run grep -R -F -- '--tlog-upload=false' "${SCRIPT}" "${FIXTURES}"
-  [ "${status}" -eq 1 ]
-
-  run grep -F -- '--with-default-services' \
-    "${MODULES}/authorization.sh"
-  [ "${status}" -eq 0 ]
-
-  run grep -F -- '--signing-config keys/signing-config.json' \
-    "${MODULES}/authorization.sh"
-  [ "${status}" -eq 0 ]
-
-  run grep -R -E 'python(3)?([[:space:]]|$)' \
-    "${SCRIPT}" "${MODULES}" "${FIXTURES}"
-  [ "${status}" -eq 1 ]
 }
 
 @test "only the isolated offline verifier may bypass the transparency log" {

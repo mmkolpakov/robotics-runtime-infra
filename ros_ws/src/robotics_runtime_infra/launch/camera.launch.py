@@ -12,24 +12,21 @@ def generate_launch_description() -> LaunchDescription:
     world = PathJoinSubstitution(
         [FindPackageShare("robotics_runtime_infra"), "worlds", "camera.sdf"]
     )
-    gazebo_launch = PathJoinSubstitution(
-        [FindPackageShare("ros_gz_sim"), "launch", "gz_sim.launch.py"]
-    )
-    clock_bridge_config = PathJoinSubstitution(
+    headless_launch = PathJoinSubstitution(
         [
             FindPackageShare("robotics_runtime_infra"),
-            "config",
-            "clock_bridge.yaml",
+            "launch",
+            "headless.launch.py",
         ]
     )
 
     return LaunchDescription(
         [
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(gazebo_launch),
+                PythonLaunchDescriptionSource(headless_launch),
                 launch_arguments={
-                    "gz_args": ["-s -r -v 2 ", world],
-                    "on_exit_shutdown": "true",
+                    "gz_args": "-s -r -v 2",
+                    "world": world,
                 }.items(),
             ),
             Node(
@@ -39,12 +36,6 @@ def generate_launch_description() -> LaunchDescription:
                     "/camera/image@sensor_msgs/msg/Image[gz.msgs.Image",
                     "/camera/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
                 ],
-                output="screen",
-            ),
-            Node(
-                package="ros_gz_bridge",
-                executable="parameter_bridge",
-                parameters=[{"config_file": clock_bridge_config}],
                 output="screen",
             ),
         ]

@@ -183,6 +183,8 @@ services:
       - /evidence/evidence-index.json
       - --otel-metrics
       - /evidence/metrics.otlp.json
+      - --measurement-complete
+      - /run/robotics/measurement-complete
       - --output
       - /run/robotics/results
     environment: *ros-environment

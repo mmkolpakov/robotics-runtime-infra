@@ -131,8 +131,8 @@
       "statement_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "policy_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
       "trust_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "cosign_version": "3.1.1",
-      "cosign_image_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      "cosign_version": "3.1.2",
+      "cosign_image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
     },
     "verified_signers": [
       {

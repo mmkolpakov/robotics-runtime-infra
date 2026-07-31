@@ -1,2 +1,0 @@
-(load(strenv(LEFT_DOCUMENT)) | sort_keys(..) | to_json(0)) ==
-(load(strenv(RIGHT_DOCUMENT)) | sort_keys(..) | to_json(0))

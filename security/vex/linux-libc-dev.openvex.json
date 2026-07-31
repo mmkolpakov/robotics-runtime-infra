@@ -1,9 +1,9 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-07-26",
+  "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-07-30",
   "author": "mmkolpakov",
-  "timestamp": "2026-07-26T23:20:49Z",
-  "version": 1,
+  "timestamp": "2026-07-30T07:45:00Z",
+  "version": 2,
   "statements": [
     {
       "vulnerability": {
@@ -368,6 +368,18 @@
     {
       "vulnerability": {
         "name": "CVE-2026-53159"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present"
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-53175"
       },
       "products": [
         {

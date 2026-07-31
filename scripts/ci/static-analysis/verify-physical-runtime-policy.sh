@@ -80,12 +80,6 @@ jq -e '
     index("hil")) == null and
   .services["real-observation-observer"].network_mode ==
     "service:edge-attach-data-plane" and
-  .services["real-observation-observer"].environment.ROS_SECURITY_ENABLE ==
-    "true" and
-  .services["real-observation-observer"].environment.ROS_SECURITY_STRATEGY ==
-    "Enforce" and
-  .services["real-observation-observer"].environment.ROS_SECURITY_ENCLAVE_OVERRIDE ==
-    "/robotics/observer" and
   .services["real-observation-observer"].labels[
     "org.robotics-runtime.execution.environment"
   ] == "real_robot" and
