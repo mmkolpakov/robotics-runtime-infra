@@ -46,8 +46,8 @@ run_chrony_case() (
   )
   trap '"${compose[@]}" down --volumes --remove-orphans || true' EXIT
 
-  "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 \
-    time-fixture time-evidence-chrony
+  "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 time-fixture
+  "${compose[@]}" up --detach --no-build time-evidence-chrony
   host_time_wait_for_evidence \
     "${evidence_dir}/hardware-time.otlp.json" "${compose[@]}"
   "${compose[@]}" stop --timeout 10 time-evidence-chrony time-fixture
