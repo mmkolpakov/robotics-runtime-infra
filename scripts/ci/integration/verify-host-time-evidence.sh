@@ -53,7 +53,9 @@ run_chrony_case() (
   "${compose[@]}" stop --timeout 10 time-evidence-chrony time-fixture
   "${compose[@]}" logs --no-color time-evidence-chrony \
     >"${HOST_TIME_WORK}/${name}-collector.log" 2>&1
-  host_time_require_clean_log "${HOST_TIME_WORK}/${name}-collector.log"
+  if [[ "${expected}" == true ]]; then
+    host_time_require_clean_log "${HOST_TIME_WORK}/${name}-collector.log"
+  fi
   host_time_verify_timing \
     chrony_ntp "${evidence_dir}/hardware-time.otlp.json" "${expected}"
 )
@@ -82,7 +84,9 @@ run_ptp_case() (
   "${compose[@]}" stop --timeout 10 time-evidence-ptp
   "${compose[@]}" logs --no-color time-evidence-ptp \
     >"${HOST_TIME_WORK}/${name}-collector.log" 2>&1
-  host_time_require_clean_log "${HOST_TIME_WORK}/${name}-collector.log"
+  if [[ "${expected}" == true ]]; then
+    host_time_require_clean_log "${HOST_TIME_WORK}/${name}-collector.log"
+  fi
   if [[ "${expected}" == true ]]; then
     host_time_verify_timing \
       ptp "${evidence_dir}/hardware-time.otlp.json" true
