@@ -11,9 +11,13 @@ docker compose \
   -f compose.serial.yaml \
   --profile serial-preflight \
   config --format json --output tmp/serial-compose.json
+HOST_IO_FIXTURE_IMAGE="${HOST_IO_FIXTURE_IMAGE:-local/host-io-fixture:test}" \
+ROBOTICS_CHRONY_FIXTURE_CONFIG=./config/time/chrony-fixture.conf \
+ROBOTICS_TIME_SOCKET_DIR=./tmp/time-socket \
 docker compose \
   -f compose.yaml \
   -f compose.time.yaml \
+  -f test/time/compose.yaml \
   --profile time-chrony \
   --profile time-ptp \
   config --format json --output tmp/time-compose.json
@@ -34,12 +38,25 @@ jq -e '
 jq -e '
   (.services | keys | sort) == [
     "time-evidence-chrony",
-    "time-evidence-ptp"
+    "time-evidence-ptp",
+    "time-fixture"
   ] and
-  all(.services[];
+  all([
+    .services["time-evidence-chrony"],
+    .services["time-evidence-ptp"]
+  ][];
     .network_mode == "none" and
     .read_only == true
-  )
+  ) and
+  .services["time-fixture"].user == "100:101" and
+  .services["time-fixture"].network_mode == "none" and
+  .services["time-fixture"].read_only == true and
+  .services["time-fixture"].cap_drop == ["ALL"] and
+  .services["time-fixture"].command == [
+    "chronyd", "-U", "-d", "-x", "-f", "/etc/chrony/chrony.conf"
+  ] and
+  (.services["time-fixture"].security_opt |
+    index("no-new-privileges:true")) != null
 ' tmp/time-compose.json >/dev/null
 jq -e '
   (.services | keys) == ["can-observation-client"] and

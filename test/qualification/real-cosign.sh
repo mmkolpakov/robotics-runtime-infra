@@ -48,6 +48,9 @@ artifact_arguments=(
   --evidence-index "primary=${work}/evidence-index.json"
   --mcap-summary "control-0=${work}/mcap-summary.json"
   --evidence "other_evidence:diagnostics.json=${work}/diagnostics.json"
+  --evidence "raw_mcap:recording-0.mcap=${root}/test/fixtures/playback/golden/golden_0.mcap"
+  --evidence "metrics:metrics.otlp.json=${fixtures}/metrics.otlp.json"
+  --evidence "traces:traces.otlp.jsonl=${fixtures}/traces.otlp.jsonl"
   --evidence "other_evidence:fastdds-profile.xml=${profile}"
 )
 scripts/qualification/create-statement \

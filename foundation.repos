@@ -3,8 +3,8 @@ repositories:
   robotics-runtime-contracts:
     type: git
     url: https://github.com/mmkolpakov/robotics-runtime-contracts.git
-    version: b9b2144abc3fed8e25bc1d312fb19bba20e3cbde
+    version: e81ea4baf65247b43958762b18895132fc83c309
   robotics-acceptance-harness:
     type: git
     url: https://github.com/mmkolpakov/robotics-acceptance-harness.git
-    version: 2350390b1de2bb678641c956ad7baa2eaa223498
+    version: 0cb5bb3394880ccb9106f63f8f584df8dbb34ec0

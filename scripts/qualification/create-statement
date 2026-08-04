@@ -14,6 +14,7 @@ usage: create-statement
   --acceptance-run PATH
   --result DOMAIN=PATH [--result DOMAIN=PATH ...]
   --aggregate PATH
+  [--transport-qualification PATH]
   --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
   --mcap-summary LABEL=PATH [--mcap-summary LABEL=PATH ...]
   [--extension-schema URI=PATH ...]
@@ -21,7 +22,9 @@ usage: create-statement
   --output PATH
 
 Optional evidence KIND is one of:
-  metrics, traces, junit, channel_contract, channel_observation, other_evidence
+  metrics, traces, junit, causal_chain_contract, channel_contract,
+  channel_observation, model_manifest, dataset_manifest, execution_permit,
+  execution_verification, policy, raw_mcap, other_evidence
 EOF
   exit 64
 }

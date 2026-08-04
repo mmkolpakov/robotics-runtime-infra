@@ -7,7 +7,6 @@
   <license>MIT</license>
 
   <exec_depend>diagnostic_msgs</exec_depend>
-  <exec_depend>jq</exec_depend>
   <exec_depend>lifecycle_msgs</exec_depend>
   <exec_depend>mavlink</exec_depend>
   <exec_depend>mavros</exec_depend>

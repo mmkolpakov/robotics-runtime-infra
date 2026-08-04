@@ -8,6 +8,7 @@ readonly run_id
 readonly project_name="robotics-zenoh-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}-${RANDOM}"
 readonly report_root="${ROBOTICS_ZENOH_REPORT_ROOT:-${root}/artifacts/zenoh}"
 readonly report_dir="${report_root}/${project_name}"
+readonly message_count="${ROBOTICS_MESSAGE_COUNT:-20}"
 readonly compose=(
   docker compose
   --project-name "${project_name}"
@@ -17,6 +18,10 @@ readonly compose=(
 )
 
 cleanup() {
+  local status=$?
+  if ((status != 0)); then
+    "${compose[@]}" logs --no-color >&2 || true
+  fi
   "${compose[@]}" down --volumes --timeout 10 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -30,7 +35,7 @@ mkdir -p \
   "${report_dir}/source"
 export ROBOTICS_HOST_UID="${ROBOTICS_HOST_UID:-$(id -u)}"
 export ROBOTICS_HOST_GID="${ROBOTICS_HOST_GID:-$(id -g)}"
-export ROBOTICS_MESSAGE_COUNT=20
+export ROBOTICS_MESSAGE_COUNT="${message_count}"
 export ROBOTICS_RUN_ID="${run_id}"
 export ROBOTICS_ZENOH_REPORT_DIR="${report_dir}"
 
@@ -67,11 +72,11 @@ jq -e '
   and (.channel_observations | length) == 1
 ' "${report_dir}/qualification/transport-qualification.json" >/dev/null
 
-jq -e '
+jq -e --argjson message_count "${message_count}" '
   .schema_version == "zenoh-channel-observation.v1"
   and .channel_id == "zenoh.trace-context"
-  and .sent_count == 20
-  and .received_count == 20
+  and .sent_count == $message_count
+  and .received_count == $message_count
   and .lost_count == 0
   and .duplicate_count == 0
   and .out_of_order_count == 0

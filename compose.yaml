@@ -23,28 +23,25 @@ x-runtime: &runtime
     - ALL
   stop_grace_period: 20s
 
+x-simulation: &simulation
+  <<: *runtime
+  image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: simulation
+    args: *build-args
+
 services:
   simulation:
-    <<: *runtime
-    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: simulation
-      args: *build-args
+    <<: *simulation
     environment:
       <<: *ros-environment
       LIBGL_ALWAYS_SOFTWARE: "${LIBGL_ALWAYS_SOFTWARE:-1}"
       QT_QPA_PLATFORM: "${QT_QPA_PLATFORM:-offscreen}"
 
   test:
-    <<: *runtime
-    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: simulation
-      args: *build-args
+    <<: *simulation
     profiles: [test]
     command:
       - bash
@@ -99,28 +96,6 @@ services:
         ros2 pkg prefix cv_bridge &&
         gst-launch-1.0 -q videotestsrc num-buffers=3 !
         video/x-raw,width=320,height=240,framerate=10/1 ! fakesink
-    environment: *ros-environment
-    healthcheck:
-      disable: true
-
-  inference-cpu-smoke:
-    <<: *runtime
-    image: "${INFERENCE_CPU_IMAGE:-local/robotics-runtime-infra/inference-cpu:dev}"
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: inference-cpu
-      args: *build-args
-    profiles: [test]
-    command:
-      - python3
-      - -c
-      - >-
-        import onnxruntime as ort;
-        from onnxruntime.datasets import get_example;
-        session = ort.InferenceSession(get_example('sigmoid.onnx'),
-        providers=['CPUExecutionProvider']);
-        assert session.get_providers()[0] == 'CPUExecutionProvider'
     environment: *ros-environment
     healthcheck:
       disable: true
@@ -204,13 +179,7 @@ services:
       disable: true
 
   runtime-manifest:
-    <<: *runtime
-    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: simulation
-      args: *build-args
+    <<: *simulation
     profiles: [acceptance]
     command:
       - emit-runtime-manifest

@@ -103,7 +103,7 @@ EOF
   run jq -e '
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 2
+    and .version == 3
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)

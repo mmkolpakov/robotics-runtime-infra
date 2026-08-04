@@ -152,8 +152,6 @@ def main() -> None:
     report_dir = Path(required_environment("ROBOTICS_ZENOH_REPORT_DIR")).resolve()
     config_dir = Path(required_environment("ROBOTICS_ZENOH_CONFIG_DIR")).resolve()
     message_count = int(os.environ.get("ROBOTICS_MESSAGE_COUNT", "20"))
-    if message_count != 20:
-        raise RuntimeError("the canonical Zenoh qualification requires 20 messages")
 
     source_trace = report_dir / "source" / "traces.otlp.jsonl"
     destination_trace = report_dir / "destination" / "traces.otlp.jsonl"

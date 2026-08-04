@@ -16,10 +16,16 @@ usage: verify-bundle
   --acceptance-run PATH
   --result DOMAIN=PATH [--result DOMAIN=PATH ...]
   --aggregate PATH
+  [--transport-qualification PATH]
   --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
   --mcap-summary LABEL=PATH [--mcap-summary LABEL=PATH ...]
   [--extension-schema URI=PATH ...]
   [--evidence KIND:LABEL=PATH ...]
+
+Optional evidence KIND is one of:
+  metrics, traces, junit, causal_chain_contract, channel_contract,
+  channel_observation, model_manifest, dataset_manifest, execution_permit,
+  execution_verification, policy, raw_mcap, other_evidence
 EOF
   exit 64
 }
@@ -27,6 +33,7 @@ EOF
 qualification_parse_cli verify "$@"
 qualification_require_command cosign
 qualification_require_command base64
+qualification_require_command sha256sum
 # shellcheck disable=SC2154
 qualification_require_file "$bundle"
 jq --slurp --exit-status 'length == 1' "$bundle" >/dev/null ||
@@ -42,7 +49,7 @@ else
       'identity verification requires --trusted-root and --policy'
   qualification_require_file "$trusted_root"
   qualification_require_file "$policy"
-  qualification_validate_contract "$policy" qualification-policy.v1
+  qualification_validate_contract "$policy" qualification-policy.v2
   [[ "$(qualification_sha256 "$trusted_root")" == \
     "$(jq -er '.trusted_root_sha256' "$policy")" ]] ||
     qualification_fail 'trusted root digest does not match qualification policy'
@@ -110,7 +117,7 @@ fi
 jq -er '.dsseEnvelope.payload' "$bundle" |
   base64 --decode >"$work/verified-statement.json" ||
   qualification_fail 'Sigstore bundle contains an invalid DSSE payload'
-qualification_validate_contract "$work/verified-statement.json" qualification-bundle.v1
+qualification_validate_contract "$work/verified-statement.json" qualification-bundle.v2
 
 jq -S -c . "$work/expected-statement.json" >"$work/expected.canonical.json"
 jq -S -c . "$work/verified-statement.json" >"$work/verified.canonical.json"
