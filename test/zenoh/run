@@ -40,7 +40,7 @@ export ROBOTICS_RUN_ID="${run_id}"
 export ROBOTICS_ZENOH_REPORT_DIR="${report_dir}"
 
 "${compose[@]}" config --quiet
-"${compose[@]}" up --detach --wait --wait-timeout 120 \
+"${compose[@]}" up --detach \
   zenoh-source-plane \
   zenoh-destination-plane \
   zenoh-source-bridge \

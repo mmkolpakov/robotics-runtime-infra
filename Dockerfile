@@ -6,6 +6,7 @@ ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e376701
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
 ARG RCLONE_IMAGE=rclone/rclone:sha-c99b2d1@sha256:6a2839db9d74eb6f6c9904bb264e40a1a64f831058c9d34908c65feed74664b4
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
+ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
 ARG OPA_IMAGE=openpolicyagent/opa:1.19.0-static@sha256:2f42ca765bb739b40fc23ee625b3287012acdf8120ad4fcbdab68433a17be144
 # Policy targets receive the qualified reference from Docker Bake.
@@ -298,16 +299,26 @@ LABEL org.opencontainers.image.title="Host I/O qualification fixture" \
 STOPSIGNAL SIGTERM
 CMD ["chronyd", "-d", "-x", "-f", "/etc/chrony/chrony.conf"]
 
-FROM scratch AS geographiclib-datasets
-ADD --checksum=sha256:c46224f8f723dc915d97179f4e1580a98d6c742fe2b82cd8fef0ecaaad13e614 \
-  https://sourceforge.net/projects/geographiclib/files/geoids-distrib/egm96-5.tar.bz2/download \
-  /datasets/egm96-5.tar.bz2
-ADD --checksum=sha256:6fea4c6bd56ff8ac53dbdad8d5dd505c855471d0354c4abc5c5fe048bf8350c1 \
-  https://sourceforge.net/projects/geographiclib/files/gravity-distrib/egm96.tar.bz2/download \
-  /datasets/egm96.tar.bz2
-ADD --checksum=sha256:8e71a9704c5f2714bb65581df68e30f0d84d0ad17286d00efb782e7232334c3f \
-  https://sourceforge.net/projects/geographiclib/files/magnetic-distrib/emm2015.tar.bz2/download \
-  /datasets/emm2015.tar.bz2
+FROM ${CURL_IMAGE} AS geographiclib-datasets
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+RUN install -d /tmp/datasets \
+    && curl --fail --location --retry 8 --retry-all-errors \
+      --connect-timeout 30 --max-time 180 --retry-max-time 300 \
+      --output /tmp/datasets/egm96-5.tar.bz2 \
+      https://downloads.sourceforge.net/project/geographiclib/geoids-distrib/egm96-5.tar.bz2?use_mirror=autoselect \
+    && curl --fail --location --retry 8 --retry-all-errors \
+      --connect-timeout 30 --max-time 180 --retry-max-time 300 \
+      --output /tmp/datasets/egm96.tar.bz2 \
+      https://downloads.sourceforge.net/project/geographiclib/gravity-distrib/egm96.tar.bz2?use_mirror=autoselect \
+    && curl --fail --location --retry 8 --retry-all-errors \
+      --connect-timeout 30 --max-time 180 --retry-max-time 300 \
+      --output /tmp/datasets/emm2015.tar.bz2 \
+      https://downloads.sourceforge.net/project/geographiclib/magnetic-distrib/emm2015.tar.bz2?use_mirror=autoselect \
+    && printf '%s  %s\n' \
+      c46224f8f723dc915d97179f4e1580a98d6c742fe2b82cd8fef0ecaaad13e614 /tmp/datasets/egm96-5.tar.bz2 \
+      6fea4c6bd56ff8ac53dbdad8d5dd505c855471d0354c4abc5c5fe048bf8350c1 /tmp/datasets/egm96.tar.bz2 \
+      8e71a9704c5f2714bb65581df68e30f0d84d0ad17286d00efb782e7232334c3f /tmp/datasets/emm2015.tar.bz2 \
+      | sha256sum -c
 
 FROM ${UBUNTU_BASE_IMAGE} AS mcap-amd64
 ADD --checksum=sha256:5d4100573fab880f1c6400952466275bb3b32c3d230a54f7c380ee0d08e59eef \
@@ -581,7 +592,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 COPY docker/rosdeps/edge/package.xml /tmp/rosdep/edge/package.xml
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --chmod=0444 docker/apt/ros-snapshot-key.gpg /usr/share/keyrings/ros-snapshot-key.gpg
-COPY --from=geographiclib-datasets /datasets /tmp/geographiclib
+COPY --from=geographiclib-datasets /tmp/datasets /tmp/geographiclib
 
 RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
     UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
@@ -1116,7 +1127,7 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --chmod=0444 docker/python/observability.lock /tmp/observability.lock
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --chmod=0444 docker/apt/ros-snapshot-key.gpg /usr/share/keyrings/ros-snapshot-key.gpg
-COPY --from=geographiclib-datasets /datasets /tmp/geographiclib
+COPY --from=geographiclib-datasets /tmp/datasets /tmp/geographiclib
 
 RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
     UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
