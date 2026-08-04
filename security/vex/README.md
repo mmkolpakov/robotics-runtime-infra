@@ -26,5 +26,6 @@ References:
 
 - [Ubuntu package description](https://packages.ubuntu.com/noble-updates/linux-libc-dev)
 - [CVE-2026-53175](https://nvd.nist.gov/vuln/detail/CVE-2026-53175)
+- [CVE-2026-64531](https://nvd.nist.gov/vuln/detail/CVE-2026-64531)
 - [OpenVEX specification](https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md)
 - [Trivy local VEX files](https://trivy.dev/docs/v0.72/guide/supply-chain/vex/file/)

@@ -1,9 +1,9 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-07-30",
+  "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-08-04",
   "author": "mmkolpakov",
-  "timestamp": "2026-07-30T07:45:00Z",
-  "version": 2,
+  "timestamp": "2026-08-04T17:25:00Z",
+  "version": 3,
   "statements": [
     {
       "vulnerability": {
@@ -644,6 +644,18 @@
     {
       "vulnerability": {
         "name": "CVE-2026-53359"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present"
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-64531"
       },
       "products": [
         {
