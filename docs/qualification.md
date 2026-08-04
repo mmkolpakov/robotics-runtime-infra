@@ -9,7 +9,7 @@ certificate verification remain delegated to Cosign.
 - Bash 5 or newer
 - Cosign 3.1.2
 - jq 1.6 or newer
-- robotics-runtime-contracts 0.11.0 or newer
+- robotics-runtime-contracts 0.13.0 or newer
 
 `ROBOTICS_CONTRACTS_CLI` may point to an executable from an isolated
 installation. Otherwise, the scripts resolve `robotics-contracts` from `PATH`
@@ -28,14 +28,16 @@ scripts/qualification/create-statement \
   --aggregate artifacts/acceptance-aggregate.json \
   --evidence-index control=artifacts/evidence-index-control.json \
   --mcap-summary control-0=artifacts/mcap-summary-control-0.json \
+  --evidence raw_mcap:control-0.mcap=artifacts/recording-control-0.mcap \
   --output artifacts/qualification.statement.json
 ```
 
 Labels for runtime manifests, results, and evidence indexes must equal domain
 identifiers from the acceptance run. Every domain must have exactly one of each.
-MCAP summaries must exactly match the summaries referenced by the evidence
-indexes. Additional retained evidence can be included with
-`--evidence KIND:LABEL=PATH`.
+MCAP summaries and retained `raw_mcap` files must exactly match the segments
+referenced by the evidence indexes. Additional retained evidence can be
+included with `--evidence KIND:LABEL=PATH`; supported kinds are printed by
+`create-statement --help`.
 
 Sign the complete in-toto Statement with the GitHub Actions identity:
 
@@ -47,10 +49,24 @@ cosign attest-blob \
 ```
 
 The generated statement is deterministic for unchanged inputs. Its
-`generated_at` value comes from the supplied aggregate; the producer does not
-insert its own wall-clock timestamp. Both base domain aggregation and completed
-cross-domain trace evaluation use `acceptance-aggregate.v3`; the verdict status
-records whether causality has been evaluated.
+`generated_at` value comes from the supplied `acceptance-aggregate.v4`; the
+producer does not insert its own wall-clock timestamp. When cross-domain
+causality is evaluated, `--transport-qualification` supplies the exact
+`transport-qualification-result.v1` document referenced by the aggregate. The
+document becomes a signed subject. An evaluated multi-domain package must also
+include every domain's runtime, result, and evidence index, plus the exact
+causal-chain contract, channel contract, and channel observation referenced by
+the transport result:
+
+```bash
+--transport-qualification artifacts/transport-qualification.json \
+--evidence causal_chain_contract:control-worker.json=artifacts/control-worker.json \
+--evidence channel_contract:commands.json=artifacts/commands.json \
+--evidence channel_observation:commands.json=artifacts/commands-observation.json
+```
+
+Omit all four arguments when the aggregate marks cross-domain evaluation as
+`unevaluated`.
 
 The foundation acceptance path also records
 `config/fastdds/udp-only.xml` as `other_evidence`. The same file is mounted into
@@ -61,7 +77,7 @@ profile bytes that the runtime loaded.
 
 ## Independent policy
 
-The verifier receives `qualification-policy.v1` separately from the signed
+The verifier receives `qualification-policy.v2` separately from the signed
 bundle. The policy defines:
 
 - accepted GitHub Actions certificate identities;
@@ -110,7 +126,8 @@ scripts/qualification/verify-bundle \
   --result control=artifacts/result-control.json \
   --aggregate artifacts/acceptance-aggregate.json \
   --evidence-index control=artifacts/evidence-index-control.json \
-  --mcap-summary control-0=artifacts/mcap-summary-control-0.json
+  --mcap-summary control-0=artifacts/mcap-summary-control-0.json \
+  --evidence raw_mcap:control-0.mcap=artifacts/recording-control-0.mcap
 ```
 
 Verification is ordered deliberately:
@@ -141,7 +158,8 @@ scripts/qualification/verify-bundle \
   --result control=artifacts/result-control.json \
   --aggregate artifacts/acceptance-aggregate.json \
   --evidence-index control=artifacts/evidence-index-control.json \
-  --mcap-summary control-0=artifacts/mcap-summary-control-0.json
+  --mcap-summary control-0=artifacts/mcap-summary-control-0.json \
+  --evidence raw_mcap:control-0.mcap=artifacts/recording-control-0.mcap
 ```
 
 `--key` is mutually exclusive with `--trusted-root` and `--policy`; it cannot

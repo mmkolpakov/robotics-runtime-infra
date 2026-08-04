@@ -1,0 +1,1 @@
+{"broken_relationship_status":"failed","chain_id":"primary-to-secondary","channel_contracts":[{"channel_id":"primary.commands","sha256":"5270f135813e75365833e877d8823d705f520bb347e7bd80c0def62cb4dda7a1"}],"missing_evidence_status":"incomplete","require_connected_trace_graph":true,"required_domain_ids":["primary","secondary"],"schema_version":"causal-chain.v1"}

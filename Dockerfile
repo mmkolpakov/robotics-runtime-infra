@@ -270,6 +270,8 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       linuxptp \
       systemd \
       udev \
+    && test "$(id -u _chrony):$(id -g _chrony)" = 100:101 \
+    && chmod 0755 /etc/chrony \
     && canlogserver > /tmp/canlogserver-usage 2>&1 \
     && grep -F "Usage: canlogserver" /tmp/canlogserver-usage \
     && rm /tmp/canlogserver-usage \
@@ -590,6 +592,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && export HOME=/root \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+      jq \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
     && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
@@ -1124,6 +1127,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && export HOME=/root \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+      jq \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
     && uv pip install \
       --system \

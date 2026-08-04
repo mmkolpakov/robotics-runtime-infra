@@ -2,12 +2,17 @@
 services:
   time-fixture:
     image: "${HOST_IO_FIXTURE_IMAGE}"
+    user: "${ROBOTICS_CHRONY_IDENTITY:?set fixture _chrony UID:GID}"
     init: true
     network_mode: none
+    read_only: true
+    command: [chronyd, -U, -d, -x, -f, /etc/chrony/chrony.conf]
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
     volumes:
       - type: bind
         source: "${ROBOTICS_TIME_SOCKET_DIR}"

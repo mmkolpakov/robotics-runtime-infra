@@ -10,13 +10,11 @@
 
   <depend>control_msgs</depend>
   <exec_depend>controller_manager</exec_depend>
-  <exec_depend>curl</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>gz_ros2_control</exec_depend>
   <exec_depend>image_transport</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
-  <exec_depend>jq</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>mavlink</exec_depend>

@@ -10,9 +10,10 @@ run_case() (
     docker compose -p "${project}"
     -f compose.yaml
     -f compose.playback.yaml
+    --profile playback
+    --profile test
   )
-  trap '"${compose[@]}" --profile playback --profile test
-    down --volumes --remove-orphans || true' EXIT
+  trap '"${compose[@]}" down --volumes --remove-orphans || true' EXIT
 
   export ROS_DOMAIN_ID="${domain_id}"
   if ((expect_failure)); then
@@ -21,20 +22,27 @@ run_case() (
     export ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC=4
   fi
 
-  "${compose[@]}" --profile playback --profile test \
-    up --no-build --detach playback playback-gate playback-probe
-  local status=0
-  "${compose[@]}" --profile playback --profile test \
-    wait playback-gate playback-probe || status=$?
+  "${compose[@]}" up --no-build --detach playback playback-gate playback-probe
+  "${compose[@]}" wait playback-gate playback-probe || true
+  local gate_id
+  local probe_id
+  local gate_status
+  local probe_status
+  gate_id="$("${compose[@]}" ps --all --quiet playback-gate)"
+  probe_id="$("${compose[@]}" ps --all --quiet playback-probe)"
+  [[ -n "${gate_id}" && -n "${probe_id}" ]]
+  gate_status="$(docker inspect --format '{{.State.ExitCode}}' "${gate_id}")"
+  probe_status="$(docker inspect --format '{{.State.ExitCode}}' "${probe_id}")"
 
   if ((expect_failure)); then
-    if ((status == 0)); then
-      printf 'playback timeout fixture unexpectedly passed\n' >&2
-      return 1
-    fi
-    printf 'playback timeout fixture failed closed: %s\n' "${status}"
+    test "${gate_status}" -eq 1
+    test "${probe_status}" -eq 124
+    docker logs "${probe_id}" 2>&1 | grep -Eq '^data:' && return 1
+    printf 'playback timeout fixture failed closed\n'
   else
-    return "${status}"
+    test "${gate_status}" -eq 0
+    test "${probe_status}" -eq 0
+    docker logs "${probe_id}" 2>&1 | grep -Eq '^data:'
   fi
 )
 

@@ -1,7 +1,7 @@
 {
-  "schema_version": "qualification-policy.v1",
+  "schema_version": "qualification-policy.v2",
   "policy_id": "github-main-qualification",
-  "predicate_type": "https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1",
+  "predicate_type": "https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v2",
   "certificate_identities": [
     "https://github.com/mmkolpakov/robotics-runtime-infra/.github/workflows/foundation-integration.yml@refs/heads/main"
   ],

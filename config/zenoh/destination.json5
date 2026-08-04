@@ -13,9 +13,6 @@
     },
   },
   plugins: {
-    rest: {
-      http_port: 8000,
-    },
     ros2dds: {
       nodename: "trace_context_destination_bridge",
       domain: 32,

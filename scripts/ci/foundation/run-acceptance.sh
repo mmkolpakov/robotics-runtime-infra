@@ -177,7 +177,12 @@ mapfile -t mcap_summaries < <(
     -maxdepth 1 -type f -name '*.mcap-summary.json' -print |
     LC_ALL=C sort
 )
+mapfile -t mcap_files < <(
+  find "${run_dir}/bags" -type f -name '*.mcap' -print |
+    LC_ALL=C sort
+)
 test "${#mcap_summaries[@]}" -ge 1
+test "${#mcap_files[@]}" -eq "${#mcap_summaries[@]}"
 export ROBOTICS_CONTRACTS_CLI="${root}/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
 [[ "$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)" == \
   "${fastdds_profile_sha256}" ]] || {
@@ -198,6 +203,7 @@ qualification_inputs=(
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
     --mcap-summary "primary-${index}=${mcap_summaries[$index]}"
+    --evidence "raw_mcap:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
 scripts/qualification/create-statement \
@@ -247,3 +253,5 @@ cp "${run_dir}/results/qualification-statement.json" "${artifact_dir}/"
 cp "${run_dir}/results/qualification.sigstore.json" "${artifact_dir}/"
 cp "${run_dir}/results/qualification.pub" "${artifact_dir}/"
 cp "${mcap_summaries[@]}" "${artifact_dir}/"
+mkdir -p "${artifact_dir}/raw-mcap"
+cp "${mcap_files[@]}" "${artifact_dir}/raw-mcap/"

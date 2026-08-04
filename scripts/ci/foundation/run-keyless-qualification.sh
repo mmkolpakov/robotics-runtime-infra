@@ -57,7 +57,12 @@ mapfile -t mcap_summaries < <(
   find artifacts -maxdepth 1 -type f -name '*.mcap-summary.json' -print |
     LC_ALL=C sort
 )
+mapfile -t mcap_files < <(
+  find artifacts/raw-mcap -maxdepth 1 -type f -name '*.mcap' -print |
+    LC_ALL=C sort
+)
 test "${#mcap_summaries[@]}" -ge 1
+test "${#mcap_files[@]}" -eq "${#mcap_summaries[@]}"
 
 qualification_inputs=(
   --scenario artifacts/scenario.yaml
@@ -73,6 +78,7 @@ qualification_inputs=(
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
     --mcap-summary "primary-${index}=${mcap_summaries[$index]}"
+    --evidence "raw_mcap:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
 

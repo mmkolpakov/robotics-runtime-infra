@@ -64,7 +64,7 @@ done
 [[ "$digest" == "$(sha256sum "$TEST_ROOT/artifacts/aggregate.json" | cut -d' ' -f1)" ]]
 [[ "$digest_algorithm" == sha256 ]]
 [[ "$predicate_type" == \
-  https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1 ]]
+  https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v2 ]]
 [[ "$identity" == "$COSIGN_TEST_BUNDLE_IDENTITY" &&
   "$issuer" == "$COSIGN_TEST_BUNDLE_ISSUER" ]]
 EOF
@@ -100,9 +100,9 @@ create_policy() {
     --arg issuer "$issuer" \
     --arg trusted_root_sha256 "$trusted_root_sha256" \
     '{
-      schema_version: "qualification-policy.v1",
+      schema_version: "qualification-policy.v2",
       policy_id: "qualification-main",
-      predicate_type: "https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1",
+      predicate_type: "https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v2",
       certificate_identities: [$identity],
       certificate_oidc_issuer: $issuer,
       trusted_root_sha256: $trusted_root_sha256,
@@ -136,7 +136,68 @@ primary=$TEST_ROOT/artifacts/evidence-index.json
 control-0=$TEST_ROOT/artifacts/mcap-summary.json
 --evidence
 other_evidence:diagnostics.json=$TEST_ROOT/artifacts/diagnostics.json
+--evidence
+raw_mcap:recording-0.mcap=$REPOSITORY_ROOT/test/fixtures/playback/golden/golden_0.mcap
+--evidence
+metrics:metrics.otlp.json=$FIXTURES/metrics.otlp.json
+--evidence
+traces:traces.otlp.jsonl=$FIXTURES/traces.otlp.jsonl
 EOF
+  if [[ -f "$TEST_ROOT/artifacts/transport.json" ]]; then
+    cat <<EOF
+--runtime-manifest
+secondary=$TEST_ROOT/artifacts/runtime.json
+--result
+secondary=$TEST_ROOT/artifacts/result-secondary.json
+--transport-qualification
+$TEST_ROOT/artifacts/transport.json
+--evidence-index
+secondary=$TEST_ROOT/artifacts/evidence-index-secondary.json
+--evidence
+causal_chain_contract:primary-to-secondary.json=$FIXTURES/transport-causal-chain.json
+--evidence
+channel_contract:primary-commands.json=$FIXTURES/transport-channel.json
+--evidence
+channel_observation:primary-commands-observation.json=$FIXTURES/transport-channel-observation.json
+--evidence
+traces:traces-secondary.otlp.jsonl=$FIXTURES/traces-secondary.otlp.jsonl
+--evidence
+other_evidence:zenoh-source.json5=$REPOSITORY_ROOT/config/zenoh/source.json5
+EOF
+  fi
+}
+
+create_evaluated_artifacts() {
+  local artifacts="$TEST_ROOT/artifacts"
+  cp "$FIXTURES/acceptance-run-transport.json" "$artifacts/run.json"
+  cp "$FIXTURES/acceptance-result-secondary.json" \
+    "$artifacts/result-secondary.json"
+  cp "$FIXTURES/evidence-index-secondary.json" \
+    "$artifacts/evidence-index-secondary.json"
+  cp "$FIXTURES/transport-qualification.json" "$artifacts/transport.json"
+  cp "$FIXTURES/acceptance-aggregate-transport.json" \
+    "$artifacts/aggregate.json"
+  jq '
+    .required_artifact_kinds += [
+      "transport_qualification",
+      "causal_chain_contract",
+      "channel_contract",
+      "channel_observation"
+    ]
+  ' "$artifacts/policy.json" >"$artifacts/policy.updated.json"
+  mv "$artifacts/policy.updated.json" "$artifacts/policy.json"
+}
+
+bind_primary_runtime() {
+  local artifacts="$TEST_ROOT/artifacts"
+  jq --arg digest "$(sha256 "$artifacts/runtime.json")" \
+    '.runtime_manifest_sha256 = $digest' \
+    "$artifacts/result.json" >"$artifacts/result.updated.json"
+  mv "$artifacts/result.updated.json" "$artifacts/result.json"
+  jq --arg digest "$(sha256 "$artifacts/result.json")" \
+    '.per_domain_results[0].result_sha256 = $digest' \
+    "$artifacts/aggregate.json" >"$artifacts/aggregate.updated.json"
+  mv "$artifacts/aggregate.updated.json" "$artifacts/aggregate.json"
 }
 
 create_statement_and_bundle() {
@@ -166,6 +227,16 @@ verify_bundle() {
 }
 
 @test "verifies a bundle with the exact local subject set" {
+  create_statement_and_bundle
+
+  run verify_bundle
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'qualification bundle verified'* ]]
+}
+
+@test "verifies a fully bound evaluated transport qualification" {
+  create_evaluated_artifacts
   create_statement_and_bundle
 
   run verify_bundle
@@ -225,7 +296,7 @@ verify_bundle() {
     "${args[@]}" --output "$TEST_ROOT/artifacts/invalid-statement.json"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"one or more documents do not satisfy"* ]]
+  [[ "$output" == *"does not satisfy acceptance-result.v4"* ]]
 }
 
 @test "rejects an unretained Fast DDS profile referenced by a runtime manifest" {
@@ -237,12 +308,14 @@ verify_bundle() {
     >"$TEST_ROOT/artifacts/runtime.with-profile.json"
   mv "$TEST_ROOT/artifacts/runtime.with-profile.json" \
     "$TEST_ROOT/artifacts/runtime.json"
+  bind_primary_runtime
 
   run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
     "${args[@]}" --output "$TEST_ROOT/artifacts/missing-profile-statement.json"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"references an absent Fast DDS profile"* ]]
+  [[ "$output" == *"runtime manifest primary Fast DDS profile"* ]]
+  [[ "$output" == *"retained raw artifact"* ]]
 }
 
 @test "binds a runtime manifest to retained Fast DDS profile bytes" {
@@ -255,18 +328,7 @@ verify_bundle() {
     >"$TEST_ROOT/artifacts/runtime.with-profile.json"
   mv "$TEST_ROOT/artifacts/runtime.with-profile.json" \
     "$TEST_ROOT/artifacts/runtime.json"
-  jq --arg digest "$(sha256 "$TEST_ROOT/artifacts/runtime.json")" \
-    '.runtime_manifest_sha256 = $digest' \
-    "$TEST_ROOT/artifacts/result.json" \
-    >"$TEST_ROOT/artifacts/result.with-runtime.json"
-  mv "$TEST_ROOT/artifacts/result.with-runtime.json" \
-    "$TEST_ROOT/artifacts/result.json"
-  jq --arg digest "$(sha256 "$TEST_ROOT/artifacts/result.json")" \
-    '.per_domain_results[0].result_sha256 = $digest' \
-    "$TEST_ROOT/artifacts/aggregate.json" \
-    >"$TEST_ROOT/artifacts/aggregate.with-result.json"
-  mv "$TEST_ROOT/artifacts/aggregate.with-result.json" \
-    "$TEST_ROOT/artifacts/aggregate.json"
+  bind_primary_runtime
   mapfile -t args < <(artifact_arguments)
 
   run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \

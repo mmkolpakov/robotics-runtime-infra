@@ -4,7 +4,7 @@ x-zenoh-probe-environment: &zenoh-probe-environment
   PYTHONUNBUFFERED: "1"
   RCUTILS_COLORIZED_OUTPUT: "0"
   RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
-  ROBOTICS_MESSAGE_COUNT: "20"
+  ROBOTICS_MESSAGE_COUNT: "${ROBOTICS_MESSAGE_COUNT:-20}"
   ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
   ROBOTICS_TOPIC: /robotics/trace_context
   ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
@@ -149,17 +149,6 @@ services:
       - python3
       - /opt/robotics/zenoh/probe.py
       - subscribe
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          curl --fail --silent --show-error --max-time 2
-          'http://127.0.0.1:8000/@/local/ros2/route/topic/sub/robotics/trace_context'
-          | jq -e 'any(.[]; .value.is_active == true)' >/dev/null
-      interval: 1s
-      timeout: 3s
-      retries: 120
-      start_period: 2s
     depends_on:
       zenoh-destination-bridge:
         condition: service_started
