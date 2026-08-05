@@ -1,0 +1,4 @@
+{
+  "device_type": "CPU",
+  "load_config": "{\"CPU\":{\"PERFORMANCE_HINT\":\"THROUGHPUT\"}}"
+}

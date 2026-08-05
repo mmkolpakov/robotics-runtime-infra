@@ -155,11 +155,11 @@ rfc3987-syntax==1.1.0 \
     --hash=sha256:6c3d97604e4c5ce9f714898e05401a0445a641cfa276432b0a648c80856f6a3f \
     --hash=sha256:717a62cbf33cffdd16dfa3a497d81ce48a660ea691b1ddd7be710c22f00b4a0d
     # via jsonschema
-robotics-acceptance-harness @ https://github.com/mmkolpakov/robotics-acceptance-harness/releases/download/v0.14.0/robotics_acceptance_harness-0.14.0-py3-none-any.whl \
-    --hash=sha256:ccc52860092c4bba8f4041f9a55abed2599e69d75a3743852eaae301eac3c412
+robotics-acceptance-harness @ https://github.com/mmkolpakov/robotics-acceptance-harness/releases/download/v0.15.0/robotics_acceptance_harness-0.15.0-py3-none-any.whl \
+    --hash=sha256:57964bb0815ebc2d274e5c001b50c675e7f0faf131476b89cd6e6a1247287563
     # via -r docker/python/acceptance-observer.in
-robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.13.0/robotics_runtime_contracts-0.13.0-py3-none-any.whl \
-    --hash=sha256:892baa7ae85fb18e5916883831d9370f55aa0d3c2bb7479b925a615679b97d54
+robotics-runtime-contracts @ https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.14.0/robotics_runtime_contracts-0.14.0-py3-none-any.whl \
+    --hash=sha256:a4ce170995432807d8210c5d4bfea18f370d49a38f79852013946488f26416db
     # via
     #   -r docker/python/acceptance-observer.in
     #   robotics-acceptance-harness

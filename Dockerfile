@@ -747,19 +747,13 @@ USER ubuntu
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD ["python3", "-c", "import onnxruntime as ort; assert 'CPUExecutionProvider' in ort.get_available_providers()"]
 
-FROM edge-runtime AS inference-intel
+FROM edge-runtime AS inference-intel-cpu
 
 USER root
 COPY --from=uv /uv /uvx /usr/local/bin/
-COPY --from=intel-gpu-packages /packages /tmp/intel-gpu
 COPY docker/python/inference-intel.lock /tmp/python/inference-intel.lock
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-      clinfo \
-      ocl-icd-libopencl1 \
-      /tmp/intel-gpu/*.deb \
-    && uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
+RUN uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
@@ -768,20 +762,38 @@ RUN apt-get update \
       --requirement /tmp/python/inference-intel.lock \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
+    && rm -rf /home/ubuntu/.cache/uv /tmp/python
+
+ENV PATH="/opt/venv/bin:${PATH}"
+
+LABEL org.opencontainers.image.title="Robotics Intel CPU inference runtime" \
+      org.opencontainers.image.description="ONNX Runtime OpenVINO CPU provider on ROS 2 Jazzy."
+
+USER ubuntu
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD ["python3", "-c", "import onnxruntime as ort; assert 'OpenVINOExecutionProvider' in ort.get_available_providers()"]
+
+FROM inference-intel-cpu AS inference-intel-gpu
+
+USER root
+COPY --from=intel-gpu-packages /packages /tmp/intel-gpu
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      clinfo \
+      ocl-icd-libopencl1 \
+      /tmp/intel-gpu/*.deb \
     && rm -rf \
-      /home/ubuntu/.cache/uv \
       /tmp/intel-gpu \
-      /tmp/python \
       /var/cache/ldconfig/aux-cache \
       /var/lib/apt/lists/* \
       /var/log/apt/* \
       /var/log/alternatives.log \
       /var/log/dpkg.log
 
-ENV PATH="/opt/venv/bin:${PATH}"
-
-LABEL org.opencontainers.image.title="Robotics Intel inference runtime" \
-      org.opencontainers.image.description="ONNX Runtime OpenVINO provider for explicit Intel CPU and GPU execution on ROS 2 Jazzy."
+LABEL org.opencontainers.image.title="Robotics Intel GPU inference runtime" \
+      org.opencontainers.image.description="ONNX Runtime OpenVINO GPU provider with pinned Intel compute packages on ROS 2 Jazzy."
 
 USER ubuntu
 
@@ -994,6 +1006,8 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
     && rm -rf /home/ubuntu/.cache/uv /tmp/python
 
 COPY --chmod=0444 test/provider-conformance/test_provider.py /opt/provider-conformance/test_provider.py
+COPY --chmod=0444 probes/robotics_inference_conformance.py \
+  /opt/provider-conformance/robotics_inference_conformance.py
 
 ENV ROBOTICS_EXPECTED_PROVIDER=${PROVIDER_CONFORMANCE_EXPECTED_PROVIDER} \
     ROBOTICS_PROVIDER_REPORT=/reports/provider-conformance.json
@@ -1020,10 +1034,13 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv,ro \
       --no-cache \
       --requirement /tmp/python/sensor-inference-probe.lock \
     && rm -rf /home/ubuntu/.cache/uv /tmp/python
-COPY --chmod=0444 probes/sensor_inference/robotics_sensor_inference \
+COPY probes/sensor_inference/robotics_sensor_inference \
   /opt/robotics/probes/robotics_sensor_inference
+COPY --chmod=0444 probes/robotics_inference_conformance.py \
+  /opt/robotics/probes/robotics_inference_conformance.py
 ENV PYTHONPATH="/opt/robotics/probes"
 USER ubuntu
+RUN python3 -c "import importlib.util; assert importlib.util.find_spec('robotics_sensor_inference.__main__')"
 CMD ["python3", "-m", "robotics_sensor_inference"]
 
 HEALTHCHECK NONE

@@ -12,42 +12,59 @@ x-intel-runtime: &intel-runtime
     - no-new-privileges:true
   cap_drop:
     - ALL
+  healthcheck:
+    disable: true
 
-x-intel-conformance: &intel-conformance
+x-intel-gpu-conformance: &intel-gpu-conformance
   <<: *intel-runtime
   # yamllint disable-line rule:line-length
-  image: "${INFERENCE_INTEL_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-intel:dev}"
+  image: "${INFERENCE_INTEL_GPU_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-intel-gpu:dev}"
   build:
     context: .
     dockerfile: Dockerfile
     target: provider-conformance
     args:
       <<: *build-args
-      PROVIDER_CONFORMANCE_BASE: inference-intel
+      PROVIDER_CONFORMANCE_BASE: inference-intel-gpu
       PROVIDER_CONFORMANCE_EXPECTED_PROVIDER: OpenVINOExecutionProvider
-      PROVIDER_CONFORMANCE_TITLE: Robotics Intel provider conformance
+      PROVIDER_CONFORMANCE_TITLE: Robotics Intel GPU provider conformance
       PROVIDER_CONFORMANCE_DESCRIPTION: >-
-        Hardware gate for explicit OpenVINO device identity, fallback, and tensor parity.
-  healthcheck:
-    disable: true
+        Hardware gate for explicit OpenVINO GPU identity, fallback, and tensor parity.
 
 services:
   provider-conformance-intel-cpu:
-    <<: *intel-conformance
+    <<: *intel-runtime
+    # yamllint disable-line rule:line-length
+    image: "${INFERENCE_INTEL_CPU_CONFORMANCE_IMAGE:-local/robotics-runtime-infra/provider-conformance-intel-cpu:dev}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: provider-conformance
+      args:
+        <<: *build-args
+        PROVIDER_CONFORMANCE_BASE: inference-intel-cpu
+        PROVIDER_CONFORMANCE_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+        PROVIDER_CONFORMANCE_TITLE: Robotics Intel CPU provider conformance
+        PROVIDER_CONFORMANCE_DESCRIPTION: >-
+          CI gate for explicit OpenVINO CPU identity, fallback, and tensor parity.
     profiles: [conformance-intel-cpu]
     environment:
       ROBOTICS_EXPECTED_PROVIDER: OpenVINOExecutionProvider
       ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
-      ROBOTICS_PROVIDER_OPTIONS: '{"device_type":"CPU"}'
+      ROBOTICS_PROVIDER_OPTIONS_FILE: /etc/robotics/inference/provider-options.json
       ROBOTICS_PROVIDER_REPORT: /reports/provider-conformance.json
       ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
     volumes:
+      - type: bind
+        source: "${ROBOTICS_OPENVINO_CONFIG:-./config/inference/openvino-cpu-latency.json}"
+        target: /etc/robotics/inference/provider-options.json
+        read_only: true
       - type: bind
         source: "${ROBOTICS_PROVIDER_REPORT_DIR:-./artifacts/provider-conformance/intel-cpu}"
         target: /reports
 
   provider-conformance-intel-gpu-linux:
-    <<: *intel-conformance
+    <<: *intel-gpu-conformance
     profiles: [conformance-intel-gpu-linux]
     devices:
       # yamllint disable-line rule:line-length
@@ -66,7 +83,7 @@ services:
         target: /reports
 
   provider-conformance-intel-gpu-wsl:
-    <<: *intel-conformance
+    <<: *intel-gpu-conformance
     profiles: [conformance-intel-gpu-wsl]
     devices:
       - /dev/dxg:/dev/dxg

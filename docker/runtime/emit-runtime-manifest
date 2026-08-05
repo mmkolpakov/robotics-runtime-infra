@@ -41,8 +41,67 @@ done
 
 [[ "${ROBOTICS_OCI_REFERENCE}" == *@"${ROBOTICS_OCI_DIGEST}" ]] || \
   fail 'ROBOTICS_OCI_REFERENCE must end with ROBOTICS_OCI_DIGEST'
-[[ "${ROBOTICS_WORKLOAD_KIND:-none}" == none ]] || \
-  fail 'this emitter supports the domain-neutral no-inference runtime only'
+workload_kind="${ROBOTICS_WORKLOAD_KIND:-none}"
+case "${workload_kind}" in
+  none)
+    workload='{"kind":"none"}'
+    ;;
+  inference)
+    for variable in \
+      ROBOTICS_MODEL_MANIFEST_SHA256 \
+      ROBOTICS_MODEL_ARTIFACT_SHA256 \
+      ROBOTICS_MODEL_FORMAT \
+      ROBOTICS_INFERENCE_RUNTIME_FAMILY \
+      ROBOTICS_INFERENCE_RUNTIME_VERSION \
+      ROBOTICS_REQUESTED_PROVIDER \
+      ROBOTICS_ACTUAL_PROVIDER \
+      ROBOTICS_FALLBACK_COUNT \
+      ROBOTICS_ACCELERATOR_VENDOR \
+      ROBOTICS_ACCELERATOR_DEVICE_CLASS \
+      ROBOTICS_ACCELERATOR_DEVICE_ID; do
+      required "$variable"
+    done
+    [[ "${ROBOTICS_FALLBACK_COUNT}" =~ ^[0-9]+$ ]] || \
+      fail 'ROBOTICS_FALLBACK_COUNT must be a non-negative integer'
+    workload="$(jq -cS -n \
+      --arg model_manifest_sha256 "${ROBOTICS_MODEL_MANIFEST_SHA256}" \
+      --arg model_artifact_sha256 "${ROBOTICS_MODEL_ARTIFACT_SHA256}" \
+      --arg model_format "${ROBOTICS_MODEL_FORMAT}" \
+      --arg runtime_family "${ROBOTICS_INFERENCE_RUNTIME_FAMILY}" \
+      --arg runtime_version "${ROBOTICS_INFERENCE_RUNTIME_VERSION}" \
+      --arg requested_provider "${ROBOTICS_REQUESTED_PROVIDER}" \
+      --arg actual_provider "${ROBOTICS_ACTUAL_PROVIDER}" \
+      --argjson fallback_count "${ROBOTICS_FALLBACK_COUNT}" \
+      --arg accelerator_vendor "${ROBOTICS_ACCELERATOR_VENDOR}" \
+      --arg accelerator_device_class "${ROBOTICS_ACCELERATOR_DEVICE_CLASS}" \
+      --arg accelerator_device_id "${ROBOTICS_ACCELERATOR_DEVICE_ID}" \
+      --arg openvino_version "${ROBOTICS_OPENVINO_VERSION:-}" \
+      '{
+        kind: "inference",
+        model: {
+          manifest_sha256: $model_manifest_sha256,
+          artifact_sha256: $model_artifact_sha256,
+          format: $model_format
+        },
+        inference: {
+          runtime_family: $runtime_family,
+          runtime_version: $runtime_version,
+          requested_provider: $requested_provider,
+          actual_provider: $actual_provider,
+          fallback_count: $fallback_count
+        },
+        accelerator: ({
+          vendor: $accelerator_vendor,
+          device_class: $accelerator_device_class,
+          device_id: $accelerator_device_id
+        } + if $openvino_version == "" then {}
+          else {openvino_version: $openvino_version} end)
+      }')"
+    ;;
+  *)
+    fail "unsupported ROBOTICS_WORKLOAD_KIND: ${workload_kind}"
+    ;;
+esac
 
 architecture="$(uname -m)"
 case "$architecture" in
@@ -68,6 +127,28 @@ shm_transport="$(boolean "${ROBOTICS_SHM_TRANSPORT:-false}")"
 data_sharing="$(boolean "${ROBOTICS_DATA_SHARING:-false}")"
 private_ipc="$(boolean "${ROBOTICS_PRIVATE_IPC:-false}")"
 
+configuration_artifacts='[]'
+append_configuration_artifact() {
+  local kind="$1"
+  local path="$2"
+  local digest
+  [[ -z "${path}" ]] && return
+  [[ -r "${path}" ]] || fail "${kind} configuration is not readable: ${path}"
+  digest="$(sha256sum "${path}" | cut -d' ' -f1)"
+  configuration_artifacts="$(
+    jq -c --arg kind "${kind}" --arg sha256 "${digest}" \
+      '. + [{kind: $kind, sha256: $sha256}]' \
+      <<<"${configuration_artifacts}"
+  )"
+}
+
+append_configuration_artifact \
+  inference_provider "${ROBOTICS_INFERENCE_PROVIDER_CONFIG:-}"
+append_configuration_artifact \
+  host_topology "${ROBOTICS_HOST_TOPOLOGY_CONFIG:-}"
+append_configuration_artifact \
+  runtime_resources "${ROBOTICS_RUNTIME_RESOURCES_CONFIG:-}"
+
 fastdds_profile_sha256=''
 if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" && -f "${FASTRTPS_DEFAULT_PROFILES_FILE}" ]]; then
   fastdds_profile_sha256="$(sha256sum "${FASTRTPS_DEFAULT_PROFILES_FILE}" | cut -d' ' -f1)"
@@ -80,7 +161,13 @@ security_policy_digests="$(jq -Rc 'split(",") | map(select(length > 0))' \
 
 gazebo='null'
 if [[ "${ROBOTICS_DATA_SOURCE:-gazebo}" == gazebo ]]; then
-  gazebo_version="$(gz sim --versions | head -n 1)"
+  if command -v gz >/dev/null 2>&1; then
+    gazebo_version="$(gz sim --versions | head -n 1)"
+  else
+    gazebo_version="${ROBOTICS_GAZEBO_VERSION:-}"
+    [[ -n "${gazebo_version}" ]] || \
+      fail 'ROBOTICS_GAZEBO_VERSION is required when gz is unavailable'
+  fi
   gazebo="$(jq -n --arg version "$gazebo_version" '{
     collection: "harmonic",
     version: $version,
@@ -123,10 +210,12 @@ jq -n \
   --argjson shm_transport "$shm_transport" \
   --argjson data_sharing "$data_sharing" \
   --argjson private_ipc "$private_ipc" \
+  --argjson configuration_artifacts "$configuration_artifacts" \
+  --argjson workload "$workload" \
   --argjson security_enclaves "$security_enclaves" \
   --argjson security_policy_digests "$security_policy_digests" \
   '{
-    schema_version: "runtime-manifest.v1",
+    schema_version: "runtime-manifest.v2",
     runtime_id: $runtime_id,
     generated_at: $generated_at,
     oci_image: {reference: $image_reference, digest: $image_digest},
@@ -143,7 +232,7 @@ jq -n \
     },
     ros: {distribution: "jazzy", rmw_implementation: $rmw},
     render: {mode: $render_mode, renderer: $renderer},
-    workload: {kind: "none"},
+    workload: $workload,
     execution: {
       target_environment: $target_environment,
       data_source: $data_source,
@@ -177,6 +266,8 @@ jq -n \
       drift_ppm: 0
     }
   }
+  + if ($configuration_artifacts | length) == 0 then {}
+    else {configuration_artifacts: $configuration_artifacts} end
   + if $gazebo == null then {} else {gazebo: $gazebo} end' >"$temporary"
 
 chmod 0444 "$temporary"

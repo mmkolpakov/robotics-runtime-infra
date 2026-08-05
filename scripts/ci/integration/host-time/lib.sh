@@ -53,6 +53,7 @@ expected = sys.argv[2] == "true"
 result = evaluate_hardware_timing(
     {
         "clock_sync_protocol": sys.argv[1],
+        "time_authority_min_samples": 1,
         "max_clock_offset_ms": 5,
         "max_clock_drift_ppm": 20,
         "max_message_age_ms": 1000,

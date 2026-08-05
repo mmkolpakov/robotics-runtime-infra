@@ -25,7 +25,7 @@ env:
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
   ROBOTICS_CONTRACTS_REQUIREMENT: >-
     robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.13.0/robotics_runtime_contracts-0.13.0-py3-none-any.whl#sha256=892baa7ae85fb18e5916883831d9370f55aa0d3c2bb7479b925a615679b97d54
+    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.14.0/robotics_runtime_contracts-0.14.0-py3-none-any.whl#sha256=a4ce170995432807d8210c5d4bfea18f370d49a38f79852013946488f26416db
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -350,25 +350,48 @@ jobs:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
       VERSION: intel-ci
       # yamllint disable-line rule:line-length
-      INFERENCE_INTEL_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/inference-intel:intel-ci
+      INFERENCE_INTEL_CPU_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/inference-intel-cpu:intel-ci
       # yamllint disable-line rule:line-length
-      INFERENCE_INTEL_CONFORMANCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/provider-conformance-intel:intel-ci
+      INFERENCE_INTEL_GPU_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/inference-intel-gpu:intel-ci
+      # yamllint disable-line rule:line-length
+      INFERENCE_INTEL_CPU_CONFORMANCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/provider-conformance-intel-cpu:intel-ci
+      # yamllint disable-line rule:line-length
+      INFERENCE_INTEL_GPU_CONFORMANCE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/provider-conformance-intel-gpu:intel-ci
+      # yamllint disable-line rule:line-length
+      SENSOR_INFERENCE_INTEL_CPU_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/sensor-inference-intel-cpu:intel-ci
+      # yamllint disable-line rule:line-length
+      SIMULATION_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/simulation:intel-ci
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-buildx
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+        with:
+          version: "0.11.28"
+          enable-cache: false
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
       - name: Build the Intel runtime and conformance images
         run: >-
-          docker buildx bake --file docker-bake.hcl intel
+          docker buildx bake --file docker-bake.hcl intel simulation
           --load
           --set '*.platform=linux/amd64'
           --set '*.cache-from=type=gha,scope=runtime-infra-intel-amd64'
           --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-intel-amd64'
       - name: Verify OpenVINO CPU execution without fallback
         run: scripts/ci/intel-image/verify-openvino-cpu-execution-without-fallback.sh
+      - name: Verify the OpenVINO CPU sensor path
+        env:
+          ROBOTICS_ACCELERATOR: intel-cpu
+          ROBOTICS_BUILD_IMAGES: "0"
+        run: test/accelerators/run-sensor-inference
+      - name: Validate Intel runtime evidence
+        run: |
+          source scripts/ci/lib.sh
+          ci_validate_contract_documents \
+            artifacts/sensor-inference/runtime-manifest.json \
+            artifacts/sensor-inference/model/model-manifest.json
       - name: Scan Intel runtime images
         run: scripts/ci/security/scan-bake-group.sh intel
       - name: Upload Intel scan results
@@ -376,7 +399,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-intel-${{ github.sha }}
-          path: artifacts/security/
+          path: |
+            artifacts/provider-conformance/intel-cpu/
+            artifacts/security/
+            artifacts/sensor-inference/
           if-no-files-found: error
           retention-days: 7
   portable-arm64:

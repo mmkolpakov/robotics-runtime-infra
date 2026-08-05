@@ -7,6 +7,9 @@ services:
       - robotics_runtime_infra
       - camera.launch.py
 
+  otel-collector:
+    user: "1000:1000"
+
   sensor-inference-probe:
     image: "${SENSOR_INFERENCE_IMAGE:-local/robotics-runtime-infra/sensor-inference-cpu:dev}"
     build:

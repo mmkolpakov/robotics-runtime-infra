@@ -5,6 +5,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=scripts/ci/foundation/lib.sh
 source "${script_dir}/lib.sh"
 
+readonly evidence_metrics_segment_index=900000
+
 root="$(foundation_repository_root)"
 cd "${root}"
 
@@ -22,10 +24,12 @@ run_dir="${root}/runs/${project}"
 rm -rf "${run_dir}"
 mkdir -p \
   "${run_dir}/bags" \
+  "${run_dir}/configuration" \
   "${run_dir}/evidence" \
   "${run_dir}/results" \
   "${artifact_dir}"
 cp test/acceptance/stepped-smoke.yaml "${run_dir}/scenario.yaml"
+lscpu --json >"${run_dir}/configuration/host-topology.json"
 
 export ROBOTICS_RUN_ID
 ROBOTICS_RUN_ID="$(
@@ -117,11 +121,35 @@ collector_health_address="$("${compose[@]}" port otel-collector 13133)"
 curl --fail --silent --show-error \
   --retry 10 --retry-connrefused --retry-delay 1 \
   "http://${collector_health_address}/"
+simulation_container="$("${compose[@]}" ps -q simulation)"
+test -n "${simulation_container}"
+runtime_resources="${artifact_dir}/runtime-resources.json"
+docker inspect "${simulation_container}" | jq '.[0].HostConfig | {
+  NanoCpus,
+  CpuPeriod,
+  CpuQuota,
+  CpusetCpus,
+  Memory,
+  MemorySwap,
+  ShmSize
+}' >"${runtime_resources}"
+sudo install -o 1000 -g 1000 -m 0644 \
+  "${runtime_resources}" \
+  "${run_dir}/configuration/runtime-resources.json"
+rm "${runtime_resources}"
+export ROBOTICS_HOST_TOPOLOGY_CONFIG=/run/robotics/configuration/host-topology.json
+export ROBOTICS_RUNTIME_RESOURCES_CONFIG=/run/robotics/configuration/runtime-resources.json
 "${compose[@]}" --profile acceptance run --rm runtime-manifest
+foundation_validate_document \
+  dependencies/robotics-runtime-contracts/.venv/bin/python \
+  "${run_dir}/runtime-manifest.json"
 fastdds_profile="${root}/config/fastdds/udp-only.xml"
 fastdds_profile_sha256="$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)"
 jq -e --arg digest "${fastdds_profile_sha256}" \
-  '.data_plane.fastdds_profile_sha256 == $digest' \
+  '.schema_version == "runtime-manifest.v2" and
+   .data_plane.fastdds_profile_sha256 == $digest and
+   ([.configuration_artifacts[].kind] | sort) ==
+     ["host_topology", "runtime_resources"]' \
   "${run_dir}/runtime-manifest.json" >/dev/null
 "${compose[@]}" --profile acceptance --profile observability \
   up --detach --no-build --wait --wait-timeout 120 \
@@ -148,7 +176,8 @@ sleep 2
 test -s "${run_dir}/evidence/metrics.otlp.json"
 "${compose[@]}" --profile evidence run --rm --no-deps \
   evidence-sink artifact \
-  /evidence/metrics.otlp.json application/json 900000
+  /evidence/metrics.otlp.json application/json \
+  "${evidence_metrics_segment_index}"
 "${compose[@]}" --profile record stop recorder
 "${compose[@]}" --profile evidence run --rm evidence-finalize
 observer_status="$(docker wait "${observer}")"
@@ -199,6 +228,8 @@ qualification_inputs=(
   --evidence "metrics:metrics.otlp.json=${run_dir}/evidence/metrics.otlp.json"
   --evidence "junit:junit.xml=${run_dir}/results/junit.xml"
   --evidence "other_evidence:fastdds-profile.xml=${fastdds_profile}"
+  --evidence "other_evidence:host-topology.json=${run_dir}/configuration/host-topology.json"
+  --evidence "other_evidence:runtime-resources.json=${run_dir}/configuration/runtime-resources.json"
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(

@@ -9,7 +9,7 @@ certificate verification remain delegated to Cosign.
 - Bash 5 or newer
 - Cosign 3.1.2
 - jq 1.6 or newer
-- robotics-runtime-contracts 0.13.0 or newer (Python 3.12+ for local installs)
+- robotics-runtime-contracts 0.14.0 or newer (Python 3.12+ for local installs)
 
 `ROBOTICS_CONTRACTS_CLI` may point to an executable from an isolated
 installation. Otherwise, the scripts resolve `robotics-contracts` from `PATH`
