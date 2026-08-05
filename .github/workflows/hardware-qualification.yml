@@ -106,7 +106,7 @@ jobs:
               environment=accelerator-intel-native
               expected_arch=amd64
               expected_provider=OpenVINOExecutionProvider
-              image_env=INFERENCE_INTEL_CONFORMANCE_IMAGE
+              image_env=INFERENCE_INTEL_GPU_CONFORMANCE_IMAGE
               overlay=compose.intel.yaml
               profile=conformance-intel-gpu-linux
               report_kind=onnxruntime
@@ -117,7 +117,7 @@ jobs:
               environment=accelerator-intel-wsl
               expected_arch=amd64
               expected_provider=OpenVINOExecutionProvider
-              image_env=INFERENCE_INTEL_CONFORMANCE_IMAGE
+              image_env=INFERENCE_INTEL_GPU_CONFORMANCE_IMAGE
               overlay=compose.intel.yaml
               profile=conformance-intel-gpu-wsl
               report_kind=onnxruntime

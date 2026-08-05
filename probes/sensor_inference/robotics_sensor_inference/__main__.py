@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -21,6 +22,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from rclpy.node import Node
+from robotics_inference_conformance import profiled_providers, provider_options
 from sensor_msgs.msg import Image, LaserScan
 
 SERVICE_NAME: Final = "robotics-sensor-inference-probe"
@@ -62,6 +64,9 @@ class SensorInferenceProbe(Node):
         self.received = 0
         self.inferred = 0
         self.latencies_ms: list[float] = []
+        self.maximum_absolute_error = 0.0
+        self.numerical_parity = True
+        self.samples: list[np.ndarray] = []
         self.started_ns = time.monotonic_ns()
         self.done = False
 
@@ -74,10 +79,18 @@ class SensorInferenceProbe(Node):
         options = ort.SessionOptions()
         if self.expected_provider != "CPUExecutionProvider":
             options.add_session_config_entry("session.disable_cpu_ep_fallback", "1")
+        options.enable_profiling = True
+        options.profile_file_prefix = "/tmp/robotics-sensor-inference-profile"
+        self.provider_options, self.provider_options_sha256 = provider_options()
+        self.model_path = Path(get_example("sigmoid.onnx"))
+        self.model_artifact_sha256 = hashlib.sha256(
+            self.model_path.read_bytes()
+        ).hexdigest()
         self.session = ort.InferenceSession(
-            get_example("sigmoid.onnx"),
+            self.model_path,
             sess_options=options,
             providers=[self.expected_provider],
+            provider_options=[self.provider_options],
         )
         self.session.disable_fallback()
         if self.session.get_providers()[0] != self.expected_provider:
@@ -86,6 +99,17 @@ class SensorInferenceProbe(Node):
             )
 
         self.model_input = self.session.get_inputs()[0]
+        self.reference_session = ort.InferenceSession(
+            self.model_path,
+            providers=["CPUExecutionProvider"],
+        )
+        self.reference_input = self.reference_session.get_inputs()[0]
+        self.relative_tolerance = float(
+            os.environ.get("ROBOTICS_PROVIDER_RTOL", "1e-5")
+        )
+        self.absolute_tolerance = float(
+            os.environ.get("ROBOTICS_PROVIDER_ATOL", "1e-6")
+        )
         self.input_shape = [
             dimension if isinstance(dimension, int) else 2
             for dimension in self.model_input.shape
@@ -145,6 +169,7 @@ class SensorInferenceProbe(Node):
         self.received += 1
         self.received_counter.add(1, self.attributes)
         tensor = np.resize(values, self.input_size).reshape(self.input_shape)
+        self.samples.append(tensor.copy())
 
         started_ns = time.perf_counter_ns()
         with self.tracer.start_as_current_span(
@@ -155,6 +180,20 @@ class SensorInferenceProbe(Node):
         latency_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
         if not outputs or not np.isfinite(outputs[0]).all():
             raise RuntimeError("inference returned no finite output")
+        reference_outputs = self.reference_session.run(
+            None,
+            {self.reference_input.name: tensor},
+        )
+        absolute_error = float(np.max(np.abs(outputs[0] - reference_outputs[0])))
+        self.maximum_absolute_error = max(self.maximum_absolute_error, absolute_error)
+        self.numerical_parity = self.numerical_parity and bool(
+            np.allclose(
+                outputs[0],
+                reference_outputs[0],
+                rtol=self.relative_tolerance,
+                atol=self.absolute_tolerance,
+            )
+        )
 
         self.inferred += 1
         self.latencies_ms.append(latency_ms)
@@ -180,11 +219,40 @@ class SensorInferenceProbe(Node):
 
     def write_report(self) -> None:
         duration_sec = (time.monotonic_ns() - self.started_ns) / 1_000_000_000
+        profile_path = Path(self.session.end_profiling())
+        executed_providers = profiled_providers(profile_path)
+        profile_path.unlink(missing_ok=True)
+        fallback_providers = [
+            provider
+            for provider in executed_providers
+            if provider != self.expected_provider
+        ]
+        passed = (
+            self.done
+            and executed_providers == [self.expected_provider]
+            and self.numerical_parity
+        )
+        self.report_path.parent.mkdir(parents=True, exist_ok=True)
+        sample_dataset_path = self.report_path.with_name("sample-inputs.npy")
+        np.save(sample_dataset_path, np.stack(self.samples), allow_pickle=False)
+        sample_dataset_sha256 = hashlib.sha256(
+            sample_dataset_path.read_bytes()
+        ).hexdigest()
         report = {
             "schema_version": "sensor-inference-observation.v1",
-            "status": "passed" if self.done else "failed",
+            "status": "passed" if passed else "failed",
             "provider": self.expected_provider,
+            "runtime_version": ort.__version__,
             "session_providers": self.session.get_providers(),
+            "executed_providers": executed_providers,
+            "fallback_count": len(fallback_providers),
+            "fallback_providers": fallback_providers,
+            "provider_options": self.provider_options,
+            "provider_options_sha256": self.provider_options_sha256,
+            "model_path": str(self.model_path),
+            "model_artifact_sha256": self.model_artifact_sha256,
+            "sample_dataset_path": str(sample_dataset_path),
+            "sample_dataset_sha256": sample_dataset_sha256,
             "sensor_type": self.sensor_type,
             "sensor_topic": self.sensor_topic,
             "received_frames": self.received,
@@ -196,8 +264,13 @@ class SensorInferenceProbe(Node):
                 "p95": percentile(self.latencies_ms, 0.95),
                 "max": max(self.latencies_ms),
             },
+            "numerical_parity": self.numerical_parity,
+            "maximum_absolute_error": self.maximum_absolute_error,
+            "tolerances": {
+                "relative": self.relative_tolerance,
+                "absolute": self.absolute_tolerance,
+            },
         }
-        self.report_path.parent.mkdir(parents=True, exist_ok=True)
         self.report_path.write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",

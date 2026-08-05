@@ -8,6 +8,10 @@ readonly report_dir="${ROBOTICS_SENSOR_INFERENCE_REPORT_DIR:-${root}/artifacts/s
 readonly evidence_dir="${ROBOTICS_EVIDENCE_DIR:-${root}/artifacts/sensor-inference/evidence}"
 readonly project_name="${COMPOSE_PROJECT_NAME:-robotics-sensor-inference-$RANDOM}"
 
+sha256_file() {
+  sha256sum "$1" | awk '{print $1}'
+}
+
 compose_files=(
   --file "${root}/compose.yaml"
   --file "${root}/compose.observability.yaml"
@@ -18,12 +22,25 @@ profiles=(--profile observability --profile sensor-inference)
 expected_provider=CPUExecutionProvider
 maximum_p95_ms="${ROBOTICS_MAXIMUM_P95_MS:-1000}"
 minimum_rate_hz="${ROBOTICS_MINIMUM_RATE_HZ:-1}"
+provider_config_sha256=
+runtime_image=
 
 rm -rf "${report_dir}"
 mkdir -p "${report_dir}" "${evidence_dir}"
+if [[ "$(id -u)" != 1000 ]]; then
+  sudo chown -R 1000:1000 "${report_dir}"
+fi
 
 case "${accelerator}" in
   cpu)
+    ;;
+  intel-cpu)
+    compose_files+=(--file "${root}/compose.sensor-inference-intel.yaml")
+    expected_provider=OpenVINOExecutionProvider
+    export ROBOTICS_OPENVINO_CONFIG="${ROBOTICS_OPENVINO_CONFIG:-${root}/config/inference/openvino-cpu-latency.json}"
+    test -r "${ROBOTICS_OPENVINO_CONFIG}"
+    provider_config_sha256="$(sha256_file "${ROBOTICS_OPENVINO_CONFIG}")"
+    runtime_image="${SENSOR_INFERENCE_INTEL_CPU_IMAGE:-local/robotics-runtime-infra/sensor-inference-intel-cpu:dev}"
     ;;
   nvidia)
     compose_files+=(
@@ -76,16 +93,189 @@ fi
   --exit-code-from sensor-inference-probe \
   data-plane otel-collector simulation sensor-inference-probe
 
+if [[ "$(id -u)" != 1000 ]]; then
+  sudo chown -R "$(id -u):$(id -g)" "${report_dir}"
+fi
+
 test -s "${report_dir}/sensor-inference.json"
+
+if [[ -n "${provider_config_sha256}" ]]; then
+  configuration_dir="${report_dir}/configuration"
+  fixture="${root}/test/accelerators/fixtures/onnxruntime-sigmoid.json"
+  model_dir="${report_dir}/model"
+  mkdir -p "${configuration_dir}"
+  mkdir -p "${model_dir}"
+  cp "${ROBOTICS_OPENVINO_CONFIG}" \
+    "${configuration_dir}/inference-provider.json"
+  lscpu --json >"${configuration_dir}/host-topology.json"
+  probe_id="$("${compose[@]}" ps --all --quiet sensor-inference-probe)"
+  simulation_id="$("${compose[@]}" ps --all --quiet simulation)"
+  test -n "${probe_id}"
+  test -n "${simulation_id}"
+  model_path="$(jq -er '.model_path' "${report_dir}/sensor-inference.json")"
+  docker cp "${probe_id}:${model_path}" "${model_dir}/model.onnx"
+  model_artifact_sha256="$(sha256_file "${model_dir}/model.onnx")"
+  expected_model_artifact_sha256="$(
+    jq -er '.model_artifact_sha256' "${report_dir}/sensor-inference.json"
+  )"
+  test "${model_artifact_sha256}" = "${expected_model_artifact_sha256}"
+  sample_dataset_path="$(
+    jq -er '.sample_dataset_path' "${report_dir}/sensor-inference.json"
+  )"
+  sample_dataset="${report_dir}/$(basename "${sample_dataset_path}")"
+  test -s "${sample_dataset}"
+  sample_dataset_sha256="$(sha256_file "${sample_dataset}")"
+  test "${sample_dataset_sha256}" = "$(
+    jq -er '.sample_dataset_sha256' "${report_dir}/sensor-inference.json"
+  )"
+  docker inspect "${probe_id}" | jq '.[0].HostConfig | {
+    NanoCpus,
+    CpuPeriod,
+    CpuQuota,
+    CpusetCpus,
+    Memory,
+    MemorySwap,
+    ShmSize
+  }' >"${configuration_dir}/runtime-resources.json"
+  host_topology_sha256="$(sha256_file "${configuration_dir}/host-topology.json")"
+  runtime_resources_sha256="$(sha256_file "${configuration_dir}/runtime-resources.json")"
+  runtime_version="$(jq -er '.runtime_version' "${report_dir}/sensor-inference.json")"
+  jq -e \
+    --arg runtime_version "${runtime_version}" \
+    --arg model_sha256 "${model_artifact_sha256}" '
+      .runtime_version == $runtime_version and
+      .source.sha256 == $model_sha256
+    ' "${fixture}" >/dev/null
+  simulation_image_id="$(docker inspect --format '{{.Image}}' "${simulation_id}")"
+  gazebo_version="$(
+    docker run --rm --network none "${simulation_image_id}" \
+      gz sim --versions |
+      head -n 1
+  )"
+  runtime_digest="$(docker image inspect "${runtime_image}" --format '{{.Id}}')"
+  report_sha256="$(sha256_file "${report_dir}/sensor-inference.json")"
+  jq -cS -n \
+    --slurpfile fixture "${fixture}" \
+    --arg runtime_version "${runtime_version}" \
+    --arg runtime_digest "${runtime_digest}" \
+    --arg model_artifact_sha256 "${model_artifact_sha256}" \
+    --arg report_sha256 "${report_sha256}" \
+    --arg sample_dataset_sha256 "${sample_dataset_sha256}" \
+    --argjson absolute_tolerance "$(
+      jq -er '.tolerances.absolute' "${report_dir}/sensor-inference.json"
+    )" \
+    --argjson relative_tolerance "$(
+      jq -er '.tolerances.relative' "${report_dir}/sensor-inference.json"
+    )" '
+      $fixture[0] as $identity |
+      {
+        schema_version: "model-artifact-manifest.v1",
+        artifact_id: "org.example.onnxruntime.sigmoid.openvino",
+        source: $identity.source,
+        target: {
+          format: "onnx",
+          uri: $identity.source.uri,
+          sha256: $model_artifact_sha256,
+          media_type: "application/onnx",
+          runtime_family: "onnxruntime_openvino",
+          runtime_version: $runtime_version,
+          execution_provider: "OpenVINOExecutionProvider",
+          target_architecture: "x86_64",
+          precision: "float32"
+        },
+        build: {
+          tool: "onnxruntime-wheel",
+          tool_version: $runtime_version,
+          tool_source_revision: $identity.source_revision,
+          builder_image_digest: $runtime_digest,
+          parameters: {transformation: "identity"}
+        },
+        numerical_conformance: {
+          report_sha256: $report_sha256,
+          reference_artifact_sha256: $model_artifact_sha256,
+          sample_dataset_sha256: $sample_dataset_sha256,
+          absolute_tolerance: $absolute_tolerance,
+          relative_tolerance: $relative_tolerance,
+          passed: true
+        },
+        compatibility: {
+          portable: true,
+          hardware: []
+        }
+      }
+    ' >"${model_dir}/model-manifest.json"
+  model_manifest_sha256="$(sha256_file "${model_dir}/model-manifest.json")"
+  if [[ "$(id -u)" != 1000 ]]; then
+    sudo chown -R 1000:1000 "${report_dir}"
+  fi
+  docker run --rm \
+    --network none \
+    --volume "${report_dir}:/reports" \
+    --env ROBOTICS_RUNTIME_ID=org.example.sensor-inference-intel-cpu \
+    --env "ROBOTICS_OCI_REFERENCE=${runtime_image}@${runtime_digest}" \
+    --env "ROBOTICS_OCI_DIGEST=${runtime_digest}" \
+    --env ROBOTICS_WORKLOAD_KIND=inference \
+    --env "ROBOTICS_MODEL_MANIFEST_SHA256=${model_manifest_sha256}" \
+    --env "ROBOTICS_MODEL_ARTIFACT_SHA256=${model_artifact_sha256}" \
+    --env ROBOTICS_MODEL_FORMAT=onnx \
+    --env ROBOTICS_INFERENCE_RUNTIME_FAMILY=onnxruntime_openvino \
+    --env "ROBOTICS_INFERENCE_RUNTIME_VERSION=${runtime_version}" \
+    --env ROBOTICS_REQUESTED_PROVIDER=OpenVINOExecutionProvider \
+    --env ROBOTICS_ACTUAL_PROVIDER=OpenVINOExecutionProvider \
+    --env ROBOTICS_FALLBACK_COUNT=0 \
+    --env ROBOTICS_ACCELERATOR_VENDOR=intel \
+    --env ROBOTICS_ACCELERATOR_DEVICE_CLASS=cpu \
+    --env "ROBOTICS_ACCELERATOR_DEVICE_ID=host-topology-sha256:${host_topology_sha256}" \
+    --env ROBOTICS_INFERENCE_PROVIDER_CONFIG=/reports/configuration/inference-provider.json \
+    --env ROBOTICS_HOST_TOPOLOGY_CONFIG=/reports/configuration/host-topology.json \
+    --env ROBOTICS_RUNTIME_RESOURCES_CONFIG=/reports/configuration/runtime-resources.json \
+    --env ROBOTICS_DATA_PLANE_PROFILE=local_high_throughput \
+    --env ROBOTICS_SHM_TRANSPORT=true \
+    --env ROBOTICS_PRIVATE_IPC=true \
+    --env ROBOTICS_IPC_NAMESPACE=compose:data-plane \
+    --env ROBOTICS_NETWORK_NAMESPACE=compose:data-plane \
+    --env "ROBOTICS_GAZEBO_VERSION=${gazebo_version}" \
+    "${runtime_image}" \
+    emit-runtime-manifest /reports/runtime-manifest.json
+  if [[ "$(id -u)" != 1000 ]]; then
+    sudo chown -R "$(id -u):$(id -g)" "${report_dir}"
+  fi
+  jq -e \
+    --arg provider_sha256 "${provider_config_sha256}" \
+    --arg topology_sha256 "${host_topology_sha256}" \
+    --arg resources_sha256 "${runtime_resources_sha256}" '
+      .schema_version == "runtime-manifest.v2" and
+      .workload.kind == "inference" and
+      .workload.inference.actual_provider == "OpenVINOExecutionProvider" and
+      .workload.inference.fallback_count == 0 and
+      (.configuration_artifacts | sort_by(.kind)) == ([
+        {kind: "host_topology", sha256: $topology_sha256},
+        {kind: "inference_provider", sha256: $provider_sha256},
+        {kind: "runtime_resources", sha256: $resources_sha256}
+      ] | sort_by(.kind))
+    ' "${report_dir}/runtime-manifest.json" >/dev/null
+fi
+
 test -s "${evidence_dir}/metrics.otlp.json"
 test -s "${evidence_dir}/traces.otlp.jsonl"
 jq -e \
   --arg provider "${expected_provider}" \
+  --arg provider_config_sha256 "${provider_config_sha256}" \
   --argjson maximum_p95_ms "${maximum_p95_ms}" \
   --argjson minimum_rate_hz "${minimum_rate_hz}" '
     .status == "passed"
     and .provider == $provider
     and .session_providers[0] == $provider
+    and .executed_providers == [$provider]
+    and .fallback_count == 0
+    and .numerical_parity == true
+    and (
+      if $provider_config_sha256 == "" then
+        .provider_options_sha256 == null
+      else
+        .provider_options_sha256 == $provider_config_sha256
+      end
+    )
     and .received_frames >= 30
     and .inference_count == .received_frames
     and .latency_ms.p95 <= $maximum_p95_ms

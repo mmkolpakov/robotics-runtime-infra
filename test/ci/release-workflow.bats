@@ -34,6 +34,14 @@ setup() {
       .environment_variable == "SENSOR_INFERENCE_IMAGE"
     ) and
     any(.include[];
+      .id == "inference-intel-cpu" and
+      .environment_variable == "INFERENCE_INTEL_CPU_IMAGE"
+    ) and
+    any(.include[];
+      .id == "sensor-inference-intel-cpu" and
+      .environment_variable == "SENSOR_INFERENCE_INTEL_CPU_IMAGE"
+    ) and
+    any(.include[];
       .id == "permit-preflight" and
       .environment_variable == "PERMIT_PREFLIGHT_IMAGE"
     )
@@ -214,6 +222,9 @@ EOF
       "sensor-inference-cpu:0.8.0@sha256:"
     )
   ' <<<"${compose_json}"
+  [ "${status}" -eq 0 ]
+  run jq -e '.services["otel-collector"].user == "1000:1000"' \
+    <<<"${compose_json}"
   [ "${status}" -eq 0 ]
 }
 

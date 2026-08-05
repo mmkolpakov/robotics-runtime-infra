@@ -141,6 +141,8 @@ Release tags publish immutable digests for these images under
 | `inference-cpu` | amd64, arm64 | ONNX Runtime CPU execution provider |
 | `provider-conformance-cpu` | amd64 | CPU provider identity, fallback, and tensor-parity gate |
 | `sensor-inference-cpu` | amd64 | Deterministic sensor-to-ONNX-to-OTLP qualification probe |
+| `inference-intel-cpu` | amd64 | OpenVINO execution on Intel CPUs without GPU system packages |
+| `sensor-inference-intel-cpu` | amd64 | Sensor qualification through the OpenVINO CPU provider |
 | `acceptance-observer` | amd64, arm64 | Attach-only acceptance verification and JSON/JUnit results |
 | `benchmark` | amd64, arm64 | `performance_test` for ROS 2 transport measurements |
 | `evidence-sink` | amd64, arm64 | MCAP validation, checksums, S3-compatible upload and evidence finalization |
@@ -168,8 +170,8 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.13.0 |
-| Acceptance harness | `robotics-acceptance-harness` 0.14.0 |
+| Contracts | `robotics-runtime-contracts` 0.14.0 |
+| Acceptance harness | `robotics-acceptance-harness` 0.15.0 |
 
 Base images, package snapshots, and Python artifacts are pinned in
 `Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
@@ -216,7 +218,7 @@ terms are normative:
 | --- | --- | --- | --- |
 | amd64 CPU | `simulation`, `inference-cpu` | Native integration and provider-conformance CI; images in `v0.8.0-rc.1` | Released |
 | arm64 CPU | Portable runtime images | Multi-platform BuildKit gate; images in `v0.8.0-rc.1`; no native board claim | Released |
-| Intel CPU on amd64 Linux | `inference-intel` | Image build and OpenVINO CPU provider conformance in hosted CI | CI-verified |
+| Intel CPU on amd64 Linux | `inference-intel-cpu` | Provider parity and full sensor-to-inference OpenVINO path in hosted CI | CI-verified |
 | Intel GPU on native Linux | `compose.intel.yaml` | Device-specific provider, no-fallback and tensor-parity gate defined | Qualification-gated |
 | Intel GPU through WSL2 | `compose.intel.yaml` | `/dev/dxg` route and a separate protected runner gate defined | Qualification-gated |
 | NVIDIA GPU on amd64 Linux | `compose.nvidia.yaml` | CUDA image builds; protected CDI/provider/parity gate defined | Qualification-gated |
@@ -229,6 +231,14 @@ No accelerated target is qualified by the current revision. The generic
 hardware workflow covers NVIDIA, Intel, AMD, and Jetson; RK3588 uses its own
 workflow. A successful image build or provider import cannot promote a row to
 Qualified.
+
+Intel CPU qualification uses
+`config/inference/openvino-cpu-latency.json` by default. It selects the
+documented OpenVINO `LATENCY` hint with one stream. Set
+`ROBOTICS_OPENVINO_CONFIG=config/inference/openvino-cpu-throughput.json` for the
+`THROUGHPUT` hint and OpenVINO-managed stream count. Both files use the official
+ONNX Runtime `load_config` provider option; neither fixes a core count or CPU
+model. Intel GPU system packages exist only in `inference-intel-gpu`.
 
 Each hardware runner label identifies one exclusive physical resource pool.
 Qualification jobs are serialized by that label, use a unique Compose project,
@@ -277,6 +287,8 @@ behavior being tested:
 | `compose.sensor-inference.yaml` | `sensor-inference` | Run the CPU sensor-to-ONNX-to-OTLP qualification probe |
 | `compose.nvidia-sim.yaml` | `nvidia-simulation` | Run headless OGRE2/EGL rendering and GPU lidar on NVIDIA hardware |
 | `compose.sensor-inference-nvidia.yaml` | `sensor-inference` | Replace the probe with the no-fallback CUDA provider path |
+| `compose.sensor-inference-intel.yaml` | `sensor-inference` | Replace the probe with the no-fallback OpenVINO CPU provider path |
+| `compose.intel.yaml` | `conformance-intel-*` | Run separate Intel CPU, native GPU, or WSL2 GPU provider gates |
 | `compose.security.yaml` | `security*` | SROS2 Enforce, observer-only enclave, positive and denial checks |
 | `compose.stepped.yaml` | `stepped` | Run Gazebo paused and advance it through `WorldControl` |
 | `compose.edge-attach.yaml` | `edge-attach`, `hil` | Attach-only observation through an external Docker network; HIL is permit-gated and SROS2-enforced |
@@ -335,6 +347,9 @@ runs/current/
 ├── scenario.yaml
 ├── acceptance-run.json
 ├── runtime-manifest.json
+├── configuration/
+│   ├── host-topology.json
+│   └── runtime-resources.json
 ├── bags/
 ├── evidence/
 │   ├── evidence-index.json
@@ -349,9 +364,21 @@ Override it with `ROBOTICS_RUN_DIR`, `ROBOTICS_BAG_DIR`, and
 `ROBOTICS_EVIDENCE_DIR`. On Linux, pre-create bind-mounted directories writable
 by UID 1000; the evidence directory must be writable by UID 10001. Named
 volumes avoid host ownership concerns for interactive development.
+The sensor-inference qualification overlay runs both report writers as UID 1000
+so its isolated report tree has one non-root owner.
+Runtime manifests use `runtime-manifest.v2` and digest-link retained provider,
+host-topology, and container-resource configuration files when present.
+Intel sensor qualification also retains the exact ONNX fixture, observed NPY
+inputs, provider report, and a validated `model-artifact-manifest.v1` linking
+those artifacts to the runtime manifest.
 `ROBOTICS_TIME_EVIDENCE_DIR` is the separate bind mount used by host-owned
 Chrony and PTP collectors; it defaults to the run evidence directory. The host
 time directory is owned by the host `_chrony` UID/GID.
+
+In S3 mode, `policy_observation.upload_lag_max_sec` is the largest whole-second
+age of any MCAP spool file observed during a sink scan: scan time minus the
+file's modification time, clamped to zero. It is not network transfer duration
+or object-store acknowledgement latency. Local-only runs report zero.
 
 Physical profiles additionally require `authorization-output` to be owned by
 UID/GID `10002:10002` with mode `0755`, and the persistent nonce store to be

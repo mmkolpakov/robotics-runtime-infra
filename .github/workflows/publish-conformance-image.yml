@@ -77,7 +77,7 @@ jobs:
               platform=linux/amd64
               ;;
             intel-native | intel-wsl)
-              bake_target=provider-conformance-intel
+              bake_target=provider-conformance-intel-gpu
               image_name="provider-conformance-${TARGET}"
               platform=linux/amd64
               ;;

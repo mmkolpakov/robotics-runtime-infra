@@ -10,6 +10,7 @@ import numpy as np
 import onnxruntime as ort
 import pytest
 from onnxruntime.datasets import get_example
+from robotics_inference_conformance import profiled_providers, provider_options
 
 
 EXPECTED_PROVIDER = os.environ.get("ROBOTICS_EXPECTED_PROVIDER", "CPUExecutionProvider")
@@ -50,19 +51,6 @@ def _exception_chain(error: BaseException) -> list[dict[str, str]]:
     return chain
 
 
-def _profiled_providers(profile_path: Path) -> list[str]:
-    events = json.loads(profile_path.read_text(encoding="utf-8"))
-    return sorted(
-        {
-            str(event["args"]["provider"])
-            for event in events
-            if isinstance(event, dict)
-            and isinstance(event.get("args"), dict)
-            and event["args"].get("provider")
-        }
-    )
-
-
 def test_provider_executes_canonical_tensor_without_fallback() -> None:
     if hasattr(ort, "preload_dlls") and EXPECTED_PROVIDER in {
         "CUDAExecutionProvider",
@@ -86,16 +74,14 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
         options.add_session_config_entry("session.disable_cpu_ep_fallback", "1")
     options.enable_profiling = True
     options.profile_file_prefix = "/tmp/robotics-provider-profile"
-    provider_options = json.loads(
-        os.environ.get("ROBOTICS_PROVIDER_OPTIONS", "") or "{}"
-    )
+    options_by_provider, provider_options_sha256 = provider_options()
 
     try:
         session = ort.InferenceSession(
             get_example("sigmoid.onnx"),
             sess_options=options,
             providers=[EXPECTED_PROVIDER],
-            provider_options=[provider_options],
+            provider_options=[options_by_provider],
         )
         session.disable_fallback()
     except Exception as error:
@@ -103,7 +89,8 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
             status="failed",
             reason="session_initialization_failed",
             available_providers=available,
-            provider_options=provider_options,
+            provider_options=options_by_provider,
+            provider_options_sha256=provider_options_sha256,
             fallback_count=0,
             error=f"{type(error).__name__}: {error}",
             error_chain=_exception_chain(error),
@@ -127,7 +114,7 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
     )
     outputs = session.run(None, {model_input.name: values})
     profile_path = Path(session.end_profiling())
-    executed_providers = _profiled_providers(profile_path)
+    executed_providers = profiled_providers(profile_path)
     profile_path.unlink(missing_ok=True)
 
     expected = 1.0 / (1.0 + np.exp(-values))
@@ -160,7 +147,8 @@ def test_provider_executes_canonical_tensor_without_fallback() -> None:
         executed_providers=executed_providers,
         fallback_count=len(fallback_providers),
         fallback_providers=fallback_providers,
-        provider_options=provider_options,
+        provider_options=options_by_provider,
+        provider_options_sha256=provider_options_sha256,
         tolerances={"relative": RTOL, "absolute": ATOL},
         output={
             "dtype": str(outputs[0].dtype),

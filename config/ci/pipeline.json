@@ -133,6 +133,16 @@
       ]
     },
     {
+      "name": "sensor-inference-intel-cpu",
+      "files": [
+        "compose.yaml",
+        "compose.high-throughput.yaml",
+        "compose.observability.yaml",
+        "compose.sensor-inference.yaml",
+        "compose.sensor-inference-intel.yaml"
+      ]
+    },
+    {
       "name": "zenoh",
       "files": ["compose.yaml", "compose.zenoh.yaml"]
     }

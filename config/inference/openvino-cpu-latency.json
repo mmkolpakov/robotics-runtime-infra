@@ -1,0 +1,4 @@
+{
+  "device_type": "CPU",
+  "load_config": "{\"CPU\":{\"NUM_STREAMS\":\"1\",\"PERFORMANCE_HINT\":\"LATENCY\"}}"
+}

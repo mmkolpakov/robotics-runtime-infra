@@ -1,0 +1,24 @@
+{
+  "runtime_version": "1.24.1",
+  "source_revision": "470ae16099a74fe05e31f2530489332c0525edb5",
+  "source": {
+    "uri": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.24.1/onnxruntime/python/datasets/sigmoid.onnx",
+    "sha256": "5340aba67a7e3475162ad794378af55f1718f55f9a5d74b4af60ecc7f7a624b6",
+    "media_type": "application/onnx",
+    "opset": 9,
+    "inputs": [
+      {
+        "name": "x",
+        "element_type": "float32",
+        "shape": [3, 4, 5]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "y",
+        "element_type": "float32",
+        "shape": [3, 4, 5]
+      }
+    ]
+  }
+}

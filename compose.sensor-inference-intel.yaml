@@ -1,0 +1,19 @@
+---
+services:
+  sensor-inference-probe:
+    # yamllint disable-line rule:line-length
+    image: "${SENSOR_INFERENCE_INTEL_CPU_IMAGE:-local/robotics-runtime-infra/sensor-inference-intel-cpu:dev}"
+    build:
+      target: sensor-inference-probe
+      args:
+        SENSOR_INFERENCE_BASE: inference-intel-cpu
+    environment:
+      ROBOTICS_EXPECTED_PROVIDER: OpenVINOExecutionProvider
+      ROBOTICS_PROVIDER_ATOL: "${ROBOTICS_PROVIDER_ATOL:-1e-5}"
+      ROBOTICS_PROVIDER_OPTIONS_FILE: /etc/robotics/inference/provider-options.json
+      ROBOTICS_PROVIDER_RTOL: "${ROBOTICS_PROVIDER_RTOL:-1e-4}"
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_OPENVINO_CONFIG:-./config/inference/openvino-cpu-latency.json}"
+        target: /etc/robotics/inference/provider-options.json
+        read_only: true

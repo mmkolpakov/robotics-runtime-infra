@@ -19,3 +19,33 @@ ci_opa eval \
 ci_validate_contract_documents \
   tmp/execution-permit.json \
   tmp/execution-verification.json
+
+jq -e '
+  .execution_valid.trust_policy.max_permit_lifetime_seconds == 1800
+' test/policy/execution/valid.json >/dev/null
+jq -e '
+  .trust_policy.max_permit_lifetime_seconds == 1800
+' test/ci/physical-attach/authorization-template.json >/dev/null
+
+jq '.execution_valid.permit
+  | .issued_at = "2026-07-14T11:55:00Z"
+  | .expires_at = "2026-07-14T12:25:00Z"' \
+  test/policy/execution/valid.json >tmp/execution-permit-1800.json
+ci_validate_contract_documents tmp/execution-permit-1800.json
+
+jq '.expires_at = "2026-07-14T12:25:01Z"' \
+  tmp/execution-permit-1800.json >tmp/execution-permit-1801.json
+if ci_validate_contract_documents tmp/execution-permit-1801.json; then
+  printf 'contracts accepted a permit lifetime above 1800 seconds\n' >&2
+  exit 1
+fi
+
+jq '.execution_valid
+  | .trust_policy.max_permit_lifetime_seconds = 1801' \
+  test/policy/execution/valid.json >tmp/execution-policy-1801.json
+deny_count="$(ci_opa eval \
+  --format raw \
+  --data policy/execution.rego \
+  --input tmp/execution-policy-1801.json \
+  'count(data.execution.deny)')"
+((deny_count > 0))

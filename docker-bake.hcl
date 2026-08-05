@@ -111,7 +111,8 @@ group "release" {
     "inference-cpu",
     "provider-conformance-cpu",
     "sensor-inference-cpu",
-    "inference-intel",
+    "inference-intel-cpu",
+    "sensor-inference-intel-cpu",
     "acceptance-observer",
     "benchmark-runtime",
     "evidence-sink",
@@ -128,8 +129,11 @@ group "amd" {
 
 group "intel" {
   targets = [
-    "inference-intel",
-    "provider-conformance-intel",
+    "inference-intel-cpu",
+    "inference-intel-gpu",
+    "provider-conformance-intel-cpu",
+    "provider-conformance-intel-gpu",
+    "sensor-inference-intel-cpu",
   ]
 }
 
@@ -253,23 +257,53 @@ target "provider-conformance-amd" {
   }
 }
 
-target "inference-intel" {
+target "inference-intel-cpu" {
   inherits  = ["_common"]
-  target    = "inference-intel"
+  target    = "inference-intel-cpu"
   platforms = ["linux/amd64"]
-  tags      = ["${REGISTRY}/robotics-runtime-infra/inference-intel:${VERSION}"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/inference-intel-cpu:${VERSION}"]
 }
 
-target "provider-conformance-intel" {
+target "inference-intel-gpu" {
+  inherits  = ["_common"]
+  target    = "inference-intel-gpu"
+  platforms = ["linux/amd64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/inference-intel-gpu:${VERSION}"]
+}
+
+target "provider-conformance-intel-cpu" {
   inherits  = ["_common"]
   target    = "provider-conformance"
   platforms = ["linux/amd64"]
-  tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-intel:${VERSION}"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-intel-cpu:${VERSION}"]
   args = {
-    PROVIDER_CONFORMANCE_BASE              = "inference-intel"
+    PROVIDER_CONFORMANCE_BASE              = "inference-intel-cpu"
     PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "OpenVINOExecutionProvider"
-    PROVIDER_CONFORMANCE_TITLE             = "Robotics Intel provider conformance"
-    PROVIDER_CONFORMANCE_DESCRIPTION       = "Hardware gate for explicit OpenVINO device identity, fallback, and tensor parity."
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics Intel CPU provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "CI gate for explicit OpenVINO CPU identity, fallback, and tensor parity."
+  }
+}
+
+target "provider-conformance-intel-gpu" {
+  inherits  = ["_common"]
+  target    = "provider-conformance"
+  platforms = ["linux/amd64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/provider-conformance-intel-gpu:${VERSION}"]
+  args = {
+    PROVIDER_CONFORMANCE_BASE              = "inference-intel-gpu"
+    PROVIDER_CONFORMANCE_EXPECTED_PROVIDER = "OpenVINOExecutionProvider"
+    PROVIDER_CONFORMANCE_TITLE             = "Robotics Intel GPU provider conformance"
+    PROVIDER_CONFORMANCE_DESCRIPTION       = "Hardware gate for explicit OpenVINO GPU identity, fallback, and tensor parity."
+  }
+}
+
+target "sensor-inference-intel-cpu" {
+  inherits  = ["_common"]
+  target    = "sensor-inference-probe"
+  platforms = ["linux/amd64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/sensor-inference-intel-cpu:${VERSION}"]
+  args = {
+    SENSOR_INFERENCE_BASE = "inference-intel-cpu"
   }
 }
 
