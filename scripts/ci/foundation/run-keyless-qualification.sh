@@ -74,6 +74,8 @@ qualification_inputs=(
   --evidence metrics:metrics.otlp.json=artifacts/metrics.otlp.json
   --evidence junit:junit.xml=artifacts/acceptance-results/junit.xml
   --evidence other_evidence:fastdds-profile.xml=artifacts/fastdds-profile.xml
+  --evidence other_evidence:host-topology.json=artifacts/host-topology.json
+  --evidence other_evidence:runtime-resources.json=artifacts/runtime-resources.json
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
