@@ -144,7 +144,7 @@ qualification_resolve_contracts_cli() {
     QUALIFICATION_CONTRACTS_CLI="$PWD/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
   else
     qualification_fail \
-      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.14.0 or newer'
+      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.14.1 or newer'
   fi
 }
 
