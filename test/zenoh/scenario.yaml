@@ -1,0 +1,60 @@
+---
+schema_version: acceptance-scenario.v5
+scenario_id: org.example.runtime-infra.zenoh-transport
+execution:
+  target_environment: simulation
+  hardware_scope: []
+  physical_effect: none
+  test_intent: interface_smoke
+  data_source: gazebo
+  plant_backend: gazebo_physics
+  time_mode: simulation_realtime
+  data_plane_profile: standard_isolated
+  security_profile: none
+authorization:
+  mode: none
+forbidden_ros_graph:
+  topics: []
+  services: []
+  actions: []
+seed: 42
+timeouts:
+  startup_sec: 60
+  graph_ready_sec: 30
+  stable_for_sec: 1
+  execution_sec: 60
+  shutdown_sec: 30
+expected_ros_graph:
+  topics: []
+  services: []
+  actions: []
+  lifecycle_nodes: []
+metric_definitions: []
+assertions: []
+time_policy:
+  min_realtime_factor: 0.8
+  max_deadline_miss_ratio: 0.01
+  time_authority_min_samples: 30
+  max_time_authority_delivery_latency_p50_ms: 1
+  max_time_authority_delivery_latency_p95_ms: 2
+  max_time_authority_delivery_latency_ms: 5
+  cross_domain_clock:
+    method: shared_clock_identity
+data_plane_policy:
+  max_message_age_ms: 5000
+  max_loss_ratio: 0
+  shm_transport: false
+  data_sharing: false
+  private_ipc: false
+evidence_policy:
+  topics: [/robotics/trace_context]
+  recording_mode: bounded
+  compression: zstd
+  max_segment_size_bytes: 1048576
+  max_segment_duration_sec: 60
+  max_spool_size_bytes: 10485760
+  spool_high_watermark_ratio: 0.8
+  max_upload_lag_sec: 0
+  upload_mode: local_only
+  retention_class: pull-request-7d
+  remote_sink_allowed: false

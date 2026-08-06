@@ -20,8 +20,14 @@ services:
         until aws --endpoint-url http://s3-fixture:8333 s3api list-buckets >/dev/null 2>&1; do
           sleep 1
         done
-        aws --endpoint-url http://s3-fixture:8333 s3api create-bucket \
-          --bucket robotics-evidence
+        bucket_name="$$(aws --endpoint-url http://s3-fixture:8333 \
+          s3api list-buckets \
+          --query "Buckets[?Name=='robotics-evidence'].Name | [0]" \
+          --output text)"
+        if [ "$${bucket_name}" != robotics-evidence ]; then
+          aws --endpoint-url http://s3-fixture:8333 s3api create-bucket \
+            --bucket robotics-evidence
+        fi
         aws --endpoint-url http://s3-fixture:8333 s3api put-bucket-versioning \
           --bucket robotics-evidence \
           --versioning-configuration Status=Enabled

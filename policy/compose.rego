@@ -2,10 +2,19 @@ package compose
 
 import rego.v1
 
+host_control_fields := {"provider", "use_api_socket", "pre_start", "post_start", "pre_stop"}
+
 deny contains message if {
 	some name, service in input.services
 	service.privileged == true
 	message := sprintf("service %q enables privileged mode", [name])
+}
+
+deny contains message if {
+	some name, service in input.services
+	some field in host_control_fields
+	object.get(service, field, null) != null
+	message := sprintf("service %q uses host-control field %s", [name, field])
 }
 
 deny contains message if {

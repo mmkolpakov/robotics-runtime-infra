@@ -42,6 +42,18 @@ TRACESTATE: Final = "runtime=zenoh"
 DISCOVERY_TIMEOUT_SEC: Final = 120.0
 
 
+def clock_identity() -> dict[str, object]:
+    clock = time.get_clock_info("time")
+    return {
+        "authority": "shared-linux-kernel-clock-realtime",
+        "boot_id": Path("/proc/sys/kernel/random/boot_id")
+        .read_text(encoding="ascii")
+        .strip(),
+        "implementation": clock.implementation,
+        "resolution_sec": clock.resolution,
+    }
+
+
 def required_environment(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
@@ -193,6 +205,7 @@ def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[st
         "unique_traceparent_count": len(traceparents),
         "matched_tracestate_count": count,
         "first_message_at_ns": first_message_at_ns,
+        "clock_identity": clock_identity(),
     }
 
 
@@ -278,6 +291,7 @@ def subscribe(
         "unique_traceparent_count": len(traceparents),
         "matched_tracestate_count": matched_tracestate,
         "first_message_at_ns": first_message_at_ns,
+        "clock_identity": clock_identity(),
     }
     node.destroy_subscription(subscription)
     return observation

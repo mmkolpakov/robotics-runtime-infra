@@ -38,15 +38,13 @@ COSIGN_PASSWORD="$(
 cosign generate-key-pair \
   --output-key-prefix "${work}/qualification" >/dev/null
 cosign signing-config create \
-  --with-default-services \
-  --no-default-fulcio \
-  --no-default-oidc \
-  --no-default-rekor \
-  --no-default-tsa \
   --out "${work}/signing-config.json"
+cosign trusted-root create \
+  --out "${work}/trusted-root.json"
 cosign attest-blob --yes \
   --key "${work}/qualification.key" \
   --signing-config "${work}/signing-config.json" \
+  --trusted-root "${work}/trusted-root.json" \
   --statement "${statement}" \
   --bundle "${work}/qualification.sigstore.json"
 

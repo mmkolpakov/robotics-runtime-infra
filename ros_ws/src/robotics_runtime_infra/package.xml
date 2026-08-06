@@ -7,6 +7,7 @@
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>control_msgs</depend>
   <exec_depend>controller_manager</exec_depend>
@@ -28,6 +29,7 @@
   <exec_depend>python3-opencv</exec_depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
+  <exec_depend>rclpy</exec_depend>
   <exec_depend>rmw_cyclonedds_cpp</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>ros2_control</exec_depend>
@@ -38,6 +40,7 @@
   <exec_depend>rosbag2_storage_mcap</exec_depend>
   <exec_depend>rosgraph_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>simulation_interfaces</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
@@ -51,7 +54,6 @@
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>launch_testing_ros</test_depend>
   <test_depend>python3-pytest</test_depend>
-  <test_depend>rclpy</test_depend>
   <test_depend>rosbag2_interfaces</test_depend>
 
   <export>

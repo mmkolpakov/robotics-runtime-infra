@@ -245,7 +245,7 @@ verify_bundle() {
   [[ "$output" == *'qualification bundle verified'* ]]
 }
 
-@test "rejects a scenario outside the canonical v4 contract" {
+@test "rejects an unsupported scenario contract" {
   sed -i \
     's/schema_version: acceptance-scenario.v4/schema_version: acceptance-scenario.v3/' \
     "$TEST_ROOT/artifacts/scenario.yaml"
@@ -255,7 +255,8 @@ verify_bundle() {
     "${args[@]}" --output "$TEST_ROOT/artifacts/statement.json"
 
   [ "$status" -eq 65 ]
-  [[ "$output" == *"does not satisfy acceptance-scenario.v4"* ]]
+  [[ "$output" == *"unsupported scenario schema_version 'acceptance-scenario.v3'"* ]]
+  [[ "$output" == *'[qualification.invalid]'* ]]
 }
 
 @test "rejects a multi-document Sigstore bundle" {

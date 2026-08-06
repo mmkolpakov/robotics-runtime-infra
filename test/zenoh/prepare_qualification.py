@@ -175,6 +175,12 @@ def main() -> None:
     )
     if source_observation["type_hash"] != destination_observation["type_hash"]:
         raise RuntimeError("source and destination ROS type hashes differ")
+    if source_observation.get("clock_identity") != destination_observation.get(
+        "clock_identity"
+    ):
+        raise RuntimeError(
+            "source and destination do not share one Linux realtime clock"
+        )
 
     wait_for_trace_evidence(
         source_trace,
@@ -193,6 +199,54 @@ def main() -> None:
 
     output_dir = report_dir / "qualification"
     output_dir.mkdir(parents=True, exist_ok=True)
+    scenario_path = Path("/opt/robotics/zenoh/scenario.yaml")
+    clock_identity_path = output_dir / "shared-clock-identity.json"
+    shared_clock_identity = {
+        **source_observation["clock_identity"],
+        "source_observation_sha256": sha256(source_observation_path),
+        "destination_observation_sha256": sha256(destination_observation_path),
+    }
+    clock_identity_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "shared-clock-identity.v1",
+                "method": "shared_linux_kernel_realtime_clock",
+                "source_domain_id": SOURCE_DOMAIN,
+                "destination_domain_id": DESTINATION_DOMAIN,
+                "clock_identity": shared_clock_identity,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_contract_json(
+        {
+            "schema_version": "clock-relation.v1",
+            "relation_id": "zenoh-source-destination-clock",
+            "run_id": run_id,
+            "scenario_sha256": sha256(scenario_path),
+            "source_domain_id": SOURCE_DOMAIN,
+            "destination_domain_id": DESTINATION_DOMAIN,
+            "method": "shared_clock_identity",
+            "sync_protocol": "shared_kernel_clock",
+            "started_at": min(
+                source_observation["started_at"],
+                destination_observation["started_at"],
+            ),
+            "finished_at": max(
+                source_observation["finished_at"],
+                destination_observation["finished_at"],
+            ),
+            "policy": {"method": "shared_clock_identity"},
+            "shared_clock_identity": shared_clock_identity,
+            "status": "passed",
+            "violations": [],
+            "evidence_sha256": sha256(clock_identity_path),
+        },
+        output_dir / "clock-relation.json",
+    )
     channel_path = write_contract_json(
         {
             "schema_version": "zenoh-channel.v1",

@@ -1,0 +1,7 @@
+---
+include:
+  - path: ../../compose.yaml
+
+name: robotics-runtime-consumer
+
+services: {}

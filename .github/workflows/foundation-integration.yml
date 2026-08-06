@@ -29,6 +29,7 @@ env:
   SIMULATION_IMAGE: local/robotics-runtime-infra/simulation:foundation
   OBSERVER_IMAGE: local/robotics-runtime-infra/acceptance-observer:foundation
   EVIDENCE_IMAGE: local/robotics-runtime-infra/evidence-sink:foundation
+  POLICY_TOOLING_IMAGE: local/robotics-runtime-infra/policy-tooling:foundation
 
 jobs:
   foundation:

@@ -3,13 +3,80 @@
 setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   LIBRARY="${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh"
+  CI_LIBRARY="${REPOSITORY_ROOT}/scripts/ci/lib.sh"
   WORKFLOW="${REPOSITORY_ROOT}/.github/workflows/foundation-integration.yml"
+  REUSABLE_WORKFLOW="${REPOSITORY_ROOT}/.github/workflows/reusable-qualify.yml"
   ACCEPTANCE_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
   KEYLESS_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-keyless-qualification.sh"
   QUALIFICATION_POLICY="${REPOSITORY_ROOT}/trust/qualification-policy.json"
   QUALIFICATION_ROOT="${REPOSITORY_ROOT}/trust/qualification.trusted-root.json"
   # shellcheck source=scripts/ci/foundation/lib.sh
   source "${LIBRARY}"
+  # shellcheck source=scripts/ci/lib.sh
+  source "${CI_LIBRARY}"
+}
+
+@test "undefined policy queries fail closed" {
+  ci_opa() {
+    printf '{"result":[]}\n'
+  }
+
+  run ci_require_policy_allows policy.rego missing input.json
+
+  [ "${status}" -ne 0 ]
+}
+
+@test "consumer path validation resolves symlinks" {
+  local consumer="${BATS_TEST_TMPDIR}/consumer"
+  local outside="${BATS_TEST_TMPDIR}/outside"
+  mkdir -p "${consumer}" "${outside}"
+  ln -s "${outside}" "${consumer}/escape"
+  jq -n --arg source "${consumer}/escape" '{
+    services: {
+      product: {
+        volumes: [{type: "bind", source: $source, target: "/workspace/data"}]
+      }
+    }
+  }' >"${BATS_TEST_TMPDIR}/model.json"
+
+  run ci_require_model_paths_within_root \
+    "${BATS_TEST_TMPDIR}/model.json" "${consumer}"
+
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"escapes its repository"* ]]
+}
+
+@test "consumer source validation resolves config symlinks before Compose" {
+  local consumer="${BATS_TEST_TMPDIR}/consumer-source"
+  local outside="${BATS_TEST_TMPDIR}/outside-source"
+  mkdir -p "${consumer}" "${outside}"
+  touch "${outside}/settings.yaml"
+  ln -s "${outside}" "${consumer}/escape"
+  jq -n '{
+    services: {},
+    configs: {settings: {file: "escape/settings.yaml"}}
+  }' >"${BATS_TEST_TMPDIR}/source-model.json"
+
+  run ci_require_source_paths_within_root \
+    "${BATS_TEST_TMPDIR}/source-model.json" "${consumer}"
+
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"escapes its repository"* ]]
+}
+
+@test "reusable qualification treats the consumer as an isolated Compose project" {
+  run grep -F 'compose_project:' "${REUSABLE_WORKFLOW}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'compose_overlay' "${REUSABLE_WORKFLOW}"
+  [ "${status}" -eq 1 ]
+  run grep -F 'policy/foundation.rego' "${ACCEPTANCE_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'policy/consumer_compose_source.rego' "${ACCEPTANCE_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'COMPOSE_DISABLE_ENV_FILE=1' "${ACCEPTANCE_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'project_directory' "${ACCEPTANCE_SCRIPT}"
+  [ "${status}" -eq 0 ]
 }
 
 @test "project names are deterministic and collision scoped" {

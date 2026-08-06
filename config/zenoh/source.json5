@@ -1,31 +1,37 @@
 {
-  id: "1",
-  mode: "router",
-  listen: {
-    endpoints: ["tcp/0.0.0.0:7447"],
+  "id": "1",
+  "listen": {
+    "endpoints": [
+      "tcp/0.0.0.0:7447"
+    ]
   },
-  scouting: {
-    multicast: {
-      enabled: false,
-    },
-    gossip: {
-      enabled: false,
-    },
-  },
-  plugins: {
-    ros2dds: {
-      nodename: "trace_context_source_bridge",
-      domain: 31,
-      ros_automatic_discovery_range: "LOCALHOST",
-      allow: {
-        publishers: ["^/robotics/trace_context$"],
-        subscribers: ["^/robotics/trace_context$"],
-        service_servers: [],
-        service_clients: [],
-        action_servers: [],
-        action_clients: [],
+  "mode": "router",
+  "plugins": {
+    "ros2dds": {
+      "allow": {
+        "action_clients": [],
+        "action_servers": [],
+        "publishers": [
+          "^/robotics/trace_context$"
+        ],
+        "service_clients": [],
+        "service_servers": [],
+        "subscribers": [
+          "^/robotics/trace_context$"
+        ]
       },
-      reliable_routes_blocking: true,
-    },
+      "domain": 31,
+      "nodename": "trace_context_source_bridge",
+      "reliable_routes_blocking": true,
+      "ros_automatic_discovery_range": "LOCALHOST"
+    }
   },
+  "scouting": {
+    "gossip": {
+      "enabled": false
+    },
+    "multicast": {
+      "enabled": false
+    }
+  }
 }

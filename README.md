@@ -170,8 +170,8 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.14.1 |
-| Acceptance harness | `robotics-acceptance-harness` 0.15.1 |
+| Contracts | `robotics-runtime-contracts` 0.15.0 |
+| Acceptance harness | `robotics-acceptance-harness` 0.17.0 |
 
 Base images, package snapshots, and Python artifacts are pinned in
 `Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
@@ -290,17 +290,34 @@ behavior being tested:
 | `compose.sensor-inference-intel.yaml` | `sensor-inference` | Replace the probe with the no-fallback OpenVINO CPU provider path |
 | `compose.intel.yaml` | `conformance-intel-*` | Run separate Intel CPU, native GPU, or WSL2 GPU provider gates |
 | `compose.security.yaml` | `security*` | SROS2 Enforce, observer-only enclave, positive and denial checks |
-| `compose.stepped.yaml` | `stepped` | Run Gazebo paused and advance it through `WorldControl` |
+| `compose.stepped.yaml` | `stepped` | Advance any conforming simulator through ROS 2 `simulation_interfaces` |
+| `compose.simulation-conformance.yaml` | `simulation-conformance` | Verify features, pause, step, resume, and `/clock` through the standard simulator API |
 | `compose.edge-attach.yaml` | `edge-attach`, `hil` | Attach-only observation through an external Docker network; HIL is permit-gated and SROS2-enforced |
 | `compose.real-observation.yaml` | `real-observation` | Permit-gated SROS2 observation of a real target; layer after `compose.edge-attach.yaml` |
 | `compose.time.yaml` | `time-chrony`, `time-ptp` | Export host-owned clock observations as contract-aligned OTLP JSON |
 | `compose.serial.yaml` | `serial-preflight` | Verify one exact stable serial device mapping without starting product code |
 | `compose.can-observation.yaml` | `can-observation` | Receive a host SocketCAN stream without exposing the bus to the container |
 
-The stepped profile advances one physics iteration every 0.2 seconds by
-default. Set `ROBOTICS_STEP_INTERVAL_SEC` to change the pace. Set
-`ROBOTICS_STEPS_PER_TICK` to batch iterations and declare the matching
-`time_policy.max_skipped_steps` in the consuming scenario.
+The stepped profile advances one physics iteration every 0.2 seconds through
+`simulation_interfaces/StepSimulation`. Set `ROBOTICS_STEP_INTERVAL_SEC` to
+change the pace. Set `ROBOTICS_STEPS_PER_TICK` to batch iterations and declare
+the matching `time_policy.max_skipped_steps` in the consuming scenario.
+
+The default Gazebo service namespace is `/simulator`. A replacement
+`SIMULATION_IMAGE` is accepted only when the conformance probe observes the
+required feature flags, pause/step/resume behavior, and an advancing `/clock`:
+
+```bash
+docker compose up --detach --wait simulation
+docker compose -f compose.yaml -f compose.simulation-conformance.yaml \
+  --profile simulation-conformance run --rm simulation-conformance
+```
+
+Override `ROBOTICS_SIMULATOR_SERVICE_NAMESPACE` only when the replacement
+simulator publishes the standard services under another namespace. Product
+code must not call Gazebo Transport control services directly.
+`ROBOTICS_CONFORMANCE_STEP_SIZE_NS` must equal the simulator world's declared
+fixed step; the probe verifies the exact `steps * step_size` clock advance.
 
 Foundation acceptance uses `/clock` only as the simulation time authority.
 Transport age and loss are measured on the separate reliable
@@ -374,6 +391,11 @@ those artifacts to the runtime manifest.
 `ROBOTICS_TIME_EVIDENCE_DIR` is the separate bind mount used by host-owned
 Chrony and PTP collectors; it defaults to the run evidence directory. The host
 time directory is owned by the host `_chrony` UID/GID.
+
+The `robotics.*` metric namespace is reserved by the foundation. It includes
+clock, message delivery, inference latency, and
+`robotics.simulation.deadline_miss_ratio`. Scenarios declare every metric they
+consume in `metric_definitions`; product metrics use a reverse-domain prefix.
 
 In S3 mode, `policy_observation.upload_lag_max_sec` is the largest whole-second
 age of any MCAP spool file observed during a sink scan: scan time minus the
@@ -460,6 +482,31 @@ sha256sum runs/current/authorization-output/serial-preflight.json
 Use the first digest as `identity_sha256` and the second as
 `preflight_evidence_sha256`.
 
+Create a structurally valid permit draft with the contracts CLI, review every
+target and digest, then sign it with the documented Cosign flow:
+
+```bash
+scenario_sha256="$(sha256sum runs/current/input/scenario.yaml | cut -d' ' -f1)"
+robotics-contracts permit init \
+  --scenario-sha256 "${scenario_sha256}" \
+  --image-digest "${ROBOTICS_TARGET_IMAGE_DIGEST}" \
+  --trust-policy-sha256 "${ROBOTICS_TRUST_POLICY_SHA256}" \
+  --environment hil \
+  --target-id controller-alpha \
+  --identity-kind udev_serial \
+  --identity-sha256 "${ROBOTICS_TARGET_IDENTITY_SHA256}" \
+  --hardware-scope controller \
+  --operator-id operator@example.org \
+  --approver-id safety@example.org \
+  --interlock-reference "${ROBOTICS_INTERLOCK_REFERENCE}" \
+  --interlock-sha256 "${ROBOTICS_INTERLOCK_SHA256}" \
+  --output runs/current/authorization/execution-permit.json
+```
+
+The command does not authorize execution and does not create or hold signing
+keys. Physical profiles still require independent operator and safety-approver
+attestations.
+
 The Compose policy rejects `/dev/ttyUSB*`, `/dev/ttyACM*`, wildcards, and a
 complete `/dev` mapping. Runtime manifests carry the reviewed stable identity
 and preflight evidence digests.
@@ -506,9 +553,36 @@ current version, enforces OPA policies, builds all portable targets for
 arm64, scans every image, and runs the three-repository acceptance path.
 Contribution setup and required checks are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-On WSL2, run evidence and qualification workflows from the Linux filesystem or
-mount DrvFS with POSIX metadata enabled. DrvFS without POSIX metadata fails
-closed when immutable receipt permissions are applied.
+WSL2 support boundaries and host diagnostics are in [WSL2](docs/wsl2.md).
+
+## Consumer Automation
+
+Consumer repositories can call three narrow reusable workflows by an exact
+40-character infra commit SHA:
+
+- `reusable-validate-documents.yml` validates caller-owned contract documents;
+- `reusable-qualify.yml` runs the locked foundation and returns a signed
+  qualification package;
+- `reusable-verify-qualification.yml` verifies a retained package with a
+  public key or keyless Sigstore policy.
+
+The caller keeps product sources and secrets in its own repository. See the
+[minimal Compose consumer](examples/minimal-consumer/README.md) and the
+[generated compatibility lock](docs/foundation-compatibility.md). Product
+images derive from a released runtime image and build ROS packages after
+sourcing `/opt/robotics_ws/install/setup.bash`; this exposes the installed
+`robotics_observability` and `robotics_observability_msgs` packages without
+copying helper implementations.
+
+The optional `compose_project` input is a standalone, caller-owned model. Its
+source is checked before Compose resolution: recursive `include`/`extends`,
+`env_file`, `label_file`, secrets, and environment-backed or inline configs are
+rejected. Host providers, Docker API socket injection, and lifecycle hooks are
+also forbidden. Local config files are allowed only after canonical path
+validation; the accepted model is rendered with an empty interpolation
+environment and then included by value. This follows the Docker Compose
+[trust model](https://docs.docker.com/compose/trust-model/) and prevents the
+qualification runner from reading host files or credentials during parsing.
 
 ## Project Policies
 

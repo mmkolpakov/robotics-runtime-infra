@@ -8,6 +8,9 @@ mkdir -p tmp
 ci_yq -o=json test/acceptance/stepped-smoke.yaml \
   > tmp/stepped-smoke.json
 test "$(ci_policy_deny_count policy/scenario.rego scenario tmp/stepped-smoke.json)" -eq 0
+ci_yq -o=json test/zenoh/scenario.yaml \
+  > tmp/zenoh-scenario.json
+test "$(ci_policy_deny_count policy/scenario.rego scenario tmp/zenoh-scenario.json)" -eq 0
 ci_yq -o=json test/policy/unsafe-compose.yaml \
   > tmp/unsafe-compose.json
 test "$(ci_policy_deny_count policy/compose.rego compose tmp/unsafe-compose.json)" -gt 0

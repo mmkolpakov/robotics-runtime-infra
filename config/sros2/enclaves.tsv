@@ -1,0 +1,4 @@
+/talker	smoke.policy.xml
+/listener	smoke.policy.xml
+/robotics/telemetry_source	observer.policy.xml
+/robotics/observer	observer.policy.xml
