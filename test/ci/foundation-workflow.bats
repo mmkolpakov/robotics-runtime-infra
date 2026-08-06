@@ -4,6 +4,8 @@ setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   LIBRARY="${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh"
   WORKFLOW="${REPOSITORY_ROOT}/.github/workflows/foundation-integration.yml"
+  ACCEPTANCE_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
+  KEYLESS_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-keyless-qualification.sh"
   QUALIFICATION_POLICY="${REPOSITORY_ROOT}/trust/qualification-policy.json"
   QUALIFICATION_ROOT="${REPOSITORY_ROOT}/trust/qualification.trusted-root.json"
   # shellcheck source=scripts/ci/foundation/lib.sh
@@ -85,11 +87,29 @@ setup() {
   [ "${status}" -eq 0 ]
   run grep -R -E \
     -- '--certificate-identity-regexp|--insecure-ignore-tlog' \
-    "${REPOSITORY_ROOT}/scripts/ci/foundation/run-keyless-qualification.sh"
+    "${KEYLESS_SCRIPT}"
   [ "${status}" -eq 1 ]
   run grep -R -E \
     -- '--certificate-identity-regexp' \
     "${REPOSITORY_ROOT}/scripts/ci/foundation" \
     "${REPOSITORY_ROOT}/scripts/qualification"
   [ "${status}" -eq 1 ]
+}
+
+@test "keyless qualification receives retained runtime configuration evidence" {
+  local artifact
+  for artifact in host-topology.json runtime-resources.json; do
+    run grep -F -- \
+      "other_evidence:${artifact}=\${run_dir}/configuration/${artifact}" \
+      "${ACCEPTANCE_SCRIPT}"
+    [ "${status}" -eq 0 ]
+    run grep -F -- \
+      "\"\${run_dir}/configuration/${artifact}\" \"\${artifact_dir}/\"" \
+      "${ACCEPTANCE_SCRIPT}"
+    [ "${status}" -eq 0 ]
+    run grep -F -- \
+      "other_evidence:${artifact}=artifacts/${artifact}" \
+      "${KEYLESS_SCRIPT}"
+    [ "${status}" -eq 0 ]
+  done
 }
