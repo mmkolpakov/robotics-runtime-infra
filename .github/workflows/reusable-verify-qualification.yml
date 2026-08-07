@@ -1,0 +1,103 @@
+---
+name: verify-qualification-bundle
+
+on:
+  workflow_call:
+    inputs:
+      tooling_ref:
+        description: Exact robotics-runtime-infra commit SHA.
+        required: true
+        type: string
+      arguments_file:
+        description: Path containing one verify-bundle argument per line.
+        required: true
+        type: string
+      bundle:
+        description: Sigstore bundle path relative to the caller repository.
+        required: true
+        type: string
+      public_key:
+        description: Cosign public key path for key-based verification.
+        required: false
+        default: ""
+        type: string
+      policy:
+        description: Qualification policy path for keyless verification.
+        required: false
+        default: ""
+        type: string
+      trusted_root:
+        description: Sigstore trusted-root path for keyless verification.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Validate the immutable tooling reference
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: '[[ "${TOOLING_REF}" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          path: consumer
+          persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          repository: mmkolpakov/robotics-runtime-infra
+          ref: ${{ inputs.tooling_ref }}
+          path: tooling
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+        with:
+          version: "0.11.28"
+          enable-cache: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: v3.1.2
+      - name: Install the locked contracts tool
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
+          bash tooling/scripts/ci/foundation/import-sources.sh
+          uv sync \
+            --project tooling/dependencies/robotics-runtime-contracts \
+            --locked --no-dev
+      - name: Verify the retained qualification package
+        env:
+          ARGUMENTS_FILE: ${{ inputs.arguments_file }}
+          BUNDLE: ${{ inputs.bundle }}
+          POLICY: ${{ inputs.policy }}
+          PUBLIC_KEY: ${{ inputs.public_key }}
+          TRUSTED_ROOT: ${{ inputs.trusted_root }}
+        run: |
+          cd consumer
+          mapfile -t qualification_arguments <"${ARGUMENTS_FILE}"
+          verification_arguments=()
+          if test -n "${PUBLIC_KEY}"; then
+            test -z "${POLICY}${TRUSTED_ROOT}"
+            verification_arguments=(--key "${PUBLIC_KEY}")
+          else
+            test -n "${POLICY}" && test -n "${TRUSTED_ROOT}"
+            verification_arguments=(
+              --trusted-root "${TRUSTED_ROOT}"
+              --policy "${POLICY}"
+            )
+          fi
+          contracts_dir="${GITHUB_WORKSPACE}/tooling/dependencies/robotics-runtime-contracts"
+          export ROBOTICS_CONTRACTS_CLI="${contracts_dir}/.venv/bin/robotics-contracts"
+          "${GITHUB_WORKSPACE}/tooling/scripts/qualification/verify-bundle" \
+            --bundle "${BUNDLE}" \
+            "${verification_arguments[@]}" \
+            "${qualification_arguments[@]}"

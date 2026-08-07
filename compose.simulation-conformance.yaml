@@ -1,0 +1,49 @@
+---
+services:
+  simulation:
+    ipc: shareable
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/robotics-entrypoint
+        - timeout
+        - "5"
+        - ros2
+        - service
+        - type
+        - "${ROBOTICS_SIMULATOR_SERVICE_NAMESPACE:-/simulator}/get_simulator_features"
+      interval: 2s
+      timeout: 6s
+      start_period: 20s
+      retries: 15
+
+  simulation-conformance:
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
+    profiles: [simulation-conformance]
+    init: true
+    network_mode: service:simulation
+    ipc: service:simulation
+    command:
+      - python3
+      - -m
+      - robotics_runtime_infra.simulation_control
+      - --namespace
+      - "${ROBOTICS_SIMULATOR_SERVICE_NAMESPACE:-/simulator}"
+      - verify
+      - --steps
+      - "${ROBOTICS_CONFORMANCE_STEPS:-5}"
+      - --step-size-ns
+      - "${ROBOTICS_CONFORMANCE_STEP_SIZE_NS:-1000000}"
+    environment:
+      GZ_PARTITION: "${GZ_PARTITION:-robotics-runtime}"
+      ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      simulation:
+        condition: service_healthy
+    healthcheck:
+      disable: true

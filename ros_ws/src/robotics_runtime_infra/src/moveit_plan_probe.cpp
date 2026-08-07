@@ -21,7 +21,6 @@ constexpr char kJointName[] = "slider_joint";
 constexpr char kControllerAction[] =
   "/joint_trajectory_controller/follow_joint_trajectory";
 constexpr auto kControllerTimeout = std::chrono::seconds{60};
-constexpr double kInvalidTarget = 0.8;
 constexpr double kValidTarget = 0.3;
 constexpr double kPositionTolerance = 0.05;
 }  // namespace
@@ -51,21 +50,27 @@ int main(int argc, char ** argv)
       controller_client->wait_for_action_server(kControllerTimeout);
     const auto initial_state =
       controller_ready ? move_group.getCurrentState(15.0) : nullptr;
+    std::vector<double> target_positions;
+    if (initial_state) {
+      initial_state->copyJointGroupPositions(kPlanningGroup, target_positions);
+      if (target_positions.size() == 1) {
+        target_positions[0] = kValidTarget;
+      }
+    }
     if (!controller_ready) {
       RCLCPP_ERROR(node->get_logger(), "Trajectory controller action server is unavailable");
       status = 12;
     } else if (!initial_state) {
       RCLCPP_ERROR(node->get_logger(), "Initial robot state is unavailable");
       status = 2;
-    } else if (move_group.setJointValueTarget(std::vector<double>{kInvalidTarget})) {
-      RCLCPP_ERROR(node->get_logger(), "Out-of-range target passed the bounds check");
+    } else if (target_positions.size() != 1) {
+      RCLCPP_ERROR(node->get_logger(), "Unexpected planning-group size");
       status = 3;
-    // MoveIt retains a rejected joint target, so replace it before planning.
-    } else if (!move_group.setJointValueTarget(std::vector<double>{kValidTarget})) {
+    } else if (!move_group.setJointValueTarget(target_positions)) {
       RCLCPP_ERROR(node->get_logger(), "Valid target failed the bounds check");
       status = 5;
     } else {
-      move_group.setStartStateToCurrentState();
+      move_group.setStartState(*initial_state);
       moveit::planning_interface::MoveGroupInterface::Plan plan;
       const auto planned = move_group.plan(plan);
       const auto & trajectory = plan.trajectory.joint_trajectory;

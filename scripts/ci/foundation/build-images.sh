@@ -6,7 +6,7 @@ cd "${root}"
 
 docker buildx bake \
   --file docker-bake.hcl \
-  simulation acceptance-observer evidence-sink \
+  simulation acceptance-observer evidence-sink policy-tooling \
   --load \
   --set '*.platform=linux/amd64' \
   --set '*.cache-from=type=gha,scope=foundation-amd64' \

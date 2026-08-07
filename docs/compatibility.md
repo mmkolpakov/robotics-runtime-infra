@@ -18,6 +18,8 @@ The public surfaces are:
   in `README.md`;
 - files under `/usr/share/robotics-runtime/`;
 - ROS packages installed by the simulation and edge images;
+- the `/simulator` ROS 2 `simulation_interfaces` service boundary and `/clock`;
+- reusable workflows documented in `README.md`, when called by exact commit SHA;
 - machine-readable documents defined by `robotics-runtime-contracts`.
 
 Files under `test/`, implementation stages in `Dockerfile`, and local image

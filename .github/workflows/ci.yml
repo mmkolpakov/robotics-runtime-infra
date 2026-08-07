@@ -25,7 +25,7 @@ env:
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
   ROBOTICS_CONTRACTS_REQUIREMENT: >-
     robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.14.1/robotics_runtime_contracts-0.14.1-py3-none-any.whl#sha256=d23c4e6bf60635f023a90a8b4eed384492883af4f5f0c1d096ec22756dc8eff9
+    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.15.0/robotics_runtime_contracts-0.15.0-py3-none-any.whl#sha256=7af8779a7fdba38ee60aa76b58290678d092a4ee221cf103d4a37768d797b1ce
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -65,6 +65,8 @@ jobs:
         run: scripts/ci/static-analysis/verify-execution-policy.sh
       - name: Verify runtime Compose policy
         run: scripts/ci/static-analysis/verify-compose-runtime-policy.sh
+      - name: Verify the consumer composition trust boundary
+        run: bash scripts/ci/static-analysis/verify-foundation-consumer-policy.sh
       - name: Verify physical runtime policy
         run: scripts/ci/static-analysis/verify-physical-runtime-policy.sh
       - name: Verify host I/O policy
@@ -108,6 +110,7 @@ jobs:
       - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
         with:
           version: ${{ matrix.version }}
+      - uses: ./.github/actions/setup-buildx
       - name: Verify Compose version
         env:
           EXPECTED_COMPOSE_VERSION: ${{ matrix.version }}
@@ -116,6 +119,15 @@ jobs:
           "${EXPECTED_COMPOSE_VERSION}"
       - name: Validate every Compose model
         run: scripts/ci/validate-compose-models.sh
+      - name: Build the pinned policy engine
+        env:
+          REGISTRY: local
+          VERSION: ci
+        run: >-
+          docker buildx bake --file docker-bake.hcl policy-tooling --load
+          --set '*.platform=linux/amd64'
+      - name: Verify the consumer composition trust boundary
+        run: bash scripts/ci/static-analysis/verify-foundation-consumer-policy.sh
   integration:
     runs-on: ubuntu-24.04
     timeout-minutes: 120

@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+verify=false
+if [[ "${1:-}" == --verify ]]; then
+  verify=true
+  shift
+fi
+[[ "$#" -eq 2 ]] || {
+  printf 'usage: render-zenoh-config [--verify] CHANNEL_CONTRACT OUTPUT_DIR\n' >&2
+  exit 64
+}
+
+contract="$1"
+output_dir="$2"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+test -f "${contract}"
+mkdir -p "${output_dir}"
+
+jq -e '
+  .schema_version == "zenoh-channel.v1" and
+  .bridge.implementation == "zenoh-bridge-ros2dds" and
+  (.source.ros_domain_id | type == "number" and . >= 0 and . <= 232) and
+  (.destination.ros_domain_id | type == "number" and . >= 0 and . <= 232) and
+  (.source.topic == .destination.topic) and
+  (.source.topic | test("^/[A-Za-z0-9_/]+$"))
+' "${contract}" >/dev/null
+
+source_domain="$(jq -er '.source.ros_domain_id' "${contract}")"
+destination_domain="$(jq -er '.destination.ros_domain_id' "${contract}")"
+topic_pattern="^$(jq -er '.source.topic' "${contract}")$"
+
+jq -S -n \
+  --argjson domain "${source_domain}" \
+  --arg topic "${topic_pattern}" '
+  {
+    id: "1",
+    listen: {endpoints: ["tcp/0.0.0.0:7447"]},
+    mode: "router",
+    plugins: {
+      ros2dds: {
+        allow: {
+          action_clients: [], action_servers: [],
+          publishers: [$topic], service_clients: [], service_servers: [],
+          subscribers: [$topic]
+        },
+        domain: $domain,
+        nodename: "trace_context_source_bridge",
+        reliable_routes_blocking: true,
+        ros_automatic_discovery_range: "LOCALHOST"
+      }
+    },
+    scouting: {gossip: {enabled: false}, multicast: {enabled: false}}
+  }' >"${output_dir}/source.json5"
+
+jq -S -n \
+  --argjson domain "${destination_domain}" \
+  --arg topic "${topic_pattern}" '
+  {
+    connect: {endpoints: ["tcp/zenoh-source-plane:7447"]},
+    id: "2",
+    mode: "client",
+    plugins: {
+      ros2dds: {
+        allow: {
+          action_clients: [], action_servers: [],
+          publishers: [$topic], service_clients: [], service_servers: [],
+          subscribers: [$topic]
+        },
+        domain: $domain,
+        nodename: "trace_context_destination_bridge",
+        reliable_routes_blocking: true,
+        ros_automatic_discovery_range: "LOCALHOST"
+      }
+    },
+    scouting: {gossip: {enabled: false}, multicast: {enabled: false}}
+  }' >"${output_dir}/destination.json5"
+cp "${root}/config/zenoh/otel-collector.yaml" "${output_dir}/otel-collector.yaml"
+
+configuration_sha256="$({
+  printf 'source.json5\0'
+  cat "${output_dir}/source.json5"
+  printf '\0destination.json5\0'
+  cat "${output_dir}/destination.json5"
+  printf '\0'
+} | sha256sum | cut -d' ' -f1)"
+
+jq -S -n \
+  --arg configuration_sha256 "${configuration_sha256}" \
+  --arg source "${output_dir}/source.json5" \
+  --arg destination "${output_dir}/destination.json5" '
+  {
+    configuration_sha256: $configuration_sha256,
+    destination: $destination,
+    source: $source
+  }' >"${output_dir}/render-manifest.json"
+
+if [[ "${verify}" == true ]]; then
+  expected="$(jq -er '.bridge.configuration_sha256' "${contract}")"
+  test "${configuration_sha256}" = "${expected}" || {
+    printf 'rendered Zenoh configuration digest differs: expected %s, got %s\n' \
+      "${expected}" "${configuration_sha256}" >&2
+    exit 1
+  }
+fi
+
+cat "${output_dir}/render-manifest.json"

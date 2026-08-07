@@ -12,6 +12,8 @@ readonly retention_class="${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
 readonly evidence_mode="${EVIDENCE_MODE:-local}"
 readonly recording_mode="${ROBOTICS_RECORDING_MODE:-bounded}"
 readonly compression="${ROBOTICS_COMPRESSION:-zstd}"
+readonly default_artifact_media_types='application/json,application/x-ndjson,application/junit+xml,text/plain,application/vnd.in-toto+json'
+readonly artifact_media_types="${EVIDENCE_ARTIFACT_MEDIA_TYPES:-${default_artifact_media_types}}"
 
 fail() {
   printf 'evidence-sink: %s\n' "$*" >&2
@@ -26,6 +28,10 @@ require_run_id() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command is unavailable: $1"
+}
+
+artifact_media_type_allowed() {
+  tr ',' '\n' <<<"${artifact_media_types}" | grep -Fqx -- "$1"
 }
 
 aws_cli() {
@@ -247,10 +253,10 @@ register_artifact() {
   [[ -f "$file" ]] || fail "artifact does not exist: $file"
   [[ "$file" == /* ]] || fail 'artifact path must be absolute'
   [[ "$index" =~ ^[0-9]+$ ]] || fail 'artifact index must be a non-negative integer'
-  case "$media_type" in
-    application/json|application/x-ndjson|application/junit+xml|text/plain|application/vnd.in-toto+json) ;;
-    *) fail "unsupported artifact media type: $media_type" ;;
-  esac
+  [[ "$media_type" =~ ^(application|audio|image|text|video)/[A-Za-z0-9.+-]+$ ]] || \
+    fail "invalid artifact media type: $media_type"
+  artifact_media_type_allowed "$media_type" || \
+    fail "artifact media type is not allowed: $media_type"
   sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
   size_bytes="$(stat -c '%s' "$file")" || fail "cannot stat $file"
   mkdir -p "$receipt_dir" || fail 'cannot create receipt directory'
@@ -308,7 +314,7 @@ finalize_index() {
     --argjson upload_lag "$upload_lag" \
     --argjson segments "$segments" \
     '{
-      schema_version: "evidence-index.v2",
+      schema_version: "evidence-index.v3",
       run_id: $run_id,
       generated_at: $generated_at,
       finalized: true,

@@ -38,6 +38,17 @@ ci_yq() {
     "$@"
 }
 
+ci_yq_from_root() {
+  local root="$1"
+  shift
+  root="$(realpath -e -- "${root}")" || return
+  docker run --rm \
+    --volume "${root}:/input:ro" \
+    --entrypoint /yq \
+    "${POLICY_TOOLING_IMAGE:-local/robotics-runtime-infra/policy-tooling:ci}" \
+    "$@"
+}
+
 ci_policy_deny_count() {
   local policy="$1"
   local package="$2"
@@ -47,6 +58,87 @@ ci_policy_deny_count() {
     --data "${policy}" \
     --input "${input}" \
     "count(data.${package}.deny)"
+}
+
+ci_require_policy_allows() {
+  local policy="$1"
+  local package="$2"
+  local input="$3"
+  local denials
+  denials="$(ci_opa eval \
+    --fail \
+    --format json \
+    --data "${policy}" \
+    --input "${input}" \
+    "data.${package}.deny")" || return
+  jq -e '
+    (.result | length) == 1 and
+    (.result[0].expressions | length) == 1 and
+    (.result[0].expressions[0].value | type) == "array" and
+    (.result[0].expressions[0].value | length) == 0
+  ' <<<"${denials}" >/dev/null || {
+    jq -r '.result[0].expressions[0].value[]? // "invalid OPA result"' \
+      <<<"${denials}" >&2
+    return 1
+  }
+}
+
+ci_require_model_paths_within_root() {
+  local model="$1"
+  local root="$2"
+  local canonical_root path canonical_path
+  canonical_root="$(realpath -e -- "${root}")" || return
+  while IFS= read -r path; do
+    canonical_path="$(realpath -e -- "${path}")" || {
+      printf 'consumer path does not exist: %s\n' "${path}" >&2
+      return 1
+    }
+    case "${canonical_path}" in
+      "${canonical_root}" | "${canonical_root}"/*) ;;
+      *)
+        printf 'consumer path escapes its repository: %s -> %s\n' \
+          "${path}" "${canonical_path}" >&2
+        return 1
+        ;;
+    esac
+  done < <(
+    jq -er '[
+      .services[]?.volumes[]? | select(.type == "bind") | .source,
+      .services[]?.build.context? // empty,
+      .configs[]?.file? // empty,
+      .secrets[]?.file? // empty
+    ] | .[]' "${model}"
+  )
+}
+
+ci_require_source_paths_within_root() {
+  local model="$1"
+  local root="$2"
+  local canonical_root path candidate canonical_path
+  canonical_root="$(realpath -e -- "${root}")" || return
+  while IFS= read -r path; do
+    if [[ "${path}" == /* ]]; then
+      candidate="${path}"
+    else
+      candidate="${canonical_root}/${path}"
+    fi
+    canonical_path="$(realpath -e -- "${candidate}")" || {
+      printf 'consumer source path does not exist: %s\n' "${path}" >&2
+      return 1
+    }
+    case "${canonical_path}" in
+      "${canonical_root}" | "${canonical_root}"/*) ;;
+      *)
+        printf 'consumer source path escapes its repository: %s -> %s\n' \
+          "${path}" "${canonical_path}" >&2
+        return 1
+        ;;
+    esac
+  done < <(
+    jq -er '[
+      .configs[]?.file? // empty
+    ] | .[] | select(type == "string")' "${model}"
+  )
 }
 
 ci_validate_contract_documents() {

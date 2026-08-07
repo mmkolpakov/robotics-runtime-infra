@@ -7,6 +7,9 @@ mapfile -d '' ci_scripts < <(
 mapfile -d '' qualification_scripts < <(
   find scripts/qualification -type f -print0
 )
+mapfile -d '' config_scripts < <(
+  find scripts/config -type f -print0
+)
 
 docker run --rm --volume "${PWD}:/work:ro" --workdir /work \
   "${SHELLCHECK_IMAGE}" \
@@ -19,5 +22,6 @@ docker run --rm --volume "${PWD}:/work:ro" --workdir /work \
   docker/permit-preflight/permit-preflight-ci \
   docker/runtime/emit-runtime-manifest \
   test/zenoh/run \
+  "${config_scripts[@]}" \
   "${qualification_scripts[@]}" \
   "${ci_scripts[@]}"

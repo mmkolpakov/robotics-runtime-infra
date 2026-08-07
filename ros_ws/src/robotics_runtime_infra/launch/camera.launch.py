@@ -25,7 +25,6 @@ def generate_launch_description() -> LaunchDescription:
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(headless_launch),
                 launch_arguments={
-                    "gz_args": "-s -r -v 2",
                     "world": world,
                 }.items(),
             ),

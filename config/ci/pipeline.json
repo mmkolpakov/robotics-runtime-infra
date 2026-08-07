@@ -41,6 +41,10 @@
       "files": ["compose.yaml", "compose.stepped.yaml"]
     },
     {
+      "name": "simulation-conformance",
+      "files": ["compose.yaml", "compose.simulation-conformance.yaml"]
+    },
+    {
       "name": "edge-attach",
       "files": ["compose.yaml", "compose.edge-attach.yaml"]
     },

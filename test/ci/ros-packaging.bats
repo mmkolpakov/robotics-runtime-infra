@@ -44,6 +44,26 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
+@test "simulation conformance reuses the selected runtime image" {
+  expected_image=example.invalid/robotics/simulation:test
+  run env \
+    ROBOTICS_DOMAIN_ID=0 \
+    ROBOTICS_RUN_ID=run-compose-model-test \
+    SIMULATION_IMAGE="${expected_image}" \
+    docker compose \
+    -f compose.yaml \
+    -f compose.simulation-conformance.yaml \
+    --profile simulation-conformance \
+    config --format json
+  [ "${status}" -eq 0 ]
+
+  run jq -e --arg image "${expected_image}" '
+    .services.simulation.image == $image and
+    .services["simulation-conformance"].image == $image
+  ' <<<"${output}"
+  [ "${status}" -eq 0 ]
+}
+
 @test "edge runtime carries the typed trace context without build tooling" {
   run grep -F \
     'FROM edge-runtime-base AS edge-runtime-interfaces' \
@@ -65,28 +85,37 @@ setup() {
 
 @test "Gazebo clock bridges use the standard CLOCK QoS profile" {
   local config=ros_ws/src/robotics_runtime_infra/config/clock_bridge.yaml
-  local launch_file
-
   run grep -F 'qos_profile: CLOCK' "${config}"
   [ "${status}" -eq 0 ]
 
-  for launch_file in \
-    ros_ws/src/robotics_runtime_infra/launch/headless.launch.py \
-    ros_ws/src/robotics_runtime_infra/launch/joint_motion.launch.py; do
-    run grep -F 'clock_bridge.yaml' "${launch_file}"
-    [ "${status}" -eq 0 ]
-    run grep -F '/clock@rosgraph_msgs/msg/Clock' "${launch_file}"
-    [ "${status}" -eq 1 ]
-  done
+  run grep -F 'clock_bridge.yaml' \
+    ros_ws/src/robotics_runtime_infra/launch/headless.launch.py
+  [ "${status}" -eq 0 ]
+  run grep -F '/clock@rosgraph_msgs/msg/Clock' \
+    ros_ws/src/robotics_runtime_infra/launch/headless.launch.py
+  [ "${status}" -eq 1 ]
 
-  for launch_file in \
-    ros_ws/src/robotics_runtime_infra/launch/camera.launch.py \
-    ros_ws/src/robotics_runtime_infra/launch/gpu_lidar.launch.py; do
-    run grep -F 'headless.launch.py' "${launch_file}"
-    [ "${status}" -eq 0 ]
-    run grep -F 'clock_bridge.yaml' "${launch_file}"
-    [ "${status}" -eq 1 ]
-  done
+  run grep -F 'headless.launch.py' \
+    ros_ws/src/robotics_runtime_infra/launch/joint_motion.launch.py
+  [ "${status}" -eq 0 ]
+  run grep -F 'clock_bridge.yaml' \
+    ros_ws/src/robotics_runtime_infra/launch/joint_motion.launch.py
+  [ "${status}" -eq 1 ]
+
+  run grep -F 'headless.launch.py' \
+    ros_ws/src/robotics_runtime_infra/launch/camera.launch.py
+  [ "${status}" -eq 0 ]
+  run grep -F 'clock_bridge.yaml' \
+    ros_ws/src/robotics_runtime_infra/launch/camera.launch.py
+  [ "${status}" -eq 1 ]
+
+  # EGL rendering remains a Gazebo-specific adapter and owns its clock bridge.
+  run grep -F 'headless.launch.py' \
+    ros_ws/src/robotics_runtime_infra/launch/gpu_lidar.launch.py
+  [ "${status}" -eq 1 ]
+  run grep -F 'clock_bridge.yaml' \
+    ros_ws/src/robotics_runtime_infra/launch/gpu_lidar.launch.py
+  [ "${status}" -eq 0 ]
 
   run grep -F 'qos_profile=qos_profile_sensor_data' \
     ros_ws/src/robotics_runtime_infra/test/test_clock.py

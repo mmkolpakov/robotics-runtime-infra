@@ -2,10 +2,13 @@ cmake_minimum_required(VERSION 3.16)
 project(robotics_runtime_infra)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+
+ament_python_install_package(${PROJECT_NAME})
 
 add_executable(moveit_plan_probe src/moveit_plan_probe.cpp)
 target_compile_features(moveit_plan_probe PRIVATE cxx_std_17)

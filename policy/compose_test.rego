@@ -20,6 +20,19 @@ test_privileged_service_is_denied if {
 	count(violations) == 1
 }
 
+test_host_control_fields_are_denied if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"provider": {"type": "host-command"},
+		"use_api_socket": true,
+		"pre_start": [{"command": ["prepare"]}],
+		"post_start": [{"command": ["configure"]}],
+		"pre_stop": [{"command": ["drain"]}],
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+	}}}
+	count(violations) == 5
+}
+
 test_host_namespaces_are_denied if {
 	violations := compose.deny with input as {"services": {"runtime": {
 		"network_mode": "host",

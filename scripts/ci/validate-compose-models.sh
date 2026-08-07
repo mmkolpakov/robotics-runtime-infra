@@ -35,3 +35,7 @@ while IFS= read -r model; do
   printf 'Validating Compose model: %s\n' "${name}"
   docker compose "${compose_files[@]}" --profile '*' config --quiet
 done < <(jq -c '.compose_models[]' "${manifest}")
+
+printf 'Validating Compose include consumer\n'
+docker compose -f examples/minimal-consumer/compose.yaml \
+  --profile '*' config --quiet

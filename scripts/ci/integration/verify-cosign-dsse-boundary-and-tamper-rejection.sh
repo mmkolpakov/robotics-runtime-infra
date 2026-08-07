@@ -16,15 +16,14 @@ cosign=(
   "${PERMIT_PREFLIGHT_CI_IMAGE}"
 )
 "${cosign[@]}" signing-config create \
-  --no-default-fulcio \
-  --no-default-oidc \
-  --no-default-rekor \
-  --no-default-tsa \
   --out offline-signing-config.json
+"${cosign[@]}" trusted-root create \
+  --out offline-trusted-root.json
 "${cosign[@]}" generate-key-pair --output-key-prefix operator
 "${cosign[@]}" attest-blob --yes \
   --key operator.key \
   --signing-config offline-signing-config.json \
+  --trusted-root offline-trusted-root.json \
   --bundle operator.sigstore.json \
   --statement statement.json
 docker run --rm \

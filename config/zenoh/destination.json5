@@ -1,31 +1,37 @@
 {
-  id: "2",
-  mode: "client",
-  connect: {
-    endpoints: ["tcp/zenoh-source-plane:7447"],
+  "connect": {
+    "endpoints": [
+      "tcp/zenoh-source-plane:7447"
+    ]
   },
-  scouting: {
-    multicast: {
-      enabled: false,
-    },
-    gossip: {
-      enabled: false,
-    },
-  },
-  plugins: {
-    ros2dds: {
-      nodename: "trace_context_destination_bridge",
-      domain: 32,
-      ros_automatic_discovery_range: "LOCALHOST",
-      allow: {
-        publishers: ["^/robotics/trace_context$"],
-        subscribers: ["^/robotics/trace_context$"],
-        service_servers: [],
-        service_clients: [],
-        action_servers: [],
-        action_clients: [],
+  "id": "2",
+  "mode": "client",
+  "plugins": {
+    "ros2dds": {
+      "allow": {
+        "action_clients": [],
+        "action_servers": [],
+        "publishers": [
+          "^/robotics/trace_context$"
+        ],
+        "service_clients": [],
+        "service_servers": [],
+        "subscribers": [
+          "^/robotics/trace_context$"
+        ]
       },
-      reliable_routes_blocking: true,
-    },
+      "domain": 32,
+      "nodename": "trace_context_destination_bridge",
+      "reliable_routes_blocking": true,
+      "ros_automatic_discovery_range": "LOCALHOST"
+    }
   },
+  "scouting": {
+    "gossip": {
+      "enabled": false
+    },
+    "multicast": {
+      "enabled": false
+    }
+  }
 }

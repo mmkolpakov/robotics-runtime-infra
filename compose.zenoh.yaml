@@ -43,7 +43,7 @@ x-zenoh-bridge: &zenoh-bridge
     ROS_DISTRO: jazzy
   volumes:
     - type: bind
-      source: ./config/zenoh
+      source: "${ROBOTICS_ZENOH_CONFIG_DIR:-./config/zenoh}"
       target: /etc/robotics/zenoh
       read_only: true
   healthcheck:
@@ -64,7 +64,7 @@ x-zenoh-otel: &zenoh-otel
     - /tmp:rw,noexec,nosuid,nodev,size=32m
   volumes:
     - type: bind
-      source: ./config/zenoh
+      source: "${ROBOTICS_ZENOH_CONFIG_DIR:-./config/zenoh}"
       target: /etc/robotics/zenoh
       read_only: true
     - type: bind
@@ -224,11 +224,12 @@ services:
       - pipefail
       - -c
       - |
-        python3 /opt/robotics/zenoh/prepare_qualification.py
         robotics-acceptance transport-evaluate \
           --run-id "${ROBOTICS_RUN_ID}" \
+          --scenario /opt/robotics/zenoh/scenario.yaml \
           --causal-chain /reports/qualification/causal-chain.json \
           --channel-contract /reports/qualification/channel.json \
+          --clock-relation /reports/qualification/clock-relation.json \
           --trace zenoh-source=/reports/source/traces.otlp.jsonl \
           --trace zenoh-destination=/reports/destination/traces.otlp.jsonl \
           --evidence-index \
@@ -244,7 +245,7 @@ services:
         source: "${ROBOTICS_ZENOH_REPORT_DIR:-./artifacts/zenoh}"
         target: /reports
       - type: bind
-        source: ./config/zenoh
+        source: "${ROBOTICS_ZENOH_CONFIG_DIR:-./config/zenoh}"
         target: /etc/robotics/zenoh
         read_only: true
       - type: bind

@@ -1,0 +1,77 @@
+---
+name: validate-runtime-documents
+
+on:
+  workflow_call:
+    inputs:
+      tooling_ref:
+        description: Exact robotics-runtime-infra commit SHA.
+        required: true
+        type: string
+      documents:
+        description: Newline-delimited paths relative to the caller repository.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Validate the immutable tooling reference
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: '[[ "${TOOLING_REF}" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          path: consumer
+          persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          repository: mmkolpakov/robotics-runtime-infra
+          ref: ${{ inputs.tooling_ref }}
+          path: tooling
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+        with:
+          version: "0.11.28"
+          enable-cache: false
+      - name: Install the locked contracts tool
+        env:
+          TOOLING_REF: ${{ inputs.tooling_ref }}
+        run: |
+          test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
+          bash tooling/scripts/ci/foundation/import-sources.sh
+          uv sync \
+            --project tooling/dependencies/robotics-runtime-contracts \
+            --locked --no-dev
+      - name: Validate caller documents
+        env:
+          DOCUMENTS: ${{ inputs.documents }}
+        run: |
+          consumer_root="$(realpath consumer)"
+          validated=0
+          while IFS= read -r document; do
+            document="${document%$'\r'}"
+            test -n "${document}" || continue
+            candidate="$(realpath -e "${consumer_root}/${document}")"
+            case "${candidate}" in
+              "${consumer_root}"/*) ;;
+              *)
+                printf 'document escapes caller repository: %s\n' \
+                  "${document}" >&2
+                exit 64
+                ;;
+            esac
+            tooling/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts \
+              validate "${candidate}"
+            validated=$((validated + 1))
+          done <<<"${DOCUMENTS}"
+          test "${validated}" -gt 0

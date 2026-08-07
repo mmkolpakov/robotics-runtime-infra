@@ -54,22 +54,36 @@ test -n "${subscriber_id}"
 "${compose[@]}" run --rm --no-deps zenoh-publisher
 subscriber_status="$(docker container wait "${subscriber_id}")"
 test "${subscriber_status}" -eq 0
+"${compose[@]}" run --rm --no-deps zenoh-evaluator \
+  python3 /opt/robotics/zenoh/prepare_qualification.py
 evidence=("${compose[@]}" run --rm --no-deps zenoh-evidence)
 "${evidence[@]}" artifact /reports/source/traces.otlp.jsonl application/x-ndjson 0
 "${evidence[@]}" artifact /reports/source/probe.json application/json 1
 "${evidence[@]}" artifact /reports/destination/traces.otlp.jsonl application/x-ndjson 2
 "${evidence[@]}" artifact /reports/destination/probe.json application/json 3
+"${evidence[@]}" artifact \
+  /reports/qualification/shared-clock-identity.json application/json 4
 "${evidence[@]}" finalize
 "${compose[@]}" run --rm --no-deps zenoh-evaluator
 
+rendered_config="${report_dir}/qualification/rendered-zenoh"
+"${root}/scripts/config/render-zenoh-config" --verify \
+  "${report_dir}/qualification/channel.json" "${rendered_config}" >/dev/null
+diff -u "${root}/config/zenoh/source.json5" "${rendered_config}/source.json5"
+diff -u \
+  "${root}/config/zenoh/destination.json5" \
+  "${rendered_config}/destination.json5"
+
 jq -e '
-  .schema_version == "transport-qualification-result.v1"
+  .schema_version == "transport-qualification-result.v2"
   and .verdict.status == "passed"
   and .verdict.chain_count == 1
   and .verdict.passed_chain_count == 1
   and .causal_chains[0].status == "passed"
   and (.trace_evidence | length) == 2
   and (.channel_observations | length) == 1
+  and (.clock_relations | length) == 1
+  and .clock_relations[0].status == "passed"
 ' "${report_dir}/qualification/transport-qualification.json" >/dev/null
 
 jq -e --argjson message_count "${message_count}" '
