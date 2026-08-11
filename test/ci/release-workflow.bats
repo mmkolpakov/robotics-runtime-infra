@@ -87,6 +87,25 @@ setup() {
   grep -F 'id-token: write' <<<"${foundation_gate}"
 }
 
+@test "release scan uploads use one category per candidate platform" {
+  workflow=.github/workflows/release-image.yml
+
+  grep -F \
+    'sarif_file: artifacts/security/${{ matrix.id }}-linux-amd64.sarif' \
+    "${workflow}"
+  grep -F \
+    'category: release-candidate-${{ matrix.id }}-linux-amd64' \
+    "${workflow}"
+  grep -F \
+    'sarif_file: artifacts/security/${{ matrix.id }}-linux-arm64.sarif' \
+    "${workflow}"
+  grep -F \
+    'category: release-candidate-${{ matrix.id }}-linux-arm64' \
+    "${workflow}"
+  run grep -E '^[[:space:]]+sarif_file: artifacts/security$' "${workflow}"
+  [ "${status}" -eq 1 ]
+}
+
 @test "cross-platform build tooling is immutable in every publishing path" {
   action=.github/actions/setup-buildx/action.yml
   run grep -R -F 'tonistiigi/binfmt:latest' .github
