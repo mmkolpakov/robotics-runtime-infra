@@ -95,7 +95,7 @@ services:
       - --ignore
       - "${ROBOTICS_BENCHMARK_WARMUP_SEC:-2}"
       - --max-runtime
-      - "${ROBOTICS_BENCHMARK_DURATION_SEC:-10}"
+      - "${ROBOTICS_BENCHMARK_PUBLISHER_DURATION_SEC:-60}"
       - --wait-for-matched-timeout
       - "30"
       - --logfile
