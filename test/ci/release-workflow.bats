@@ -257,7 +257,7 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
-@test "immutable promotion refuses collisions and registry ambiguity" {
+@test "immutable promotion distinguishes missing tags from registry ambiguity" {
   fake_bin="${BATS_TEST_TMPDIR}/promotion-bin"
   mkdir -p "${fake_bin}"
   cat >"${fake_bin}/docker" <<'EOF'
@@ -265,6 +265,10 @@ EOF
 set -Eeuo pipefail
 test "$1 $2 $3" = "buildx imagetools inspect"
 case "${FAKE_REGISTRY_STATE}" in
+  missing)
+    printf 'ERROR: %s: not found\n' "$6" >&2
+    exit 1
+    ;;
   collision)
     jq -n --arg digest "sha256:$(printf '%064d' 9)" \
       '{digest: $digest}'
@@ -281,6 +285,13 @@ EOF
   chmod +x "${fake_bin}/docker"
   image=ghcr.io/test-owner/robotics-runtime-infra/simulation
   digest="sha256:$(printf '%064d' 1)"
+
+  run env \
+    "PATH=${fake_bin}:${PATH}" \
+    FAKE_REGISTRY_STATE=missing \
+    scripts/ci/release/promote-immutable-tags.sh \
+      check "${image}" "${digest}" - "${image}:0.8.0"
+  [ "${status}" -eq 0 ]
 
   run env \
     "PATH=${fake_bin}:${PATH}" \
