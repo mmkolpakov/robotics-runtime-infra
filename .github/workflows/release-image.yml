@@ -273,7 +273,19 @@ jobs:
         with:
           name: release-bundle-${{ github.ref_name }}
           path: release
+      - name: Detect an existing release
+        id: release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json tagName >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish release notes, lock, and digest records
+        if: steps.release.outputs.exists != 'true'
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
@@ -289,3 +301,20 @@ jobs:
             --verify-tag \
             --title "robotics-runtime-infra ${GITHUB_REF_NAME}" \
             --notes-file release/release-notes.md
+      - name: Verify immutable release assets
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in {1..12}; do
+            if gh release verify "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              break
+            fi
+            if (( attempt < 12 )); then
+              sleep 5
+            fi
+          done
+          gh release verify "$GITHUB_REF_NAME"
+          for artifact in release/release.env release/digests/*.txt; do
+            gh release verify-asset "$GITHUB_REF_NAME" "$artifact"
+          done
