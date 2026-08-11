@@ -53,6 +53,7 @@ jobs:
     needs: verify-source
     permissions:
       contents: read
+      id-token: write
     uses: ./.github/workflows/foundation-integration.yml
 
   prepare:

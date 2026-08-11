@@ -77,6 +77,16 @@ setup() {
 
 }
 
+@test "release workflow delegates the permissions required by reusable gates" {
+  foundation_gate="$(
+    sed -n '/^  foundation-gate:/,/^  prepare:/p' \
+      .github/workflows/release-image.yml
+  )"
+
+  grep -F 'contents: read' <<<"${foundation_gate}"
+  grep -F 'id-token: write' <<<"${foundation_gate}"
+}
+
 @test "cross-platform build tooling is immutable in every publishing path" {
   action=.github/actions/setup-buildx/action.yml
   run grep -R -F 'tonistiigi/binfmt:latest' .github
