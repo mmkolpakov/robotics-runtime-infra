@@ -21,6 +21,7 @@ for profile in \
   ROBOTICS_BENCHMARK_PROFILE="${profile}" \
   ROBOTICS_BENCHMARK_DIR="${result_dir}" \
   ROBOTICS_BENCHMARK_DURATION_SEC=5 \
+  ROBOTICS_BENCHMARK_PUBLISHER_DURATION_SEC=60 \
     "${compose[@]}" --profile benchmark \
     up --no-build --abort-on-container-exit \
     --exit-code-from benchmark-subscriber \
