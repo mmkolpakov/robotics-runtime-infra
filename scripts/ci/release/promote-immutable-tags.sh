@@ -44,7 +44,7 @@ inspect_digest() {
     return 0
   fi
   if grep -Eiq \
-    '(manifest unknown|name unknown|manifest[^[:space:]]* not found)' \
+    '(manifest unknown|name unknown|manifest[^[:space:]]* not found|^ERROR:[[:space:]]+[^[:space:]]+:[[:space:]]+not found[[:space:]]*$)' \
     "${error}"; then
     return 1
   fi
