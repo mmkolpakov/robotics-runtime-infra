@@ -177,6 +177,8 @@ Base images, package snapshots, and Python artifacts are pinned in
 `Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
 source of exact contracts and harness revisions. BuildKit embeds it and derives
 the runtime-readable `foundation-lock.json` used when a manifest is emitted.
+The non-published project in `tooling/foundation` owns the reproducible joint
+Python environment; each imported repository retains its own development lock.
 CI also requires each imported revision to be an exact release tag matching the
 package version installed in the acceptance observer image.
 Ubuntu packages for both amd64 and arm64 resolve from the same signed,

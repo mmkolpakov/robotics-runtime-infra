@@ -32,6 +32,25 @@ docker compose --profile test --profile acceptance \
 CI is the release gate for the arm64 build, vulnerability policy, supply-chain
 checks, and the integration of contracts, acceptance harness, and runtime.
 
+## Foundation integration
+
+`foundation.repos` selects exact contracts and harness commits. The runtime
+repository owns their joint Python resolution in `tooling/foundation/uv.lock`;
+the imported repositories keep independent development locks.
+
+After changing a revision in `foundation.repos`, refresh and validate the
+integration environment:
+
+```bash
+bash scripts/ci/foundation/import-sources.sh
+uv lock --project tooling/foundation
+bash scripts/ci/foundation/validate-foundation.sh
+```
+
+Only the runtime repository changes for a compatible foundation upgrade. A
+contracts release does not require a harness release unless the harness code or
+its declared compatibility range changes.
+
 ## Change boundaries
 
 Keep this repository domain-neutral. A change may add reusable ROS, simulation,

@@ -48,4 +48,6 @@ mapfile -t checkable_targets < <(
   ' <<<"${bake_plan}"
 )
 ((${#checkable_targets[@]} > 0))
-"${bake[@]}" --check "${checkable_targets[@]}"
+for target in "${checkable_targets[@]}"; do
+  "${bake[@]}" --check "${target}"
+done
