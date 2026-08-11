@@ -170,13 +170,15 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.15.0 |
-| Acceptance harness | `robotics-acceptance-harness` 0.17.0 |
+| Contracts | `robotics-runtime-contracts` 0.15.4 |
+| Acceptance harness | `robotics-acceptance-harness` 0.17.1 |
 
 Base images, package snapshots, and Python artifacts are pinned in
 `Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
 source of exact contracts and harness revisions. BuildKit embeds it and derives
 the runtime-readable `foundation-lock.json` used when a manifest is emitted.
+The non-published project in `tooling/foundation` owns the reproducible joint
+Python environment; each imported repository retains its own development lock.
 CI also requires each imported revision to be an exact release tag matching the
 package version installed in the acceptance observer image.
 Ubuntu packages for both amd64 and arm64 resolve from the same signed,

@@ -1,0 +1,16 @@
+[project]
+name = "robotics-foundation-integration"
+version = "0.0.0"
+description = "Locked integration environment for the robotics runtime foundation."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "robotics-acceptance-harness",
+  "robotics-runtime-contracts",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+robotics-acceptance-harness = { path = "../../dependencies/robotics-acceptance-harness", editable = true }
+robotics-runtime-contracts = { path = "../../dependencies/robotics-runtime-contracts", editable = true }

@@ -140,11 +140,11 @@ qualification_resolve_contracts_cli() {
     QUALIFICATION_CONTRACTS_CLI="$ROBOTICS_CONTRACTS_CLI"
   elif command -v robotics-contracts >/dev/null 2>&1; then
     QUALIFICATION_CONTRACTS_CLI="$(command -v robotics-contracts)"
-  elif [[ -x dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts ]]; then
-    QUALIFICATION_CONTRACTS_CLI="$PWD/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
+  elif [[ -x tooling/foundation/.venv/bin/robotics-contracts ]]; then
+    QUALIFICATION_CONTRACTS_CLI="$PWD/tooling/foundation/.venv/bin/robotics-contracts"
   else
     qualification_fail \
-      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.15.0 or newer'
+      'robotics-contracts CLI is unavailable; install robotics-runtime-contracts 0.15.4 or newer'
   fi
 }
 

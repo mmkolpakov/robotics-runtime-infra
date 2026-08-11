@@ -9,6 +9,7 @@ readonly evidence_metrics_segment_index=900000
 
 root="$(foundation_repository_root)"
 cd "${root}"
+readonly foundation_bin="${root}/tooling/foundation/.venv/bin"
 # shellcheck source=scripts/ci/lib.sh
 source "${root}/scripts/ci/lib.sh"
 
@@ -40,7 +41,7 @@ lscpu --json >"${run_dir}/configuration/host-topology.json"
 
 export ROBOTICS_RUN_ID
 ROBOTICS_RUN_ID="$(
-  dependencies/robotics-acceptance-harness/.venv/bin/robotics-acceptance create-run \
+  "${foundation_bin}/robotics-acceptance" create-run \
     --scenario "${run_dir}/scenario.yaml" \
     --output "${run_dir}/acceptance-run.json" \
     --domain primary=observer \
@@ -49,7 +50,7 @@ ROBOTICS_RUN_ID="$(
 )"
 export ROBOTICS_DOMAIN_ID=primary
 foundation_validate_document \
-  dependencies/robotics-runtime-contracts/.venv/bin/python \
+  "${foundation_bin}/python" \
   "${run_dir}/acceptance-run.json"
 
 export ROBOTICS_RUN_DIR="${run_dir}"
@@ -253,7 +254,7 @@ export ROBOTICS_HOST_TOPOLOGY_CONFIG=/run/robotics/configuration/host-topology.j
 export ROBOTICS_RUNTIME_RESOURCES_CONFIG=/run/robotics/configuration/runtime-resources.json
 "${compose[@]}" --profile acceptance run --rm runtime-manifest
 foundation_validate_document \
-  dependencies/robotics-runtime-contracts/.venv/bin/python \
+  "${foundation_bin}/python" \
   "${run_dir}/runtime-manifest.json"
 fastdds_profile="${root}/config/fastdds/udp-only.xml"
 fastdds_profile_sha256="$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)"
@@ -325,7 +326,7 @@ mapfile -t mcap_files < <(
 )
 test "${#mcap_summaries[@]}" -ge 1
 test "${#mcap_files[@]}" -eq "${#mcap_summaries[@]}"
-export ROBOTICS_CONTRACTS_CLI="${root}/dependencies/robotics-runtime-contracts/.venv/bin/robotics-contracts"
+export ROBOTICS_CONTRACTS_CLI="${foundation_bin}/robotics-contracts"
 [[ "$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)" == \
   "${fastdds_profile_sha256}" ]] || {
   printf 'Fast DDS profile changed during the foundation run\n' >&2

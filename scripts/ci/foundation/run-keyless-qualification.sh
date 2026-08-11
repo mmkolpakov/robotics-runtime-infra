@@ -8,6 +8,7 @@ source "${script_dir}/lib.sh"
 
 root="$(foundation_repository_root)"
 cd "${root}"
+readonly foundation_project="${root}/tooling/foundation"
 
 foundation_require_env \
   ACTIONS_ID_TOKEN_REQUEST_TOKEN \
@@ -49,9 +50,9 @@ actual_identity="https://github.com/${GITHUB_WORKFLOW_REF}"
   exit 65
 }
 
-contracts_dir="${root}/dependencies/robotics-runtime-contracts"
-uv sync --project "${contracts_dir}" --locked --all-groups
-export ROBOTICS_CONTRACTS_CLI="${contracts_dir}/.venv/bin/robotics-contracts"
+uv sync --project "${foundation_project}" --locked --no-default-groups --no-editable
+uv pip check --python "${foundation_project}/.venv/bin/python"
+export ROBOTICS_CONTRACTS_CLI="${foundation_project}/.venv/bin/robotics-contracts"
 
 mapfile -t mcap_summaries < <(
   find artifacts -maxdepth 1 -type f -name '*.mcap-summary.json' -print |

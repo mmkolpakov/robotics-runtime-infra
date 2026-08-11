@@ -8,12 +8,28 @@ setup() {
   REUSABLE_WORKFLOW="${REPOSITORY_ROOT}/.github/workflows/reusable-qualify.yml"
   ACCEPTANCE_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
   KEYLESS_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-keyless-qualification.sh"
+  VALIDATION_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/validate-foundation.sh"
+  INTEGRATION_PROJECT="${REPOSITORY_ROOT}/tooling/foundation/pyproject.toml"
+  INTEGRATION_LOCK="${REPOSITORY_ROOT}/tooling/foundation/uv.lock"
   QUALIFICATION_POLICY="${REPOSITORY_ROOT}/trust/qualification-policy.json"
   QUALIFICATION_ROOT="${REPOSITORY_ROOT}/trust/qualification.trusted-root.json"
   # shellcheck source=scripts/ci/foundation/lib.sh
   source "${LIBRARY}"
   # shellcheck source=scripts/ci/lib.sh
   source "${CI_LIBRARY}"
+}
+
+@test "runtime foundation owns the joint Python lock" {
+  [ -f "${INTEGRATION_PROJECT}" ]
+  [ -f "${INTEGRATION_LOCK}" ]
+  run grep -F 'foundation_project=tooling/foundation' "${VALIDATION_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run grep -E 'uv sync --project .*dependencies/robotics-' "${VALIDATION_SCRIPT}"
+  [ "${status}" -eq 1 ]
+  run grep -F 'robotics-acceptance-harness' "${INTEGRATION_PROJECT}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'robotics-runtime-contracts' "${INTEGRATION_PROJECT}"
+  [ "${status}" -eq 0 ]
 }
 
 @test "undefined policy queries fail closed" {
