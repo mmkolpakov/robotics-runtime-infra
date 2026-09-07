@@ -45,7 +45,10 @@ flowchart LR
 The end-to-end handoff is machine-readable: a product repository supplies its
 workload and scenario, runtime infra emits observed runtime and evidence facts,
 and the harness emits an acceptance result plus JUnit. Each layer can evolve
-and be tested independently.
+within the [pinned compatibility pair](docs/compatibility.md#foundation-generations).
+This source line uses contracts 0.15.4 and harness 0.17.1. Contracts 0.16 /
+harness 0.18 documents require a coordinated migration before infra can consume
+them; matching `schema_version` strings alone do not establish compatibility.
 
 The shared document model lives in
 [`robotics-runtime-contracts`](https://github.com/mmkolpakov/robotics-runtime-contracts).
@@ -146,6 +149,7 @@ Release tags publish immutable digests for these images under
 | `acceptance-observer` | amd64, arm64 | Attach-only acceptance verification and JSON/JUnit results |
 | `benchmark` | amd64, arm64 | `performance_test` for ROS 2 transport measurements |
 | `evidence-sink` | amd64, arm64 | MCAP validation, checksums, S3-compatible upload and evidence finalization |
+| `permit-preflight` | amd64, arm64 | Verify execution permits, independent signatures, policy and nonce state before physical attachment |
 
 The simulation image is tested by running Gazebo and ROS 2 tests on amd64. The
 portable images are built for amd64 and arm64; hardware-specific accelerators
@@ -164,7 +168,7 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Intel inference candidate | ONNX Runtime OpenVINO 1.24.1 with OpenVINO 2025.4.1 |
 | NVIDIA inference candidate | ONNX Runtime GPU 1.27.0, CUDA 13.3.0 and cuDNN 9 |
 | AMD inference candidate | ONNX Runtime MIGraphX 1.23.2 with ROCm 7.2.4 |
-| Jetson inference candidate | JetPack 7.2 host; source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11 |
+| Jetson inference candidate | Source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11; compatibility with JetPack 7.2 is unqualified |
 | RK3588 inference candidate | RKNN Toolkit2 and RKNN Runtime 2.3.2 |
 | Evidence format | rosbag2 MCAP and MCAP CLI 0.3.0 |
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
@@ -174,8 +178,11 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Acceptance harness | `robotics-acceptance-harness` 0.17.1 |
 
 Base images, package snapshots, and Python artifacts are pinned in
-`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
-source of exact contracts and harness revisions. BuildKit embeds it and derives
+`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` selects exact
+contracts and harness source revisions. Wheel URLs, checksums and the joint
+Python lock are maintained separately and must match those releases; see the
+[foundation update procedure](CONTRIBUTING.md#foundation-integration).
+BuildKit embeds `foundation.repos` and derives
 the runtime-readable `foundation-lock.json` used when a manifest is emitted.
 The non-published project in `tooling/foundation` owns the reproducible joint
 Python environment; each imported repository retains its own development lock.
@@ -190,6 +197,13 @@ image is published with an SBOM, BuildKit provenance, and an artifact
 attestation.
 
 Candidate versions are reproducible build inputs, not hardware support claims.
+NVIDIA's [JetPack 7.2 baseline](https://developer.nvidia.com/embedded/jetpack/downloads/archive-7.2)
+is Jetson Linux 39.2, CUDA 13.2.1, cuDNN 9.20.0 and TensorRT 10.16.2. The
+candidate container's CUDA 13.3 / TensorRT 11 stack differs from that host
+baseline. An image build or CUDA compatibility setting does not prove that
+pair works on Orin or Thor; a retained device qualification is still required.
+RKNN Toolkit2 2.3.2 has a separate, deliberately constrained converter stack;
+see [hardware dependency limits](docs/compatibility.md#hardware-dependency-limits).
 The current source line targets prerelease `v0.8.0-rc.1`; unqualified
 accelerator and physical-observation paths remain qualification-gated.
 
@@ -391,8 +405,37 @@ Intel sensor qualification also retains the exact ONNX fixture, observed NPY
 inputs, provider report, and a validated `model-artifact-manifest.v1` linking
 those artifacts to the runtime manifest.
 `ROBOTICS_TIME_EVIDENCE_DIR` is the separate bind mount used by host-owned
-Chrony and PTP collectors; it defaults to the run evidence directory. The host
-time directory is owned by the host `_chrony` UID/GID.
+Chrony and PTP collectors. Its literal Compose default is
+`./runs/current/evidence`; changing `ROBOTICS_RUN_DIR` or `ROBOTICS_EVIDENCE_DIR`
+does not change this default. Set it explicitly to a separate directory, such
+as `./runs/current/time-evidence`, owned by the host `_chrony` UID/GID with
+mode `0770`. Do not change the evidence-sink directory to `_chrony` ownership.
+When assembling a qualification bundle, retain the resulting time file in the
+run's evidence set and register it with the appropriate owner and checksum.
+
+For a local runtime manifest, set both image variables before invoking Compose:
+
+```bash
+export ROBOTICS_RUN_ID=local-simulation
+export ROBOTICS_DOMAIN_ID=primary
+export ROBOTICS_RUN_DIR=./runs/current
+# Use the simulation tag@sha256 reference from the reviewed release.env.
+export ROBOTICS_SIMULATION_OCI_REFERENCE="${SIMULATION_IMAGE:?load the simulation reference from release.env}"
+export ROBOTICS_SIMULATION_OCI_DIGEST="${ROBOTICS_SIMULATION_OCI_REFERENCE##*@}"
+docker compose --env-file release.env --profile acceptance \
+  run --rm --no-deps runtime-manifest
+```
+
+`--env-file` supplies Compose interpolation; it does not export shell variables.
+Load the reviewed `SIMULATION_IMAGE` value into the shell before this example.
+Use a registry manifest digest, not a local Docker image ID. Source-only builds
+without a registry reference cannot satisfy this manifest prerequisite yet.
+The image supplies `ROBOTICS_INFRA_REVISION`; `ROBOTICS_RUNTIME_ID` defaults to
+`org.example.local-runtime`. Set that ID for the consuming runtime. The run
+directory must already exist and be writable by UID 1000.
+`ROBOTICS_RUN_ID` and `ROBOTICS_DOMAIN_ID` must match the acceptance run and
+scenario when an observer is attached. `ROBOTICS_DOMAIN_ID` is a contract
+domain identifier; it is separate from the numeric DDS `ROS_DOMAIN_ID`.
 
 The `robotics.*` metric namespace is reserved by the foundation. It includes
 clock, message delivery, inference latency, and
@@ -423,11 +466,23 @@ Install `config/time/chrony-command-socket.conf` as
 
 ```bash
 export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
-install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
-  -m 0770 runs/current/evidence
+export ROBOTICS_TIME_EVIDENCE_DIR=./runs/current/time-evidence
+sudo install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
+  -m 0770 "${ROBOTICS_TIME_EVIDENCE_DIR}"
+sudo chronyc -h /run/robotics-time/chronyd.sock tracking
+sudo chronyc -h /run/robotics-time/chronyd.sock sources
 docker compose -f compose.yaml -f compose.time.yaml \
   --profile time-chrony up -d time-evidence-chrony
 ```
+
+The fragment changes the Unix command socket to
+`/run/robotics-time/chronyd.sock` and disables the UDP command port with
+`cmdport 0`; it does not add a second Unix socket. Host monitoring and any
+`chrony-wait.service` or site script using `chronyc` must use this path as
+well. Review those commands before restarting Chrony. See the
+[Chrony 4.5 command-access documentation](https://chrony-project.org/doc/4.5/chrony.conf.html#bindcmdaddress).
+`ROBOTICS_TIME_SOCKET_DIR` defaults to `/run/robotics-time`; the collector runs
+as `ROBOTICS_CHRONY_IDENTITY` and needs access to the socket directory.
 
 For PTP, install `config/time/ptp4l.conf` through host configuration
 management and install both `systemd/robotics-ptp-sample.*` units under
@@ -437,14 +492,21 @@ management and install both `systemd/robotics-ptp-sample.*` units under
 sudo systemctl daemon-reload
 sudo systemctl enable --now robotics-ptp-sample.timer
 export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
+export ROBOTICS_TIME_EVIDENCE_DIR=./runs/current/time-evidence
+sudo install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
+  -m 0770 "${ROBOTICS_TIME_EVIDENCE_DIR}"
 docker compose -f compose.yaml -f compose.time.yaml \
   --profile time-ptp up -d time-evidence-ptp
 ```
 
-Both profiles write `runs/current/evidence/hardware-time.otlp.json` with clock
+Both examples write `runs/current/time-evidence/hardware-time.otlp.json` with clock
 offset in milliseconds, drift in ppm, message age in milliseconds, and a
 monotonic-clock flag. `ptp4l` and `phc2sys` remain host services; the collectors
 receive no network device, PHC device, or Linux capability.
+Use one time collector per output directory: both use the same filename.
+Current message-age and monotonic metrics are derived collector observations,
+not proof of source freshness or hardware clock monotonicity. Physical timing
+qualification remains pending the time-evidence corrections and a live host run.
 
 The hosted physical-attach test binds its synthetic target to the SPKI digest
 of the generated SROS2 telemetry-source certificate. That identity proves the
@@ -484,7 +546,8 @@ sha256sum runs/current/authorization-output/serial-preflight.json
 Use the first digest as `identity_sha256` and the second as
 `preflight_evidence_sha256`.
 
-Create a structurally valid permit draft with the contracts CLI, review every
+Create a structurally valid permit draft with the pinned contracts 0.15.4 CLI,
+review every
 target and digest, then sign it with the documented Cosign flow:
 
 ```bash
@@ -508,6 +571,15 @@ robotics-contracts permit init \
 The command does not authorize execution and does not create or hold signing
 keys. Physical profiles still require independent operator and safety-approver
 attestations.
+
+The physical Compose profiles are preflight and observation candidates. The
+current `edge-attach`, `hil`, and `real-observation` observer commands omit
+required `robotics-acceptance verify` arguments. Hosted physical-attach CI
+substitutes a ROS telemetry probe, so its success proves the synthetic
+authorization/transport path, not a completed live acceptance result. The
+foundation simulation path supplies the full observer arguments. Physical
+profile acceptance needs the planned command repair and an independent run;
+do not treat preflight success as product or hardware qualification.
 
 The Compose policy rejects `/dev/ttyUSB*`, `/dev/ttyACM*`, wildcards, and a
 complete `/dev` mapping. Runtime manifests carry the reviewed stable identity
