@@ -21,6 +21,7 @@ write_runtime_manifest_input() {
   local target_evidence_sha256
   local observer_policy_sha256
   local image_digest
+  local image_identity
   local contracts_revision
   local harness_revision
 
@@ -31,9 +32,8 @@ write_runtime_manifest_input() {
   observer_policy_sha256="$(
     sha256_file "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml"
   )"
-  image_digest="$(
-    docker image inspect "${OBSERVER_IMAGE}" --format '{{.Id}}'
-  )"
+  image_identity="$(ci_image_identity "${OBSERVER_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}")" || return
+  image_digest="$(jq -er '.digest' <<<"${image_identity}")"
   contracts_revision="$(
     awk '
       /^  robotics-runtime-contracts:/ {contracts = 1; next}
@@ -53,7 +53,7 @@ write_runtime_manifest_input() {
     --arg harness_revision "${harness_revision}" \
     --arg infra_revision "$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)" \
     --arg image_digest "${image_digest}" \
-    --arg image_reference "${OBSERVER_IMAGE}@${image_digest}" \
+    --arg image_reference "$(jq -er '.reference' <<<"${image_identity}")" \
     --arg kernel "$(uname -r)" \
     --arg observer_policy_sha256 "${observer_policy_sha256}" \
     --arg target_evidence_sha256 "${target_evidence_sha256}" \

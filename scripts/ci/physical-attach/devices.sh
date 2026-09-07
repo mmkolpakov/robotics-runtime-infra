@@ -3,6 +3,9 @@
 # This module is sourced by physical-attach.sh and uses its coordinator state.
 # shellcheck disable=SC2034,SC2154
 
+# shellcheck source=scripts/ci/image-identity.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/image-identity.sh"
+
 acquire_host_lock() {
   local lock_file="${ROBOTICS_PHYSICAL_ATTACH_LOCK_FILE:-/run/lock/robotics-runtime-infra-physical-attach.lock}"
 

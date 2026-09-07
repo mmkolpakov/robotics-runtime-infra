@@ -5,6 +5,7 @@
 
 write_scenario_input_manifest() {
   local image
+  local image_config_digest
   local repository_status
   local source_revision
 
@@ -24,8 +25,11 @@ write_scenario_input_manifest() {
     printf 'evidence\t%s\thardware-time-window.json\n' \
       "$(sha256_file "${ROBOTICS_TIME_EVIDENCE_WINDOW}")"
     while IFS= read -r image; do
+      # This input binds the local execution configuration, separately from the
+      # registry manifest digest used by the permit and runtime manifest.
+      image_config_digest="$(docker image inspect "${image}" --format '{{.Id}}')" || return
       printf 'image\t%s\t%s\n' \
-        "$(docker image inspect "${image}" --format '{{.Id}}')" \
+        "${image_config_digest}" \
         "${image}"
     done < <(
       real_compose \
@@ -35,13 +39,13 @@ write_scenario_input_manifest() {
         config --images | LC_ALL=C sort --unique
     )
     if test "${ROBOTICS_RUNTIME_MODE}" = released; then
-      test -s "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
+      test -s "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}" || return
       printf 'evidence\t%s\tverifier-attestation.json\n' \
         "$(sha256_file "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}")"
     fi
     printf 'measurement-run\t%s\thardware-time\n' \
       "${ROBOTICS_TIME_EVIDENCE_RUN_ID}"
-  } | LC_ALL=C sort >"${scenario_manifest}"
+  } | LC_ALL=C sort >"${scenario_manifest}" || return
   test -s "${scenario_manifest}"
 }
 
@@ -65,6 +69,7 @@ write_permit_case() {
   local target_identity
   local scenario_sha256
   local image_digest
+  local image_identity
   local trust_policy_sha256
   local interlock_sha256
   local checked_at
@@ -77,9 +82,8 @@ write_permit_case() {
   }
   target_identity="$(<"${work_root}/target-identity.sha256")"
   scenario_sha256="$(sha256_file "${scenario_manifest}")"
-  image_digest="$(
-    docker image inspect "${OBSERVER_IMAGE}" --format '{{.Id}}'
-  )"
+  image_identity="$(ci_image_identity "${OBSERVER_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}")" || return
+  image_digest="$(jq -er '.digest' <<<"${image_identity}")"
   trust_policy_sha256="$(sha256_file "${work_root}/trust-policy.json")"
   interlock_sha256="$(sha256_file "${target_evidence}")"
   checked_at="$(jq -r '.checked_at' "${target_evidence}")"

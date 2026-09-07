@@ -88,7 +88,7 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "authorization renderer binds one identity across permit and statement" {
+@test "released authorization renderer binds registry identity across permit and statement" {
   run bash -c '
     set -Eeuo pipefail
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
@@ -108,19 +108,21 @@ setup() {
     docker() {
       test "$1" = image
       test "$2" = inspect
+      test "$#" -eq 3
       case "$3" in
-        acceptance-observer)
-          printf "sha256:%064d\n" 1
+        acceptance-observer@*)
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"acceptance-observer@sha256:%064d\"]}]\n" 9 1
           ;;
         permit-preflight)
-          printf "sha256:%064d\n" 2
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"permit-preflight@sha256:%064d\"]}]\n" 8 2
           ;;
         *)
           return 64
           ;;
       esac
     }
-    OBSERVER_IMAGE=acceptance-observer
+    ROBOTICS_RUNTIME_MODE=released
+    OBSERVER_IMAGE="acceptance-observer@sha256:$(printf "%064d" 1)"
     PERMIT_PREFLIGHT_IMAGE=permit-preflight
     write_trust_policy
     write_permit_case \

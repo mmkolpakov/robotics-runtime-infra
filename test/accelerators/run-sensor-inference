@@ -3,6 +3,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly root
+# shellcheck source=scripts/ci/image-identity.sh
+source "${root}/scripts/ci/image-identity.sh"
 readonly accelerator="${ROBOTICS_ACCELERATOR:-cpu}"
 readonly report_dir="${ROBOTICS_SENSOR_INFERENCE_REPORT_DIR:-${root}/artifacts/sensor-inference}"
 readonly evidence_dir="${ROBOTICS_EVIDENCE_DIR:-${root}/artifacts/sensor-inference/evidence}"
@@ -152,7 +154,8 @@ if [[ -n "${provider_config_sha256}" ]]; then
       gz sim --versions |
       head -n 1
   )"
-  runtime_digest="$(docker image inspect "${runtime_image}" --format '{{.Id}}')"
+  runtime_identity="$(ci_image_identity "${runtime_image}" "${ROBOTICS_RUNTIME_MODE:-source}")"
+  runtime_digest="$(jq -er '.digest' <<<"${runtime_identity}")"
   report_sha256="$(sha256_file "${report_dir}/sensor-inference.json")"
   jq -cS -n \
     --slurpfile fixture "${fixture}" \
@@ -212,7 +215,7 @@ if [[ -n "${provider_config_sha256}" ]]; then
     --network none \
     --volume "${report_dir}:/reports" \
     --env ROBOTICS_RUNTIME_ID=org.example.sensor-inference-intel-cpu \
-    --env "ROBOTICS_OCI_REFERENCE=${runtime_image}@${runtime_digest}" \
+    --env "ROBOTICS_OCI_REFERENCE=$(jq -er '.reference' <<<"${runtime_identity}")" \
     --env "ROBOTICS_OCI_DIGEST=${runtime_digest}" \
     --env ROBOTICS_WORKLOAD_KIND=inference \
     --env "ROBOTICS_MODEL_MANIFEST_SHA256=${model_manifest_sha256}" \
