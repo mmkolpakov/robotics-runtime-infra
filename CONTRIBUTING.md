@@ -51,6 +51,40 @@ Only the runtime repository changes for a compatible foundation upgrade. A
 contracts release does not require a harness release unless the harness code or
 its declared compatibility range changes.
 
+Renovate custom managers track the release-tag comments and commit hashes in
+`foundation.repos`, the wheel URLs in `docker/python/acceptance-observer.in`
+and `permit-preflight.in`, and the wheel URL/checksum in the CI environment.
+The CI checksum uses the `github-release-attachments` datasource. Foundation
+updates are grouped for review and never auto-merged. This config does not
+itself prove the hosted Renovate app is enabled or has opened a PR.
+
+Before merging an update, verify the proposed release tags resolve to the
+recorded commits, regenerate the two Python hash locks with the `uv pip compile`
+commands recorded in their headers, refresh `tooling/foundation/uv.lock`,
+and regenerate `docs/foundation-compatibility.md`. Update the README baseline
+as part of the same review. The regex managers do not generate those derived
+files. Check the CI wheel hash against the downloaded release asset; a missing
+or unchanged digest for a changed wheel is a blocker. Run
+`foundation-integration` before merging. Contracts 0.16 / harness 0.18 require
+the coordinated migration described in `docs/compatibility.md`.
+
+Validate config syntax using the pinned CI Renovate version:
+
+```bash
+renovate-config-validator --strict renovate.json
+node test/renovate/check-pins.mjs /path/to/node_modules/renovate
+```
+
+The extraction check loads Renovate's real regex manager and template renderer.
+It verifies all nine custom-managed pins, both wheel-version positions,
+commit/checksum replacement, preservation of other dependencies, rejection of
+unrelated repositories, and LF/CRLF input. Use Node 24 and Renovate 43.257.5,
+matching the current `RENOVATE_IMAGE`; the test rejects a version mismatch.
+
+External activation remains unverified until a real Renovate run opens a
+reviewable update PR. Local extraction and replacement checks demonstrate
+config behavior only. No external PR is created by these local checks.
+
 ## Change boundaries
 
 Keep this repository domain-neutral. A change may add reusable ROS, simulation,
