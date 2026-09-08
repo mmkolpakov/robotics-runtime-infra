@@ -128,7 +128,9 @@ def create_documents(
                 "uri": path.resolve().as_uri(),
                 "sha256": sha256(raw),
                 "size_bytes": len(raw),
-                "media_type": "application/json" if path.suffix == ".json" else "text/plain",
+                "media_type": "application/json"
+                if path.suffix == ".json"
+                else "text/plain",
             }
         )
     template.update(

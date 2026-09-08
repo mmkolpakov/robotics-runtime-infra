@@ -55,7 +55,9 @@ class PhysicalRuntimeTests(unittest.TestCase):
             "rmw_version": "8.4.2",
             "domain_id": 92,
         }
-        self.evidence = producer.mapping(ROOT / "test/ci/physical-attach/target-evidence.json")
+        self.evidence = producer.mapping(
+            ROOT / "test/ci/physical-attach/target-evidence.json"
+        )
         self.evidence["identity"]["sha256"] = "d" * 64
         self.evidence["identity"]["certificate_sha256"] = "e" * 64
         self.save("target-evidence.json", self.evidence)
@@ -82,9 +84,13 @@ class PhysicalRuntimeTests(unittest.TestCase):
         errors = io.StringIO()
         with (
             patch.object(sys, "argv", arguments),
-            patch.dict(os.environ, ROS_DISTRO="jazzy", RMW_IMPLEMENTATION="rmw_fastrtps_cpp"),
+            patch.dict(
+                os.environ, ROS_DISTRO="jazzy", RMW_IMPLEMENTATION="rmw_fastrtps_cpp"
+            ),
             patch.object(producer, "platform_facts", return_value=self.platform),
-            patch.object(producer.subprocess, "check_output", return_value="8.4.2\n") as ros,
+            patch.object(
+                producer.subprocess, "check_output", return_value="8.4.2\n"
+            ) as ros,
             redirect_stderr(errors),
         ):
             status = producer.main()
@@ -123,7 +129,9 @@ class PhysicalRuntimeTests(unittest.TestCase):
             hashlib.sha256((output / "configuration.json").read_bytes()).hexdigest(),
         )
         self.assertFalse(
-            producer.mapping(output / "configuration.json")["hardware_identity_verified"]
+            producer.mapping(output / "configuration.json")[
+                "hardware_identity_verified"
+            ]
         )
         self.assertIn(
             "no physical hardware identity or qualification",
@@ -134,12 +142,20 @@ class PhysicalRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["execution_platform"], self.platform)
         self.assertEqual(runtime["clock"]["offset_ms"], 0.75)
         self.assertEqual(runtime["clock"]["drift_ppm"], 1.5)
-        self.assertEqual(runtime["execution_subject"]["digest"], self.args.subject_digest)
-        self.assertEqual(runtime["components"]["contracts_revision"], self.args.workspace_revision)
+        self.assertEqual(
+            runtime["execution_subject"]["digest"], self.args.subject_digest
+        )
+        self.assertEqual(
+            runtime["components"]["contracts_revision"], self.args.workspace_revision
+        )
         self.assertNotIn("oci_image", runtime)
         self.assertNotIn("host", runtime)
         for artifact in result["evidence"]:
-            paths = [p for p in self.inputs.iterdir() if p.resolve().as_uri() == artifact["uri"]]
+            paths = [
+                p
+                for p in self.inputs.iterdir()
+                if p.resolve().as_uri() == artifact["uri"]
+            ]
             self.assertEqual(len(paths), 1)
             raw = paths[0].read_bytes()
             self.assertEqual(artifact["sha256"], hashlib.sha256(raw).hexdigest())
@@ -201,7 +217,9 @@ class PhysicalRuntimeTests(unittest.TestCase):
             runtime["provider_bindings"][0]["provider"]["version"],
             self.args.infra_revision,
         )
-        self.assertEqual(runtime["provider_bindings"][0]["capabilities"], ["live_observation"])
+        self.assertEqual(
+            runtime["provider_bindings"][0]["capabilities"], ["live_observation"]
+        )
 
     def test_existing_output_is_preserved(self):
         self.args.output.mkdir()
