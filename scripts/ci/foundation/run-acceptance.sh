@@ -312,9 +312,8 @@ if [[ "${observer_mode}" == edge-attach ]]; then
   attached_compose=(docker compose -p "${project}-attach"
     -f "${root}/compose.yaml" -f "${root}/compose.edge-attach.yaml"
     --profile edge-attach)
-  attached_model="${run_dir}/edge-attach-compose.json"
+  attached_model="${artifact_dir}/edge-attach-compose.json"
   "${attached_compose[@]}" config --format json >"${attached_model}"
-  cp "${attached_model}" "${artifact_dir}/"
   ci_require_policy_allows policy/compose.rego compose \
     "$(realpath --relative-to="${root}" "${attached_model}")"
   "${attached_compose[@]}" up --detach --no-build edge-attach-data-plane
