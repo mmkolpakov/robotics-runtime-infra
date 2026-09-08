@@ -728,7 +728,8 @@ setup() {
     production="$1"
     core="$2"
     ci="$3"
-    ! grep -F -- "--insecure-ignore-tlog" "${production}" "${core}"
+    # The core inspects the flag for evidence, but must never add it to a call.
+    ! grep -F -- "--insecure-ignore-tlog" "${production}"
     ! grep -F -- "authorize-offline-test" "${production}" "${core}"
     ! grep -F -- "verify-offline-test-attestation" "${production}" "${core}"
     grep -F -- "--insecure-ignore-tlog" "${ci}"

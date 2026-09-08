@@ -18,7 +18,7 @@
       issuer: $operator_issuer,
       bundle_sha256: $operator_bundle_sha256,
       integrated_time: $operator_integrated_time,
-      transparency_log_verified: true
+      transparency_log_verified: $operator_transparency_log_verified
     },
     {
       role: "approver",
@@ -26,7 +26,7 @@
       issuer: $approver_issuer,
       bundle_sha256: $approver_bundle_sha256,
       integrated_time: $approver_integrated_time,
-      transparency_log_verified: true
+      transparency_log_verified: $approver_transparency_log_verified
     }
   ]
 }
