@@ -22,9 +22,13 @@ index. Index output cannot replace an evidence source, summary or receipt.
 
 Local artifacts need no receipt. An uploaded artifact requires an
 `artifact-receipt.v1` tied to its exact URI, byte digest, size, media type,
-immutable object version and run. The evidence image includes `retained-artifact`
-and the digest-pinned Cosign binary. Prepare a retention predicate from a
-confirmed registration and the original recording:
+immutable object version and run. Registration rejects S3's mutable `null`
+version and records object keys as
+percent-encoded URIs, including spaces and reserved URI characters.
+
+The evidence image includes `retained-artifact` and the digest-pinned Cosign
+binary. Prepare a retention predicate from a confirmed registration and the
+original recording:
 
 ```sh
 source=/spool/recording_0.mcap

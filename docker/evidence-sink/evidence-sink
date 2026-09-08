@@ -171,7 +171,7 @@ verify_remote_versioning() {
 upload_segment() {
   local file="$1" index="$2" sha256="$3" size_bytes="$4"
   local summary_path="$5" summary_sha256="$6" summary_size_bytes="$7"
-  local key remote remote_dir file_name check_list
+  local key encoded_key remote remote_dir file_name check_list
   local head_json remote_size remote_sha content_type version_id
 
   require_command rclone
@@ -205,15 +205,17 @@ upload_segment() {
   remote_size="$(jq -er '.ContentLength' <<<"$head_json")" || fail 'remote size is absent'
   remote_sha="$(jq -er '.Metadata.sha256' <<<"$head_json")" || fail 'remote SHA-256 is absent'
   content_type="$(jq -er '.ContentType' <<<"$head_json")" || fail 'remote media type is absent'
-  version_id="$(jq -er '.VersionId | select(length > 0)' <<<"$head_json")" || \
-    fail 'remote version ID is absent'
+  version_id="$(jq -er '.VersionId | select(type == "string" and length > 0 and . != "null")' <<<"$head_json")" || \
+    fail 'remote version ID must be a non-null string'
 
   [[ "$remote_size" == "$size_bytes" ]] || fail "remote size differs for $key"
   [[ "$remote_sha" == "$sha256" ]] || fail "remote SHA-256 differs for $key"
   [[ "$content_type" == application/mcap ]] || fail "remote media type differs for $key"
 
+  encoded_key="$(jq -rn --arg key "$key" '$key | split("/") | map(@uri) | join("/")')" || \
+    fail 'cannot encode the remote object URI'
   write_registration "$file" "$index" "$sha256" "$size_bytes" \
-    "s3://${EVIDENCE_BUCKET}/${key}" confirmed "$version_id" application/mcap \
+    "s3://${EVIDENCE_BUCKET}/${encoded_key}" confirmed "$version_id" application/mcap \
     "$summary_path" "$summary_sha256" "$summary_size_bytes"
 
   # Keep original bytes until the public writer has rechecked every source at
