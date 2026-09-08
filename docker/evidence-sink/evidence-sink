@@ -472,9 +472,9 @@ watch_segments() {
   while true; do
     scan_segments
     status=0
-    inotifywait --quiet \
+    inotifywait --quiet --recursive \
       --timeout "${EVIDENCE_RESCAN_INTERVAL_SEC:-2}" \
-      --event close_write,moved_to "$spool_dir" >/dev/null || status=$?
+      --event create,close_write,moved_to "$spool_dir" >/dev/null || status=$?
     if (( status != 0 && status != 2 )); then
       fail "cannot watch evidence spool: $spool_dir"
     fi

@@ -8,6 +8,7 @@ setup() {
   export AWS_DEFAULT_REGION=eu-north-1
   export AWS_ENDPOINT_URL=http://s3.example.test:9000
   export EVIDENCE_MODE=s3
+  export ROBOTICS_RUN_ID=run-00000000-0000-4000-8000-000000000001
   unset RCLONE_REMOTE RCLONE_S3_PROVIDER
 }
 

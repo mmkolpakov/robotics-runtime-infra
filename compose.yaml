@@ -149,9 +149,9 @@ services:
       - --runtime
       - /run/robotics/runtime-manifest.json
       - --run-id
-      - "${ROBOTICS_RUN_ID}"
+      - "${ROBOTICS_RUN_ID:-}"
       - --domain-id
-      - "${ROBOTICS_DOMAIN_ID}"
+      - "${ROBOTICS_DOMAIN_ID:-}"
       - --run-context
       - /run/robotics/acceptance-run.json
       - --evidence-index

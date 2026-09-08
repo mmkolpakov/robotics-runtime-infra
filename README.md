@@ -402,8 +402,8 @@ by UID 1000; the evidence directory must be writable by UID 10001. Named
 volumes avoid host ownership concerns for interactive development.
 The sensor-inference qualification overlay runs both report writers as UID 1000
 so its isolated report tree has one non-root owner.
-Runtime manifests use `runtime-manifest.v2` and digest-link retained provider,
-host-topology, and container-resource configuration files when present.
+Runtime manifests use `runtime-manifest.v1` and bind retained provider profiles,
+conformance results, host topology, and container-resource configuration files.
 Intel sensor qualification also retains the exact ONNX fixture, observed NPY
 inputs, provider report, and a validated `model-artifact-manifest.v1` linking
 those artifacts to the runtime manifest.
@@ -416,29 +416,45 @@ mode `0770`. Do not change the evidence-sink directory to `_chrony` ownership.
 When assembling a qualification bundle, retain the resulting time file in the
 run's evidence set and register it with the appropriate owner and checksum.
 
-For a local runtime manifest, set both image variables before invoking Compose:
+On Linux, the foundation runner captures host facts and qualifies the running
+simulator before producing its runtime manifest and acceptance result. With
+Docker Buildx, uv, Bats, and Cosign 3.1.3 available, build and run the source
+foundation from the repository root:
 
 ```bash
-export ROBOTICS_RUN_ID=local-simulation
-export ROBOTICS_DOMAIN_ID=primary
-export ROBOTICS_RUN_DIR=./runs/current
-# Use the simulation tag@sha256 reference from the reviewed release.env.
-export ROBOTICS_SIMULATION_OCI_REFERENCE="${SIMULATION_IMAGE:?load the simulation reference from release.env}"
-export ROBOTICS_SIMULATION_OCI_DIGEST="${ROBOTICS_SIMULATION_OCI_REFERENCE##*@}"
-docker compose --env-file release.env --profile acceptance \
-  run --rm --no-deps runtime-manifest
+export REGISTRY=local VERSION=foundation ROBOTICS_RUNTIME_MODE=source
+export SIMULATION_IMAGE="${REGISTRY}/robotics-runtime-infra/simulation:${VERSION}"
+export OBSERVER_IMAGE="${REGISTRY}/robotics-runtime-infra/acceptance-observer:${VERSION}"
+export EVIDENCE_IMAGE="${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"
+export POLICY_TOOLING_IMAGE="${REGISTRY}/robotics-runtime-infra/policy-tooling:${VERSION}"
+export VCS_REF IMAGE_CREATED SOURCE_DATE_EPOCH
+VCS_REF="$(git rev-parse HEAD)"
+IMAGE_CREATED="$(git show --no-patch --format=%cI HEAD)"
+SOURCE_DATE_EPOCH="$(git show --no-patch --format=%ct HEAD)"
+bash scripts/ci/foundation/import-sources.sh
+bash scripts/ci/foundation/validate-foundation.sh
+docker buildx bake --file docker-bake.hcl \
+  simulation acceptance-observer evidence-sink policy-tooling \
+  --load --set '*.platform=linux/amd64'
+bash scripts/ci/foundation/run-acceptance.sh
 ```
 
-`--env-file` supplies Compose interpolation; it does not export shell variables.
-Load the reviewed `SIMULATION_IMAGE` value into the shell before this example.
-Use a registry manifest digest, not a local Docker image ID. Source-only builds
-without a registry reference cannot satisfy this manifest prerequisite yet.
-The image supplies `ROBOTICS_INFRA_REVISION`; `ROBOTICS_RUNTIME_ID` defaults to
-`org.example.local-runtime`. Set that ID for the consuming runtime. The run
-directory must already exist and be writable by UID 1000.
+The runner creates a canonical run ID, retains the provider probe and world
+under `artifacts/<project>/provider/`, and supplies the manifest's host platform
+and provider bindings. Direct use of the `runtime-manifest` service requires
+those inputs to exist in the mounted run directory. The image supplies
+`ROBOTICS_INFRA_REVISION`; `ROBOTICS_RUNTIME_ID` defaults to
+`org.example.local-runtime`. Set that ID for a consuming runtime.
+Released mode uses reviewed `release.env` image references and independently
+verified registry manifest digests. `--env-file` supplies Compose interpolation;
+it does not export shell variables.
 `ROBOTICS_RUN_ID` and `ROBOTICS_DOMAIN_ID` must match the acceptance run and
 scenario when an observer is attached. `ROBOTICS_DOMAIN_ID` is a contract
 domain identifier; it is separate from the numeric DDS `ROS_DOMAIN_ID`.
+Evidence, recording, sensor-inference, and transport overlays require a run ID
+during Compose interpolation; sensor-inference also requires a domain ID.
+The base simulation model remains usable without an acceptance run. Its observer
+command validates both identifiers when invoked.
 
 The `robotics.*` metric namespace is reserved by the foundation. It includes
 clock, message delivery, inference latency, and
@@ -449,6 +465,8 @@ In S3 mode, `policy_observation.upload_lag_max_sec` is the largest whole-second
 age of any MCAP spool file observed during a sink scan: scan time minus the
 file's modification time, clamped to zero. It is not network transfer duration
 or object-store acknowledgement latency. Local-only runs report zero.
+The watcher follows nested recording directories recursively and retains a
+periodic rescan to handle directory creation races and missed filesystem events.
 
 Physical profiles additionally require `authorization-output` to be owned by
 UID/GID `10002:10002` with mode `0755`, and the persistent nonce store to be

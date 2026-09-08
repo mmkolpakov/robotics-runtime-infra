@@ -9,6 +9,7 @@ sudo chown -R 10001:10001 "${evidence_dir}"
 export EVIDENCE_ARTIFACT_MEDIA_TYPES='application/json,application/x-ndjson,application/junit+xml,text/plain,application/vnd.in-toto+json,application/vnd.example.controller-log'
 export ROBOTICS_BAG_DIR="${PWD}/test/fixtures/playback/golden"
 export ROBOTICS_EVIDENCE_DIR="${evidence_dir}"
+export ROBOTICS_RUN_ID=run-00000000-0000-4000-8000-000000000001
 compose=(
   docker compose -p "${project}"
   -f compose.yaml

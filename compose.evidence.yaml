@@ -31,7 +31,7 @@ x-evidence: &evidence
     ROBOTICS_RETENTION_CLASS: "${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
     ROBOTICS_COMPRESSION: zstd
     ROBOTICS_RECORDING_MODE: "${ROBOTICS_RECORDING_MODE:-bounded}"
-    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
   security_opt:
     - no-new-privileges:true
   cap_drop:
