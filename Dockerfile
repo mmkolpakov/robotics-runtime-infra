@@ -59,7 +59,7 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
     uv venv --no-cache --python /usr/bin/python3 /opt/contracts \
     && uv pip install --python /opt/contracts/bin/python --require-hashes --no-deps \
       --requirement /tmp/permit-preflight.lock \
-    && uv --directory /tmp/foundation-wheels pip install \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
       --python /opt/contracts/bin/python --require-hashes --no-deps \
       --requirement contracts.requirements \
     && uv pip check --python /opt/contracts/bin/python
@@ -454,7 +454,7 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       --no-cache \
       --no-deps \
       --requirement /tmp/python/permit-preflight.lock \
-    && uv --directory /tmp/foundation-wheels pip install \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
       --python /opt/venv/bin/python --require-hashes --no-deps \
       --requirement contracts.requirements \
     && uv pip check --python /opt/venv/bin/python \
@@ -569,7 +569,7 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,rea
       --no-cache \
       --no-deps \
       --requirement /tmp/python/evidence-sink.lock \
-    && uv --directory /tmp/foundation-wheels pip install \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
       --python /opt/venv/bin/python --require-hashes --no-deps --no-cache \
       --requirement contracts.requirements \
     && uv pip check --python /opt/venv/bin/python \
@@ -1108,7 +1108,7 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       --no-cache \
       --no-deps \
       --requirement /tmp/python/acceptance-observer.lock \
-    && uv --directory /tmp/foundation-wheels pip install \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
       --python /opt/venv/bin/python --require-hashes --no-deps \
       --requirement harness.requirements \
     && uv pip check --python /opt/venv/bin/python \

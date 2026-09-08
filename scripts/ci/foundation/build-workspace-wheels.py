@@ -58,8 +58,9 @@ def build(source: Path, metadata: Path, python: str, output: Path) -> None:
         wheel = output / f"{name}-{package['version']}-py3-none-any.whl"
         if not wheel.is_file():
             raise ValueError(f"missing foundation wheel: {wheel.name}")
-        # uv retains the source wheel's mtime in uv_cache.json and RECORD.
         # SOURCE_DATE_EPOCH controls archive entries, not this filesystem time.
+        # Installers must also omit their cache metadata: uv uses ctime on Unix,
+        # so normalizing mtime alone cannot make an installed image reproducible.
         epoch_ns = int(expected["source_date_epoch"]) * 1_000_000_000
         os.utime(wheel, ns=(epoch_ns, epoch_ns))
         wheel_digest = sha256(wheel.read_bytes()).hexdigest()
