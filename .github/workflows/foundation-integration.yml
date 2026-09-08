@@ -60,6 +60,8 @@ jobs:
         run: bash scripts/ci/foundation/build-images.sh
       - name: Verify embedded foundation revisions
         run: bash scripts/ci/foundation/verify-image-lock.sh
+      - name: Verify versioned S3 evidence with the installed harness
+        run: bash scripts/ci/integration/verify-versioned-s3-evidence.sh
       - name: Run scenario against the real ROS graph
         run: bash scripts/ci/foundation/run-runtime.sh
       - name: Run two isolated three-repository acceptance paths

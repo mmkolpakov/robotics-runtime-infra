@@ -156,6 +156,8 @@ services:
       - /run/robotics/acceptance-run.json
       - --evidence-index
       - /evidence/evidence-index.json
+      - --receipt-inventory
+      - /evidence/receipt-inventory.json
       - --otel-metrics
       - /evidence/metrics.otlp.jsonl
       - --measurement-complete
@@ -169,7 +171,7 @@ services:
         target: /run/robotics
       - type: bind
         source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
-        target: /spool
+        target: /evidence/recordings
         read_only: true
       - type: bind
         source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"

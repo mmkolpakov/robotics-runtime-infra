@@ -47,3 +47,22 @@ setup() {
   ' "${BATS_TEST_TMPDIR}/model.json"
   [ "${status}" -eq 0 ]
 }
+
+@test "producer and observer share recording paths beneath the evidence index" {
+  docker compose -f "${ROOT}/compose.yaml" -f "${ROOT}/compose.evidence.yaml" \
+    --profile evidence --profile acceptance config --format json >"${BATS_TEST_TMPDIR}/model.json"
+  run jq -e '
+    .services as $services |
+    $services["acceptance-observer"] as $observer |
+    ($observer.volumes[] | select(.target == "/evidence/recordings")) as $recordings |
+    ($observer.volumes[] | select(.target == "/evidence")) as $evidence |
+    ($observer.command | index("--receipt-inventory")) as $flag |
+    $recordings.read_only == true and $evidence.read_only == true and
+    $flag != null and $observer.command[$flag + 1] == "/evidence/receipt-inventory.json" and
+    all(["evidence-sink", "evidence-finalize"][]; $services[.] as $producer |
+      $producer.environment.EVIDENCE_SPOOL_DIR == $recordings.target and
+      any($producer.volumes[]; .target == $recordings.target and .source == $recordings.source) and
+      any($producer.volumes[]; .target == $evidence.target and .source == $evidence.source))
+  ' "${BATS_TEST_TMPDIR}/model.json"
+  [ "${status}" -eq 0 ]
+}

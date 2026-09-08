@@ -9,6 +9,9 @@ readonly state_dir="${EVIDENCE_STATE_DIR:-/evidence/state}"
 readonly index_path="${EVIDENCE_INDEX_PATH:-/evidence/evidence-index.json}"
 readonly receipt_dir="${EVIDENCE_RECEIPT_DIR:-/evidence/receipts}"
 readonly contracts_cli="${ROBOTICS_CONTRACTS_CLI:-robotics-contracts}"
+readonly receipt_inputs_cli="${ROBOTICS_RECEIPT_INPUTS_CLI:-receipt-inputs}"
+receipt_inventory_path="$(dirname "$index_path")/receipt-inventory.json"
+readonly receipt_inventory_path
 readonly run_id="${ROBOTICS_RUN_ID:-}"
 readonly retention_class="${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
 readonly evidence_mode="${EVIDENCE_MODE:-local}"
@@ -320,6 +323,7 @@ receipt_matches_registration() {
 
 register_receipt() (
   local file="$1" index="$2" verification='' sha256 registration target template temporary path
+  local input_registry=''
   local -a dependencies=() dependency_arguments=()
   shift 2
   while (( $# )); do
@@ -344,26 +348,35 @@ register_receipt() (
     fail 'receipt requires a confirmed remote upload'
   mkdir -p "$receipt_dir"
   target="${receipt_dir}/${index}-${sha256}.json"
-  for path in "$file" "$verification" "${dependencies[@]}"; do
+  for path in "$file" "$registration" "$verification" "${dependencies[@]}"; do
     [[ ! "$path" -ef "$target" ]] || fail 'receipt output must not replace an input'
   done
   for path in "${dependencies[@]}"; do dependency_arguments+=(--dependency "$path"); done
   template="$(mktemp "${receipt_dir}/.receipt-template.XXXXXX")"
   temporary=''
-  trap 'rm -f -- "$template"; if [[ -n "$temporary" ]]; then rm -f -- "$temporary"; fi' EXIT
+  trap 'rm -f -- "$template"; if [[ -n "$temporary" ]]; then rm -f -- "$temporary"; fi
+    if [[ -n "$input_registry" ]]; then rm -f -- "$input_registry"; fi' EXIT
   temporary="$(mktemp "${receipt_dir}/.receipt.XXXXXX")"
   jq -n --arg receipt_id "receipt-${index}-${sha256}" --arg run_id "$run_id" \
-    --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')" \
     '{receipt_id: $receipt_id, run_id: $run_id, created_at: $created_at}' >"$template"
   "$contracts_cli" artifact-receipt create --template "$template" --source "$file" \
     --verification "$verification" "${dependency_arguments[@]}" --output "$temporary" >/dev/null
   receipt_matches_registration "$temporary" "$registration"
+  require_command "$receipt_inputs_cli"
+  input_registry="$(mktemp "${registration_dir}/.receipt-inputs.XXXXXX")"
+  "$receipt_inputs_cli" bind --root "$(dirname "$index_path")" \
+    --registration "$registration" --receipt "$temporary" --destination "$target" \
+    --verification "$verification" "${dependency_arguments[@]}" >"$input_registry"
+  chmod 0444 "$input_registry"
+  mv -f -- "$input_registry" "$registration"
   chmod 0444 "$temporary"
   mv -f -- "$temporary" "$target"
 )
 
 protect_index_input() {
   [[ ! "$1" -ef "$index_path" ]] || fail 'index output must not replace an evidence input'
+  [[ ! "$1" -ef "$receipt_inventory_path" ]] || fail 'inventory output must not replace an evidence input'
 }
 
 add_registered_artifact() {
@@ -411,6 +424,9 @@ add_registered_artifact() {
 finalize_index() (
   local work spool_peak upload_lag upload_mode remote_sink registration
   [[ -d "$spool_dir" ]] || fail 'evidence spool directory is unavailable'
+  [[ "$(realpath -m "$index_path")" != "$(realpath -m "$receipt_inventory_path")" ]] || \
+    fail 'index and receipt inventory must have different output paths'
+  require_command "$receipt_inputs_cli"
   scan_segments
   while IFS= read -r -d '' file; do
     process_segment "$file" || fail "unclosed or invalid segment: $file"
@@ -419,7 +435,8 @@ finalize_index() (
   mkdir -p "$(dirname "$index_path")"
   work="$(mktemp -d "$(dirname "$index_path")/.evidence-index.XXXXXX")"
   trap 'rm -f -- "$work/registrations.jsonl" "$work/registration.json" "$work/template.json" \
-    "$work/metadata.json" "$work/draft.json" "$work/final.json"; rmdir -- "$work"' EXIT
+    "$work/metadata.json" "$work/draft.json" "$work/final.json" \
+    "$work/receipt-inventory.json"; rmdir -- "$work"' EXIT
   jq -cs 'sort_by(.segment_index)
     | if (map(.segment_index) | unique | length) != length then error("duplicate segment_index")
       else .[] end' "${registration_dir}"/*.json >"${work}/registrations.jsonl"
@@ -457,6 +474,11 @@ finalize_index() (
     add_registered_artifact "${work}/registration.json" "$work"
   done <"${work}/registrations.jsonl"
   "$contracts_cli" evidence-index finalize "${work}/draft.json" --output "${work}/final.json" >/dev/null
+  "$receipt_inputs_cli" inventory --root "$(dirname "$index_path")" \
+    --registrations "${work}/registrations.jsonl" --index "${work}/final.json" \
+    >"${work}/receipt-inventory.json"
+  chmod 0444 "${work}/receipt-inventory.json"
+  mv -f -- "${work}/receipt-inventory.json" "$receipt_inventory_path"
   chmod 0444 "${work}/final.json"
   mv -f -- "${work}/final.json" "$index_path"
   if [[ "${EVIDENCE_DELETE_CONFIRMED_LOCAL:-false}" == true ]]; then

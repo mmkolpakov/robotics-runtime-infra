@@ -598,6 +598,7 @@ RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws
 COPY --chmod=0555 docker/evidence-sink/evidence-sink /usr/local/bin/evidence-sink
 COPY --chmod=0555 docker/evidence-sink/mcap-summary /usr/local/bin/mcap-summary
 COPY --chmod=0555 docker/evidence-sink/retained-artifact.py /usr/local/bin/retained-artifact
+COPY --chmod=0555 docker/evidence-sink/receipt-inputs.py /usr/local/bin/receipt-inputs
 
 USER evidence
 WORKDIR /work

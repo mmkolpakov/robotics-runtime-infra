@@ -47,10 +47,10 @@ jobs:
         run: bash scripts/ci/foundation/import-sources.sh
       - name: Test foundation pin generation
         run: python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
-      - name: Install the pinned contracts CLI for producer tests
+      - name: Install the pinned foundation CLIs for producer tests
         run: |
           uv sync --project dependencies/robotics-runtime --locked \
-            --package robotics-runtime-contracts --extra mcap --no-default-groups --no-editable
+            --all-packages --extra mcap --no-default-groups --no-editable
           contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
           echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
       - name: Test simulation provider evidence
@@ -236,7 +236,7 @@ jobs:
           # Generated SROS2 keys and physical authorization inputs are never artifacts.
           path: |
             artifacts/benchmarks/
-            artifacts/evidence-s3/evidence-index.json
+            artifacts/evidence-s3/
             artifacts/provider-conformance/
             artifacts/runtime/
             artifacts/security/

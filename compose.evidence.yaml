@@ -18,6 +18,7 @@ x-evidence: &evidence
       ${ROBOTICS_MAX_SEGMENT_SIZE_BYTES:-1073741824}
     EVIDENCE_MODE: "${EVIDENCE_MODE:-local}"
     EVIDENCE_PREFIX: "${EVIDENCE_PREFIX:-}"
+    EVIDENCE_SPOOL_DIR: /evidence/recordings
     RCLONE_CONFIG: /dev/null
     RCLONE_CONFIG_EVIDENCE_TYPE: s3
     RCLONE_CONFIG_EVIDENCE_ENV_AUTH: "true"
@@ -41,7 +42,7 @@ x-evidence: &evidence
   volumes:
     - type: bind
       source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
-      target: /spool
+      target: /evidence/recordings
       read_only: true
     - type: bind
       source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"

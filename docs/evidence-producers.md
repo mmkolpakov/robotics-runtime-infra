@@ -13,6 +13,10 @@ The collector writes OTLP records to `/evidence/metrics.otlp.jsonl`.
 Observer arguments, artifact registration and qualification inputs use that
 same path. The artifact media type is `application/x-ndjson`.
 
+The producer and observer mount the recording directory at
+`/evidence/recordings`. Local artifacts and provenance inputs must remain beneath
+the index directory, `/evidence`, with the same paths in both containers.
+
 Artifact registrations are internal state under `/evidence/state/registrations`;
 they are not public receipts. They bind the run ID, source path and observed byte
 digest. Index finalization uses the contracts `evidence-index init`, `add-artifact`
@@ -31,7 +35,7 @@ binary. Prepare a retention predicate from a confirmed registration and the
 original recording:
 
 ```sh
-source=/spool/recording_0.mcap
+source=/evidence/recordings/recording_0.mcap
 digest=$(sha256sum "$source" | cut -d' ' -f1)
 registration="/evidence/state/registrations/0-${digest}.json"
 retained-artifact predicate --registration "$registration" --source "$source" \
@@ -72,7 +76,7 @@ Sigstore bundle and the S3 response metadata. Create the receipt with the exact
 three provenance dependencies:
 
 ```sh
-evidence-sink receipt /spool/recording_0.mcap 0 \
+evidence-sink receipt /evidence/recordings/recording_0.mcap 0 \
   --verification /evidence/provenance/recording-0/artifact-verification.json \
   --dependency /evidence/provenance/recording-0/statement.json \
   --dependency /evidence/provenance/recording-0/trust-policy.pem \
@@ -83,8 +87,17 @@ evidence-sink finalize
 The upload must already have a confirmed registration. This command delegates
 receipt construction to contracts and checks that its descriptor matches the
 registered upload. It does not perform signature verification. Preserve the
-verification record and dependencies for the harness's receipt inputs. An S3
-upload checksum alone does not supply an external provenance verification.
+verification record and dependencies beneath `/evidence` for the harness's
+receipt inputs. An S3 upload checksum alone does not supply an external
+provenance verification.
+
+Receipt registration remembers these input paths. Finalization rechecks their
+bytes and publishes `receipt-inventory.json` before the final index. The inventory
+lists canonical relative paths in `receipts`, `verifications` and `dependencies`;
+shared dependency bytes appear once. The observer supplies `--receipt-inventory`
+and loads it when evidence becomes available after measurement. Local-only runs
+publish empty lists. Missing, changed or unreferenced provenance prevents
+publication and leaves the previous index and inventory intact.
 
 `EVIDENCE_DELETE_CONFIRMED_LOCAL=true` removes only confirmed remote sources
 after the index has been validated and published. It requires a writable spool
@@ -95,3 +108,9 @@ With only local artifacts, merely selecting S3 mode reports no remote upload.
 `test/ci/test_retained_artifact.py` uses real Cosign signatures and explicitly
 simulated S3 responses to test byte, run, version, key and range mismatches.
 The live S3 verifier/consumer handoff remains a separate integration gate.
+`scripts/ci/integration/verify-versioned-s3-evidence.sh` runs that gate against
+the versioned SeaweedFS fixture. It rejects a foreign key and changed remote
+bytes, verifies the original version after an overwrite, then loads the final
+index and inventory with the installed harness in an offline container. It runs
+in both foundation integration and CPU integration; generated private test keys
+remain in container tmpfs and are never uploaded with the evidence.

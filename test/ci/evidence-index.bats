@@ -5,6 +5,7 @@ setup() {
   SINK="${ROOT}/docker/evidence-sink/evidence-sink"
   : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before these tests}"
   export ROBOTICS_CONTRACTS_CLI
+  export ROBOTICS_RECEIPT_INPUTS_CLI="${ROOT}/test/ci/receipt-inputs"
   export ROBOTICS_RUN_ID=run-00000000-0000-4000-8000-000000000001
   export EVIDENCE_SPOOL_DIR="${BATS_TEST_TMPDIR}/spool"
   export EVIDENCE_REGISTRATION_DIR="${BATS_TEST_TMPDIR}/registrations"
@@ -131,18 +132,21 @@ PY
     .artifacts[0].sha256 == $digest and .artifacts[0].recording_summary.sha256 == $summary
   ' "$EVIDENCE_INDEX_PATH"
   [ "$status" -eq 0 ]
+  run verify_inventory_with_harness 0
+  [ "$status" -eq 0 ]
 }
 
 seed_remote_verification_fixture() {
   # This tests document assembly. The upload and external verifier observations
   # are fixtures; it is not a network, signature, or S3 qualification test.
-  register_local 7
+  local slot="${1:-7}"
+  register_local "$slot"
   export EVIDENCE_MODE=s3
   DIGEST="$(sha256sum "$SOURCE" | cut -d' ' -f1)"
-  REGISTRATION="${EVIDENCE_REGISTRATION_DIR}/7-${DIGEST}.json"
-  RECEIPT="${EVIDENCE_RECEIPT_DIR}/7-${DIGEST}.json"
-  VERIFICATION="${BATS_TEST_TMPDIR}/verification.json"
-  jq '.upload_status = "confirmed" | .uri = "s3://fixture-bucket/metrics.otlp.jsonl" |
+  REGISTRATION="${EVIDENCE_REGISTRATION_DIR}/${slot}-${DIGEST}.json"
+  RECEIPT="${EVIDENCE_RECEIPT_DIR}/${slot}-${DIGEST}.json"
+  VERIFICATION="${BATS_TEST_TMPDIR}/verification-${slot}.json"
+  jq --arg slot "$slot" '.upload_status = "confirmed" | .uri = ("s3://fixture-bucket/metrics-" + $slot + ".otlp.jsonl") |
     .version_id = "fixture-version-1"' "$REGISTRATION" >"${BATS_TEST_TMPDIR}/registration.json"
   mv "${BATS_TEST_TMPDIR}/registration.json" "$REGISTRATION"
   for name in statement trust-policy verification-evidence; do
@@ -164,10 +168,23 @@ seed_remote_verification_fixture() {
 }
 
 create_fixture_receipt() {
-  bash "$SINK" receipt "${1:-$SOURCE}" 0007 --verification "$VERIFICATION" \
+  bash "$SINK" receipt "${1:-$SOURCE}" "$(jq -r '.segment_index' "$REGISTRATION")" --verification "$VERIFICATION" \
     --dependency "${BATS_TEST_TMPDIR}/statement.json" \
     --dependency "${BATS_TEST_TMPDIR}/trust-policy.json" \
     --dependency "${BATS_TEST_TMPDIR}/verification-evidence.json"
+}
+
+verify_inventory_with_harness() {
+  local test_python
+  test_python="$(dirname "$ROBOTICS_CONTRACTS_CLI")/python"
+  if [[ -f "${test_python}.exe" ]]; then test_python+='.exe'; fi
+  "$test_python" - "$EVIDENCE_INDEX_PATH" "${BATS_TEST_TMPDIR}/receipt-inventory.json" "${1:-1}" <<'PY'
+import sys
+from robotics_acceptance_harness.evidence import load_evidence_index
+from robotics_acceptance_harness.receipts import ReceiptInventory
+evidence = load_evidence_index(sys.argv[1], receipt_paths=ReceiptInventory(sys.argv[2]))
+assert len(evidence.receipts) == int(sys.argv[3])
+PY
 }
 
 @test "a confirmed upload without a typed receipt cannot finalize retained evidence" {
@@ -191,6 +208,8 @@ create_fixture_receipt() {
     .artifacts[0].immutable_revision == "fixture-version-1" and
     .artifacts[0].receipt_sha256 == $receipt' "$EVIDENCE_INDEX_PATH"
   [ "$status" -eq 0 ]
+  run verify_inventory_with_harness
+  [ "$status" -eq 0 ]
 }
 
 @test "receipt creation preserves previous output if verification describes another upload" {
@@ -206,6 +225,84 @@ create_fixture_receipt() {
   [[ "$output" == *'receipt does not match the uploaded artifact and run'* ]]
   [ "$(sha256sum "$RECEIPT")" = "$before" ]
   [ -z "$(find "$EVIDENCE_RECEIPT_DIR" -name '.receipt*' -print -quit)" ]
+}
+
+@test "shared provenance is listed once for distinct retained artifacts" {
+  seed_remote_verification_fixture 7
+  create_fixture_receipt
+  SOURCE="${BATS_TEST_TMPDIR}/second-metrics.jsonl"
+  printf '{"resourceMetrics":[],"fixture":2}\n' >"$SOURCE"
+  seed_remote_verification_fixture 8
+  create_fixture_receipt
+  run bash "$SINK" finalize
+  [ "$status" -eq 0 ]
+  run jq -e '(.receipts | length) == 2 and (.verifications | length) == 2 and
+    (.dependencies | length) == 3' "${BATS_TEST_TMPDIR}/receipt-inventory.json"
+  [ "$status" -eq 0 ]
+  run verify_inventory_with_harness 2
+  [ "$status" -eq 0 ]
+}
+
+@test "receipt creation retains subsecond order after a fresh verification" {
+  seed_remote_verification_fixture
+  jq '.verified_at = "2026-09-08T12:00:00.800000Z"' "$VERIFICATION" \
+    >"${BATS_TEST_TMPDIR}/recent.json"
+  mv "${BATS_TEST_TMPDIR}/recent.json" "$VERIFICATION"
+  date() { command date --date='2026-09-08T12:00:00.900000000Z' "$@"; }
+  export -f date
+  run create_fixture_receipt
+  [ "$status" -eq 0 ]
+  run jq -e '.created_at == "2026-09-08T12:00:00.900000000Z"' "$RECEIPT"
+  [ "$status" -eq 0 ]
+}
+
+@test "changed provenance cannot replace an existing inventory or index" {
+  seed_remote_verification_fixture
+  create_fixture_receipt
+  printf 'changed statement\n' >"${BATS_TEST_TMPDIR}/statement.json"
+  printf 'previous\n' >"$EVIDENCE_INDEX_PATH"
+  printf 'previous inventory\n' >"${BATS_TEST_TMPDIR}/receipt-inventory.json"
+  run bash "$SINK" finalize
+  assert_index_preserved
+  [[ "$output" == *'provenance dependencies are missing'* ]]
+  [ "$(cat "${BATS_TEST_TMPDIR}/receipt-inventory.json")" = 'previous inventory' ]
+}
+
+@test "inventory output cannot replace local evidence" {
+  SOURCE="${BATS_TEST_TMPDIR}/receipt-inventory.json"
+  printf 'original evidence\n' >"$SOURCE"
+  register_local
+  printf 'previous\n' >"$EVIDENCE_INDEX_PATH"
+  run bash "$SINK" finalize
+  assert_index_preserved
+  [[ "$output" == *'inventory output must not replace an evidence input'* ]]
+  [ "$(cat "$SOURCE")" = 'original evidence' ]
+}
+
+@test "receipt output cannot replace the upload registration" {
+  seed_remote_verification_fixture
+  local before
+  before="$(sha256sum "$REGISTRATION")"
+  export EVIDENCE_RECEIPT_DIR="$EVIDENCE_REGISTRATION_DIR"
+  run create_fixture_receipt
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'receipt output must not replace an input'* ]]
+  [ "$(sha256sum "$REGISTRATION")" = "$before" ]
+}
+
+@test "receipt input binding reserves the inventory output path" {
+  seed_remote_verification_fixture
+  create_fixture_receipt
+  run "$ROBOTICS_RECEIPT_INPUTS_CLI" bind --root "$BATS_TEST_TMPDIR" \
+    --registration "$REGISTRATION" --receipt "$RECEIPT" \
+    --destination "${BATS_TEST_TMPDIR}/receipt-inventory.json" \
+    --verification "$VERIFICATION" \
+    --dependency "${BATS_TEST_TMPDIR}/statement.json" \
+    --dependency "${BATS_TEST_TMPDIR}/trust-policy.json" \
+    --dependency "${BATS_TEST_TMPDIR}/verification-evidence.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'receipt output must not replace the receipt inventory'* ]]
+  [ ! -e "${BATS_TEST_TMPDIR}/receipt-inventory.json" ]
 }
 
 @test "final index destination cannot alias a registered evidence source" {
