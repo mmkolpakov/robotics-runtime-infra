@@ -50,14 +50,13 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def configuration_sha256(paths: tuple[Path, ...]) -> str:
-    digest = hashlib.sha256()
-    for path in paths:
-        digest.update(path.name.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()
+def retain_configuration(paths: tuple[Path, ...], output: Path) -> str:
+    # Keep the exact bytes that the bridge configuration digest identifies.
+    with output.open("wb") as stream:
+        for path in paths:
+            stream.write(path.name.encode("utf-8") + b"\0")
+            stream.write(path.read_bytes() + b"\0")
+    return sha256(output)
 
 
 def wait_for_trace_evidence(
@@ -199,7 +198,7 @@ def main() -> None:
 
     output_dir = report_dir / "qualification"
     output_dir.mkdir(parents=True, exist_ok=True)
-    scenario_path = Path("/opt/robotics/zenoh/scenario.yaml")
+    scenario_path = Path(__file__).with_name("scenario.yaml")
     clock_identity_path = output_dir / "shared-clock-identity.json"
     shared_clock_identity = {
         **source_observation["clock_identity"],
@@ -249,7 +248,7 @@ def main() -> None:
     )
     channel_path = write_contract_json(
         {
-            "schema_version": "zenoh-channel.v1",
+            "schema_version": "transport-channel.v1",
             "channel_id": "zenoh.trace-context",
             "source": {
                 "domain_id": SOURCE_DOMAIN,
@@ -265,17 +264,16 @@ def main() -> None:
                 "message_type": MESSAGE_TYPE,
                 "type_hash": destination_observation["type_hash"],
             },
-            "bridge": {
-                "implementation": "zenoh-bridge-ros2dds",
+            "implementation_binding": {
+                "implementation_id": "zenoh_bridge_ros2dds",
                 "version": "1.9.0",
-                "configuration_sha256": configuration_sha256(
+                "configuration_sha256": retain_configuration(
                     (
                         config_dir / "source.json5",
                         config_dir / "destination.json5",
-                    )
+                    ),
+                    output_dir / "zenoh-configuration.bin",
                 ),
-                "dds_discovery_scope": "local_domain_only",
-                "zenoh_key_expression": TOPIC,
             },
             "qos": {
                 "reliability": "reliable",

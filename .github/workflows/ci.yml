@@ -250,6 +250,7 @@ jobs:
             artifacts/runtime/
             artifacts/security/
             artifacts/test-results/
+            artifacts/zenoh/
           if-no-files-found: warn
           retention-days: 7
 
