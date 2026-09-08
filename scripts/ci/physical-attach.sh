@@ -379,6 +379,9 @@ run_setup() {
   acquire_host_lock
   verify_verifier_image_digest
   validate_physical_compose_model
+  # The input manifest binds every observer image before starting containers.
+  # A fresh runner has not yet fetched the digest-pinned network namespace image.
+  real_compose --profile real-observation pull --policy missing edge-attach-data-plane
   prepare_pty_pair
   prepare_vcan_gateway
   verify_time_evidence
