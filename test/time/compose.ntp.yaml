@@ -30,6 +30,7 @@ services:
     networks: [time-fixture]
 
   time-fixture:
+    network_mode: service:time-source
     depends_on:
       time-source:
         condition: service_healthy

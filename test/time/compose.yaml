@@ -4,7 +4,7 @@ services:
     image: "${HOST_IO_FIXTURE_IMAGE}"
     user: "${ROBOTICS_CHRONY_IDENTITY:?set fixture _chrony UID:GID}"
     init: true
-    networks: [time-fixture]
+    network_mode: none
     read_only: true
     command: [chronyd, -U, -d, -x, -f, /etc/chrony/chrony.conf]
     security_opt:
@@ -26,7 +26,3 @@ services:
       interval: 1s
       timeout: 1s
       retries: 30
-
-networks:
-  time-fixture:
-    internal: true

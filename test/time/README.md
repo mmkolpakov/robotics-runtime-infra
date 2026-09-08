@@ -4,6 +4,8 @@
 Collector and installed acceptance harness together. Its positive Chrony case
 runs a client against a separate synthetic NTP source on a private Docker
 network. The source listens on UDP 1123 inside that network; no port is published.
+The client shares the source's network namespace and polls over loopback at
+1/16 second. This short interval is confined to the synthetic local source.
 Both daemons use `-x` and drop all capabilities, so they cannot adjust the host
 clock. This proves the evidence path, not the accuracy of a lab time authority.
 
