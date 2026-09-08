@@ -38,4 +38,4 @@ test "${harness_version}" = "$(jq -er '.packages.harness.version' config/foundat
 docker run --rm --network none --env PYTHONDONTWRITEBYTECODE=1 \
   "${SIMULATION_IMAGE}" python3 -c \
   'import numpy; from rclpy.node import Node; from robotics_runtime_infra import simulation_control'
-docker run --rm --network none "${SIMULATION_IMAGE}" robotics-contracts --version
+docker run --rm --network none "${SIMULATION_IMAGE}" robotics-contracts --help
