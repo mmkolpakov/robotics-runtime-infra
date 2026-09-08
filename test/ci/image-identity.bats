@@ -9,8 +9,14 @@ setup() {
   CONFIG="sha256:$(printf '%064d' 9)"
   export INSPECT_FILE="${BATS_TEST_TMPDIR}/inspect.json"
   export INSPECT_CALLS="${BATS_TEST_TMPDIR}/inspect.calls"
+  export REMOTE_FILE="${BATS_TEST_TMPDIR}/remote.json"
+  export REMOTE_CALLS="${BATS_TEST_TMPDIR}/remote.calls"
   export INSPECT_STATUS=0
+  export REMOTE_STATUS=0
   fixture "registry.example:5000/team/image@${MANIFEST}"
+  jq -n --arg digest "${MANIFEST}" '
+    {digest: $digest, size: 1234, mediaType: "application/vnd.oci.image.manifest.v1+json"}
+  ' >"${REMOTE_FILE}"
 }
 
 fixture() {
@@ -19,77 +25,104 @@ fixture() {
     "$@" >"${INSPECT_FILE}"
 }
 
-docker() {
-  [[ "$#" == 3 && "$1 $2" == 'image inspect' ]] || return 64
-  printf '%s\n' "$3" >>"${INSPECT_CALLS}"
-  [[ "${INSPECT_STATUS}" == 0 ]] || return "${INSPECT_STATUS}"
-  cat "${INSPECT_FILE}"
+containerd_fixture() {
+  # The local ID is the target descriptor, not the image config. RepoDigests
+  # are synthesized for local tags whether or not they were ever published.
+  jq -n --arg manifest "${MANIFEST}" --args '
+    [{Id: $manifest,
+      Descriptor: {digest: $manifest, mediaType: "application/vnd.oci.image.index.v1+json"},
+      RepoTags: ["local/alias:dev"], RepoDigests: $ARGS.positional}]
+  ' "$@" >"${INSPECT_FILE}"
 }
 
-@test "registry identity does not change when only Docker config ID changes" {
-  first="$(ci_image_identity registry.example:5000/team/image:v1 source)"
-  CONFIG="${OTHER}"
-  fixture "registry.example:5000/team/image@${MANIFEST}"
-  second="$(ci_image_identity registry.example:5000/team/image:v1 source)"
+docker() {
+  if [[ "$#" == 3 && "$1 $2" == 'image inspect' ]]; then
+    printf '%s\n' "$3" >>"${INSPECT_CALLS}"
+    [[ "${INSPECT_STATUS}" == 0 ]] || return "${INSPECT_STATUS}"
+    cat "${INSPECT_FILE}"
+  elif [[ "$#" == 6 && "$1 $2 $3 $4" == 'buildx imagetools inspect --format' &&
+    "$5" == '{{json .Manifest}}' ]]; then
+    printf '%s\n' "$6" >>"${REMOTE_CALLS}"
+    cat "${REMOTE_FILE}"
+    return "${REMOTE_STATUS}"
+  else
+    return 64
+  fi
+}
+
+@test "released registry identity is stable across classic and containerd image stores" {
+  first="$(ci_image_identity "registry.example:5000/team/image:v1@${MANIFEST}" released)"
+  containerd_fixture "registry.example:5000/team/image@${MANIFEST}"
+  second="$(ci_image_identity "registry.example:5000/team/image:v1@${MANIFEST}" released)"
   [ "$(jq -r '.digest' <<<"${first}")" = "${MANIFEST}" ]
-  [ "$(jq -c 'del(.config_digest)' <<<"${first}")" = \
-    "$(jq -c 'del(.config_digest)' <<<"${second}")" ]
-  [ "$(jq -r '.config_digest' <<<"${first}")" != \
-    "$(jq -r '.config_digest' <<<"${second}")" ]
+  [ "$(jq -c 'del(.local_image_id)' <<<"${first}")" = \
+    "$(jq -c 'del(.local_image_id)' <<<"${second}")" ]
+  [ "$(jq -r '.local_image_id' <<<"${first}")" = "${CONFIG}" ]
+  [ "$(jq -r '.local_image_id' <<<"${second}")" = "${MANIFEST}" ]
+  jq -e 'has("config_digest") | not' <<<"${first}"
+  jq -e 'has("config_digest") | not' <<<"${second}"
 }
 
 @test "released tag plus digest is preserved exactly once" {
   reference="registry.example:5000/team/image:v1@${MANIFEST}"
   identity="$(ci_image_identity "${reference}" released)"
   [ "$(cat "${INSPECT_CALLS}")" = "${reference}" ]
+  [ "$(cat "${REMOTE_CALLS}")" = "${reference}" ]
   jq -e --arg reference "${reference}" --arg digest "${MANIFEST}" \
     '.reference == $reference and .digest == $digest and .kind == "registry"
      and (.reference | split("@") | length) == 2' <<<"${identity}"
 }
 
-@test "unpinned tags prefer their repository over an unrelated first entry" {
+@test "unpinned source tags remain local even with matching and unrelated RepoDigests" {
   fixture "aaa.example/unrelated@${OTHER}" "registry.example:5000/team/image@${MANIFEST}"
   identity="$(ci_image_identity registry.example:5000/team/image:v1 source)"
   [ "$(jq -r '.reference' <<<"${identity}")" = \
-    "registry.example:5000/team/image:v1@${MANIFEST}" ]
+    "local-image/image@${CONFIG}" ]
+  [ ! -e "${REMOTE_CALLS}" ]
 }
 
-@test "an untagged repository keeps its registry port" {
-  identity="$(ci_image_identity registry.example:5000/team/image source)"
+@test "a pin without a tag keeps its registry port in the remote lookup" {
+  identity="$(ci_image_identity "registry.example:5000/team/image@${MANIFEST}" released)"
   [ "$(jq -r '.reference' <<<"${identity}")" = \
     "registry.example:5000/team/image@${MANIFEST}" ]
+  [ "$(cat "${REMOTE_CALLS}")" = "registry.example:5000/team/image@${MANIFEST}" ]
 }
 
-@test "multiple matching RepoDigests select stably regardless of inspection order" {
+@test "source identity is independent of matching RepoDigest order" {
   fixture "registry.example:5000/team/image@${OTHER}" "registry.example:5000/team/image@${MANIFEST}"
   first="$(ci_image_identity registry.example:5000/team/image:v1 source)"
   fixture "registry.example:5000/team/image@${MANIFEST}" "registry.example:5000/team/image@${OTHER}"
   second="$(ci_image_identity registry.example:5000/team/image:v1 source)"
   [ "${first}" = "${second}" ]
-  [ "$(jq -r '.digest' <<<"${first}")" = "${MANIFEST}" ]
+  [ "$(jq -r '.digest' <<<"${first}")" = "${CONFIG}" ]
 }
 
-@test "a local tag alias records a stable actual RepoDigest" {
-  fixture "zzz.example/image@${OTHER}" "aaa.example/image@${MANIFEST}"
+@test "containerd local aliases never promote synthesized RepoDigests to registry identity" {
+  containerd_fixture "local/alias@${MANIFEST}" "aaa.example/image@${MANIFEST}"
   first="$(ci_image_identity local/alias:dev source)"
-  fixture "aaa.example/image@${MANIFEST}" "zzz.example/image@${OTHER}"
+  containerd_fixture "aaa.example/image@${MANIFEST}" "local/alias@${MANIFEST}"
   second="$(ci_image_identity local/alias:dev source)"
   [ "${first}" = "${second}" ]
-  [ "$(jq -r '.reference' <<<"${first}")" = "aaa.example/image@${MANIFEST}" ]
+  jq -e --arg id "${MANIFEST}" '
+    .reference == ("local-image/image@" + $id) and .kind == "local-image-id"
+    and .local_image_id == $id and (has("config_digest") | not)
+  ' <<<"${first}"
+  [ ! -e "${REMOTE_CALLS}" ]
 }
 
-@test "Docker Hub familiar names match canonical RepoDigests" {
+@test "Docker Hub familiar pins are checked remotely without rewriting the reference" {
   fixture "aaa.example/unrelated@${OTHER}" "docker.io/library/alpine@${MANIFEST}"
   for name in alpine:latest docker.io/alpine:latest index.docker.io/library/alpine:latest; do
-    identity="$(ci_image_identity "${name}" source)"
+    identity="$(ci_image_identity "${name}@${MANIFEST}" released)"
     [ "$(jq -r '.reference' <<<"${identity}")" = "${name}@${MANIFEST}" ]
   done
 }
 
-@test "pinned identity selects the requested digest even under a repository alias" {
+@test "a local repository alias still requires remote verification of the requested repository" {
   fixture "registry.example:5000/team/image@${OTHER}" "mirror.example/team/image@${MANIFEST}"
   identity="$(ci_image_identity "registry.example:5000/team/image:v1@${MANIFEST}" released)"
   [ "$(jq -r '.digest' <<<"${identity}")" = "${MANIFEST}" ]
+  [ "$(cat "${REMOTE_CALLS}")" = "registry.example:5000/team/image:v1@${MANIFEST}" ]
 }
 
 @test "pinned mismatch fails even when the requested digest equals the config ID" {
@@ -98,6 +131,7 @@ docker() {
     [ "${status}" -eq 65 ]
     [[ "${output}" == *'absent from inspected RepoDigests'* ]]
   done
+  [ ! -e "${REMOTE_CALLS}" ]
 }
 
 @test "released identity fails without RepoDigests and never falls back to Id" {
@@ -113,12 +147,13 @@ docker() {
   [ ! -e "${INSPECT_CALLS}" ]
 }
 
-@test "source-only config identity is explicit and retains emitter compatibility" {
+@test "source-only local image identity is explicit and retains emitter compatibility" {
   fixture
   identity="$(ci_image_identity local/image:dev source 2>"${BATS_TEST_TMPDIR}/warning")"
   jq -e --arg config "${CONFIG}" '
-    .kind == "local-config" and .digest == $config and .config_digest == $config
-    and .reference == ("local-config/image@" + $config)
+    .kind == "local-image-id" and .digest == $config and .local_image_id == $config
+    and (has("config_digest") | not)
+    and .reference == ("local-image/image@" + $config)
     and (.reference | endswith("@" + $config))
   ' <<<"${identity}"
   [[ "$(cat "${BATS_TEST_TMPDIR}/warning")" == *'not verified registry identity'* ]]
@@ -129,7 +164,7 @@ docker() {
     jq -n --arg config "${CONFIG}" "${value}" >"${INSPECT_FILE}"
     run ci_image_identity local/image:dev source
     [ "${status}" -eq 0 ]
-    [[ "${output}" == *'"kind":"local-config"'* ]]
+    [[ "${output}" == *'"kind":"local-image-id"'* ]]
   done
 }
 
@@ -186,6 +221,94 @@ docker() {
   [ ! -e "${INSPECT_CALLS}" ]
 }
 
+@test "containerd without Descriptor is still an opaque local ID and needs no registry" {
+  CONFIG="${MANIFEST}"
+  fixture "local/alias@${MANIFEST}"
+  REMOTE_STATUS=127
+  identity="$(ci_image_identity local/alias:dev source)"
+  jq -e --arg id "${MANIFEST}" '
+    .kind == "local-image-id" and .digest == $id and .local_image_id == $id
+    and (has("config_digest") | not)
+  ' <<<"${identity}"
+  [ ! -e "${REMOTE_CALLS}" ]
+}
+
+@test "unpublished containerd pins fail when remote lookup fails in either mode" {
+  containerd_fixture "local/alias@${MANIFEST}"
+  for mode in released source; do
+    for REMOTE_STATUS in 44 69 77 127; do
+      # Even a valid descriptor printed before a failure cannot produce identity.
+      identity_status=0
+      identity="$(ci_image_identity "local/alias@${MANIFEST}" "${mode}")" || identity_status=$?
+      [ "${identity_status}" -eq "${REMOTE_STATUS}" ]
+      [ -z "${identity}" ]
+    done
+  done
+  [ "$(sort -u "${REMOTE_CALLS}")" = "local/alias@${MANIFEST}" ]
+}
+
+@test "a matching local digest cannot override a different remote digest" {
+  containerd_fixture "local/alias@${MANIFEST}"
+  jq -n --arg digest "${OTHER}" '
+    {digest: $digest, mediaType: "application/vnd.oci.image.index.v1+json"}
+  ' >"${REMOTE_FILE}"
+  for mode in released source; do
+    run ci_image_identity "local/alias@${MANIFEST}" "${mode}"
+    [ "${status}" -eq 65 ]
+    [[ "${output}" == *'registry manifest does not match'* ]]
+    [[ "${output}" != *'"kind"'* ]]
+  done
+}
+
+@test "empty malformed or multiple remote descriptors fail closed" {
+  for payload in '' 'null' '{}' '[]' 'false' '"text"' 'not-json'; do
+    printf '%s\n' "${payload}" >"${REMOTE_FILE}"
+    run ci_image_identity "registry.example:5000/team/image@${MANIFEST}" released
+    [ "${status}" -eq 65 ]
+    [[ "${output}" != *'"kind"'* ]]
+  done
+  jq -n --arg digest "${MANIFEST}" '
+    {digest: $digest, mediaType: "application/vnd.oci.image.manifest.v1+json"} | ., .
+  ' >"${REMOTE_FILE}"
+  run ci_image_identity "registry.example:5000/team/image@${MANIFEST}" released
+  [ "${status}" -eq 65 ]
+}
+
+@test "remote descriptor must be an OCI or Docker image manifest or index" {
+  for media_type in '' 'application/vnd.oci.image.config.v1+json' 'application/json'; do
+    jq -n --arg digest "${MANIFEST}" --arg media_type "${media_type}" '
+      {digest: $digest, mediaType: $media_type}
+    ' >"${REMOTE_FILE}"
+    run ci_image_identity "registry.example:5000/team/image@${MANIFEST}" released
+    [ "${status}" -eq 65 ]
+  done
+}
+
+@test "remote verification accepts both supported single and multi-platform media types" {
+  containerd_fixture "registry.example:5000/team/image@${MANIFEST}"
+  for media_type in \
+    application/vnd.oci.image.manifest.v1+json \
+    application/vnd.oci.image.index.v1+json \
+    application/vnd.docker.distribution.manifest.v2+json \
+    application/vnd.docker.distribution.manifest.list.v2+json; do
+    jq -n --arg digest "${MANIFEST}" --arg media_type "${media_type}" '
+      {digest: $digest, mediaType: $media_type, size: 1234}
+    ' >"${REMOTE_FILE}"
+    identity="$(ci_image_identity "registry.example:5000/team/image@${MANIFEST}" released)"
+    jq -e --arg digest "${MANIFEST}" '
+      .digest == $digest and .kind == "registry" and (has("config_digest") | not)
+    ' <<<"${identity}"
+  done
+}
+
+@test "verified source pins retain the requested registry identity" {
+  identity="$(ci_image_identity "registry.example:5000/team/image:v1@${MANIFEST}" source)"
+  jq -e --arg digest "${MANIFEST}" '
+    .digest == $digest and .kind == "registry" and (has("config_digest") | not)
+  ' <<<"${identity}"
+  [ "$(cat "${REMOTE_CALLS}")" = "registry.example:5000/team/image:v1@${MANIFEST}" ]
+}
+
 @test "physical runtime manifest preserves a released pin and records the registry digest" {
   export -f docker
   run bash -ceu '
@@ -204,7 +327,7 @@ docker() {
   [ "${status}" -eq 0 ]
 }
 
-@test "physical runtime manifest keeps source-only config identity visibly local" {
+@test "physical runtime manifest keeps source-only image identity visibly local" {
   fixture
   export -f docker
   run bash -ceu '
@@ -217,7 +340,7 @@ docker() {
     cp "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" "${work_root}/target-evidence.json"
     write_runtime_manifest_input
     jq -e --arg config "$3" \
-      ".oci_image.digest == \$config and .oci_image.reference == (\"local-config/image@\" + \$config)" \
+      ".oci_image.digest == \$config and .oci_image.reference == (\"local-image/image@\" + \$config)" \
       "${work_root}/runtime/runtime-manifest.input.json"
   ' _ "${REPOSITORY_ROOT}" "${BATS_TEST_TMPDIR}" "${CONFIG}"
   [ "${status}" -eq 0 ]
@@ -247,7 +370,37 @@ docker() {
   [[ "${output}" == *'absent from inspected RepoDigests'* ]]
 }
 
-@test "scenario input manifest retains the actual execution config identity" {
+@test "remote failure prevents physical permit and runtime output even in conditionals" {
+  export REMOTE_STATUS=42
+  export -f docker
+  run bash -ceu '
+    export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+    source "$1/scripts/ci/physical-attach.sh"
+    work_root="$2"
+    ROBOTICS_RUNTIME_MODE=released
+    OBSERVER_IMAGE="registry.example:5000/team/image:v1@$3"
+    printf "%064d\n" 3 >"${work_root}/target-identity.sha256"
+    cp "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" "${work_root}/target-evidence.json"
+    scenario_manifest="${work_root}/scenario-inputs.manifest"
+    printf "scenario-input\n" >"${scenario_manifest}"
+    if write_permit_case "${work_root}/case" now later target; then
+      exit 99
+    else
+      test "$?" -eq 42
+    fi
+    if write_runtime_manifest_input; then
+      exit 99
+    else
+      test "$?" -eq 42
+    fi
+    test ! -e "${work_root}/case/execution-permit.json"
+    test ! -e "${work_root}/case/execution-request.json"
+    test ! -e "${work_root}/runtime/runtime-manifest.input.json"
+  ' _ "${REPOSITORY_ROOT}" "${BATS_TEST_TMPDIR}" "${MANIFEST}"
+  [ "${status}" -eq 0 ]
+}
+
+@test "scenario input manifest retains the Docker local image ID" {
   run bash -ceu '
     set -o pipefail
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1

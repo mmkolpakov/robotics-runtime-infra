@@ -106,6 +106,14 @@ setup() {
       "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" \
       >"${work_root}/target-evidence.json"
     docker() {
+      if test "$1" = buildx; then
+        test "$#" -eq 6
+        test "$2 $3 $4" = "imagetools inspect --format"
+        test "$5" = "{{json .Manifest}}"
+        test "$6" = "acceptance-observer@sha256:$(printf "%064d" 1)"
+        printf "{\"digest\":\"sha256:%064d\",\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\"}\n" 1
+        return
+      fi
       test "$1" = image
       test "$2" = inspect
       test "$#" -eq 3
