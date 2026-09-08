@@ -83,10 +83,14 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "Gazebo clock bridges use the standard CLOCK QoS profile" {
+@test "Gazebo clock bridges configure queued reliable delivery for stepped observation" {
   local config=ros_ws/src/robotics_runtime_infra/config/clock_bridge.yaml
-  run grep -F 'qos_profile: CLOCK' "${config}"
+  # The live test_clock subscriber requests reliable delivery. Here retain the
+  # packaging check that every launch selects its shared bridge configuration.
+  run grep -F 'publisher_queue: 1000' "${config}"
   [ "${status}" -eq 0 ]
+  run grep -E '^[[:space:]]*qos_profile: CLOCK' "${config}"
+  [ "${status}" -eq 1 ]
 
   run grep -F 'clock_bridge.yaml' \
     ros_ws/src/robotics_runtime_infra/launch/headless.launch.py
@@ -117,7 +121,7 @@ setup() {
     ros_ws/src/robotics_runtime_infra/launch/gpu_lidar.launch.py
   [ "${status}" -eq 0 ]
 
-  run grep -F 'qos_profile=qos_profile_sensor_data' \
+  run grep -F 'qos_profile=QoSProfile(depth=1000, reliability=ReliabilityPolicy.RELIABLE)' \
     ros_ws/src/robotics_runtime_infra/test/test_clock.py
   [ "${status}" -eq 0 ]
 }
