@@ -325,8 +325,7 @@ if [[ "${observer_mode}" == edge-attach ]]; then
   ci_require_policy_allows policy/compose.rego compose \
     "$(realpath --relative-to="${root}" "${attached_model}")"
   foundation_require_release_images_policy "${attached_model}" \
-    "runs/${project}/edge-attach-release-policy-input.json"
-  cp "${run_dir}/edge-attach-release-policy-input.json" "${artifact_dir}/"
+    "$(realpath --relative-to="${root}" "${artifact_dir}")/edge-attach-release-policy-input.json"
   "${attached_compose[@]}" up --detach --no-build edge-attach-data-plane
   observer_compose=("${attached_compose[@]}")
   observer_service=edge-attach-observer
