@@ -163,32 +163,6 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "runtime manifest filter binds revisions and physical evidence" {
-  run jq \
-    --arg architecture x86_64 \
-    --arg contracts_revision contracts-revision \
-    --arg harness_revision harness-revision \
-    --arg infra_revision infra-revision \
-    --arg image_digest "sha256:$(printf '%064d' 0)" \
-    --arg image_reference "local/synthetic-observer@sha256:$(printf '%064d' 0)" \
-    --arg kernel 6.8.0 \
-    --arg observer_policy_sha256 "$(printf '%064d' 1)" \
-    --arg target_evidence_sha256 "$(printf '%064d' 2)" \
-    --arg target_identity "$(printf '%064d' 3)" \
-    -f "${FIXTURES}/runtime-manifest.jq" \
-    "${REPOSITORY_ROOT}/test/physical/hil-runtime.input.json"
-  [ "${status}" -eq 0 ]
-  run jq -e '
-      .runtime_id == "ci.physical-attach-runtime" and
-      .execution.target_environment == "hil" and
-      .physical_targets[0].target_id == "controller-ci" and
-      .physical_targets[0].identity_kind == "x509_spki" and
-      (.physical_targets[0] | has("stable_device_path") | not) and
-      .clock.sync_protocol == "chrony_ntp"
-  ' <<<"${output}"
-  [ "${status}" -eq 0 ]
-}
-
 @test "physical Compose configuration is validated before host mutation" {
   run bash -c '
     set -Eeuo pipefail

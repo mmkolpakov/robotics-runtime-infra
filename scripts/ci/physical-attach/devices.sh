@@ -461,8 +461,8 @@ prepare_vcan_gateway() {
     fi
     sleep 1
   done
-  can_compose logs --no-color can-observation-client |
-    grep -q '123#DEADBEEF'
+  can_compose logs --no-color can-observation-client >"${work_root}/can-received.txt"
+  grep -q '123#DEADBEEF' "${work_root}/can-received.txt"
 }
 
 verify_time_evidence() {

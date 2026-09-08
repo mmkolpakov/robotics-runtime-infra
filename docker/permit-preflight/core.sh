@@ -6,7 +6,7 @@ sha256_file() {
 }
 
 validate_contract() {
-  robotics-contracts validate --quiet "$1"
+  robotics-contracts validate --quiet --schema "$2" "$1"
 }
 
 assert_single_json_document() {
@@ -271,9 +271,9 @@ authorize_common() {
   output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
   trap 'rm -rf "${work}"; rm -f "${output_tmp}"' EXIT HUP INT TERM
 
-  validate_contract "${permit}"
+  validate_contract "${permit}" execution-permit.v1
   jq -c '.predicate' "${statement}" >"${work}/predicate.json"
-  validate_contract "${work}/predicate.json"
+  validate_contract "${work}/predicate.json" execution-permit.v1
 
   operator_identity="$(jq -r '.operator_id' "${permit}")"
   approver_identity="$(jq -r '.approver_id' "${permit}")"
@@ -355,7 +355,7 @@ authorize_common() {
     printf 'execution policy did not produce a verification record\n' >&2
     exit 65
   }
-  validate_contract "${output_tmp}"
+  validate_contract "${output_tmp}" execution-verification.v1
 
   nonce="$(jq -r '.nonce' "${permit}")"
   umask 077
@@ -400,16 +400,17 @@ materialize_runtime() {
     exit 73
   }
 
-  validate_contract "${template}"
-  validate_contract "${permit}"
-  validate_contract "${verification}"
+  validate_contract "${template}" runtime-manifest.v1
+  validate_contract "${permit}" execution-permit.v1
+  validate_contract "${verification}" execution-verification.v1
   permit_sha256="$(sha256_file "${permit}")"
   verification_sha256="$(sha256_file "${verification}")"
   trust_policy_sha256="$(sha256_file "${trust_policy}")"
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
-  trap 'rm -f "${output_tmp}"' EXIT HUP INT TERM
+  runtime_input="$(mktemp "${output}.input.XXXXXX")"
+  trap 'rm -f "${output_tmp}" "${runtime_input}"' EXIT HUP INT TERM
   jq \
     --arg generated_at "${generated_at}" \
     --arg permit_sha256 "${permit_sha256}" \
@@ -421,8 +422,9 @@ materialize_runtime() {
       .authorization.execution_verification_sha256 =
         $verification_sha256 |
       .authorization.trust_policy_sha256 = $trust_policy_sha256
-    ' "${template}" > "${output_tmp}"
-  validate_contract "${output_tmp}"
+    ' "${template}" > "${runtime_input}"
+  robotics-contracts runtime-manifest init \
+    --template "${runtime_input}" --output "${output_tmp}" >/dev/null
   chmod 0444 "${output_tmp}"
   mv "${output_tmp}" "${output}"
   output_tmp=

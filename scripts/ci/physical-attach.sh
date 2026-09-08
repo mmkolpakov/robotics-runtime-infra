@@ -130,6 +130,7 @@ check_prerequisites() {
     jq \
     mktemp \
     openssl \
+    python3 \
     readlink \
     sha256sum \
     socat \
@@ -159,7 +160,6 @@ check_prerequisites() {
   for fixture in \
     authorization-template.json \
     report.json \
-    runtime-manifest.jq \
     target-evidence.json \
     time-evidence-window.json \
     verify-time-evidence.jq \
@@ -522,6 +522,7 @@ finalize_run() {
     return 73
   }
   report_pending="$(mktemp "${report_output}.pending.XXXXXXXX")"
+  retain_runtime_evidence
   install -m 0644 "${case_report}" "${report_pending}"
 }
 
