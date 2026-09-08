@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+backend="${ROBOTICS_TRANSPORT:-domain_bridge}"
+project_name="robotics-transport-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}-${RANDOM}"
+report_root="${ROBOTICS_TRANSPORT_REPORT_ROOT:-${root}/artifacts/transport}"
+report_dir="${report_root}/${project_name}"
+compose=(docker compose --project-name "${project_name}"
+  --file "${root}/compose.yaml" --file "${root}/compose.transport.yaml" --profile transport)
+case "${backend}" in
+  domain_bridge)
+    compose+=(--profile domain-bridge)
+    bridges=(transport-bridge)
+    configuration_files=(domain-bridge.yaml udp-only.xml)
+    implementation_id=ros2.domain_bridge
+    ;;
+  zenoh)
+    compose+=(--file "${root}/test/compose/compose.zenoh.yaml" --profile zenoh)
+    bridges=(zenoh-source-bridge zenoh-destination-bridge)
+    configuration_files=(source.json5 destination.json5)
+    implementation_id=zenoh_bridge_ros2dds
+    ;;
+  *) printf 'unsupported transport: %s\n' "${backend}" >&2; exit 64 ;;
+esac
+
+mkdir -p "${report_root}"
+mkdir "${report_dir}"
+mkdir -p "${report_dir}/configuration" "${report_dir}/source" "${report_dir}/destination" \
+  "${report_dir}/qualification/observations" "${report_dir}/qualification/evidence-spool"
+export ROBOTICS_HOST_UID="${ROBOTICS_HOST_UID:-$(id -u)}"
+export ROBOTICS_HOST_GID="${ROBOTICS_HOST_GID:-$(id -g)}"
+export ROBOTICS_MESSAGE_COUNT="${ROBOTICS_MESSAGE_COUNT:-20}"
+export ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:-run-$(python3 -c 'import uuid; print(uuid.uuid4())')}"
+export ROBOTICS_TRANSPORT_REPORT_DIR="${report_dir}"
+[[ "${ROBOTICS_MESSAGE_COUNT}" =~ ^[1-9][0-9]*$ ]] || exit 64
+
+cleanup() {
+  local status=$?
+  "${compose[@]}" logs --no-color >"${report_dir}/compose.log" 2>&1 || true
+  if ((status != 0)); then cat "${report_dir}/compose.log" >&2; fi
+  "${compose[@]}" down --volumes --timeout 10 >/dev/null 2>&1 || true
+  return "${status}"
+}
+trap cleanup EXIT
+
+if [[ "${backend}" == domain_bridge ]]; then
+  cp "${root}/config/transport/domain-bridge.yaml" "${report_dir}/configuration/"
+  cp "${root}/config/fastdds/udp-only.xml" "${report_dir}/configuration/"
+else
+  cp "${root}/config/zenoh/source.json5" "${root}/config/zenoh/destination.json5" \
+    "${report_dir}/configuration/"
+fi
+"${compose[@]}" config --format json >"${report_dir}/compose.json"
+"${compose[@]}" up --detach --no-build "${bridges[@]}" \
+  transport-source-otel transport-destination-otel transport-subscriber
+for service in transport-source-otel transport-destination-otel; do
+  ready=false
+  for _ in {1..30}; do
+    if "${compose[@]}" logs --no-color "${service}" 2>&1 |
+      grep -F 'Everything is ready' >/dev/null; then ready=true; break; fi
+    sleep 1
+  done
+  [[ "${ready}" == true ]] || { printf '%s did not become ready\n' "${service}" >&2; exit 1; }
+done
+
+if [[ "${backend}" == domain_bridge ]]; then
+  "${compose[@]}" exec -T transport-bridge robotics-entrypoint \
+    ros2 pkg xml domain_bridge --tag version >"${report_dir}/configuration/version.txt"
+  bridge_version="$(tr -d '\r\n' <"${report_dir}/configuration/version.txt")"
+else
+  "${compose[@]}" run --rm --no-deps zenoh-source-bridge --version \
+    >"${report_dir}/configuration/version.txt"
+  bridge_version="$(sed -nE 's/^zenoh-bridge-ros2dds v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' \
+    "${report_dir}/configuration/version.txt")"
+  test "${bridge_version}" = 1.9.0
+fi
+[[ "${bridge_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.-]+)?$ ]] || exit 65
+bridge_id="$("${compose[@]}" ps --quiet "${bridges[0]}")"
+image_config_digest="$(docker inspect --format '{{.Image}}' "${bridge_id}")"
+configuration_files+=(version.txt)
+python3 - "${report_dir}/configuration" "${implementation_id}" "${bridge_version}" \
+  "${image_config_digest}" "${configuration_files[@]}" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+directory = Path(sys.argv[1])
+document = {
+    "schema_version": "transport-implementation.v1",
+    "implementation_id": sys.argv[2],
+    "version": sys.argv[3],
+    "image_config_digest": sys.argv[4],
+    "artifacts": [
+        {"path": name, "sha256": hashlib.sha256((directory / name).read_bytes()).hexdigest()}
+        for name in sys.argv[5:]
+    ],
+}
+(directory / "implementation.json").write_text(
+    json.dumps(document, sort_keys=True, separators=(",", ":")), encoding="utf-8"
+)
+PY
+
+subscriber_id="$("${compose[@]}" ps --all --quiet transport-subscriber)"
+test -n "${subscriber_id}"
+"${compose[@]}" run --rm --no-deps transport-publisher
+test "$(docker container wait "${subscriber_id}")" = 0
+"${compose[@]}" stop --timeout 30 transport-source-otel transport-destination-otel
+"${compose[@]}" run --rm --no-deps transport-evaluator \
+  python3 /opt/robotics/transport/prepare_qualification.py
+evidence=("${compose[@]}" run --rm --no-deps transport-evidence)
+"${evidence[@]}" artifact /reports/source/traces.otlp.jsonl application/x-ndjson 0
+"${evidence[@]}" artifact /reports/source/probe.json application/json 1
+"${evidence[@]}" artifact /reports/destination/traces.otlp.jsonl application/x-ndjson 2
+"${evidence[@]}" artifact /reports/destination/probe.json application/json 3
+"${evidence[@]}" artifact /reports/qualification/shared-clock-identity.json application/json 4
+"${evidence[@]}" artifact /reports/configuration/implementation.json application/json 5
+index=6
+for name in "${configuration_files[@]}"; do
+  "${evidence[@]}" artifact "/reports/configuration/${name}" application/octet-stream "${index}"
+  index=$((index + 1))
+done
+"${evidence[@]}" finalize
+"${compose[@]}" run --rm --no-deps transport-evaluator
+jq -e '
+  .schema_version == "transport-qualification-result.v1"
+  and .verdict.status == "passed" and .verdict.chain_count == 1
+  and .verdict.passed_chain_count == 1 and .causal_chains[0].status == "passed"
+  and (.trace_evidence | length) == 2 and (.channel_observations | length) == 1
+  and (.clock_relations | length) == 1 and .clock_relations[0].status == "passed"
+' "${report_dir}/qualification/transport-qualification.json" >/dev/null
+jq -e --argjson count "${ROBOTICS_MESSAGE_COUNT}" '
+  .schema_version == "transport-channel-observation.v1" and .channel_id == "transport.trace-context"
+  and .sent_count == $count and .received_count == $count and .lost_count == 0
+  and .duplicate_count == 0 and .out_of_order_count == 0 and .loss_ratio == 0
+  and .status == "passed" and (.violations | length) == 0
+' "${report_dir}/qualification/observations/transport.trace-context.json" >/dev/null
+printf 'Qualified %s %s: %s\n' "${implementation_id}" "${bridge_version}" "${report_dir}"

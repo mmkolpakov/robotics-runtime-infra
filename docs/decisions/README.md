@@ -11,3 +11,4 @@ accepted decision adds a superseding record instead of rewriting history.
 | [0003](0003-fail-closed-physical-execution.md) | Fail closed for physical execution |
 | [0004](0004-record-telemetry-as-verifiable-evidence.md) | Record telemetry as verifiable evidence |
 | [0005](0005-retain-rknn-toolchain-constraints.md) | Retain RKNN toolchain constraints until device qualification |
+| [0006](0006-qualify-native-domain-bridging-before-replacing-zenoh.md) | Qualify native domain bridging before replacing Zenoh |

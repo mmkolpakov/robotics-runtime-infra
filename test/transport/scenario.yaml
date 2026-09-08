@@ -1,6 +1,6 @@
 ---
 schema_version: acceptance-scenario.v1
-scenario_id: org.example.runtime-infra.zenoh-transport
+scenario_id: org.example.runtime-infra.transport-trace-context
 execution:
   target_environment: simulation
   hardware_scope: []

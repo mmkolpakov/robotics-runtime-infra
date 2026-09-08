@@ -20,7 +20,7 @@ jq -e '
 
 diff -u \
   <(find . -maxdepth 1 -type f -name 'compose*.yaml' -printf '%f\n' | sort) \
-  <(jq -r '.compose_models[].files[]' "${manifest}" | sort --unique)
+  <(jq -r '.compose_models[].files[] | select(contains("/") | not)' "${manifest}" | sort --unique)
 
 ci_set_compose_fixture_env
 

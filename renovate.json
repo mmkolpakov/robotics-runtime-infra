@@ -49,6 +49,12 @@
   ],
   "packageRules": [
     {
+      "description": "Freeze the Zenoh bridge baseline until transport equivalence is qualified",
+      "matchFileNames": ["test/compose/compose.zenoh.yaml"],
+      "matchPackageNames": ["eclipse/zenoh-bridge-ros2dds"],
+      "enabled": false
+    },
+    {
       "description": "Keep the Cosign image, build version and installer inputs in one reviewed update",
       "matchPackageNames": [
         "cgr.dev/chainguard/cosign",

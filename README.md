@@ -310,7 +310,7 @@ behavior being tested:
 | `compose.observability.yaml` | `observability` | Receive OTLP metrics and traces and write bounded evidence files |
 | `compose.high-throughput.yaml` | none | Private shared network and IPC namespaces with Fast DDS SHM |
 | `compose.benchmark.yaml` | `benchmark` | Measure UDP, SHM, or Data Sharing with `performance_test` |
-| `compose.zenoh.yaml` | `zenoh` | Bridge two isolated ROS domains through pinned Zenoh routers |
+| `compose.transport.yaml` | `transport`, `domain-bridge` | Bridge ROS domains with Fast DDS and `ros2/domain_bridge` |
 | `compose.sensor-inference.yaml` | `sensor-inference` | Run the CPU sensor-to-ONNX-to-OTLP qualification probe |
 | `compose.nvidia-sim.yaml` | `nvidia-simulation` | Run headless OGRE2/EGL rendering and GPU lidar on NVIDIA hardware |
 | `compose.sensor-inference-nvidia.yaml` | `sensor-inference` | Replace the probe with the no-fallback CUDA provider path |

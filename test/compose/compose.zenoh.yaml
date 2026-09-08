@@ -1,0 +1,62 @@
+---
+# Frozen alternative: same probes and contracts as compose.transport.yaml.
+x-zenoh-plane: &zenoh-plane
+  image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+  profiles: [zenoh]
+  networks: [transport-backbone]
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-zenoh-bridge: &zenoh-bridge
+  image: >-
+    eclipse/zenoh-bridge-ros2dds:1.9.0@sha256:5aca6798ae112e390a97788450fd37360ddd72ac092032a25acf9fac17b2d9af
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [zenoh]
+  environment:
+    ROS_DISTRO: jazzy
+  volumes:
+    - type: bind
+      source: "${ROBOTICS_TRANSPORT_REPORT_DIR:-./artifacts/transport}/configuration"
+      target: /etc/robotics/zenoh
+      read_only: true
+
+services:
+  zenoh-source-plane:
+    <<: *zenoh-plane
+
+  zenoh-destination-plane:
+    <<: *zenoh-plane
+
+  zenoh-source-bridge:
+    <<: *zenoh-bridge
+    network_mode: service:zenoh-source-plane
+    command: [-c, /etc/robotics/zenoh/source.json5]
+    depends_on:
+      zenoh-source-plane:
+        condition: service_started
+
+  zenoh-destination-bridge:
+    <<: *zenoh-bridge
+    network_mode: service:zenoh-destination-plane
+    command: [-c, /etc/robotics/zenoh/destination.json5]
+    depends_on:
+      zenoh-destination-plane:
+        condition: service_started
+      zenoh-source-bridge:
+        condition: service_started
+
+  transport-publisher:
+    network_mode: service:zenoh-source-plane
+    environment:
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+
+  transport-subscriber:
+    network_mode: service:zenoh-destination-plane
+    environment:
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp

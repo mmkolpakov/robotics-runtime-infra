@@ -1,0 +1,12 @@
+---
+name: trace_context_domain_bridge
+from_domain: 31
+to_domain: 32
+topics:
+  /robotics/trace_context:
+    type: robotics_observability_msgs/msg/TraceContext
+    qos:
+      reliability: reliable
+      durability: volatile
+      history: keep_last
+      depth: 100

@@ -35,10 +35,10 @@ from robotics_observability import extract_context, inject_context
 from robotics_observability_msgs.msg import TraceContext
 
 MESSAGE_TYPE: Final = "robotics_observability_msgs/msg/TraceContext"
-PRODUCER_SPAN: Final = "robotics.zenoh.publish"
-CONSUMER_SPAN: Final = "robotics.zenoh.receive"
+PRODUCER_SPAN: Final = "robotics.transport.publish"
+CONSUMER_SPAN: Final = "robotics.transport.receive"
 TRACEPARENT_PATTERN: Final = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-0[1-9a-f]$")
-TRACESTATE: Final = "runtime=zenoh"
+TRACESTATE: Final = "runtime=transport"
 DISCOVERY_TIMEOUT_SEC: Final = 120.0
 
 
@@ -85,7 +85,7 @@ def configure_telemetry(domain_id: str, run_id: str) -> TracerProvider:
     provider = TracerProvider(
         resource=Resource.create(
             {
-                "service.name": f"robotics-zenoh-{domain_id}",
+                "service.name": f"robotics-transport-{domain_id}",
                 "service.namespace": "robotics-runtime",
                 "run.id": run_id,
                 "domain.id": domain_id,
@@ -147,6 +147,22 @@ def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[st
     publisher = node.create_publisher(TraceContext, topic, qos_profile())
     started_at = iso8601_now()
     subscriber_count = wait_for_subscriber(node, topic, DISCOVERY_TIMEOUT_SEC)
+    ready_path = Path(required_environment("ROBOTICS_DESTINATION_READY"))
+    expected = {
+        "run_id": required_environment("ROBOTICS_RUN_ID"),
+        "domain_id": "transport-destination",
+        "topic": topic,
+        "type_hash": endpoint_type_hash(node, topic, publishers=True),
+    }
+    deadline = time.monotonic() + DISCOVERY_TIMEOUT_SEC
+    while not ready_path.is_file() and time.monotonic() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.1)
+    if not ready_path.is_file():
+        raise RuntimeError(
+            "destination subscription did not match its bridge publisher"
+        )
+    if json.loads(ready_path.read_bytes()) != expected:
+        raise RuntimeError("destination readiness belongs to another run or topic")
     traceparents: set[str] = set()
     first_message_at_ns: int | None = None
 
@@ -157,17 +173,17 @@ def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[st
             span_id=secrets.randbits(64) or 1,
             is_remote=False,
             trace_flags=TraceFlags(TraceFlags.SAMPLED),
-            trace_state=TraceState([("runtime", "zenoh")]),
+            trace_state=TraceState([("runtime", "transport")]),
         )
         parent_context = set_span_in_context(NonRecordingSpan(parent))
-        message_id = f"zenoh-{trace_id:032x}"
+        message_id = f"transport-{trace_id:032x}"
         with tracer.start_as_current_span(
             PRODUCER_SPAN,
             context=parent_context,
             kind=SpanKind.PRODUCER,
             attributes={
                 "messaging.message.id": message_id,
-                "messaging.system": "zenoh",
+                "messaging.system": "transport",
                 "messaging.destination.name": topic,
                 "messaging.operation.name": "publish",
                 "messaging.operation.type": "send",
@@ -191,7 +207,7 @@ def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[st
     if first_message_at_ns is None:
         raise RuntimeError("publisher emitted no messages")
     return {
-        "schema_version": "zenoh-probe-observation.v1",
+        "schema_version": "transport-probe-observation.v1",
         "role": "source",
         "started_at": started_at,
         "finished_at": iso8601_now(),
@@ -228,14 +244,14 @@ def subscribe(
         parent = trace.get_current_span(context).get_span_context()
         if not parent.is_valid or not parent.is_remote:
             raise RuntimeError("received Trace Context did not produce a remote parent")
-        message_id = f"zenoh-{parent.trace_id:032x}"
+        message_id = f"transport-{parent.trace_id:032x}"
         with tracer.start_as_current_span(
             CONSUMER_SPAN,
             context=context,
             kind=SpanKind.CONSUMER,
             attributes={
                 "messaging.message.id": message_id,
-                "messaging.system": "zenoh",
+                "messaging.system": "transport",
                 "messaging.destination.name": topic,
                 "messaging.operation.name": "receive",
                 "messaging.operation.type": "receive",
@@ -256,8 +272,20 @@ def subscribe(
     )
     deadline = time.monotonic() + DISCOVERY_TIMEOUT_SEC
     reached_at: float | None = None
+    ready = False
     while time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.1)
+        if not ready and node.count_publishers(topic) >= 1:
+            write_observation(
+                Path(required_environment("ROBOTICS_DESTINATION_READY")),
+                {
+                    "run_id": required_environment("ROBOTICS_RUN_ID"),
+                    "domain_id": required_environment("ROBOTICS_DOMAIN_ID"),
+                    "topic": topic,
+                    "type_hash": endpoint_type_hash(node, topic, publishers=False),
+                },
+            )
+            ready = True
         if len(traceparents) >= count and reached_at is None:
             reached_at = time.monotonic()
         if reached_at is not None and time.monotonic() - reached_at >= 1.0:
@@ -277,7 +305,7 @@ def subscribe(
         raise RuntimeError("subscriber observed no messages")
 
     observation = {
-        "schema_version": "zenoh-probe-observation.v1",
+        "schema_version": "transport-probe-observation.v1",
         "role": "destination",
         "started_at": started_at,
         "finished_at": iso8601_now(),
@@ -299,7 +327,7 @@ def subscribe(
 
 def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(
-        description="Emit correlated ROS 2 and OpenTelemetry evidence for Zenoh."
+        description="Emit correlated ROS 2 and OpenTelemetry evidence for transport."
     )
     command.add_argument("role", choices=("publish", "subscribe"))
     return command
@@ -313,13 +341,13 @@ def main() -> None:
     count = positive_integer_environment("ROBOTICS_MESSAGE_COUNT")
     output = Path(required_environment("ROBOTICS_OBSERVATION_PATH"))
     provider = configure_telemetry(domain_id, run_id)
-    tracer = provider.get_tracer("robotics.zenoh.qualification")
+    tracer = provider.get_tracer("robotics.transport.qualification")
     rclpy.init()
     node: Node | None = None
     observation: dict[str, Any] | None = None
     try:
         node = rclpy.create_node(
-            f"zenoh_{arguments.role}_{domain_id.replace('-', '_')}"
+            f"transport_{arguments.role}_{domain_id.replace('-', '_')}"
         )
         observation = (
             publish(node, tracer, topic, count)
@@ -337,7 +365,7 @@ def main() -> None:
             raise RuntimeError("OpenTelemetry span flush timed out")
         provider.shutdown()
     if observation is None:
-        raise RuntimeError("Zenoh probe produced no observation")
+        raise RuntimeError("transport probe produced no observation")
     write_observation(output, observation)
 
 

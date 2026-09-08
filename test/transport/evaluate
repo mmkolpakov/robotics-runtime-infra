@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+report_dir="${ROBOTICS_TRANSPORT_REPORT_DIR:?transport report directory is required}"
+robotics-acceptance transport-evaluate \
+  --run-id "${ROBOTICS_RUN_ID:?run ID is required}" \
+  --scenario "${root}/scenario.yaml" \
+  --causal-chain "${report_dir}/qualification/causal-chain.json" \
+  --channel-contract "${report_dir}/qualification/channel.json" \
+  --clock-relation "${report_dir}/qualification/clock-relation.json" \
+  --trace "transport-source=${report_dir}/source/traces.otlp.jsonl" \
+  --trace "transport-destination=${report_dir}/destination/traces.otlp.jsonl" \
+  --evidence-index "transport-source=${report_dir}/evidence-index.json" \
+  --evidence-index "transport-destination=${report_dir}/evidence-index.json" \
+  --observation-output "${report_dir}/qualification/observations" \
+  --output "${report_dir}/qualification/transport-qualification.json"
