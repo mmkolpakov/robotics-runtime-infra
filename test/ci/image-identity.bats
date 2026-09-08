@@ -45,6 +45,8 @@ docker() {
     printf '%s\n' "$6" >>"${REMOTE_CALLS}"
     cat "${REMOTE_FILE}"
     return "${REMOTE_STATUS}"
+  elif [[ "$1" == run && -n "${RUNTIME_CALLS:-}" ]]; then
+    printf '%s\n' "$@" >"$RUNTIME_CALLS"
   else
     return 64
   fi
@@ -309,7 +311,7 @@ docker() {
   [ "$(cat "${REMOTE_CALLS}")" = "registry.example:5000/team/image:v1@${MANIFEST}" ]
 }
 
-@test "physical runtime manifest preserves a released pin and records the registry digest" {
+@test "physical runtime writer receives the released reference and registry digest" {
   export -f docker
   run bash -ceu '
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
@@ -317,17 +319,16 @@ docker() {
     work_root="$2"
     ROBOTICS_RUNTIME_MODE=released
     OBSERVER_IMAGE="registry.example:5000/team/image:v1@$3"
-    printf "%064d\n" 3 >"${work_root}/target-identity.sha256"
-    cp "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" "${work_root}/target-evidence.json"
-    write_runtime_manifest_input
-    jq -e --arg digest "$3" --arg reference "${OBSERVER_IMAGE}" \
-      ".oci_image.digest == \$digest and .oci_image.reference == \$reference" \
-      "${work_root}/runtime/runtime-manifest.input.json"
+    RUNTIME_CALLS="$2/runtime.calls"
+    identity="$(ci_image_identity "$OBSERVER_IMAGE" "$ROBOTICS_RUNTIME_MODE")"
+    run_runtime_manifest_writer "$work_root/runtime" "$identity"
+    test "$(sed -n "/^--subject-digest\$/ {n;p;}" "$RUNTIME_CALLS")" = "$3"
+    test "$(sed -n "/^--subject-reference\$/ {n;p;}" "$RUNTIME_CALLS")" = "$OBSERVER_IMAGE"
   ' _ "${REPOSITORY_ROOT}" "${BATS_TEST_TMPDIR}" "${MANIFEST}"
   [ "${status}" -eq 0 ]
 }
 
-@test "physical runtime manifest keeps source-only image identity visibly local" {
+@test "physical runtime writer keeps source-only image identity visibly local" {
   fixture
   export -f docker
   run bash -ceu '
@@ -336,12 +337,11 @@ docker() {
     work_root="$2"
     ROBOTICS_RUNTIME_MODE=source
     OBSERVER_IMAGE=local/image:dev
-    printf "%064d\n" 3 >"${work_root}/target-identity.sha256"
-    cp "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" "${work_root}/target-evidence.json"
-    write_runtime_manifest_input
-    jq -e --arg config "$3" \
-      ".oci_image.digest == \$config and .oci_image.reference == (\"local-image/image@\" + \$config)" \
-      "${work_root}/runtime/runtime-manifest.input.json"
+    RUNTIME_CALLS="$2/runtime.calls"
+    identity="$(ci_image_identity "$OBSERVER_IMAGE" "$ROBOTICS_RUNTIME_MODE")"
+    run_runtime_manifest_writer "$work_root/runtime" "$identity"
+    test "$(sed -n "/^--subject-digest\$/ {n;p;}" "$RUNTIME_CALLS")" = "$3"
+    test "$(sed -n "/^--subject-reference\$/ {n;p;}" "$RUNTIME_CALLS")" = "local-image/image@$3"
   ' _ "${REPOSITORY_ROOT}" "${BATS_TEST_TMPDIR}" "${CONFIG}"
   [ "${status}" -eq 0 ]
   [[ "${output}" == *'not verified registry identity'* ]]

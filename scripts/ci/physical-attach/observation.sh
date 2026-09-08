@@ -18,13 +18,11 @@ prepare_sros2_identity() {
 write_runtime_manifest_input() {
   local runtime_dir="${work_root}/runtime"
   local inputs="${work_root}/runtime/inputs"
-  local image_identity workspace_revision
-  local -a run_arguments=()
+  local image_identity
 
   mkdir -p "$inputs"
   chmod 0777 "$runtime_dir"
   image_identity="$(ci_image_identity "${OBSERVER_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}")" || return
-  workspace_revision="$(jq -er '.workspace.revision' "${REPOSITORY_ROOT}/config/foundation-lock.json")"
   cp "${REPOSITORY_ROOT}/test/physical/hil-runtime.input.json" "$inputs/template.json"
   cp "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml" "$inputs/observer.policy.xml"
   cp "${work_root}/target-evidence.json" "$inputs/target-evidence.json"
@@ -40,6 +38,16 @@ print(json.dumps({"os": release["ID"], "os_version": release["VERSION_ID"],
 ' >"$inputs/host-platform.json"
   write_clock_facts "${ROBOTICS_TIME_EVIDENCE}" "$inputs/clock.json"
   chmod 0444 "$inputs"/*
+  run_runtime_manifest_writer "$runtime_dir" "$image_identity"
+  cp "$runtime_dir/provider/runtime-manifest.input.json" "$runtime_dir/runtime-manifest.input.json"
+  export ROBOTICS_RUN_ID
+  ROBOTICS_RUN_ID="$(jq -er '.run_id' "$runtime_dir/provider/conformance.json")"
+}
+
+run_runtime_manifest_writer() {
+  local runtime_dir="$1" image_identity="$2" workspace_revision
+  local -a run_arguments=()
+  workspace_revision="$(jq -er '.workspace.revision' "${REPOSITORY_ROOT}/config/foundation-lock.json")"
   if [[ -n "${ROBOTICS_RUN_ID:-}" ]]; then
     run_arguments+=(--run-id "$ROBOTICS_RUN_ID")
   fi
@@ -54,9 +62,6 @@ print(json.dumps({"os": release["ID"], "os_version": release["VERSION_ID"],
     --workspace-revision "$workspace_revision" \
     --infra-revision "$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)" \
     --domain-id "${ROS_DOMAIN_ID:-92}" "${run_arguments[@]}"
-  cp "$runtime_dir/provider/runtime-manifest.input.json" "$runtime_dir/runtime-manifest.input.json"
-  export ROBOTICS_RUN_ID
-  ROBOTICS_RUN_ID="$(jq -er '.run_id' "$runtime_dir/provider/conformance.json")"
 }
 
 write_clock_facts() {
