@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>robotics_udp_v4</transport_id>
+        <type>UDPv4</type>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="robotics_udp_participant" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>robotics_udp_v4</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+    <data_writer profile_name="robotics_udp_writer" is_default_profile="true">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+        <publishMode>
+          <kind>SYNCHRONOUS</kind>
+        </publishMode>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_writer>
+    <data_reader profile_name="robotics_udp_reader" is_default_profile="true">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_reader>
+  </profiles>
+</dds>

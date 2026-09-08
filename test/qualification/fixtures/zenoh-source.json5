@@ -1,0 +1,37 @@
+{
+  "id": "1",
+  "listen": {
+    "endpoints": [
+      "tcp/0.0.0.0:7447"
+    ]
+  },
+  "mode": "router",
+  "plugins": {
+    "ros2dds": {
+      "allow": {
+        "action_clients": [],
+        "action_servers": [],
+        "publishers": [
+          "^/robotics/trace_context$"
+        ],
+        "service_clients": [],
+        "service_servers": [],
+        "subscribers": [
+          "^/robotics/trace_context$"
+        ]
+      },
+      "domain": 31,
+      "nodename": "trace_context_source_bridge",
+      "reliable_routes_blocking": true,
+      "ros_automatic_discovery_range": "LOCALHOST"
+    }
+  },
+  "scouting": {
+    "gossip": {
+      "enabled": false
+    },
+    "multicast": {
+      "enabled": false
+    }
+  }
+}

@@ -61,14 +61,19 @@ while (($# > 0)); do
   esac
 done
 [[ -f "$bundle" && -f "$trusted_root" ]]
-[[ "$digest" == "$(sha256sum "$TEST_ROOT/artifacts/aggregate.json" | cut -d' ' -f1)" ]]
+aggregate="$TEST_ROOT/artifacts/acceptance-aggregate.json"
+if [[ "$QUALIFICATION_FIXTURE_CASE" == transport ]]; then
+  aggregate="$TEST_ROOT/artifacts/acceptance-aggregate-transport.json"
+fi
+[[ "$digest" == "$(sha256sum "$aggregate" | cut -d' ' -f1)" ]]
 [[ "$digest_algorithm" == sha256 ]]
 [[ "$predicate_type" == \
-  https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v2 ]]
+  https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1 ]]
 [[ "$identity" == "$COSIGN_TEST_BUNDLE_IDENTITY" &&
   "$issuer" == "$COSIGN_TEST_BUNDLE_ISSUER" ]]
 EOF
   chmod +x "$TEST_BIN/cosign"
+  export QUALIFICATION_FIXTURE_CASE=single
   create_artifacts
 }
 
@@ -78,14 +83,7 @@ sha256() {
 
 create_artifacts() {
   local artifacts="$TEST_ROOT/artifacts"
-  cp "$FIXTURES/acceptance-scenario.yaml" "$artifacts/scenario.yaml"
-  cp "$FIXTURES/acceptance-run.json" "$artifacts/run.json"
-  cp "$FIXTURES/runtime-manifest.json" "$artifacts/runtime.json"
-  cp "$FIXTURES/acceptance-result.json" "$artifacts/result.json"
-  cp "$FIXTURES/acceptance-aggregate.json" "$artifacts/aggregate.json"
-  cp "$FIXTURES/evidence-index.json" "$artifacts/evidence-index.json"
-  cp "$FIXTURES/mcap-summary.json" "$artifacts/mcap-summary.json"
-  cp "$FIXTURES/diagnostics.json" "$artifacts/diagnostics.json"
+  cp "$FIXTURES/"* "$artifacts/"
   printf '{"trustedRoot":"fixture"}\n' >"$artifacts/trusted-root.json"
   create_policy "$EXPECTED_IDENTITY" "$EXPECTED_ISSUER"
 }
@@ -100,9 +98,9 @@ create_policy() {
     --arg issuer "$issuer" \
     --arg trusted_root_sha256 "$trusted_root_sha256" \
     '{
-      schema_version: "qualification-policy.v2",
+      schema_version: "qualification-policy.v1",
       policy_id: "qualification-main",
-      predicate_type: "https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v2",
+      predicate_type: "https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1",
       certificate_identities: [$identity],
       certificate_oidc_issuer: $issuer,
       trusted_root_sha256: $trusted_root_sha256,
@@ -113,76 +111,24 @@ create_policy() {
         "domain_result",
         "acceptance_aggregate",
         "evidence_index",
-        "mcap_summary"
+        "recording_summary"
       ]
     }' >"$TEST_ROOT/artifacts/policy.json"
 }
 
 artifact_arguments() {
-  cat <<EOF
---scenario
-$TEST_ROOT/artifacts/scenario.yaml
---runtime-manifest
-primary=$TEST_ROOT/artifacts/runtime.json
---acceptance-run
-$TEST_ROOT/artifacts/run.json
---result
-primary=$TEST_ROOT/artifacts/result.json
---aggregate
-$TEST_ROOT/artifacts/aggregate.json
---evidence-index
-primary=$TEST_ROOT/artifacts/evidence-index.json
---mcap-summary
-control-0=$TEST_ROOT/artifacts/mcap-summary.json
---evidence
-other_evidence:diagnostics.json=$TEST_ROOT/artifacts/diagnostics.json
---evidence
-raw_mcap:recording-0.mcap=$REPOSITORY_ROOT/test/fixtures/playback/golden/golden_0.mcap
---evidence
-metrics:metrics.otlp.jsonl=$FIXTURES/metrics.otlp.jsonl
---evidence
-traces:traces.otlp.jsonl=$FIXTURES/traces.otlp.jsonl
-EOF
-  if [[ -f "$TEST_ROOT/artifacts/transport.json" ]]; then
-    cat <<EOF
---runtime-manifest
-secondary=$TEST_ROOT/artifacts/runtime.json
---result
-secondary=$TEST_ROOT/artifacts/result-secondary.json
---transport-qualification
-$TEST_ROOT/artifacts/transport.json
---evidence-index
-secondary=$TEST_ROOT/artifacts/evidence-index-secondary.json
---evidence
-causal_chain_contract:primary-to-secondary.json=$FIXTURES/transport-causal-chain.json
---evidence
-channel_contract:primary-commands.json=$FIXTURES/transport-channel.json
---evidence
-channel_observation:primary-commands-observation.json=$FIXTURES/transport-channel-observation.json
---evidence
-traces:traces-secondary.otlp.jsonl=$FIXTURES/traces-secondary.otlp.jsonl
---evidence
-other_evidence:zenoh-source.json5=$REPOSITORY_ROOT/config/zenoh/source.json5
-EOF
-  fi
+  jq -r --arg root "$TEST_ROOT/artifacts" '
+    .artifacts[] | "--artifact", "\(.kind):\(.subject_name)=\($root)/\(.file)"
+  ' "$FIXTURES/${QUALIFICATION_FIXTURE_CASE}-artifacts.json"
 }
 
 create_evaluated_artifacts() {
+  export QUALIFICATION_FIXTURE_CASE=transport
   local artifacts="$TEST_ROOT/artifacts"
-  cp "$FIXTURES/acceptance-run-transport.json" "$artifacts/run.json"
-  cp "$FIXTURES/acceptance-result-secondary.json" \
-    "$artifacts/result-secondary.json"
-  cp "$FIXTURES/evidence-index-secondary.json" \
-    "$artifacts/evidence-index-secondary.json"
-  cp "$FIXTURES/transport-qualification.json" "$artifacts/transport.json"
-  cp "$FIXTURES/acceptance-aggregate-transport.json" \
-    "$artifacts/aggregate.json"
   jq '
     .required_artifact_kinds += [
-      "transport_qualification",
-      "causal_chain_contract",
-      "channel_contract",
-      "channel_observation"
+      "transport_qualification", "causal_chain_contract", "channel_contract",
+      "channel_observation", "clock_relation"
     ]
   ' "$artifacts/policy.json" >"$artifacts/policy.updated.json"
   mv "$artifacts/policy.updated.json" "$artifacts/policy.json"
@@ -190,14 +136,17 @@ create_evaluated_artifacts() {
 
 bind_primary_runtime() {
   local artifacts="$TEST_ROOT/artifacts"
-  jq --arg digest "$(sha256 "$artifacts/runtime.json")" \
-    '.runtime_manifest_sha256 = $digest' \
-    "$artifacts/result.json" >"$artifacts/result.updated.json"
-  mv "$artifacts/result.updated.json" "$artifacts/result.json"
-  jq --arg digest "$(sha256 "$artifacts/result.json")" \
+  jq --arg digest "$(sha256 "$artifacts/runtime-manifest.json")" \
+    --slurpfile runtime "$artifacts/runtime-manifest.json" \
+    '.runtime_manifest_sha256 = $digest |
+     .runtime_observation.middleware_configuration_sha256 =
+       $runtime[0].data_plane.middleware_configuration_sha256'  \
+    "$artifacts/acceptance-result.json" >"$artifacts/result.updated.json"
+  mv "$artifacts/result.updated.json" "$artifacts/acceptance-result.json"
+  jq --arg digest "$(sha256 "$artifacts/acceptance-result.json")" \
     '.per_domain_results[0].result_sha256 = $digest' \
-    "$artifacts/aggregate.json" >"$artifacts/aggregate.updated.json"
-  mv "$artifacts/aggregate.updated.json" "$artifacts/aggregate.json"
+    "$artifacts/acceptance-aggregate.json" >"$artifacts/aggregate.updated.json"
+  mv "$artifacts/aggregate.updated.json" "$artifacts/acceptance-aggregate.json"
 }
 
 create_statement_and_bundle() {
@@ -247,8 +196,8 @@ verify_bundle() {
 
 @test "rejects an unsupported scenario contract" {
   sed -i \
-    's/schema_version: acceptance-scenario.v4/schema_version: acceptance-scenario.v3/' \
-    "$TEST_ROOT/artifacts/scenario.yaml"
+    's/schema_version: acceptance-scenario.v1/schema_version: acceptance-scenario.v3/' \
+    "$TEST_ROOT/artifacts/acceptance-scenario.yaml"
   mapfile -t args < <(artifact_arguments)
 
   run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
@@ -256,7 +205,7 @@ verify_bundle() {
 
   [ "$status" -eq 65 ]
   [[ "$output" == *"unsupported scenario schema_version 'acceptance-scenario.v3'"* ]]
-  [[ "$output" == *'[qualification.invalid]'* ]]
+  [[ "$output" == *'"error_id": "qualification.invalid"'* ]]
 }
 
 @test "rejects a multi-document Sigstore bundle" {
@@ -288,53 +237,54 @@ verify_bundle() {
 
 @test "rejects a schema-invalid result before statement creation" {
   mapfile -t args < <(artifact_arguments)
-  jq 'del(.run_id)' "$TEST_ROOT/artifacts/result.json" \
+  jq 'del(.run_id)' "$TEST_ROOT/artifacts/acceptance-result.json" \
     >"$TEST_ROOT/artifacts/result.invalid.json"
   mv "$TEST_ROOT/artifacts/result.invalid.json" \
-    "$TEST_ROOT/artifacts/result.json"
+    "$TEST_ROOT/artifacts/acceptance-result.json"
 
   run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
     "${args[@]}" --output "$TEST_ROOT/artifacts/invalid-statement.json"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"does not satisfy acceptance-result.v4"* ]]
+  [[ "$output" == *"'run_id' is a required property"* ]]
+  [[ "$output" == *'"error_id": "schema.validation_failed"'* ]]
 }
 
 @test "rejects an unretained Fast DDS profile referenced by a runtime manifest" {
   mapfile -t args < <(artifact_arguments)
   jq \
-    '.data_plane.fastdds_profile_sha256 =
+    '.data_plane.middleware_configuration_sha256 =
       "0000000000000000000000000000000000000000000000000000000000000000"' \
-    "$TEST_ROOT/artifacts/runtime.json" \
+    "$TEST_ROOT/artifacts/runtime-manifest.json" \
     >"$TEST_ROOT/artifacts/runtime.with-profile.json"
   mv "$TEST_ROOT/artifacts/runtime.with-profile.json" \
-    "$TEST_ROOT/artifacts/runtime.json"
+    "$TEST_ROOT/artifacts/runtime-manifest.json"
   bind_primary_runtime
 
   run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
     "${args[@]}" --output "$TEST_ROOT/artifacts/missing-profile-statement.json"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"runtime manifest primary Fast DDS profile"* ]]
+  [[ "$output" == *"runtime manifest primary middleware configuration"* ]]
   [[ "$output" == *"retained raw artifact"* ]]
 }
 
 @test "binds a runtime manifest to retained Fast DDS profile bytes" {
-  local profile="$REPOSITORY_ROOT/config/fastdds/udp-only.xml"
+  local profile="$TEST_ROOT/artifacts/fastdds-profile.xml"
+  printf '\n' >>"$profile"
   local profile_sha256
   profile_sha256="$(sha256 "$profile")"
   jq --arg digest "$profile_sha256" \
-    '.data_plane.fastdds_profile_sha256 = $digest' \
-    "$TEST_ROOT/artifacts/runtime.json" \
+    '.data_plane.middleware_configuration_sha256 = $digest' \
+    "$TEST_ROOT/artifacts/runtime-manifest.json" \
     >"$TEST_ROOT/artifacts/runtime.with-profile.json"
   mv "$TEST_ROOT/artifacts/runtime.with-profile.json" \
-    "$TEST_ROOT/artifacts/runtime.json"
+    "$TEST_ROOT/artifacts/runtime-manifest.json"
   bind_primary_runtime
   mapfile -t args < <(artifact_arguments)
 
   run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
     "${args[@]}" \
-    --evidence "other_evidence:fastdds-profile.xml=$profile" \
     --output "$TEST_ROOT/artifacts/profile-bound-statement.json"
 
   [ "$status" -eq 0 ]

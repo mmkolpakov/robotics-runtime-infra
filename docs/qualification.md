@@ -239,6 +239,6 @@ scripts/qualification/create-statement \
 The adapter tests in `test/ci/qualification-v1.bats` use complete v1 inventories
 from the pinned contracts workspace and an explicitly labelled verifier double.
 `test/qualification/real-cosign.sh` exercises actual offline Cosign signing,
-verification, foreign-key rejection and changed aggregate bytes against the
-same fixture generation. These checks do not claim live ROS/provider/S3
+verification, foreign-key rejection and changed aggregate bytes against infra's
+own v1 transport inventory. These checks do not claim live ROS/provider/S3
 qualification; infra-produced v1 fixtures and foundation E2E are separate gates.

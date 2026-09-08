@@ -1,13 +1,13 @@
 ---
-schema_version: acceptance-scenario.v4
+schema_version: acceptance-scenario.v1
 scenario_id: org.example.runtime-infra.stepped-smoke
 execution:
   target_environment: simulation
   hardware_scope: []
   physical_effect: none
   test_intent: interface_smoke
-  data_source: gazebo
-  plant_backend: gazebo_physics
+  data_source: simulator
+  plant_backend: simulated_physics
   time_mode: simulation_stepped
   data_plane_profile: standard_isolated
   security_profile: none
@@ -31,6 +31,7 @@ expected_ros_graph:
       min_publishers: 1
       min_subscribers: 0
       first_message_timeout_sec: 10
+      qos_profile: sensor_data
   services: []
   actions: []
   lifecycle_nodes: []
@@ -42,6 +43,10 @@ time_policy:
   max_time_authority_delivery_latency_p50_ms: 1
   max_time_authority_delivery_latency_p95_ms: 2
   max_time_authority_delivery_latency_ms: 5
+  cross_domain_clock:
+    method: measured_skew
+    maximum_absolute_skew_ms: 1
+    minimum_samples: 2
 data_plane_policy:
   max_message_age_ms: 100
   max_loss_ratio: 0
@@ -49,7 +54,8 @@ data_plane_policy:
   data_sharing: false
   private_ipc: false
 evidence_policy:
-  topics: [/clock]
+  topics:
+    - /clock
   recording_mode: bounded
   compression: zstd
   max_segment_size_bytes: 1048576
@@ -60,3 +66,8 @@ evidence_policy:
   upload_mode: local_only
   retention_class: pull-request-7d
   remote_sink_allowed: false
+provider_requirements:
+  capabilities:
+    - simulated_physics
+metric_definitions: []
+evaluator_requirements: []

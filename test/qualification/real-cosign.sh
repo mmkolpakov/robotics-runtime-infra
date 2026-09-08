@@ -20,10 +20,10 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Test the adapter and real cryptographic boundary against the pinned v1
-# reference inventory. ROS/provider observations remain labelled fixtures.
-fixtures="$root/dependencies/robotics-runtime/packages/contracts/tests/fixtures/qualification/transport"
-cp "$fixtures/aggregate.json" "$work/aggregate.json"
+# Test the adapter and real cryptographic boundary against the infra v1
+# regression inventory. ROS/provider observations remain labelled fixtures.
+fixtures="$root/test/qualification/fixtures"
+cp "$fixtures/acceptance-aggregate-transport.json" "$work/aggregate.json"
 artifact_arguments=()
 while IFS=$'\t' read -r kind subject file; do
   path="$fixtures/$file"
@@ -31,7 +31,7 @@ while IFS=$'\t' read -r kind subject file; do
     path="$work/aggregate.json"
   fi
   artifact_arguments+=(--artifact "$kind:$subject=$path")
-done < <(jq -r '.[] | [.kind, .subject_name, .file] | @tsv' "$fixtures/artifacts.json")
+done < <(jq -r '.artifacts[] | [.kind, .subject_name, .file] | @tsv' "$fixtures/transport-artifacts.json")
 scripts/qualification/create-statement \
   "${artifact_arguments[@]}" \
   --output "${work}/statement.json"
