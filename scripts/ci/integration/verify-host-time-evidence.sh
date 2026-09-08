@@ -31,6 +31,7 @@ run_chrony_case() (
   local socket_dir="$3"
   local evidence_dir="$4"
   local expected="$5"
+  local replay="${6:-}"
   local compose=(
     env
     "ROBOTICS_CHRONY_FIXTURE_CONFIG=${config}"
@@ -50,7 +51,14 @@ run_chrony_case() (
   trap '"${compose[@]}" logs --no-color >"${HOST_TIME_WORK}/${name}-compose.log" 2>&1 || true;
     "${compose[@]}" down --volumes --remove-orphans || true' EXIT
 
-  "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 time-fixture
+  if [[ -z "${replay}" ]]; then
+    "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 time-fixture
+  else
+    # Re-read the actual positive-case CSV after it is stale; never rewrite its
+    # reference time to manufacture a current measurement.
+    test -s "${replay}"
+    sleep 3
+  fi
   if [[ "${expected}" == true ]]; then
     "${compose[@]}" exec -T time-fixture \
       chronyc -n -h /run/robotics-time/chronyd.sock waitsync 60 0.005 20 1
@@ -60,8 +68,12 @@ run_chrony_case() (
   # Exercise the same timestamp parser and publisher as the host timer. The
   # NTP pair is an isolated fixture, not a qualified lab time source.
   for _ in {1..10}; do
-    "${compose[@]}" exec -T time-fixture \
-      chronyc -c -n -h /run/robotics-time/chronyd.sock tracking |
+    if [[ -n "${replay}" ]]; then
+      tail -n 1 "${replay}"
+    else
+      "${compose[@]}" exec -T time-fixture \
+        chronyc -c -n -h /run/robotics-time/chronyd.sock tracking
+    fi |
       tee -a "${HOST_TIME_WORK}/${name}-tracking.csv" |
       sudo bash scripts/time/sample.sh chrony "${socket_dir}" --stdin
     if host_time_has_samples "${evidence_dir}/hardware-time.otlp.json"; then
@@ -78,7 +90,8 @@ run_chrony_case() (
     host_time_require_clean_log "${HOST_TIME_WORK}/${name}-collector.log"
   fi
   host_time_verify_timing \
-    chrony_ntp "${evidence_dir}/hardware-time.otlp.json" "${expected}"
+    chrony_ntp "${evidence_dir}/hardware-time.otlp.json" "${expected}" \
+    "$(if [[ -n "${replay}" ]]; then printf true; else printf '%s' "${expected}"; fi)"
 )
 
 run_ptp_case() (
@@ -133,6 +146,12 @@ run_ptp_case() (
 run_chrony_case \
   chrony config/time/chrony-fixture.conf \
   "${HOST_TIME_SOCKET_DIR}" "${HOST_TIME_CHRONY_EVIDENCE}" true
+sudo install -d -o 100 -g 101 -m 2770 \
+  "${HOST_TIME_WORK}/replay-socket" "${HOST_TIME_WORK}/chrony-replay"
+run_chrony_case \
+  chrony-replay config/time/chrony-unsynchronized-fixture.conf \
+  "${HOST_TIME_WORK}/replay-socket" "${HOST_TIME_WORK}/chrony-replay" false \
+  "${HOST_TIME_WORK}/chrony-tracking.csv"
 run_chrony_case \
   chrony-unsync config/time/chrony-unsynchronized-fixture.conf \
   "${HOST_TIME_UNSYNC_SOCKET_DIR}" "${HOST_TIME_CHRONY_UNSYNC_EVIDENCE}" false

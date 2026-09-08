@@ -85,13 +85,18 @@ from robotics_acceptance_harness.otel import load_otlp_json_metrics
 import sys
 
 expected = sys.argv[2] == "true"
+# Chrony 4.5 deliberately randomizes tracking reference time backwards by
+# up to one second (reference.c, fuzz_ref_time). Keep that conservative age:
+# this fixture allows 1s timestamp uncertainty + 1s polling/export budget.
+# PTP ingress timestamps have no such randomization.
+max_age_ms = 2000 if sys.argv[1] == "chrony_ntp" else 1000
 result = evaluate_hardware_timing(
     {
         "clock_sync_protocol": sys.argv[1],
         "time_authority_min_samples": 1,
         "max_clock_offset_ms": 5,
         "max_clock_drift_ppm": 20,
-        "max_message_age_ms": 1000,
+        "max_message_age_ms": max_age_ms,
     },
     load_otlp_json_metrics("/metrics.otlp.jsonl"),
 )
