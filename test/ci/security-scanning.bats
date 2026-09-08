@@ -128,17 +128,17 @@ EOF
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
-  run grep -F 'ARG UBUNTU_SNAPSHOT=20260726T000000Z' Dockerfile
+  run grep -F 'ARG UBUNTU_SNAPSHOT=20260908T000000Z' Dockerfile
   [ "${status}" -eq 0 ]
-  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136' Dockerfile
+  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-139.139' Dockerfile
   [ "${status}" -eq 0 ]
   run grep -F \
     'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
     docker/apt/use-package-snapshots
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"linux-libc-dev=${LINUX_LIBC_DEV_VERSION}"' Dockerfile)" -eq 2 ]
-  run grep -F 'default = "20260726T000000Z"' docker-bake.hcl
+  run grep -F 'default = "20260908T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
-  run grep -F 'default = "6.8.0-136.136"' docker-bake.hcl
+  run grep -F 'default = "6.8.0-139.139"' docker-bake.hcl
   [ "${status}" -eq 0 ]
 }
