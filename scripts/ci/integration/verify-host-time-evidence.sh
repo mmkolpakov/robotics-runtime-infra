@@ -146,8 +146,10 @@ run_ptp_case() (
 run_chrony_case \
   chrony config/time/chrony-fixture.conf \
   "${HOST_TIME_SOCKET_DIR}" "${HOST_TIME_CHRONY_EVIDENCE}" true
-sudo install -d -o 100 -g 101 -m 2770 \
-  "${HOST_TIME_WORK}/replay-socket" "${HOST_TIME_WORK}/chrony-replay"
+sudo install -d -o 100 -g 101 -m 2770 "${HOST_TIME_WORK}/replay-socket"
+# The Collector writes as the fixture user; the CI runner must also be able to
+# read completed evidence. Socket directories keep their restricted group mode.
+sudo install -d -o 100 -g 101 -m 0755 "${HOST_TIME_WORK}/chrony-replay"
 run_chrony_case \
   chrony-replay config/time/chrony-unsynchronized-fixture.conf \
   "${HOST_TIME_WORK}/replay-socket" "${HOST_TIME_WORK}/chrony-replay" false \
@@ -159,7 +161,7 @@ run_ptp_case ptp test/time/pmc.fixture "${HOST_TIME_PTP_EVIDENCE}" true
 run_ptp_case \
   ptp-unsync test/time/pmc-unsynchronized.fixture \
   "${HOST_TIME_PTP_UNSYNC_EVIDENCE}" false
-sudo install -d -o 100 -g 101 -m 0770 "${HOST_TIME_WORK}/ptp-stale"
+sudo install -d -o 100 -g 101 -m 0755 "${HOST_TIME_WORK}/ptp-stale"
 run_ptp_case ptp-stale test/time/pmc.fixture "${HOST_TIME_WORK}/ptp-stale" false true
 
 export HOST_TIME_MEASUREMENT_FINISHED_NS
