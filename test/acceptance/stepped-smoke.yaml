@@ -28,7 +28,7 @@ expected_ros_graph:
   topics:
     - name: /clock
       type: rosgraph_msgs/msg/Clock
-      qos_profile: sensor_data
+      qos_profile: system_default
       min_publishers: 1
       min_subscribers: 0
       first_message_timeout_sec: 10
