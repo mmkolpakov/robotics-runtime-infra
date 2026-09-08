@@ -9,7 +9,9 @@ x-transport-environment: &transport-environment
   ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
   ROBOTICS_TOPIC: /robotics/trace_context
   ROBOTICS_DESTINATION_READY: /reports/destination/ready.json
-  ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+  # Jazzy LOCALHOST adds SHM despite the XML transport list. Keep the configured
+  # UDP transport across containers with private IPC on this isolated network.
+  ROS_AUTOMATIC_DISCOVERY_RANGE: SYSTEM_DEFAULT
 
 x-transport-probe: &transport-probe
   image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
