@@ -176,6 +176,10 @@ jobs:
         env:
           COSIGN_PASSWORD: test-only
         run: scripts/ci/integration/verify-cosign-dsse-boundary-and-tamper-rejection.sh
+      - name: Verify logged permit authorization and denial boundaries
+        env:
+          COSIGN_PASSWORD: test-only
+        run: bash scripts/ci/integration/verify-logged-permit-preflight.sh
       - name: Verify synthetic physical attach end to end
         env:
           COSIGN_PASSWORD: test-only

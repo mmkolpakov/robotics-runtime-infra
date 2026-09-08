@@ -5,7 +5,7 @@
 
 write_scenario_input_manifest() {
   local image
-  local image_config_digest
+  local local_image_id
   local repository_status
   local source_revision
 
@@ -25,11 +25,11 @@ write_scenario_input_manifest() {
     printf 'evidence\t%s\thardware-time-window.json\n' \
       "$(sha256_file "${ROBOTICS_TIME_EVIDENCE_WINDOW}")"
     while IFS= read -r image; do
-      # This input binds the local execution configuration, separately from the
-      # registry manifest digest used by the permit and runtime manifest.
-      image_config_digest="$(docker image inspect "${image}" --format '{{.Id}}')" || return
+      # Bind the opaque local-store identifier separately from the verified
+      # registry digest used by the permit and runtime manifest.
+      local_image_id="$(docker image inspect "${image}" --format '{{.Id}}')" || return
       printf 'image\t%s\t%s\n' \
-        "${image_config_digest}" \
+        "${local_image_id}" \
         "${image}"
     done < <(
       real_compose \
@@ -175,6 +175,7 @@ sign_role() {
   permit_ci_cosign "${work_root}" attest-blob --yes \
     --key "keys/${role}.key" \
     --signing-config keys/signing-config.json \
+    --trusted-root /usr/share/robotics-runtime/trust/sigstore-trusted-root.json \
     --bundle "$(basename "${case_dir}")/${role}.sigstore.json" \
     --statement "$(basename "${case_dir}")/execution-statement.json"
   permit_ci_chmod \
@@ -232,14 +233,15 @@ prepare_preflight_directories() {
     "${output_dir}"
 }
 
-run_offline_preflight() {
+run_test_preflight() {
   local case_dir="$1"
   local nonce_dir="$2"
   local output="$3"
+  local mode="${4:-authorize-logged-test}"
   local case_mount
 
   case_mount="$(work_mount_path "${case_dir}")"
-  permit_ci_run "${work_root}" authorize-offline-test \
+  permit_ci_run "${work_root}" "${mode}" \
     /work/keys \
     "${case_mount}/execution-permit.json" \
     "${case_mount}/execution-statement.json" \
@@ -257,14 +259,15 @@ expect_preflight_denial() {
   local nonce_dir="$3"
   local output="$4"
   local expected_status="${5:-}"
+  local mode="${6:-authorize-logged-test}"
   local denial_log="${case_dir}/preflight-denial.log"
   local status
 
   set +e
-  run_offline_preflight \
+  run_test_preflight \
     "${case_dir}" \
     "${nonce_dir}" \
-    "${output}" >"${denial_log}" 2>&1
+    "${output}" "${mode}" >"${denial_log}" 2>&1
   status=$?
   set -e
   test "${status}" -ne 0 || {

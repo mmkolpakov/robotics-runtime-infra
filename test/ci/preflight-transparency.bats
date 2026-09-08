@@ -27,12 +27,50 @@ load_role() {
   assert_single_json_document() { :; }
   statement_subject_digest() { printf '%064d\n' 0; }
   assert_bundle_statement() { return "${BUNDLE_STATUS:-0}"; }
-  offline_key_dir=/fixture/keys
+  ci_key_dir=/fixture/keys
+  ci_authorization_mode=authorize-offline-test
 }
 
 verify_role() {
   verify_role_with_transparency "$1" \
-    operator statement.json bundle.json operator@example.test issuer decoded.json
+    operator statement.json bundle.json ci.operator https://github.com/sigstore/cosign/key decoded.json
+}
+
+@test "logged CI verifies the key and pinned log root without a bypass" {
+  load_role permit-preflight-ci
+  ci_authorization_mode=authorize-logged-test
+  run verify_role "${BATS_TEST_TMPDIR}/logged.json"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${BATS_TEST_TMPDIR}/logged.json")" = true ]
+  ! grep -Fx -- --insecure-ignore-tlog "${COSIGN_ARGV}"
+  grep -Fx -- --key "${COSIGN_ARGV}"
+  grep -Fx -- /fixture/keys/operator.pub "${COSIGN_ARGV}"
+  grep -Fx -- --trusted-root "${COSIGN_ARGV}"
+  grep -Fx -- /usr/share/robotics-runtime/trust/sigstore-trusted-root.json "${COSIGN_ARGV}"
+}
+
+@test "keyed CI cannot report a claimed OIDC identity or issuer" {
+  load_role permit-preflight-ci
+  for ci_authorization_mode in authorize-logged-test authorize-offline-test; do
+    run verify_role_with_transparency "${BATS_TEST_TMPDIR}/identity.json" \
+      operator statement.json bundle.json operator@example.test \
+      https://github.com/sigstore/cosign/key decoded.json
+    [ "${status}" -eq 65 ]
+    run verify_role_with_transparency "${BATS_TEST_TMPDIR}/issuer.json" \
+      operator statement.json bundle.json ci.operator \
+      https://token.actions.githubusercontent.com decoded.json
+    [ "${status}" -eq 65 ]
+  done
+  [ ! -e "${COSIGN_ARGV}" ]
+}
+
+@test "failed log verification cannot produce true" {
+  load_role permit-preflight-ci
+  ci_authorization_mode=authorize-logged-test
+  export COSIGN_STATUS=9
+  run verify_role "${BATS_TEST_TMPDIR}/failed-log.json"
+  [ "${status}" -eq 65 ]
+  [ ! -e "${BATS_TEST_TMPDIR}/failed-log.json" ]
 }
 
 @test "real production arguments produce true, real offline arguments produce false" {

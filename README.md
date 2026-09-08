@@ -545,6 +545,15 @@ CI authorization path only; it is not a hardware identity. Lab qualification
 must instead bind the permit to the reviewed hardware identity kind and its
 independently captured preflight evidence.
 
+The positive synthetic authorization uses two ephemeral CI keys and real Rekor
+entries. The CI-only `authorize-logged-test` command verifies the signatures and
+log proofs against the embedded Sigstore trusted root, then applies the unchanged
+execution policy and consumes the nonce. Its principals are limited to
+`ci.operator` and `ci.approver` with the Cosign key issuer; they are not OIDC
+identities. Signing requires access to public Rekor and publishes the synthetic
+attestations. The explicit offline-bypass case must be denied without an output
+or nonce consumption; it never substitutes for the positive path.
+
 For a serial controller, prefer `/dev/serial/by-id/...`. Sites that need a
 contract name may install a reviewed copy of
 `config/udev/99-robotics-serial.rules` after replacing every example USB
