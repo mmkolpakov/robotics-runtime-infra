@@ -11,29 +11,22 @@ and a declared target. A successful image build does not qualify hardware.
 
 ## Foundation Generations
 
-This source line is pinned to the following released pair:
+The legacy 0.8 source line used contracts 0.15.4 and harness 0.17.1 with
+`acceptance-scenario.v4`, emitted `runtime-manifest.v2`, `evidence-index.v3`, and
+`qualification-bundle.v2`. It remains a distinct generation.
 
-| Infra consumer | Contracts | Harness | Document family |
-| --- | --- | --- | --- |
-| Current source / 0.8 release candidates | 0.15.4 (`>=0.15.4,<0.16`) | 0.17.1 (`>=0.17.1,<0.18`) | Legacy versioned roles, including `acceptance-scenario.v4`, emitted `runtime-manifest.v2`, `evidence-index.v3`, `qualification-bundle.v2` |
-| Pending coordinated migration | 0.16.0 | 0.18.0 | Role catalog v1; incompatible with current infra producers and fixtures |
+This integration branch builds both packages from the single workspace commit
+in [the generated foundation lock](foundation-compatibility.md). The current
+source candidate is contracts 0.17.0rc1 with harness metadata 0.18.0; it is not
+a claim that contracts 0.17 / harness 0.19 have been published or qualified.
+All producer and fixture changes must land in the same integration PR before
+that branch is accepted. The E2E-0 milestone remains pending.
 
-The ranges describe the compatibility boundary, not qualification of every
-patch release. The exact tested input pins remain 0.15.4 / 0.17.1; see the
-[foundation lock](foundation-compatibility.md). A package upgrade must pass
-`foundation-integration` with its matching wheel hashes and imported commits.
-The E2E-0 milestone is not claimed by this documentation change.
-
-Contracts 0.16 reuses some schema names with different fields and removes
-several legacy roles. In particular, permits change `image_digest` to
-`subject_digest`, MCAP summaries become recording summaries, and the
-qualification predicate changes from `/qualification-bundle/v2` to
-`/qualification-bundle/v1`. Harness 0.18 also requires OTLP metrics evidence
-with media type `application/x-ndjson`, while this infra line uses
-`application/json`. Neither upgrading one package nor matching a
-`schema_version` string establishes compatibility. The reusable workflows
-also use the pinned foundation pair; newer consumer examples are not accepted
-without migration of producers, fixtures, CLI arguments and validation.
+The new generation uses `subject_digest` in permits, recording summaries,
+qualification predicate `/qualification-bundle/v1`, and OTLP metrics with
+media type `application/x-ndjson`. Neither upgrading one package nor matching
+a `schema_version` string establishes compatibility. Reusable workflows use
+the exact same workspace lock and therefore participate in the migration.
 
 ## Hardware Dependency Limits
 

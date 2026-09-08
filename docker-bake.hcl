@@ -38,6 +38,12 @@ variable "ROSDISTRO_INDEX_REVISION" {
   default = "9f76014b84955f757306270d6860fa3bc1c30b57"
 }
 
+# FOUNDATION_GENERATED_START
+variable "FOUNDATION_SOURCE" {
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=c4405c0d973970a9b83666bfa81e90508508c53b&checksum=c4405c0d973970a9b83666bfa81e90508508c53b"
+}
+# FOUNDATION_GENERATED_END
+
 variable "ONNXRUNTIME_SOURCE" {
   default = "https://github.com/microsoft/onnxruntime.git?tag=v1.27.0&checksum=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5"
 }
@@ -167,6 +173,9 @@ group "rknn" {
 target "_common" {
   context    = "."
   dockerfile = "Dockerfile"
+  contexts = {
+    "foundation-source" = FOUNDATION_SOURCE
+  }
   args = {
     IMAGE_CREATED = IMAGE_CREATED
     IMAGE_SOURCE  = IMAGE_SOURCE

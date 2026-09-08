@@ -33,6 +33,23 @@ FROM ${OPA_IMAGE} AS opa
 FROM ${COSIGN_IMAGE} AS cosign
 FROM ${ROS_BASE_IMAGE} AS ca-bootstrap
 
+FROM ca-bootstrap AS foundation-wheels
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --from=uv /uv /uvx /usr/local/bin/
+# The named context is pinned by both Git ref and checksum in Docker Bake.
+# hadolint ignore=DL3022
+COPY --from=foundation-source / /src/foundation/
+COPY docker/python/foundation-build.lock /tmp/foundation-build.lock
+COPY config/foundation-lock.json /tmp/foundation-lock.json
+COPY scripts/ci/foundation/build-workspace-wheels.py /tmp/build-workspace-wheels.py
+RUN uv venv --no-cache --python /usr/bin/python3 /opt/build \
+    && uv pip install --python /opt/build/bin/python --require-hashes --no-deps \
+      --requirement /tmp/foundation-build.lock \
+    && python3 /tmp/build-workspace-wheels.py \
+      --source /src/foundation --metadata /tmp/foundation-lock.json \
+      --python /opt/build/bin/python --output /out
+
 FROM scratch AS cosign-license
 ARG COSIGN_VERSION
 ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
@@ -408,7 +425,8 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY docker/python/permit-preflight.lock /tmp/python/permit-preflight.lock
 
-RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro \
+    export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
@@ -422,6 +440,9 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       --no-cache \
       --no-deps \
       --requirement /tmp/python/permit-preflight.lock \
+    && (cd /tmp/foundation-wheels \
+      && uv pip install --python /opt/venv/bin/python --require-hashes --no-deps \
+        --requirement contracts.requirements) \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
@@ -1051,13 +1072,18 @@ USER root
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/acceptance-observer.lock /tmp/python/acceptance-observer.lock
 
-RUN uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro \
+    uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
       --no-cache \
       --no-deps \
       --requirement /tmp/python/acceptance-observer.lock \
+    && (cd /tmp/foundation-wheels \
+      && uv pip install --python /opt/venv/bin/python --require-hashes --no-deps \
+        --requirement harness.requirements) \
+    && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
     && rm -rf /home/ubuntu/.cache/uv /tmp/python

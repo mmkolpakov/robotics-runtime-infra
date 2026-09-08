@@ -142,7 +142,13 @@ ci_require_source_paths_within_root() {
 }
 
 ci_validate_contract_documents() {
-  uv run --isolated --with "${ROBOTICS_CONTRACTS_REQUIREMENT}" \
+  local foundation="${CI_REPO_ROOT}/dependencies/robotics-runtime"
+  if [[ ! -e "${foundation}/.git" ]]; then
+    bash "${CI_REPO_ROOT}/scripts/ci/foundation/import-sources.sh"
+  fi
+  python3 "${CI_REPO_ROOT}/scripts/ci/foundation/sync-workspace-pins.py" --check
+  uv run --project "${foundation}" --locked --no-default-groups \
+    --package robotics-runtime-contracts --no-editable \
     robotics-contracts validate --quiet "$@"
 }
 

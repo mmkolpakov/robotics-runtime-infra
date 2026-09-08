@@ -23,9 +23,6 @@ env:
   HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
   # yamllint disable-line rule:line-length
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
-  ROBOTICS_CONTRACTS_REQUIREMENT: >-
-    robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.15.4/robotics_runtime_contracts-0.15.4-py3-none-any.whl#sha256=6a86e8ce96adcdf442b1680a7242282dbb33428458c5a8c7fc07952806971c1c
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -46,6 +43,10 @@ jobs:
       - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43  # 4.0.0
         with:
           bats-version: "1.14.0"
+      - name: Check the pinned foundation workspace
+        run: bash scripts/ci/foundation/import-sources.sh
+      - name: Test foundation pin generation
+        run: python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture

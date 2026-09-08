@@ -8,7 +8,7 @@ source "${script_dir}/lib.sh"
 
 root="$(foundation_repository_root)"
 cd "${root}"
-readonly foundation_project="${root}/tooling/foundation"
+readonly foundation_project="${root}/dependencies/robotics-runtime"
 
 foundation_require_env \
   ACTIONS_ID_TOKEN_REQUEST_TOKEN \
@@ -32,7 +32,7 @@ expected_identity="$(
   ' "${policy}"
 )"
 actual_identity="https://github.com/${GITHUB_WORKFLOW_REF}"
-[[ "${GITHUB_REPOSITORY}" == mmkolpakov/robotics-runtime-infra ]] || {
+[[ "${GITHUB_REPOSITORY}" == "$(jq -er '.infra.repository' "${root}/config/trust/identities.json")" ]] || {
   printf 'keyless qualification is restricted to the canonical repository\n' >&2
   exit 65
 }
@@ -50,7 +50,7 @@ actual_identity="https://github.com/${GITHUB_WORKFLOW_REF}"
   exit 65
 }
 
-uv sync --project "${foundation_project}" --locked --no-default-groups --no-editable
+uv sync --project "${foundation_project}" --locked --all-packages --no-default-groups --no-editable
 uv pip check --python "${foundation_project}/.venv/bin/python"
 export ROBOTICS_CONTRACTS_CLI="${foundation_project}/.venv/bin/robotics-contracts"
 

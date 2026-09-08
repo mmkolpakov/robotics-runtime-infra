@@ -46,9 +46,10 @@ The end-to-end handoff is machine-readable: a product repository supplies its
 workload and scenario, runtime infra emits observed runtime and evidence facts,
 and the harness emits an acceptance result plus JUnit. Each layer can evolve
 within the [pinned compatibility pair](docs/compatibility.md#foundation-generations).
-This source line uses contracts 0.15.4 and harness 0.17.1. Contracts 0.16 /
-harness 0.18 documents require a coordinated migration before infra can consume
-them; matching `schema_version` strings alone do not establish compatibility.
+This branch prepares the coordinated workspace migration. The source pin and
+package versions are generated in [the foundation lock](docs/foundation-compatibility.md).
+Legacy producers and fixtures are migrated together before the integration PR
+can merge; E2E-0 is not yet qualified.
 
 The shared document model lives in
 [`robotics-runtime-contracts`](https://github.com/mmkolpakov/robotics-runtime-contracts).
@@ -174,20 +175,22 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.15.4 |
-| Acceptance harness | `robotics-acceptance-harness` 0.17.1 |
+| Contracts | Source version from the [foundation lock](docs/foundation-compatibility.md) |
+| Acceptance harness | Same workspace revision as contracts |
 
 Base images, package snapshots, and Python artifacts are pinned in
-`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` selects exact
-contracts and harness source revisions. Wheel URLs, checksums and the joint
-Python lock are maintained separately and must match those releases; see the
+`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` selects one
+immutable `robotics-runtime` commit. The generator checks both package versions
+against that workspace's `uv.lock`, exports hashed runtime dependencies with
+`uv export`, and derives the BuildKit context and compatibility document.
+Observer and permit-preflight wheels are built from the pinned context with
+locked build dependencies, then installed by their build-produced hashes.
+The imported workspace owns the joint Python environment; infra keeps no
+independent foundation `uv.lock`. See the
 [foundation update procedure](CONTRIBUTING.md#foundation-integration).
-BuildKit embeds `foundation.repos` and derives
-the runtime-readable `foundation-lock.json` used when a manifest is emitted.
-The non-published project in `tooling/foundation` owns the reproducible joint
-Python environment; each imported repository retains its own development lock.
-CI also requires each imported revision to be an exact release tag matching the
-package version installed in the acceptance observer image.
+Building this development candidate does not publish Python packages or prove
+a stable release pairing. Publication and foundation qualification remain
+required before release adoption.
 Ubuntu packages for both amd64 and arm64 resolve from the same signed,
 timestamped `snapshot.ubuntu.com` archive rather than from architecture-specific
 live mirrors.

@@ -72,8 +72,8 @@ jobs:
           test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
           bash tooling/scripts/ci/foundation/import-sources.sh
           uv sync \
-            --project tooling/dependencies/robotics-runtime-contracts \
-            --locked --no-dev
+            --project tooling/dependencies/robotics-runtime \
+            --locked --package robotics-runtime-contracts --no-default-groups --no-editable
       - name: Verify the retained qualification package
         env:
           ARGUMENTS_FILE: ${{ inputs.arguments_file }}
@@ -95,7 +95,7 @@ jobs:
               --policy "${POLICY}"
             )
           fi
-          contracts_dir="${GITHUB_WORKSPACE}/tooling/dependencies/robotics-runtime-contracts"
+          contracts_dir="${GITHUB_WORKSPACE}/tooling/dependencies/robotics-runtime"
           export ROBOTICS_CONTRACTS_CLI="${contracts_dir}/.venv/bin/robotics-contracts"
           "${GITHUB_WORKSPACE}/tooling/scripts/qualification/verify-bundle" \
             --bundle "${BUNDLE}" \

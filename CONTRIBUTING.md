@@ -34,56 +34,39 @@ checks, and the integration of contracts, acceptance harness, and runtime.
 
 ## Foundation integration
 
-`foundation.repos` selects exact contracts and harness commits. The runtime
-repository owns their joint Python resolution in `tooling/foundation/uv.lock`;
-the imported repositories keep independent development locks.
+`foundation.repos` pins one immutable workspace commit. The imported workspace
+owns the joint `uv.lock`; `config/foundation-lock.json` binds the two package
+versions and source trees to that commit. Generated runtime locks are exports
+of the workspace lock and omit the two packages built into the images.
 
-After changing a revision in `foundation.repos`, refresh and validate the
-integration environment:
+After changing the commit, import the source and regenerate its derived inputs:
 
 ```bash
-bash scripts/ci/foundation/import-sources.sh
-uv lock --project tooling/foundation
+bash scripts/ci/foundation/import-sources.sh --refresh-pins
+python3 scripts/ci/foundation/sync-workspace-pins.py --check
+python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
 bash scripts/ci/foundation/validate-foundation.sh
 ```
 
-Only the runtime repository changes for a compatible foundation upgrade. A
-contracts release does not require a harness release unless the harness code or
-its declared compatibility range changes.
-
-Renovate custom managers track the release-tag comments and commit hashes in
-`foundation.repos`, the wheel URLs in `docker/python/acceptance-observer.in`
-and `permit-preflight.in`, and the wheel URL/checksum in the CI environment.
-The CI checksum uses the `github-release-attachments` datasource. Foundation
-updates are grouped for review and never auto-merged. This config does not
-itself prove the hosted Renovate app is enabled or has opened a PR.
-
-Before merging an update, verify the proposed release tags resolve to the
-recorded commits, regenerate the two Python hash locks with the `uv pip compile`
-commands recorded in their headers, refresh `tooling/foundation/uv.lock`,
-and regenerate `docs/foundation-compatibility.md`. Update the README baseline
-as part of the same review. The regex managers do not generate those derived
-files. Check the CI wheel hash against the downloaded release asset; a missing
-or unchanged digest for a changed wheel is a blocker. Run
-`foundation-integration` before merging. Contracts 0.16 / harness 0.18 require
-the coordinated migration described in `docs/compatibility.md`.
-
-Validate config syntax using the pinned CI Renovate version:
+The importer refuses to switch a checkout containing tracked local changes.
+Build backend dependencies are checked with the existing hash lock as version
+constraints. If the workspace changes `build-system.requires`, explicitly
+refresh that separate build lock and review the dependency changes:
 
 ```bash
-renovate-config-validator --strict renovate.json
-node test/renovate/check-pins.mjs /path/to/node_modules/renovate
+python3 scripts/ci/foundation/sync-workspace-pins.py --refresh-build-lock
 ```
 
-The extraction check loads Renovate's real regex manager and template renderer.
-It verifies all nine custom-managed pins, both wheel-version positions,
-commit/checksum replacement, preservation of other dependencies, rejection of
-unrelated repositories, and LF/CRLF input. Use Node 24 and Renovate 43.257.5,
-matching the current `RENOVATE_IMAGE`; the test rejects a version mismatch.
+The development pin currently precedes stable workspace publication. Updates
+are manual until the first stable workspace release establishes a release tag
+baseline for Renovate. The obsolete managers for independent repositories and
+wheel URLs have been removed. This is a pending migration gate, not a claim
+that foundation release automation is already operational.
 
-External activation remains unverified until a real Renovate run opens a
-reviewable update PR. Local extraction and replacement checks demonstrate
-config behavior only. No external PR is created by these local checks.
+Keep the migration in one integration PR until producers, fixtures, CLI
+arguments, retained evidence and both domain paths pass foundation-integration.
+Do not merge only the new source pin into an otherwise legacy infra checkout.
+Wheels built for this draft are source inputs, not published release assets.
 
 ## Change boundaries
 

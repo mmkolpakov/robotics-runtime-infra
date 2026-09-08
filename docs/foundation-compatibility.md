@@ -1,10 +1,13 @@
 # Foundation Compatibility Lock
 
-Generated from the repositories imported through `foundation.repos`.
+Generated from the single workspace revision in `foundation.repos`.
 
-| Component | Version | Commit | Source |
-| --- | --- | --- | --- |
-| `robotics-runtime-contracts` | `0.15.4` | `d0f2909d1808aa475c82ced630c1cf0703f31921` | <https://github.com/mmkolpakov/robotics-runtime-contracts.git> |
-| `robotics-acceptance-harness` | `0.17.1` | `2fbdaf72b524634e7ec736e1ede1f6edb6aad00f` | <https://github.com/mmkolpakov/robotics-acceptance-harness.git> |
+| Component | Version | Workspace commit |
+| --- | --- | --- |
+| `robotics-runtime-contracts` | `0.17.0rc1` | `c4405c0d973970a9b83666bfa81e90508508c53b` |
+| `robotics-acceptance-harness` | `0.18.0` | `c4405c0d973970a9b83666bfa81e90508508c53b` |
 
-CI imports these exact commits and verifies the versions embedded in runtime images.
+The current pin is a development candidate, not a published release pair.
+Both packages are built from this source with locked build dependencies.
+CI checks the imported revision, workspace lock and installed image versions.
+Stable release adoption remains gated on publication and foundation qualification.

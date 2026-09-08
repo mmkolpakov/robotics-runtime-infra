@@ -19,12 +19,14 @@ acquire_host_lock() {
 
 verify_released_verifier_provenance() {
   local canonical_repository
+  local identities
   local evidence_tmp
   local signer_workflow
   local verification_status
 
-  canonical_repository="mmkolpakov/robotics-runtime-infra"
-  signer_workflow="${canonical_repository}/.github/workflows/release-image.yml"
+  identities="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)/config/trust/identities.json"
+  canonical_repository="$(jq -er '.infra.repository' "${identities}")"
+  signer_workflow="${canonical_repository}/.github/workflows/$(jq -er '.infra.release_workflow' "${identities}")"
   [[ "${ROBOTICS_RELEASE_SOURCE_SHA}" =~ ^[a-f0-9]{40}$ ]] || {
     printf 'ROBOTICS_RELEASE_SOURCE_SHA is not a Git commit digest\n' >&2
     return 65
@@ -69,8 +71,10 @@ verify_verifier_image_digest() {
   local name_and_tag
   local reference_digest
   local trusted_release_repository
+  local identities
 
-  trusted_release_repository="ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight"
+  identities="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)/config/trust/identities.json"
+  trusted_release_repository="$(jq -er '.infra.registry' "${identities}")/permit-preflight"
 
   case "${ROBOTICS_RUNTIME_MODE}" in
     released | source)

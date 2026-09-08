@@ -9,7 +9,7 @@ readonly evidence_metrics_segment_index=900000
 
 root="$(foundation_repository_root)"
 cd "${root}"
-readonly foundation_bin="${root}/tooling/foundation/.venv/bin"
+readonly foundation_bin="${root}/dependencies/robotics-runtime/.venv/bin"
 # shellcheck source=scripts/ci/lib.sh
 source "${root}/scripts/ci/lib.sh"
 # shellcheck source=scripts/ci/image-identity.sh
@@ -377,10 +377,10 @@ jq -e '
   | contains(["application/json"])
 ' "${run_dir}/evidence/evidence-index.json"
 contracts_revision="$(
-  git -C dependencies/robotics-runtime-contracts rev-parse HEAD
+  git -C dependencies/robotics-runtime rev-parse HEAD
 )"
 harness_revision="$(
-  git -C dependencies/robotics-acceptance-harness rev-parse HEAD
+  git -C dependencies/robotics-runtime rev-parse HEAD
 )"
 jq -e \
   --arg contracts_revision "${contracts_revision}" \
