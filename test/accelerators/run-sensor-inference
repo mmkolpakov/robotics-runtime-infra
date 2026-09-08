@@ -209,57 +209,9 @@ if [[ -n "${provider_config_sha256}" ]]; then
   runtime_digest="$(jq -er '.digest' <<<"${runtime_identity}")"
   bash "${root}/scripts/ci/foundation/collect-simulation-provider.sh" \
     "${simulation_id}" "${report_dir}" "${report_dir}/provider" "${runtime_digest}"
-  report_sha256="$(sha256_file "${report_dir}/sensor-inference.json")"
-  jq -cS -n \
-    --slurpfile fixture "${fixture}" \
-    --arg runtime_version "${runtime_version}" \
-    --arg runtime_digest "${runtime_digest}" \
-    --arg model_artifact_sha256 "${model_artifact_sha256}" \
-    --arg report_sha256 "${report_sha256}" \
-    --arg sample_dataset_sha256 "${sample_dataset_sha256}" \
-    --argjson absolute_tolerance "$(
-      jq -er '.tolerances.absolute' "${report_dir}/sensor-inference.json"
-    )" \
-    --argjson relative_tolerance "$(
-      jq -er '.tolerances.relative' "${report_dir}/sensor-inference.json"
-    )" '
-      $fixture[0] as $identity |
-      {
-        schema_version: "model-artifact-manifest.v1",
-        artifact_id: "org.example.onnxruntime.sigmoid.openvino",
-        source: $identity.source,
-        target: {
-          format: "onnx",
-          uri: $identity.source.uri,
-          sha256: $model_artifact_sha256,
-          media_type: "application/onnx",
-          runtime_family: "onnxruntime_openvino",
-          runtime_version: $runtime_version,
-          execution_provider: "OpenVINOExecutionProvider",
-          target_architecture: "x86_64",
-          precision: "float32"
-        },
-        build: {
-          tool: "onnxruntime-wheel",
-          tool_version: $runtime_version,
-          tool_source_revision: $identity.source_revision,
-          builder_image_digest: $runtime_digest,
-          parameters: {transformation: "identity"}
-        },
-        numerical_conformance: {
-          report_sha256: $report_sha256,
-          reference_artifact_sha256: $model_artifact_sha256,
-          sample_dataset_sha256: $sample_dataset_sha256,
-          absolute_tolerance: $absolute_tolerance,
-          relative_tolerance: $relative_tolerance,
-          passed: true
-        },
-        compatibility: {
-          portable: true,
-          hardware: []
-        }
-      }
-    ' >"${model_dir}/model-manifest.json"
+  "${ROBOTICS_FOUNDATION_PYTHON}" "${root}/test/accelerators/write-model-manifest.py" \
+    --report-directory "${report_dir}" --fixture "${fixture}" \
+    --runtime-digest "${runtime_digest}"
   model_manifest_sha256="$(sha256_file "${model_dir}/model-manifest.json")"
   if [[ "$(id -u)" != 1000 ]]; then
     sudo chown -R 1000:1000 "${report_dir}"
