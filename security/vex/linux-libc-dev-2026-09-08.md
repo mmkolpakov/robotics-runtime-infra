@@ -1,31 +1,62 @@
 # linux-libc-dev applicability review — 2026-09-08
 
-This document preserves the original 135-CVE review and NVIDIA-only v4 decision. The [completed-image follow-up](linux-libc-dev-2026-09-08.images.md) records the subsequent arm64 evidence and active v5 scope.
+This document preserves the original 135-CVE review and NVIDIA-only v4 decision. The
+[completed-image follow-up](linux-libc-dev-2026-09-08.images.md) records the subsequent arm64
+evidence and active v5 scope.
 
-Review prepared in `review/trivy-linux-libc-dev`, initially based on original infra commit `d36ee2a`. The pin update was committed as `5245fae` and integrated by the parent as `a2f62d3`. This VEX change follows the rebuilt amd64 residual in CI run `34192891669`; the scanner and severity gate are unchanged.
+Review prepared in `review/trivy-linux-libc-dev`, initially based on original infra commit
+`d36ee2a`. The pin update was committed as `5245fae` and integrated by the parent as `a2f62d3`. This
+VEX change follows the rebuilt amd64 residual in CI run `34192891669`; the scanner and severity gate
+are unchanged.
 
 ## Finding and proposed resolution
 
-The supplied NVIDIA report contains **135 new findings: 5 CRITICAL and 130 HIGH**, all attributed to `linux-libc-dev=6.8.0-136.136`. None overlaps the 55 existing OpenVEX v3 statements. Ubuntu's current `linux`/`noble` rows independently confirm six fixes at `6.8.0-139.139` and 129 vulnerable/work-in-progress statuses for the kernel source package. These statuses do not establish applicability to every binary built from that source package.
+The supplied NVIDIA report contains **135 new findings: 5 CRITICAL and 130 HIGH**, all attributed to
+`linux-libc-dev=6.8.0-136.136`. None overlaps the 55 existing OpenVEX v3 statements. Ubuntu's
+current `linux`/`noble` rows independently confirm six fixes at `6.8.0-139.139` and 129
+vulnerable/work-in-progress statuses for the kernel source package. These statuses do not establish
+applicability to every binary built from that source package.
 
-Input report: `analysis/ci-artifacts/nvidia/nvidia-inference-nvidia-local.json`; SHA256 `ffcfc4b990fb7638f54f51693b2f402bbf61246621b7115e30c24dffd6267115`. Image ID: `sha256:6fc88e1017a90d77695a332d6410691868bdedfeb3f334ae7ac380ae97a447ab`. The report was created at `2026-09-07T20:09:43.425951899Z`.
+Input report: `analysis/ci-artifacts/nvidia/nvidia-inference-nvidia-local.json`; SHA256
+`ffcfc4b990fb7638f54f51693b2f402bbf61246621b7115e30c24dffd6267115`. Image ID:
+`sha256:6fc88e1017a90d77695a332d6410691868bdedfeb3f334ae7ac380ae97a447ab`. The report was created at
+`2026-09-07T20:09:43.425951899Z`.
 
-The snapshot and compatible pins were applied before the new scan. Its HIGH/CRITICAL residual exactly matches the 129 reviewed IDs. OpenVEX v4 retains the existing 55 decisions and adds 129 decisions restricted to `linux-libc-dev@6.8.0-139.139`, Ubuntu 24.04, **amd64 only**. The six fixed CVEs receive no new statement. New statements cannot suppress the old `.136` package or unobserved arm64 findings; both architectures' package evidence remains available for review.
+The snapshot and compatible pins were applied before the new scan. Its HIGH/CRITICAL residual
+exactly matches the 129 reviewed IDs. OpenVEX v4 retains the existing 55 decisions and adds 129
+decisions restricted to `linux-libc-dev@6.8.0-139.139`, Ubuntu 24.04, **amd64 only**. The six fixed
+CVEs receive no new statement. New statements cannot suppress the old `.136` package or unobserved
+arm64 findings; both architectures' package evidence remains available for review.
 
-This is a package-content applicability finding. It does not qualify the host kernel, CPU, firmware, GPU drivers, separately installed perf tools, or the complete container image.
+This is a package-content applicability finding. It does not qualify the host kernel, CPU, firmware,
+GPU drivers, separately installed perf tools, or the complete container image.
 
 ## Ubuntu snapshot and payload evidence
 
-The applied snapshot is `20260908T000000Z`. Both `noble-updates` and `noble-security` indexes publish the following packages for both architectures, and the actual DEBs were downloaded without installation. The compressed indexes match SHA256/size entries in their retrieved InRelease files, and the DEBs match their package-index SHA256 fields. InRelease signatures were not verified locally. The subsequent CI log records successful signed APT retrieval and installation for amd64, as detailed below; arm64 build validation remains pending.
+The applied snapshot is `20260908T000000Z`. Both `noble-updates` and `noble-security` indexes
+publish the following packages for both architectures, and the actual DEBs were downloaded without
+installation. The compressed indexes match SHA256/size entries in their retrieved InRelease files,
+and the DEBs match their package-index SHA256 fields. InRelease signatures were not verified
+locally. The subsequent CI log records successful signed APT retrieval and installation for amd64,
+as detailed below; arm64 build validation remains pending.
 
 | Architecture | Package version | File count (excluding directories) | DEB SHA256 | Primary Ubuntu payload |
 | --- | --- | ---: | --- | --- |
 | amd64 | 6.8.0-139.139 | 990 | `f8292b3414cac372ec28ba484a45e3f18b3ac5fc7872ca82661835286f1c5865` | [snapshot DEB](https://snapshot.ubuntu.com/ubuntu/20260908T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-139.139_amd64.deb) |
 | arm64 | 6.8.0-139.139 | 962 | `673684ae380e365c4aacbba22ee233d7d2aebe695a87d4dbc62cf873febb970a` | [snapshot DEB](https://snapshot.ubuntu.com/ubuntu/20260908T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-139.139_arm64.deb) |
 
-The amd64 payload has 988 `.h` files plus copyright/changelog; arm64 has 960 `.h` files plus copyright/changelog. The baseline `20260726T000000Z` DEBs at version `6.8.0-136.136` were independently downloaded, checked and inventoried too; their counts are the same. No executable, kernel image, module, `.c` implementation, or perf executable is in these package payloads. Exported headers can contain inline code, so a `.h` suffix alone was not used as an exemption rule: every CNA program-file path was inspected, including the one UAPI-path overlap below.
+The amd64 payload has 988 `.h` files plus copyright/changelog; arm64 has 960 `.h` files plus
+copyright/changelog. The baseline `20260726T000000Z` DEBs at version `6.8.0-136.136` were
+independently downloaded, checked and inventoried too; their counts are the same. No executable,
+kernel image, module, `.c` implementation, or perf executable is in these package payloads. Exported
+headers can contain inline code, so a `.h` suffix alone was not used as an exemption rule: every CNA
+program-file path was inspected, including the one UAPI-path overlap below.
 
-[Ubuntu package metadata](https://packages.ubuntu.com/noble/linux-libc-dev) identifies the binary's source package and purpose, but its mixed per-architecture release display is not proof of cross-architecture snapshot availability. The inspected snapshot indexes and DEBs above provide that proof. [Ubuntu's snapshot documentation](https://snapshot.ubuntu.com/) defines the timestamped archive interface.
+[Ubuntu package metadata](https://packages.ubuntu.com/noble/linux-libc-dev) identifies the binary's
+source package and purpose, but its mixed per-architecture release display is not proof of
+cross-architecture snapshot availability. The inspected snapshot indexes and DEBs above provide that
+proof. [Ubuntu's snapshot documentation](https://snapshot.ubuntu.com/) defines the timestamped
+archive interface.
 
 | Pin | Previous | Applied | Reason |
 | --- | --- | --- | --- |
@@ -34,35 +65,95 @@ The amd64 payload has 988 `.h` files plus copyright/changelog; arm64 has 960 `.h
 | `OPENSSL_VERSION` (Dockerfile) | `3.0.13-0ubuntu3.11` | `3.0.13-0ubuntu3.15` | New snapshot no longer advertises the old exact pin in any enabled main pocket |
 | `CA_CERTIFICATES_VERSION` | `20260601~24.04.1` | unchanged | Still available on both architectures |
 
-Only changing the two original pins is insufficient: the `ubuntu-ca` stage explicitly installs and checks the OpenSSL version. All four configured pockets (`noble`, `noble-updates`, `noble-backports`, `noble-security`) were inspected for amd64 and arm64. Release contains OpenSSL `3.0.13-0ubuntu3`; updates/security contain `.15`; backports has no OpenSSL entry. Keeping `.11` would leave an unsatisfied exact APT request on this snapshot. No general upgrade, unpinning, header removal, severity change or ignore-all is proposed.
+Only changing the two original pins is insufficient: the `ubuntu-ca` stage explicitly installs and
+checks the OpenSSL version. All four configured pockets (`noble`, `noble-updates`,
+`noble-backports`, `noble-security`) were inspected for amd64 and arm64. Release contains OpenSSL
+`3.0.13-0ubuntu3`; updates/security contain `.15`; backports has no OpenSSL entry. Keeping `.11`
+would leave an unsatisfied exact APT request on this snapshot. No general upgrade, unpinning, header
+removal, severity change or ignore-all is proposed.
 
 ## Actual rebuilt NVIDIA residual
 
-[CI run 34192891669, NVIDIA job 101954401272](https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401272) completed at `2026-09-08T06:12:12Z`. The build and GPU ABI steps passed; the HIGH/CRITICAL scan gate failed. The workflow head is `a2f62d356507d2fe842e59447f50eef538d0e011`; checkout used PR merge `5336df557bf1cefe81cd543ee2925b879180cb6c`, whose second parent is that head. The artifact name and image revision use this merge SHA, so their different suffix is expected.
+[CI run 34192891669, NVIDIA job
+101954401272](https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401272)
+completed at `2026-09-08T06:12:12Z`. The build and GPU ABI steps passed; the HIGH/CRITICAL scan gate
+failed. The workflow head is `a2f62d356507d2fe842e59447f50eef538d0e011`; checkout used PR merge
+`5336df557bf1cefe81cd543ee2925b879180cb6c`, whose second parent is that head. The artifact name and
+image revision use this merge SHA, so their different suffix is expected.
 
-Artifact `10043065827`, `security-nvidia-5336df557bf1cefe81cd543ee2925b879180cb6c`, contains one JSON report and its SARIF. JSON SHA256: `26bb62b1be763728161d8c32140e7d86e007dcf8b2751964b4a5d584c41b9471`; created `2026-09-08T06:12:01.318693324Z`; image ID `sha256:353a7757c1392e8a87266acebb592c24d0b619180249b4bf74d44664bfdb25ac`.
+Artifact `10043065827`, `security-nvidia-5336df557bf1cefe81cd543ee2925b879180cb6c`, contains one
+JSON report and its SARIF. JSON SHA256:
+`26bb62b1be763728161d8c32140e7d86e007dcf8b2751964b4a5d584c41b9471`; created
+`2026-09-08T06:12:01.318693324Z`; image ID
+`sha256:353a7757c1392e8a87266acebb592c24d0b619180249b4bf74d44664bfdb25ac`.
 
-The [portable CI comparison](linux-libc-dev-2026-09-08.ci.json) records all actual residual IDs, severities, package versions and PURLs, provenance and selected numbered build-log lines. It confirms:
+The [portable CI comparison](linux-libc-dev-2026-09-08.ci.json) records all actual residual IDs,
+severities, package versions and PURLs, provenance and selected numbered build-log lines. It
+confirms:
 
-- **129 HIGH/CRITICAL: 124 HIGH and five CRITICAL**, all `pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04` with no reported fixed version. The six fixed CVEs are absent from the new report. There are zero unexpected IDs, missing candidate IDs or severity mismatches.
-- The report also contains 2,431 MEDIUM and 265 LOW findings. Those remain outside these new statements; severity and the HIGH/CRITICAL gate are unchanged.
-- The merge's snapshot helper specifies `Signed-By` with Ubuntu's archive keyring and strict APT update errors. The log records retrieval of snapshot InRelease files and successful installation of `.139`. The built VEX document exactly matches the existing v3 baseline. This supplies the previously missing amd64 build/scan evidence.
-- The final NVIDIA image still has OpenSSL, libssl3t64 and libssl-dev `.11`, with no HIGH/CRITICAL findings in this report. The `.15` pin is scoped to the separate `ubuntu-ca` stage; it is not evidence that the NVIDIA runtime's OpenSSL was upgraded. No OpenSSL VEX is introduced.
-- The scan covers amd64 and one NVIDIA image. Arm64 package contents were reviewed, but no arm64 residual is present here. Later images in the group may not have been scanned after this gate failed. New statements therefore cover only the observed amd64 PURL.
+- **129 HIGH/CRITICAL: 124 HIGH and five CRITICAL**, all
+  `pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04` with no reported
+  fixed version. The six fixed CVEs are absent from the new report. There are zero unexpected IDs,
+  missing candidate IDs or severity mismatches.
+- The report also contains 2,431 MEDIUM and 265 LOW findings. Those remain outside these new
+  statements; severity and the HIGH/CRITICAL gate are unchanged.
+- The merge's snapshot helper specifies `Signed-By` with Ubuntu's archive keyring and strict APT
+  update errors. The log records retrieval of snapshot InRelease files and successful installation
+  of `.139`. The built VEX document exactly matches the existing v3 baseline. This supplies the
+  previously missing amd64 build/scan evidence.
+- The final NVIDIA image still has OpenSSL, libssl3t64 and libssl-dev `.11`, with no HIGH/CRITICAL
+  findings in this report. The `.15` pin is scoped to the separate `ubuntu-ca` stage; it is not
+  evidence that the NVIDIA runtime's OpenSSL was upgraded. No OpenSSL VEX is introduced.
+- The scan covers amd64 and one NVIDIA image. Arm64 package contents were reviewed, but no arm64
+  residual is present here. Later images in the group may not have been scanned after this gate
+  failed. New statements therefore cover only the observed amd64 PURL.
 
 ## Cases requiring distinct applicability reasoning
 
-- **CVE-2026-53398 (CRITICAL):** the Linux CNA identifies `fs/nfsd/nfs4xdr.c` (SECINFO_NO_NAME decode cleanup). [Ubuntu still marks noble linux vulnerable](https://ubuntu.com/security/CVE-2026-53398). The NFSD implementation is absent from both reviewed headers packages; this does not establish that the host's NFSD implementation is safe.
-- **CVE-2026-80668:** the upstream [fix](https://github.com/torvalds/linux/commit/b8b09dc2bf35a00d4e0556b5d6308c7b917ebda2) lists `include/uapi/linux/netfilter/nf_conntrack_common.h`, which really is exported. Its only change in that file adds `NF_CT_EXPECT_DEAD` under `#ifdef __KERNEL__`. The [Linux 6.8 export script](https://github.com/torvalds/linux/blob/v6.8/scripts/headers_install.sh) removes such sections with `unifdef -U__KERNEL__`. The installed header in all four examined DEBs lacks both that macro and the guard, with identical SHA256 `f96c03a170825a42f0a417efe70d77f05dd4265d7855eb05ba8024a58cc938f8`. The vulnerable timer/refcount handling of `exp->master` and the GC replacement are in non-exported netfilter implementation code. The exemption is based on the changed code, not just the package label.
-- **CVE-2026-80671:** `tools/perf/builtin-sched.c`, specifically `register_pid()` parsing untrusted perf.data. This is a userspace perf-tool bug. That source/executable is absent from linux-libc-dev. No VEX statement is made about linux-tools or another package containing perf.
-- **CVE-2025-10263:** the [Arm CNA record](https://www.cve.org/CVERecord?id=CVE-2025-10263) describes CPU TLBI completion errata. [Ubuntu's notes](https://ubuntu.com/security/CVE-2025-10263) name `ARM64_WORKAROUND_REPEAT_TLBI`; the [upstream mitigation](https://github.com/torvalds/linux/commit/cfd391e74134db664feb499d43af286380b10ba8) changes `arch/arm64/kernel/cpu_errata.c`, Kconfig and silicon-errata documentation, with separate internal CPU-ID header additions. None is supplied by the UAPI headers package. Arm's linked advisory endpoint returned HTTP 403 during this review; the fetched Arm-authored CNA record, Ubuntu record and Arm-authored upstream patches establish the package distinction. No host mitigation claim is made.
-- **Internal headers:** files such as `include/linux/fscrypt.h`, `include/net/tcp.h` and `fs/afs/internal.h` can contain vulnerable kernel inline code, but are not exported UAPI headers. An installed `usr/include/linux/fscrypt.h` originates from the distinct `include/uapi/linux/fscrypt.h` interface; a shared basename is not proof that internal code is included. [Linux export documentation](https://www.kernel.org/doc/html/latest/kbuild/headers_install.html) defines that boundary.
+- **CVE-2026-53398 (CRITICAL):** the Linux CNA identifies `fs/nfsd/nfs4xdr.c` (SECINFO_NO_NAME
+  decode cleanup). [Ubuntu still marks noble linux
+  vulnerable](https://ubuntu.com/security/CVE-2026-53398). The NFSD implementation is absent from
+  both reviewed headers packages; this does not establish that the host's NFSD implementation is
+  safe.
+- **CVE-2026-80668:** the upstream
+  [fix](https://github.com/torvalds/linux/commit/b8b09dc2bf35a00d4e0556b5d6308c7b917ebda2) lists
+  `include/uapi/linux/netfilter/nf_conntrack_common.h`, which really is exported. Its only change in
+  that file adds `NF_CT_EXPECT_DEAD` under `#ifdef __KERNEL__`. The [Linux 6.8 export
+  script](https://github.com/torvalds/linux/blob/v6.8/scripts/headers_install.sh) removes such
+  sections with `unifdef -U__KERNEL__`. The installed header in all four examined DEBs lacks both
+  that macro and the guard, with identical SHA256
+  `f96c03a170825a42f0a417efe70d77f05dd4265d7855eb05ba8024a58cc938f8`. The vulnerable timer/refcount
+  handling of `exp->master` and the GC replacement are in non-exported netfilter implementation
+  code. The exemption is based on the changed code, not just the package label.
+- **CVE-2026-80671:** `tools/perf/builtin-sched.c`, specifically `register_pid()` parsing untrusted
+  perf.data. This is a userspace perf-tool bug. That source/executable is absent from
+  linux-libc-dev. No VEX statement is made about linux-tools or another package containing perf.
+- **CVE-2025-10263:** the [Arm CNA record](https://www.cve.org/CVERecord?id=CVE-2025-10263)
+  describes CPU TLBI completion errata. [Ubuntu's notes](https://ubuntu.com/security/CVE-2025-10263)
+  name `ARM64_WORKAROUND_REPEAT_TLBI`; the [upstream
+  mitigation](https://github.com/torvalds/linux/commit/cfd391e74134db664feb499d43af286380b10ba8)
+  changes `arch/arm64/kernel/cpu_errata.c`, Kconfig and silicon-errata documentation, with separate
+  internal CPU-ID header additions. None is supplied by the UAPI headers package. Arm's linked
+  advisory endpoint returned HTTP 403 during this review; the fetched Arm-authored CNA record,
+  Ubuntu record and Arm-authored upstream patches establish the package distinction. No host
+  mitigation claim is made.
+- **Internal headers:** files such as `include/linux/fscrypt.h`, `include/net/tcp.h` and
+  `fs/afs/internal.h` can contain vulnerable kernel inline code, but are not exported UAPI headers.
+  An installed `usr/include/linux/fscrypt.h` originates from the distinct
+  `include/uapi/linux/fscrypt.h` interface; a shared basename is not proof that internal code is
+  included. [Linux export
+  documentation](https://www.kernel.org/doc/html/latest/kbuild/headers_install.html) defines that
+  boundary.
 
-The full set partitions into 132 ordinary non-exported kernel implementation cases (six fixed), one specially inspected UAPI-path case, one perf-tool case, and one hardware/kernel-mitigation case.
+The full set partitions into 132 ordinary non-exported kernel implementation cases (six fixed), one
+specially inspected UAPI-path case, one perf-tool case, and one hardware/kernel-mitigation case.
 
 ## Per-CVE table
 
-Severity is preserved from the supplied Trivy report even where a current upstream CVSS differs. Every row links the Ubuntu source-package status, the primary CNA record and an upstream implementation reference. `Absent` below refers only to the vulnerable implementation in the reviewed amd64/arm64 linux-libc-dev payloads.
+Severity is preserved from the supplied Trivy report even where a current upstream CVSS differs.
+Every row links the Ubuntu source-package status, the primary CNA record and an upstream
+implementation reference. `Absent` below refers only to the vulnerable implementation in the
+reviewed amd64/arm64 linux-libc-dev payloads.
 
 | CVE / reported severity | Ubuntu linux / noble | Implementation and primary references | Header-package applicability / action |
 | --- | --- | --- | --- |
@@ -204,13 +295,41 @@ Severity is preserved from the supplied Trivy report even where a current upstre
 
 ## Validation and handoff
 
-- 135/135 primary CNA records fetched successfully (134 Linux CNA, one Arm CNA); 135/135 Ubuntu linux/noble statuses captured. Five transient Ubuntu read timeouts succeeded on retry. All six report fixed-version IDs agree with Ubuntu; the other 129 remain source-package vulnerable/work-in-progress.
-- Four exact DEB payloads inspected: old/new version on amd64/arm64; DEB SHA256 matches their snapshot indexes. Candidate indexes were checked across all four configured main pockets and both architectures.
-- **5/5 `test/ci/security-scanning.bats` tests passed** with Git Bash and native jq using mocked Docker. They check VEX v4, exact amd64 package/version scope, 184 total statements, the 129 new statements' equality with the actual CI residual, and the applied snapshot/header pins. Both actual jq predicates accepted the policy and rejected **11/11 unsafe mutations**, including an unobserved CVE, a fixed CVE and an arm64 scope expansion. The original 55 statement objects exactly match v3. `git diff --check` passed.
-- The separate pin commit changed only Dockerfile/Bake baseline pins, their existing assertions and the README baseline. This VEX commit contains no Dockerfile, Bake or healthcheck change.
-- The existing HIGH/CRITICAL conversion gate, scan script, trivy.yaml and .trivyignore are unchanged. Six fixed findings are addressed by updating packages, not suppressing them. The new statements require version `6.8.0-139.139` plus matching architecture/distribution qualifiers. This matching behavior is implemented by [go-vex v0.2.7 PurlMatches](https://github.com/openvex/go-vex/blob/v0.2.7/pkg/vex/vex.go), the dependency pinned by [Trivy v0.72.0](https://github.com/aquasecurity/trivy/blob/v0.72.0/go.mod).
-- **Not executed locally:** Docker/Trivy image scans, signed APT installation or host/GPU/kernel qualification. The downloaded CI evidence supplies the amd64 build and v3 scan result, including the six actual removals. A fresh Trivy run with v4 remains required; matching the residual to these statements is not a green CI result.
+- 135/135 primary CNA records fetched successfully (134 Linux CNA, one Arm CNA); 135/135 Ubuntu
+  linux/noble statuses captured. Five transient Ubuntu read timeouts succeeded on retry. All six
+  report fixed-version IDs agree with Ubuntu; the other 129 remain source-package
+  vulnerable/work-in-progress.
+- Four exact DEB payloads inspected: old/new version on amd64/arm64; DEB SHA256 matches their
+  snapshot indexes. Candidate indexes were checked across all four configured main pockets and both
+  architectures.
+- **5/5 `test/ci/security-scanning.bats` tests passed** with Git Bash and native jq using mocked
+  Docker. They check VEX v4, exact amd64 package/version scope, 184 total statements, the 129 new
+  statements' equality with the actual CI residual, and the applied snapshot/header pins. Both
+  actual jq predicates accepted the policy and rejected **11/11 unsafe mutations**, including an
+  unobserved CVE, a fixed CVE and an arm64 scope expansion. The original 55 statement objects
+  exactly match v3. `git diff --check` passed.
+- The separate pin commit changed only Dockerfile/Bake baseline pins, their existing assertions and
+  the README baseline. This VEX commit contains no Dockerfile, Bake or healthcheck change.
+- The existing HIGH/CRITICAL conversion gate, scan script, trivy.yaml and .trivyignore are
+  unchanged. Six fixed findings are addressed by updating packages, not suppressing them. The new
+  statements require version `6.8.0-139.139` plus matching architecture/distribution qualifiers.
+  This matching behavior is implemented by [go-vex v0.2.7
+  PurlMatches](https://github.com/openvex/go-vex/blob/v0.2.7/pkg/vex/vex.go), the dependency pinned
+  by [Trivy v0.72.0](https://github.com/aquasecurity/trivy/blob/v0.72.0/go.mod).
+- **Not executed locally:** Docker/Trivy image scans, signed APT installation or host/GPU/kernel
+  qualification. The downloaded CI evidence supplies the amd64 build and v3 scan result, including
+  the six actual removals. A fresh Trivy run with v4 remains required; matching the residual to
+  these statements is not a green CI result.
 
-After parent review, run the same scanner and mandatory HIGH/CRITICAL gate with v4 against the NVIDIA image group. Unexpected IDs, other packages and other versions remain unsuppressed by these new statements. Obtain a rebuilt arm64 scan before adding new arm64 statements. This review makes no host-kernel or complete-image qualification claim.
+After parent review, run the same scanner and mandatory HIGH/CRITICAL gate with v4 against the
+NVIDIA image group. Unexpected IDs, other packages and other versions remain unsuppressed by these
+new statements. Obtain a rebuilt arm64 scan before adding new arm64 statements. This review makes no
+host-kernel or complete-image qualification claim.
 
-Portable data: `linux-libc-dev-2026-09-08.evidence.json` records source URLs, hashes, affected paths and which original findings occur in the rebuilt CI report. The companion `.ci.json` records that residual and provenance. Raw CI artifacts, source captures and the job log are retained under `analysis/ci-artifacts/infra-34192891669-a2f62d3-vex-5048f49d/` in the parent workspace. Earlier upstream responses, package inventories/DEBs and the original candidate patches remain under `analysis/trivy-review/` in the isolated worktree as historical evidence; the committed files define the active policy.
+Portable data: `linux-libc-dev-2026-09-08.evidence.json` records source URLs, hashes, affected paths
+and which original findings occur in the rebuilt CI report. The companion `.ci.json` records that
+residual and provenance. Raw CI artifacts, source captures and the job log are retained under
+`analysis/ci-artifacts/infra-34192891669-a2f62d3-vex-5048f49d/` in the parent workspace. Earlier
+upstream responses, package inventories/DEBs and the original candidate patches remain under
+`analysis/trivy-review/` in the isolated worktree as historical evidence; the committed files define
+the active policy.
