@@ -47,6 +47,10 @@ run_chrony_case() (
   trap '"${compose[@]}" down --volumes --remove-orphans || true' EXIT
 
   "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 time-fixture
+  if [[ "${expected}" == true ]]; then
+    "${compose[@]}" exec -T time-fixture \
+      chronyc -n -h /run/robotics-time/chronyd.sock waitsync 30 0 0 1
+  fi
   "${compose[@]}" up --detach --no-build time-evidence-chrony
   host_time_wait_for_collector time-evidence-chrony "${compose[@]}"
   # Exercise the same timestamp parser and publisher as the host timer. The

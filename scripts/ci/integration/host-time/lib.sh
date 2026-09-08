@@ -15,7 +15,19 @@ export HOST_TIME_PTP_UNSYNC_EVIDENCE="${HOST_TIME_WORK}/ptp-unsync"
 export HOST_TIME_OTEL_IMAGE="otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa"
 
 host_time_cleanup() {
+  local status=$?
+  local report_dir="${PWD}/artifacts/host-time"
+  mkdir -p "${report_dir}"
+  if [[ -d "${HOST_TIME_WORK}" ]]; then
+    # Exclude command sockets; retain raw samples and Collector output on failure.
+    (
+      cd "${HOST_TIME_WORK}" || exit
+      sudo find . -type f -exec cp --parents '{}' "${report_dir}" \;
+    )
+    sudo chown -R "$(id -u):$(id -g)" "${report_dir}"
+  fi
   sudo rm -rf "${HOST_TIME_WORK}"
+  return "${status}"
 }
 
 host_time_wait_for_collector() {
@@ -83,9 +95,9 @@ result = evaluate_hardware_timing(
     },
     load_otlp_json_metrics("/metrics.otlp.jsonl"),
 )
-assert result.sample_count >= 1
-assert result.monotonic is (sys.argv[3] == "true")
-assert result.within_policy is expected
+assert result.sample_count >= 1, result
+assert result.monotonic is (sys.argv[3] == "true"), result
+assert result.within_policy is expected, result
 ' "${protocol}" "${expected}" "${monotonic}"
 }
 
