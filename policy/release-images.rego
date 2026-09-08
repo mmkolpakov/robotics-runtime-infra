@@ -3,12 +3,16 @@ package release_images
 import rego.v1
 
 registry_prefix := "ghcr.io/mmkolpakov/robotics-runtime-infra/"
-local_prefix := "local/robotics-runtime-infra/"
+local_prefix := "local/"
 runtime_mode := object.get(
 	object.get(input, "x-robotics-runtime", {}),
 	"mode",
 	"source",
 )
+
+deny contains "runtime mode must be source or released" if {
+	not runtime_mode in {"source", "released"}
+}
 
 deny contains message if {
 	some name, service in object.get(input, "services", {})

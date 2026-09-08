@@ -48,6 +48,23 @@ test_mutable_published_tag_is_denied if {
 	"service \"simulation\" uses a runtime image without an immutable sha256 digest" in violations
 }
 
+test_consumer_local_image_is_denied_in_released_mode if {
+	violations := release_images.deny with input as {
+		"x-robotics-runtime": {"mode": "released"},
+		"services": {"product": {"image": "local/consumer/product:dev"}},
+	}
+	count(violations) == 1
+	"service \"product\" falls back to a local development image in released mode" in violations
+}
+
+test_misspelled_runtime_mode_is_denied if {
+	violations := release_images.deny with input as {
+		"x-robotics-runtime": {"mode": "relased"},
+		"services": {},
+	}
+	"runtime mode must be source or released" in violations
+}
+
 test_short_digest_is_denied if {
 	violations := release_images.deny with input as {
 		"services": {

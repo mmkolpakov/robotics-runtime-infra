@@ -39,8 +39,8 @@ selected by the registry.
 The lock also sets `ROBOTICS_RUNTIME_MODE=released` and records the exact
 release source commit and tag ref. The resolved Compose model records the
 runtime mode, and `policy/release-images.rego` rejects any internal
-`local/*:dev` fallback. Source mode remains the default only when no release
-lock is supplied.
+`local/*:dev` fallback, including a consumer's own local image. Source mode remains
+the default only when no release lock is supplied.
 
 Physical-attach tooling accepts a released `PERMIT_PREFLIGHT_IMAGE` only from
 the canonical release repository at an OCI digest. In source mode, the
@@ -73,16 +73,29 @@ source dependency updater cannot invent or modify released image records.
 
 ## Policy Check
 
+`scripts/ci/foundation/run-acceptance.sh` applies the scenario policy to its
+private copy of the caller's scenario before creating the run. It parses that
+copy with the contracts loader used by the verifier. It then applies the
+release-image policy to the final resolved Compose model before starting any
+runtime service, including the separate edge-attach model when selected.
+The reusable qualification workflow calls this same entrypoint. A caller's
+`ROBOTICS_RUNTIME_MODE` takes precedence over a consumer's Compose extension,
+including when `include` omits that extension from its result. Unknown modes
+fail closed. The evaluated JSON inputs are retained with successful run evidence.
+
+Direct `docker compose` commands do not invoke OPA automatically; the manual
+check below is required when operating outside that entrypoint.
+
 `policy/release-images.rego` evaluates resolved Docker Compose JSON. It rejects
 references in this repository's GHCR namespace unless they contain a complete
 SHA-256 digest:
 
 ```bash
-docker compose --env-file release.env config --format json |
+test "$(docker compose --env-file release.env config --format json |
   opa eval --stdin-input \
     --data policy/release-images.rego \
-    --format pretty \
-    'data.release_images.deny'
+    --format raw \
+    'count(data.release_images.deny)')" -eq 0
 ```
 
 The policy intentionally accepts `local/*:dev` references used by source mode.
