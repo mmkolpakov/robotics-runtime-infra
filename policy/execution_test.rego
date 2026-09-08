@@ -28,7 +28,7 @@ test_valid_hil_permit_emits_verification if {
 	verification.schema_version == "execution-verification.v1"
 	verification.decision == "allow"
 	verification.verified_at == "2026-07-14T12:00:00Z"
-	verification.cosign_image_digest == data.execution_valid.artifacts.cosign_image_digest
+	verification.cosign_subject_digest == data.execution_valid.artifacts.cosign_image_digest
 	count(verification.signers) == 2
 }
 
@@ -101,8 +101,27 @@ test_wrong_scenario_is_denied if {
 }
 
 test_wrong_image_is_denied if {
-	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/request/image_digest", "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"}])
+	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/request/subject_digest", "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"}])
 	"observed image digest does not match the permit" in violations(candidate)
+}
+
+test_legacy_image_digest_does_not_authorize_execution if {
+	candidate := json.patch(data.execution_valid, [
+		{"op": "move", "from": "/permit/subject_digest", "path": "/permit/image_digest"},
+		{"op": "move", "from": "/statement/predicate/subject_digest", "path": "/statement/predicate/image_digest"},
+		{"op": "move", "from": "/request/subject_digest", "path": "/request/image_digest"},
+	])
+	"permit subject_digest must be an immutable SHA-256 digest" in violations(candidate)
+}
+
+test_malformed_subject_digest_is_denied if {
+	every value in [null, 1, "", "image:latest", "sha256:1234"] {
+		candidate := json.patch(data.execution_valid, [
+			{"op": "replace", "path": "/permit/subject_digest", "value": value},
+			{"op": "replace", "path": "/statement/predicate/subject_digest", "value": value},
+		])
+		"permit subject_digest must be an immutable SHA-256 digest" in violations(candidate)
+	}
 }
 
 test_wrong_target_identity_is_denied if {

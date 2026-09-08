@@ -87,7 +87,7 @@ write_permit_case() {
   trust_policy_sha256="$(sha256_file "${work_root}/trust-policy.json")"
   interlock_sha256="$(sha256_file "${target_evidence}")"
   checked_at="$(jq -r '.checked_at' "${target_evidence}")"
-  nonce="$(tr -d '-' </proc/sys/kernel/random/uuid)"
+  nonce="$(openssl rand -hex 16)" || return
 
   cp "${work_root}/trust-policy.json" "${case_dir}/trust-policy.json"
   jq \
@@ -104,7 +104,7 @@ write_permit_case() {
     --arg trust_policy_sha256 "${trust_policy_sha256}" '
       .permit |
       .scenario_sha256 = $scenario_sha256 |
-      .image_digest = $image_digest |
+      .subject_digest = $image_digest |
       .trust_policy_sha256 = $trust_policy_sha256 |
       .target.identity_sha256 = $target_identity |
       .issued_at = $issued_at |
@@ -127,7 +127,7 @@ write_permit_case() {
         },
         {
           name: "robotics-runtime-image",
-          digest: {sha256: (.image_digest | sub("^sha256:"; ""))}
+          digest: {sha256: (.subject_digest | sub("^sha256:"; ""))}
         }
       ],
       predicateType: .predicate_type,
@@ -144,7 +144,7 @@ write_permit_case() {
     --arg scenario_sha256 "${scenario_sha256}" '
       .request |
       .scenario_sha256 = $scenario_sha256 |
-      .image_digest = $image_digest |
+      .subject_digest = $image_digest |
       .target.identity_sha256 = $request_target_identity |
       .interlock_check.sha256 = $interlock_sha256 |
       .interlock_check.checked_at = $checked_at

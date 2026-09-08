@@ -11,6 +11,15 @@ signers := object.get(input, "verified_signers", [])
 
 default verification := null
 
+valid_subject_digest if {
+	is_string(permit.subject_digest)
+	regex.match("^sha256:[a-f0-9]{64}$", permit.subject_digest)
+}
+
+deny contains "permit subject_digest must be an immutable SHA-256 digest" if {
+	not valid_subject_digest
+}
+
 deny contains "statement must use in-toto Statement v1" if {
 	object.get(statement, "_type", "") != "https://in-toto.io/Statement/v1"
 }
@@ -42,7 +51,7 @@ deny contains "statement must contain exactly one runtime image subject" if {
 
 deny contains "statement image digest does not match the permit" if {
 	count(image_subjects) == 1
-	expected := trim_prefix(object.get(permit, "image_digest", ""), "sha256:")
+	expected := trim_prefix(object.get(permit, "subject_digest", ""), "sha256:")
 	object.get(object.get(image_subjects[0], "digest", {}), "sha256", "") != expected
 }
 
@@ -96,7 +105,7 @@ deny contains "observed scenario digest does not match the permit" if {
 }
 
 deny contains "observed image digest does not match the permit" if {
-	object.get(request, "image_digest", "") != object.get(permit, "image_digest", "")
+	object.get(request, "subject_digest", "") != object.get(permit, "subject_digest", "")
 }
 
 deny contains "observed target identity does not match the permit" if {
@@ -201,7 +210,7 @@ verification := {
 	"target": object.get(permit, "target", {}),
 	"verified_at": time.format(time.now_ns()),
 	"cosign_version": object.get(artifacts, "cosign_version", ""),
-	"cosign_image_digest": object.get(artifacts, "cosign_image_digest", ""),
+	"cosign_subject_digest": object.get(artifacts, "cosign_image_digest", ""),
 	"signers": signers,
 	"decision": "allow",
 } if {

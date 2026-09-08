@@ -89,12 +89,13 @@ setup() {
 }
 
 @test "released authorization renderer binds registry identity across permit and statement" {
+  : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before this test}"
   run bash -c '
     set -Eeuo pipefail
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
     source "$1"
-    work_root="$(mktemp -d)"
-    trap "rm -rf -- \"${work_root}\"" EXIT
+    work_root="${BATS_TEST_TMPDIR}/permit-render"
+    mkdir "$work_root"
     target_identity="$(
       printf "controller-ci" | sha256sum | awk "{print \$1}"
     )"
@@ -138,6 +139,8 @@ setup() {
       "2026-07-26T12:00:00Z" \
       "2026-07-26T12:15:00Z" \
       "${target_identity}"
+    "$ROBOTICS_CONTRACTS_CLI" validate --schema execution-permit.v1 --quiet \
+      "${work_root}/case/execution-permit.json"
     scenario_sha256="$(
       jq -r ".scenario_sha256" \
         "${work_root}/case/execution-permit.json"
@@ -152,8 +155,8 @@ setup() {
     jq -e --slurpfile permit "${work_root}/case/execution-permit.json" "
       .predicate == \$permit[0] and
       .subject[0].digest.sha256 == \$permit[0].scenario_sha256 and
-      (\"sha256:\" + .subject[1].digest.sha256) == \$permit[0].image_digest and
-      \$permit[0].image_digest == \"sha256:$(printf "%064d" 1)\"
+      (\"sha256:\" + .subject[1].digest.sha256) == \$permit[0].subject_digest and
+      \$permit[0].subject_digest == \"sha256:$(printf "%064d" 1)\"
     " "${work_root}/case/execution-statement.json"
   ' _ "${SCRIPT}"
 
