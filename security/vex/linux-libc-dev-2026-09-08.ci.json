@@ -1,0 +1,1162 @@
+{
+  "schema_version": 1,
+  "run": {
+    "id": 34192891669,
+    "attempt": 1,
+    "url": "https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669",
+    "head_sha": "a2f62d356507d2fe842e59447f50eef538d0e011",
+    "checked_out_merge_sha": "5336df557bf1cefe81cd543ee2925b879180cb6c",
+    "merge_parents": [
+      "caa62ab7dd0d3329211b0f14b8b5840e6c79ab19",
+      "a2f62d356507d2fe842e59447f50eef538d0e011"
+    ]
+  },
+  "job": {
+    "id": 101954401272,
+    "url": "https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401272",
+    "conclusion": "failure",
+    "completed_at": "2026-09-08T06:12:12Z",
+    "steps": {
+      "Set up job": "success",
+      "Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0": "success",
+      "Run ./.github/actions/setup-buildx": "success",
+      "Set reproducible build metadata": "success",
+      "Build the NVIDIA runtime image": "success",
+      "Verify the ONNX Runtime GPU ABI": "success",
+      "Scan NVIDIA runtime images": "failure",
+      "Upload NVIDIA scan results": "success",
+      "Post Run ./.github/actions/setup-buildx": "success",
+      "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0": "success",
+      "Complete job": "success"
+    }
+  },
+  "artifact": {
+    "id": 10043065827,
+    "name": "security-nvidia-5336df557bf1cefe81cd543ee2925b879180cb6c",
+    "digest": "sha256:b28f680d8faa4c5d9933720c3afe4faf7e218a5d779d6f5820c47534fd2de4eb",
+    "size_in_bytes": 2459296,
+    "created_at": "2026-09-08T06:12:04Z"
+  },
+  "report": {
+    "filename": "nvidia-inference-nvidia-local.json",
+    "sha256": "26bb62b1be763728161d8c32140e7d86e007dcf8b2751964b4a5d584c41b9471",
+    "created_at": "2026-09-08T06:12:01.318693324Z",
+    "image": "ghcr.io/mmkolpakov/robotics-runtime-infra/inference-nvidia:nvidia-ci",
+    "image_id": "sha256:353a7757c1392e8a87266acebb592c24d0b619180249b4bf74d44664bfdb25ac",
+    "architecture": "amd64",
+    "os": {
+      "Family": "ubuntu",
+      "Name": "24.04"
+    },
+    "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+    "severity_counts": {
+      "CRITICAL": 5,
+      "HIGH": 124,
+      "LOW": 265,
+      "MEDIUM": 2431
+    }
+  },
+  "signed_apt_build": {
+    "snapshot": "20260908T000000Z",
+    "package_version": "6.8.0-139.139",
+    "architecture": "amd64",
+    "snapshot_helper_sha256": "c5989ef5a6fd66b1c8efec407533ec8faedf765ff1847d5615ffe42babff7ae1",
+    "source_url": "https://github.com/mmkolpakov/robotics-runtime-infra/blob/5336df557bf1cefe81cd543ee2925b879180cb6c/docker/apt/use-package-snapshots",
+    "job_log_sha256": "1e18ad37648079fa31dd2c4a7fea30432b38dd72587689cd80ac11c5300a50c3",
+    "log_evidence": [
+      {
+        "line": 134,
+        "text": "2026-09-08T06:01:21.6633184Z HEAD is now at 5336df5 Merge a2f62d356507d2fe842e59447f50eef538d0e011 into caa62ab7dd0d3329211b0f14b8b5840e6c79ab19"
+      },
+      {
+        "line": 783,
+        "text": "2026-09-08T06:02:12.1542753Z #32 9.307 Get:4 https://snapshot.ubuntu.com/ubuntu/20260908T000000Z noble-updates InRelease [126 kB]"
+      },
+      {
+        "line": 785,
+        "text": "2026-09-08T06:02:19.1166937Z #32 16.27 Get:6 https://snapshot.ubuntu.com/ubuntu/20260908T000000Z noble-security InRelease [126 kB]"
+      },
+      {
+        "line": 824,
+        "text": "2026-09-08T06:03:39.8151945Z #32 97.12 Get:4 https://snapshot.ubuntu.com/ubuntu/20260908T000000Z noble-updates/main amd64 linux-libc-dev amd64 6.8.0-139.139 [1527 kB]"
+      },
+      {
+        "line": 860,
+        "text": "2026-09-08T06:03:41.4922824Z #32 98.66 Setting up linux-libc-dev:amd64 (6.8.0-139.139) ..."
+      }
+    ]
+  },
+  "comparison": {
+    "baseline_report_sha256": "ffcfc4b990fb7638f54f51693b2f402bbf61246621b7115e30c24dffd6267115",
+    "baseline_high_critical": 135,
+    "actual_high_critical": 129,
+    "removed_fixed_cves": [
+      "CVE-2026-53357",
+      "CVE-2026-64015",
+      "CVE-2026-64018",
+      "CVE-2026-64032",
+      "CVE-2026-64073",
+      "CVE-2026-64115"
+    ],
+    "unexpected_cves": [],
+    "candidate_missing_from_residual": [],
+    "unreviewed_residual_cves": [],
+    "severity_mismatches": [],
+    "observed_purls": [
+      "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04"
+    ],
+    "unobserved_candidate_architectures": [
+      "arm64"
+    ]
+  },
+  "openssl_observation": {
+    "packages": [
+      "libssl-dev",
+      "libssl3t64",
+      "openssl"
+    ],
+    "installed_version": "3.0.13-0ubuntu3.11",
+    "high_critical_count": 0,
+    "note": "The .15 pin belongs to ubuntu-ca; this NVIDIA runtime inherits .11. No OpenSSL VEX is added."
+  },
+  "findings": [
+    {
+      "cve": "CVE-2025-10263",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-37906",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-38717",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-40025",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-40064",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-40075",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-40158",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-68304",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2025-68360",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-53356",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-53362",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-53388",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-53398",
+      "severity": "CRITICAL",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-53399",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63801",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63809",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63815",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63823",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63884",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63917",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63926",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63940",
+      "severity": "CRITICAL",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63946",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63954",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63971",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63974",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-63976",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64002",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64005",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64091",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64093",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64123",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64188",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64191",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64266",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64269",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64276",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64361",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64380",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64383",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64385",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64386",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64387",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64390",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64393",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64396",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64423",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64432",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64440",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64441",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64442",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64535",
+      "severity": "CRITICAL",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64543",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64548",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64554",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64557",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64562",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64564",
+      "severity": "CRITICAL",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64567",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-64597",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68085",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68098",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68117",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68121",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68147",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68162",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68189",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68196",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68198",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68199",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68204",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68236",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68257",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68284",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68323",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68329",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68399",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68442",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68446",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68451",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-68470",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72024",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72110",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72111",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72123",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72124",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72135",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72195",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72288",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72338",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72390",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72472",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-72478",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74268",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74317",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74334",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74341",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74363",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74378",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74390",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74394",
+      "severity": "CRITICAL",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74411",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74427",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74438",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74446",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74465",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74470",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74506",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74510",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74534",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-74535",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80631",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80634",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80637",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80644",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80668",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80671",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80681",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80691",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80692",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80693",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80700",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80702",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80710",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80714",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80716",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80718",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80721",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    },
+    {
+      "cve": "CVE-2026-80725",
+      "severity": "HIGH",
+      "package": "linux-libc-dev",
+      "installed_version": "6.8.0-139.139",
+      "purl": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+      "fixed_version": ""
+    }
+  ],
+  "limits": [
+    "Only the observed amd64 PURL receives new statements; arm64 package evidence is retained for a later scan.",
+    "This artifact contains one image report; later NVIDIA group scans may not have run after the failing gate.",
+    "No Trivy rerun with v4 or local Docker build has been performed; CI must enforce the unchanged gate.",
+    "The package review does not qualify the host kernel, GPU, CPU, or separately installed perf tools."
+  ]
+}
