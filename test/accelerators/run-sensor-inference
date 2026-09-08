@@ -110,7 +110,7 @@ else
 fi
 "${compose[@]}" up \
   "${up_options[@]}" \
-  --detach --wait data-plane otel-collector simulation
+  --detach --wait --wait-timeout 120 data-plane otel-collector simulation
 "${compose[@]}" up "${up_options[@]}" --detach --no-deps sensor-inference-probe
 probe_id="$("${compose[@]}" ps --all --quiet sensor-inference-probe)"
 test -n "${probe_id}"
