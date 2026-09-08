@@ -21,11 +21,14 @@ decision.
 The [2026-09-08 review](linux-libc-dev-2026-09-08.md) maps each of the 135 new
 HIGH/CRITICAL findings to primary CVE records, implementation paths and the
 actual amd64/arm64 package contents. Six findings have Ubuntu fixes in
-`6.8.0-139.139` and receive no new VEX statement. Version 4 adds 129 individual
-statements restricted to that exact package version, **amd64** and Ubuntu
-24.04, matching the actual residual in [CI run 34192891669](https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401272).
-The [captured comparison](linux-libc-dev-2026-09-08.ci.json) records the report
-hash, PR merge revision, signed APT build evidence and all 129 residual CVEs.
+`6.8.0-139.139` and receive no new VEX statement. Version 5 retains the 129
+individual decisions and restricts them to that exact version, Ubuntu 24.04,
+and the observed **amd64/arm64** PURLs. The [completed-image review](linux-libc-dev-2026-09-08.images.md)
+and [captured comparisons](linux-libc-dev-2026-09-08.images.json) cover NVIDIA,
+RKNN, portable ARM64, AMD and Intel artifacts from CI run `34192891669`.
+Every image has the same 129 residual IDs. Report hashes, checkout revisions,
+APT build evidence and metadata discrepancies are retained; the original
+[NVIDIA comparison](linux-libc-dev-2026-09-08.ci.json) remains unchanged.
 The existing 55 statements remain unchanged. The policy version, reviewed
 statement scope and correspondence with the actual residual are checked in
 `test/ci/security-scanning.bats`.
@@ -33,12 +36,14 @@ statement scope and correspondence with the actual residual are checked in
 The pins landed as `a2f62d3`; CI built PR merge `5336df5` and installed `.139`
 from snapshot `20260908T000000Z`. All six fixed CVEs disappeared; the remaining
 124 HIGH and five CRITICAL CVEs exactly match the new statements. They do not
-match the old `.136` package or arm64. The arm64 payload review is retained,
-but new arm64 statements require a rebuilt residual scan. The NVIDIA image
+match the old `.136` package or other architectures. Version 4 initially
+covered amd64 only; the additional RKNN and portable ARM64 reports supply the
+previously missing arm64 residual and signed APT installation evidence. The NVIDIA image
 still contains OpenSSL `.11` (no HIGH/CRITICAL findings in this report); the
 `.15` pin belongs to the separate `ubuntu-ca` stage. No OpenSSL exemption is
 added. CI must rerun the existing scanner and gate with this VEX version;
-neither the whole NVIDIA image group nor CI is qualified by this comparison.
+the artifacts contain only the first scanned image of each group. Later
+group targets and the complete CI run still require validation.
 
 The review distinguishes kernel implementations from the separately packaged
 `perf` userspace tool, processor errata, and an exported-path header change

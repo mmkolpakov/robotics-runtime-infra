@@ -3448,6 +3448,8 @@
   ],
   "ci_evidence": "linux-libc-dev-2026-09-08.ci.json",
   "active_new_statement_purls": [
-    "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04"
-  ]
+    "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04",
+    "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=arm64&distro=ubuntu-24.04"
+  ],
+  "additional_ci_evidence": "linux-libc-dev-2026-09-08.images.json"
 }

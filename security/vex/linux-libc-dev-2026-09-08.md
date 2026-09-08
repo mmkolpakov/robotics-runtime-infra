@@ -1,5 +1,7 @@
 # linux-libc-dev applicability review — 2026-09-08
 
+This document preserves the original 135-CVE review and NVIDIA-only v4 decision. The [completed-image follow-up](linux-libc-dev-2026-09-08.images.md) records the subsequent arm64 evidence and active v5 scope.
+
 Review prepared in `review/trivy-linux-libc-dev`, initially based on original infra commit `d36ee2a`. The pin update was committed as `5245fae` and integrated by the parent as `a2f62d3`. This VEX change follows the rebuilt amd64 residual in CI run `34192891669`; the scanner and severity gate are unchanged.
 
 ## Finding and proposed resolution

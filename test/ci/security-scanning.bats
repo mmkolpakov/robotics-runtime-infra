@@ -103,11 +103,12 @@ EOF
   run jq -e '
     def reviewed_headers:
       [
-        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04"}
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04"},
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=arm64&distro=ubuntu-24.04"}
       ];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 4
+    and .version == 5
     and (.statements | length == 184)
     and ([.statements[] | select(.products == reviewed_headers)] | length == 129)
     and (
@@ -140,13 +141,16 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
-@test "OpenVEX additions match the rebuilt NVIDIA residual evidence" {
+@test "OpenVEX additions match all completed image residual evidence" {
   run jq -e \
+    --slurpfile images security/vex/linux-libc-dev-2026-09-08.images.json \
     --slurpfile ci security/vex/linux-libc-dev-2026-09-08.ci.json \
     --slurpfile review security/vex/linux-libc-dev-2026-09-08.evidence.json '
     $ci[0] as $ci
     | $review[0] as $review
-    | [.statements[] | select(.products == [{"@id": $ci.report.purl}])] as $new
+    | $images[0] as $images
+    | [$images.observed_purls[] | {"@id": .}] as $products
+    | [.statements[] | select(.products == $products)] as $new
     | ([ $new[].vulnerability.name ] | sort) == ([ $ci.findings[].cve ] | sort)
       and ($ci.findings | length == 129)
       and ($ci.findings | map(select(.severity == "HIGH")) | length == 124)
@@ -159,7 +163,26 @@ EOF
       )
       and $ci.report.architecture == "amd64"
       and $ci.comparison.observed_purls == [$ci.report.purl]
-      and $review.active_new_statement_purls == [$ci.report.purl]
+      and $review.active_new_statement_purls == $images.observed_purls
+      and $images.run == $ci.run
+      and $images.report_count == 5
+      and ($images.reports | length == 5)
+      and ([ $images.reports[].purl ] | unique) == $images.observed_purls
+      and all($images.reports[];
+        .residual_cves == ([ $new[].vulnerability.name ] | sort)
+        and .high_critical_counts == {"CRITICAL": 5, "HIGH": 124}
+        and .package == "linux-libc-dev"
+        and .installed_version == "6.8.0-139.139"
+        and .purl == ("pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=" + .architecture + "&distro=ubuntu-24.04")
+        and .checked_out_revision == $ci.run.checked_out_merge_sha
+        and .revision_label_matches_checkout == (.image_revision == .checked_out_revision)
+        and (.revision_label_matches_checkout or .image_id_matches_build_export == true)
+        and .removed_fixed_cves == $ci.comparison.removed_fixed_cves
+        and .unexpected_cves == []
+        and .candidate_missing_cves == []
+        and .severity_mismatches == []
+        and .fixed_version_findings == []
+      )
       and $review.report_sha256 == $ci.comparison.baseline_report_sha256
       and ([ $review.rows[] | select(.observed_in_rebuilt_ci) | .cve ] | sort)
         == ([ $ci.findings[].cve ] | sort)
