@@ -546,7 +546,8 @@ COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-s
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/evidence-sink.lock /tmp/python/evidence-sink.lock
 
-RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,readonly \
+    UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -562,10 +563,13 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       --no-cache \
       --no-deps \
       --requirement /tmp/python/evidence-sink.lock \
+    && uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/venv/bin/python --require-hashes --no-deps --no-cache \
+      --requirement contracts.requirements \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && /opt/venv/bin/python -B -c "from mcap.reader import make_reader" \
+    && /opt/venv/bin/python -B -c "from robotics_runtime_contracts.recordings import recording_summary_from_mcap; from mcap.reader import make_reader" \
     && rm -f /usr/local/bin/uv /usr/local/bin/uvx \
     && groupadd --gid 10001 evidence \
     && useradd --uid 10001 --gid 10001 --create-home evidence \

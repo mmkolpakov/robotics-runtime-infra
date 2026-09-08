@@ -66,7 +66,9 @@ def requirement_text(values: list[str]) -> str:
     )
 
 
-def export_lock(workspace: Path, revision: str, distribution: str) -> str:
+def export_lock(
+    workspace: Path, revision: str, distribution: str, *, extra: str | None = None
+) -> str:
     if git(workspace, "rev-parse", "HEAD").decode().strip() != revision:
         raise ValueError(
             "uv export requires the imported workspace at the pinned revision"
@@ -97,6 +99,7 @@ def export_lock(workspace: Path, revision: str, distribution: str) -> str:
                 "--no-annotate",
                 "--format",
                 "requirements.txt",
+                *(["--extra", extra] if extra else []),
             ],
             stderr=subprocess.PIPE,
         )
@@ -223,6 +226,13 @@ def outputs(
         ),
         root / "docker/python/permit-preflight.lock": export_lock(
             workspace, revision, PACKAGES["contracts"]
+        ),
+        root / "docker/python/evidence-sink.in": requirement_text(
+            contracts_dependencies
+            + metadata["contracts"]["project"]["optional-dependencies"]["mcap"]
+        ),
+        root / "docker/python/evidence-sink.lock": export_lock(
+            workspace, revision, PACKAGES["contracts"], extra="mcap"
         ),
         root / "docker/python/foundation-build.in": requirement_text(
             build_dependencies

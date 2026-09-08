@@ -37,6 +37,8 @@ class WorkspacePinsTests(unittest.TestCase):
 name = "{distribution}"
 version = "1.2.3"
 dependencies = ["packaging>=24", "robotics-runtime-contracts>=1.2"]
+[project.optional-dependencies]
+mcap = ["mcap>=1.4,<2"]
 [build-system]
 requires = ["hatchling==1.29.0"]
 '''

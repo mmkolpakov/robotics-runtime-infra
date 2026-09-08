@@ -389,7 +389,7 @@ runs/current/
 ├── bags/
 ├── evidence/
 │   ├── evidence-index.json
-│   ├── metrics.otlp.json
+│   ├── metrics.otlp.jsonl
 │   └── traces.otlp.jsonl
 └── results/
     ├── acceptance-result.json

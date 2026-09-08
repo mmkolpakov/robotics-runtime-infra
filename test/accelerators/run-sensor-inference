@@ -259,7 +259,7 @@ if [[ -n "${provider_config_sha256}" ]]; then
     ' "${report_dir}/runtime-manifest.json" >/dev/null
 fi
 
-test -s "${evidence_dir}/metrics.otlp.json"
+test -s "${evidence_dir}/metrics.otlp.jsonl"
 test -s "${evidence_dir}/traces.otlp.jsonl"
 jq -e \
   --arg provider "${expected_provider}" \

@@ -55,7 +55,7 @@ uv pip check --python "${foundation_project}/.venv/bin/python"
 export ROBOTICS_CONTRACTS_CLI="${foundation_project}/.venv/bin/robotics-contracts"
 
 mapfile -t mcap_summaries < <(
-  find artifacts -maxdepth 1 -type f -name '*.mcap-summary.json' -print |
+  find artifacts -maxdepth 1 -type f -name '*.recording-summary.json' -print |
     LC_ALL=C sort
 )
 mapfile -t mcap_files < <(
@@ -72,7 +72,7 @@ qualification_inputs=(
   --result primary=artifacts/acceptance-results/acceptance-result.json
   --aggregate artifacts/acceptance-results/acceptance-aggregate.json
   --evidence-index primary=artifacts/evidence-index.json
-  --evidence metrics:metrics.otlp.json=artifacts/metrics.otlp.json
+  --evidence metrics:metrics.otlp.jsonl=artifacts/metrics.otlp.jsonl
   --evidence junit:junit.xml=artifacts/acceptance-results/junit.xml
   --evidence other_evidence:fastdds-profile.xml=artifacts/fastdds-profile.xml
   --evidence other_evidence:host-topology.json=artifacts/host-topology.json

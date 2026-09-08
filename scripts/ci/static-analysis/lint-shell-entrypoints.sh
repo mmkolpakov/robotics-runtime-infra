@@ -17,6 +17,7 @@ docker run --rm --volume "${PWD}:/work:ro" --workdir /work \
   docker/apt/use-package-snapshots \
   docker/apt/update-rosdep-cache \
   docker/evidence-sink/evidence-sink \
+  docker/evidence-sink/mcap-summary \
   docker/permit-preflight/core.sh \
   docker/permit-preflight/permit-preflight \
   docker/permit-preflight/permit-preflight-ci \

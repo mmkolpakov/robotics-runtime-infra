@@ -208,7 +208,7 @@ publish_failure_evidence() {
   local source
   mkdir -p "${destination}"
   for source in \
-    "${run_dir}/evidence/metrics.otlp.json" \
+    "${run_dir}/evidence/metrics.otlp.jsonl" \
     "${run_dir}/evidence/evidence-index.json"; do
     if [[ -f "${source}" ]]; then
       sudo cp "${source}" "${destination}/"
@@ -296,10 +296,10 @@ done
   runtime-metrics runtime-probe-publisher
 sleep 2
 "${compose[@]}" --profile observability stop otel-collector
-test -s "${run_dir}/evidence/metrics.otlp.json"
+test -s "${run_dir}/evidence/metrics.otlp.jsonl"
 "${compose[@]}" --profile evidence run --rm --no-deps \
   evidence-sink artifact \
-  /evidence/metrics.otlp.json application/json \
+  /evidence/metrics.otlp.jsonl application/x-ndjson \
   "${evidence_metrics_segment_index}"
 "${compose[@]}" --profile record stop recorder
 "${compose[@]}" --profile evidence run --rm evidence-finalize
@@ -327,7 +327,7 @@ sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
 
 mapfile -t mcap_summaries < <(
   find "${run_dir}/evidence/summaries" \
-    -maxdepth 1 -type f -name '*.mcap-summary.json' -print |
+    -maxdepth 1 -type f -name '*.recording-summary.json' -print |
     LC_ALL=C sort
 )
 mapfile -t mcap_files < <(
@@ -349,7 +349,7 @@ qualification_inputs=(
   --result "primary=${run_dir}/results/acceptance-result.json"
   --aggregate "${run_dir}/results/acceptance-aggregate.json"
   --evidence-index "primary=${run_dir}/evidence/evidence-index.json"
-  --evidence "metrics:metrics.otlp.json=${run_dir}/evidence/metrics.otlp.json"
+  --evidence "metrics:metrics.otlp.jsonl=${run_dir}/evidence/metrics.otlp.jsonl"
   --evidence "junit:junit.xml=${run_dir}/results/junit.xml"
   --evidence "other_evidence:fastdds-profile.xml=${fastdds_profile}"
   --evidence "other_evidence:host-topology.json=${run_dir}/configuration/host-topology.json"
@@ -381,7 +381,7 @@ jq -e \
   "${run_dir}/results/acceptance-aggregate.json"
 jq -e '
   [.segments[].media_type]
-  | contains(["application/json"])
+  | contains(["application/x-ndjson"])
 ' "${run_dir}/evidence/evidence-index.json"
 contracts_revision="$(
   git -C dependencies/robotics-runtime rev-parse HEAD
@@ -402,7 +402,7 @@ cp "${run_dir}/runtime-manifest.json" "${artifact_dir}/"
 cp "${run_dir}/acceptance-run.json" "${artifact_dir}/"
 cp "${run_dir}/scenario.yaml" "${artifact_dir}/"
 cp "${run_dir}/evidence/evidence-index.json" "${artifact_dir}/"
-cp "${run_dir}/evidence/metrics.otlp.json" "${artifact_dir}/"
+cp "${run_dir}/evidence/metrics.otlp.jsonl" "${artifact_dir}/"
 cp "${fastdds_profile}" "${artifact_dir}/fastdds-profile.xml"
 cp "${run_dir}/configuration/host-topology.json" "${artifact_dir}/"
 cp "${run_dir}/configuration/host-platform.json" "${artifact_dir}/"

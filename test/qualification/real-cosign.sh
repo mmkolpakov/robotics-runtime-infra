@@ -49,7 +49,7 @@ artifact_arguments=(
   --mcap-summary "control-0=${work}/mcap-summary.json"
   --evidence "other_evidence:diagnostics.json=${work}/diagnostics.json"
   --evidence "raw_mcap:recording-0.mcap=${root}/test/fixtures/playback/golden/golden_0.mcap"
-  --evidence "metrics:metrics.otlp.json=${fixtures}/metrics.otlp.json"
+  --evidence "metrics:metrics.otlp.jsonl=${fixtures}/metrics.otlp.jsonl"
   --evidence "traces:traces.otlp.jsonl=${fixtures}/traces.otlp.jsonl"
   --evidence "other_evidence:fastdds-profile.xml=${profile}"
 )

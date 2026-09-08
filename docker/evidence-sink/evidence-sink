@@ -106,7 +106,7 @@ write_receipt() {
         uri: $uri,
         sha256: $sha256,
         size_bytes: $size_bytes,
-        media_type: "application/vnd.robotics.mcap-summary.v1+json"
+        media_type: "application/vnd.robotics.recording-summary.v1+json"
       }')"
   fi
   jq -cS -n \
@@ -214,7 +214,7 @@ process_segment() {
   fi
 
   mkdir -p "$receipt_dir" "$summary_dir" || fail 'cannot create evidence directories'
-  summary_path="${summary_dir}/${index}-${sha256}.mcap-summary.json"
+  summary_path="${summary_dir}/${index}-${sha256}.recording-summary.json"
   if [[ ! -e "$summary_path" ]]; then
     mcap-summary "$file" "$summary_path" || fail "cannot summarize $file"
   fi
@@ -223,7 +223,8 @@ process_segment() {
   summary_size_bytes="$(stat -c '%s' "$summary_path")" || \
     fail "cannot stat summary for $file"
   jq -e --arg sha256 "$sha256" \
-    '.source_sha256 == $sha256 and .compressions == ["zstd"]' \
+    '.schema_version == "recording-summary.v1" and
+     .source_sha256 == $sha256 and .compressions == ["zstd"]' \
     "$summary_path" >/dev/null || fail "MCAP summary policy differs for $file"
   duration_ns="$(jq -er \
     '.statistics.message_end_time_ns - .statistics.message_start_time_ns' \

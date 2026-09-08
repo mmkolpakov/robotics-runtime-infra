@@ -65,7 +65,7 @@ host_time_verify_timing() {
   local expected="$3"
   local monotonic="${4:-${expected}}"
   docker run --rm \
-    --volume "${evidence}:/metrics.otlp.json:ro" \
+    --volume "${evidence}:/metrics.otlp.jsonl:ro" \
     --entrypoint /opt/venv/bin/python \
     "${OBSERVER_IMAGE}" -c '
 from robotics_acceptance_harness.hardware_timing import evaluate_hardware_timing
@@ -81,7 +81,7 @@ result = evaluate_hardware_timing(
         "max_clock_drift_ppm": 20,
         "max_message_age_ms": 1000,
     },
-    load_otlp_json_metrics("/metrics.otlp.json"),
+    load_otlp_json_metrics("/metrics.otlp.jsonl"),
 )
 assert result.sample_count >= 1
 assert result.monotonic is (sys.argv[3] == "true")
@@ -92,11 +92,11 @@ assert result.within_policy is expected
 host_time_require_no_samples() {
   local evidence="$1"
   docker run --rm \
-    --volume "${evidence}:/metrics.otlp.json:ro" \
+    --volume "${evidence}:/metrics.otlp.jsonl:ro" \
     --entrypoint /opt/venv/bin/python \
     "${OBSERVER_IMAGE}" -c '
 from robotics_acceptance_harness.otel import load_otlp_json_metrics
 
-assert load_otlp_json_metrics("/metrics.otlp.json") == ()
+assert load_otlp_json_metrics("/metrics.otlp.jsonl") == ()
 '
 }

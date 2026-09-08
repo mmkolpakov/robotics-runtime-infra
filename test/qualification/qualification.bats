@@ -139,7 +139,7 @@ other_evidence:diagnostics.json=$TEST_ROOT/artifacts/diagnostics.json
 --evidence
 raw_mcap:recording-0.mcap=$REPOSITORY_ROOT/test/fixtures/playback/golden/golden_0.mcap
 --evidence
-metrics:metrics.otlp.json=$FIXTURES/metrics.otlp.json
+metrics:metrics.otlp.jsonl=$FIXTURES/metrics.otlp.jsonl
 --evidence
 traces:traces.otlp.jsonl=$FIXTURES/traces.otlp.jsonl
 EOF

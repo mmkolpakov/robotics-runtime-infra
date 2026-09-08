@@ -157,7 +157,7 @@ services:
       - --evidence-index
       - /evidence/evidence-index.json
       - --otel-metrics
-      - /evidence/metrics.otlp.json
+      - /evidence/metrics.otlp.jsonl
       - --measurement-complete
       - /run/robotics/measurement-complete
       - --output
