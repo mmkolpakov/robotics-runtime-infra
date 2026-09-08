@@ -9,6 +9,7 @@ setup() {
   export PROVIDER_TEST_ROOT="${BATS_TEST_TMPDIR}"
   export PROVIDER_TEST_WORLD="/opt/robotics_ws/install/worlds/empty.sdf"
   export PROVIDER_TEST_MODE=success ROBOTICS_SIMULATOR_SERVICE_NAMESPACE=/simulator
+  export PROVIDER_TEST_IMAGE_ID="sha256:$(printf '%064d' 9)"
   mkdir "${BATS_TEST_TMPDIR}/run"
   cp "${REPOSITORY_ROOT}/test/qualification/fixtures/acceptance-scenario.yaml" \
     "${BATS_TEST_TMPDIR}/run/scenario.yaml"
@@ -23,6 +24,11 @@ setup() {
   # Docker observations are fixtures here; the collector, retained files and
   # installed contracts writer are real. Live simulation remains a Linux gate.
   docker() {
+    if [[ "$1" == inspect ]]; then
+      [[ "$2" == --format && "$3" == '{{.Image}}' && "$4" == simulation ]] || return 64
+      printf '%s\n' "$PROVIDER_TEST_IMAGE_ID"
+      return
+    fi
     if [[ "$1" == cp ]]; then
       [[ "$2" == "simulation:${PROVIDER_TEST_WORLD}" ]] || return 64
       cp "${PROVIDER_TEST_ROOT}/world.sdf" "$3"
@@ -79,6 +85,35 @@ collect() {
     'length == 1 and .[0].conformance_result_sha256 == $digest' "${DESTINATION}/bindings.json"
   [ "${status}" -eq 0 ]
   cmp -s "${PROVIDER_TEST_ROOT}/world.sdf" "${DESTINATION}/world.sdf"
+  run jq -e --arg identity "$PROVIDER_TEST_IMAGE_ID" \
+    '.container_image_id == $identity' "${DESTINATION}/configuration.json"
+  [ "${status}" -eq 0 ]
+}
+
+@test "sensor provider context uses the same qualified simulator collector" {
+  cp "${REPOSITORY_ROOT}/test/accelerators/sensor-provider-scenario.yaml" \
+    "${BATS_TEST_TMPDIR}/run/scenario.yaml"
+  cp "${REPOSITORY_ROOT}/ros_ws/src/robotics_runtime_infra/worlds/camera.sdf" \
+    "${PROVIDER_TEST_ROOT}/world.sdf"
+  run "$(dirname "${ROBOTICS_CONTRACTS_CLI}")/robotics-acceptance" create-run \
+    --scenario "${BATS_TEST_TMPDIR}/run/scenario.yaml" \
+    --output "${BATS_TEST_TMPDIR}/run/acceptance-run.json" \
+    --domain qualification-domain=observer --time-authority sim_clock --time-source gazebo-clock
+  [ "${status}" -eq 0 ]
+  run collect
+  [ "${status}" -eq 0 ]
+  run jq -e --slurpfile context "${BATS_TEST_TMPDIR}/run/acceptance-run.json" \
+    '.run_id == $context[0].run_id and .status == "passed"' "${DESTINATION}/conformance.json"
+  [ "${status}" -eq 0 ]
+}
+
+@test "simulator collector rejects a missing immutable container image ID" {
+  export PROVIDER_TEST_IMAGE_ID=local/simulation:dev
+  run collect
+  [ "${status}" -eq 65 ]
+  [[ "${output}" == *'immutable local image ID'* ]]
+  [ ! -f "${PROVIDER_TEST_ROOT}/probed" ]
+  [ ! -f "${DESTINATION}/bindings.json" ]
 }
 
 @test "simulation provider collector preserves a probe failure without bindings" {

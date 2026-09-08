@@ -21,6 +21,11 @@ namespace="${ROBOTICS_SIMULATOR_SERVICE_NAMESPACE:-/simulator}"
 # The retained directory is new for this invocation. A failed probe cannot leave
 # a previously successful binding for the caller to reuse.
 mkdir "${output}"
+container_image_id="$(docker inspect --format '{{.Image}}' "${container}")"
+[[ "${container_image_id}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+  printf 'simulator container did not report an immutable local image ID\n' >&2
+  exit 65
+}
 world_parameter="$(
   docker exec "${container}" robotics-entrypoint timeout 35 \
     ros2 param get "${namespace}" world_sdf_file --hide-type --timeout 30
@@ -64,8 +69,10 @@ rm -- "${output}/world-after.sdf"
 world_sha256="$(sha256sum "${output}/world.sdf" | cut -d' ' -f1)"
 world_size="$(wc -c <"${output}/world.sdf" | tr -d '[:space:]')"
 jq -n --arg version "${version}" --arg namespace "${namespace}" \
+  --arg container_image_id "${container_image_id}" \
   --arg path "${world_path}" --arg sha256 "${world_sha256}" --argjson size "${world_size}" \
   '{implementation_id: "gz_sim", version: $version, service_namespace: $namespace,
+    container_image_id: $container_image_id,
     world_path: $path, world_sha256: $sha256, world_size_bytes: $size}' \
   >"${output}/configuration.json"
 cp "${root}/config/qualification/simulation-interfaces.json" "${output}/profile.json"

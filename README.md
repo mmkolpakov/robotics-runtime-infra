@@ -259,6 +259,14 @@ documented OpenVINO `LATENCY` hint with one stream. Set
 ONNX Runtime `load_config` provider option; neither fixes a core count or CPU
 model. Intel GPU system packages exist only in `inference-intel-gpu`.
 
+The Intel sensor runner requires `uv` and imports the exact workspace recorded
+in `foundation.repos`. It retains an acceptance run context, host facts and the
+standard simulation-interface probe before emitting `runtime-manifest.v1`.
+The provider configuration records the simulator container's local image ID;
+the runtime subject identifies the sensor inference image. Numeric parity,
+provider selection and performance limits must pass before model and runtime
+manifests are written. Use a new report directory for each invocation.
+
 Each hardware runner label identifies one exclusive physical resource pool.
 Qualification jobs are serialized by that label, use a unique Compose project,
 and must leave no containers, networks, volumes, or qualification images on

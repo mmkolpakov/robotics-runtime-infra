@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly root
@@ -27,12 +27,9 @@ minimum_rate_hz="${ROBOTICS_MINIMUM_RATE_HZ:-1}"
 provider_config_sha256=
 runtime_image=
 
-rm -rf "${report_dir}"
-mkdir -p "${report_dir}" "${evidence_dir}"
-if [[ "$(id -u)" != 1000 ]]; then
-  sudo chown -R 1000:1000 "${report_dir}"
-fi
-
+mkdir -p "$(dirname "${report_dir}")"
+mkdir "${report_dir}"
+mkdir -p "${evidence_dir}"
 case "${accelerator}" in
   cpu)
     ;;
@@ -79,9 +76,31 @@ trap cleanup EXIT
 export ROBOTICS_DOMAIN_ID="${ROBOTICS_DOMAIN_ID:-qualification-domain}"
 export ROBOTICS_EVIDENCE_DIR="${evidence_dir}"
 export ROBOTICS_EXPECTED_PROVIDER="${expected_provider}"
-export ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:-run-00000000-0000-4000-8000-000000000000}"
+export ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:-run-$(python3 -c 'from uuid import uuid4; print(uuid4())')}"
 export ROBOTICS_SENSOR_INFERENCE_REPORT_DIR="${report_dir}"
 
+if [[ -n "${provider_config_sha256}" ]]; then
+  bash "${root}/scripts/ci/foundation/import-sources.sh"
+  foundation="${root}/dependencies/robotics-runtime"
+  uv sync --project "${foundation}" --locked --all-packages --no-default-groups --no-editable
+  export ROBOTICS_FOUNDATION_PYTHON="${foundation}/.venv/bin/python"
+  cp "${root}/test/accelerators/sensor-provider-scenario.yaml" "${report_dir}/scenario.yaml"
+  "${foundation}/.venv/bin/robotics-acceptance" create-run \
+    --scenario "${report_dir}/scenario.yaml" --output "${report_dir}/acceptance-run.json" \
+    --run-id "${ROBOTICS_RUN_ID}" --domain "${ROBOTICS_DOMAIN_ID}=observer" \
+    --time-authority sim_clock --time-source gazebo-clock >/dev/null
+  "${ROBOTICS_FOUNDATION_PYTHON}" -c '
+import json
+import platform
+release = platform.freedesktop_os_release()
+print(json.dumps({"os": release["ID"], "os_version": release["VERSION_ID"],
+                  "architecture": platform.machine(), "kernel": platform.release()}))
+' >"${report_dir}/host-platform.json"
+fi
+
+if [[ "$(id -u)" != 1000 ]]; then
+  sudo chown -R 1000:1000 "${report_dir}"
+fi
 "${compose[@]}" config --quiet
 up_options=()
 if [[ "${ROBOTICS_BUILD_IMAGES:-1}" == "1" ]]; then
@@ -91,15 +110,53 @@ else
 fi
 "${compose[@]}" up \
   "${up_options[@]}" \
-  --abort-on-container-exit \
-  --exit-code-from sensor-inference-probe \
-  data-plane otel-collector simulation sensor-inference-probe
+  --detach --wait data-plane otel-collector simulation
+"${compose[@]}" up "${up_options[@]}" --detach --no-deps sensor-inference-probe
+probe_id="$("${compose[@]}" ps --all --quiet sensor-inference-probe)"
+test -n "${probe_id}"
+probe_status="$(docker wait "${probe_id}")"
+docker logs "${probe_id}"
+[[ "${probe_status}" =~ ^[0-9]+$ ]] || {
+  printf 'the sensor probe did not return one exit status\n' >&2
+  exit 70
+}
+if [[ "${probe_status}" != 0 ]]; then
+  exit "${probe_status}"
+fi
+# Flush the completed sensor observation before probing simulator controls.
+"${compose[@]}" stop --timeout 30 otel-collector
 
 if [[ "$(id -u)" != 1000 ]]; then
   sudo chown -R "$(id -u):$(id -g)" "${report_dir}"
 fi
 
 test -s "${report_dir}/sensor-inference.json"
+
+test -s "${evidence_dir}/metrics.otlp.jsonl"
+test -s "${evidence_dir}/traces.otlp.jsonl"
+jq -e \
+  --arg provider "${expected_provider}" \
+  --arg provider_config_sha256 "${provider_config_sha256}" \
+  --argjson maximum_p95_ms "${maximum_p95_ms}" \
+  --argjson minimum_rate_hz "${minimum_rate_hz}" '
+    .status == "passed"
+    and .provider == $provider
+    and .session_providers[0] == $provider
+    and .executed_providers == [$provider]
+    and .fallback_count == 0
+    and .numerical_parity == true
+    and (
+      if $provider_config_sha256 == "" then
+        .provider_options_sha256 == null
+      else
+        .provider_options_sha256 == $provider_config_sha256
+      end
+    )
+    and .received_frames >= 30
+    and .inference_count == .received_frames
+    and .latency_ms.p95 <= $maximum_p95_ms
+    and .observed_rate_hz >= $minimum_rate_hz
+  ' "${report_dir}/sensor-inference.json" >/dev/null
 
 if [[ -n "${provider_config_sha256}" ]]; then
   configuration_dir="${report_dir}/configuration"
@@ -148,14 +205,10 @@ if [[ -n "${provider_config_sha256}" ]]; then
       .runtime_version == $runtime_version and
       .source.sha256 == $model_sha256
     ' "${fixture}" >/dev/null
-  simulation_image_id="$(docker inspect --format '{{.Image}}' "${simulation_id}")"
-  gazebo_version="$(
-    docker run --rm --network none "${simulation_image_id}" \
-      gz sim --versions |
-      head -n 1
-  )"
   runtime_identity="$(ci_image_identity "${runtime_image}" "${ROBOTICS_RUNTIME_MODE:-source}")"
   runtime_digest="$(jq -er '.digest' <<<"${runtime_identity}")"
+  bash "${root}/scripts/ci/foundation/collect-simulation-provider.sh" \
+    "${simulation_id}" "${report_dir}" "${report_dir}/provider" "${runtime_digest}"
   report_sha256="$(sha256_file "${report_dir}/sensor-inference.json")"
   jq -cS -n \
     --slurpfile fixture "${fixture}" \
@@ -217,6 +270,9 @@ if [[ -n "${provider_config_sha256}" ]]; then
     --env ROBOTICS_RUNTIME_ID=org.example.sensor-inference-intel-cpu \
     --env "ROBOTICS_OCI_REFERENCE=$(jq -er '.reference' <<<"${runtime_identity}")" \
     --env "ROBOTICS_OCI_DIGEST=${runtime_digest}" \
+    --env ROBOTICS_HOST_PLATFORM_FILE=/reports/host-platform.json \
+    --env ROBOTICS_PROVIDER_BINDINGS_FILE=/reports/provider/bindings.json \
+    --env "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}" \
     --env ROBOTICS_WORKLOAD_KIND=inference \
     --env "ROBOTICS_MODEL_MANIFEST_SHA256=${model_manifest_sha256}" \
     --env "ROBOTICS_MODEL_ARTIFACT_SHA256=${model_artifact_sha256}" \
@@ -233,11 +289,11 @@ if [[ -n "${provider_config_sha256}" ]]; then
     --env ROBOTICS_HOST_TOPOLOGY_CONFIG=/reports/configuration/host-topology.json \
     --env ROBOTICS_RUNTIME_RESOURCES_CONFIG=/reports/configuration/runtime-resources.json \
     --env ROBOTICS_DATA_PLANE_PROFILE=local_high_throughput \
+    --env FASTRTPS_DEFAULT_PROFILES_FILE=/etc/robotics/fastdds/high-throughput.xml \
     --env ROBOTICS_SHM_TRANSPORT=true \
     --env ROBOTICS_PRIVATE_IPC=true \
     --env ROBOTICS_IPC_NAMESPACE=compose:data-plane \
     --env ROBOTICS_NETWORK_NAMESPACE=compose:data-plane \
-    --env "ROBOTICS_GAZEBO_VERSION=${gazebo_version}" \
     "${runtime_image}" \
     emit-runtime-manifest /reports/runtime-manifest.json
   if [[ "$(id -u)" != 1000 ]]; then
@@ -247,7 +303,7 @@ if [[ -n "${provider_config_sha256}" ]]; then
     --arg provider_sha256 "${provider_config_sha256}" \
     --arg topology_sha256 "${host_topology_sha256}" \
     --arg resources_sha256 "${runtime_resources_sha256}" '
-      .schema_version == "runtime-manifest.v2" and
+      .schema_version == "runtime-manifest.v1" and
       .workload.kind == "inference" and
       .workload.inference.actual_provider == "OpenVINOExecutionProvider" and
       .workload.inference.fallback_count == 0 and
@@ -258,29 +314,3 @@ if [[ -n "${provider_config_sha256}" ]]; then
       ] | sort_by(.kind))
     ' "${report_dir}/runtime-manifest.json" >/dev/null
 fi
-
-test -s "${evidence_dir}/metrics.otlp.jsonl"
-test -s "${evidence_dir}/traces.otlp.jsonl"
-jq -e \
-  --arg provider "${expected_provider}" \
-  --arg provider_config_sha256 "${provider_config_sha256}" \
-  --argjson maximum_p95_ms "${maximum_p95_ms}" \
-  --argjson minimum_rate_hz "${minimum_rate_hz}" '
-    .status == "passed"
-    and .provider == $provider
-    and .session_providers[0] == $provider
-    and .executed_providers == [$provider]
-    and .fallback_count == 0
-    and .numerical_parity == true
-    and (
-      if $provider_config_sha256 == "" then
-        .provider_options_sha256 == null
-      else
-        .provider_options_sha256 == $provider_config_sha256
-      end
-    )
-    and .received_frames >= 30
-    and .inference_count == .received_frames
-    and .latency_ms.p95 <= $maximum_p95_ms
-    and .observed_rate_hz >= $minimum_rate_hz
-  ' "${report_dir}/sensor-inference.json" >/dev/null

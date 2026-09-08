@@ -18,4 +18,4 @@ ROBOTICS_CONTRACTS_CLI="${foundation_bin}/robotics-contracts" \
 "${foundation_bin}/python" -m unittest discover -s test/ci -p test_retained_artifact.py -v
 "${foundation_bin}/python" -m unittest discover -s test/ci -p test_physical_runtime.py -v
 ROBOTICS_CONTRACTS_CLI="${foundation_bin}/robotics-contracts" \
-  bats test/ci/evidence-index.bats
+  bats test/ci/evidence-index.bats test/ci/simulation-provider.bats test/ci/physical-runtime.bats
