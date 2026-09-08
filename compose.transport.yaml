@@ -138,8 +138,11 @@ services:
     environment:
       EVIDENCE_INDEX_PATH: /reports/evidence-index.json
       EVIDENCE_RECEIPT_DIR: /reports/qualification/evidence-receipts
+      EVIDENCE_REGISTRATION_DIR: /reports/qualification/evidence-state/registrations
+      EVIDENCE_SUMMARY_DIR: /reports/qualification/evidence-summaries
       EVIDENCE_SPOOL_DIR: /reports/qualification/evidence-spool
       EVIDENCE_STATE_DIR: /reports/qualification/evidence-state
+      EVIDENCE_ARTIFACT_MEDIA_TYPES: application/json,application/x-ndjson,application/octet-stream
       ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m
