@@ -13,6 +13,7 @@
 !docker/python/
 !docker/python/**
 !config/
+!config/foundation-lock.json
 !config/time/
 !config/time/chrony-fixture.conf
 !config/observability/
@@ -31,6 +32,10 @@
 !trust/qualification.trusted-root.json
 !docker/runtime/
 !docker/runtime/**
+!scripts/
+!scripts/ci/
+!scripts/ci/foundation/
+!scripts/ci/foundation/build-workspace-wheels.py
 !test/
 !test/provider-conformance/
 !test/provider-conformance/**
