@@ -50,6 +50,20 @@ RUN uv venv --no-cache --python /usr/bin/python3 /opt/build \
       --source /src/foundation --metadata /tmp/foundation-lock.json \
       --python /opt/build/bin/python --output /out
 
+FROM ca-bootstrap AS foundation-contracts
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY docker/python/permit-preflight.lock /tmp/permit-preflight.lock
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro \
+    uv venv --no-cache --python /usr/bin/python3 /opt/contracts \
+    && uv pip install --python /opt/contracts/bin/python --require-hashes --no-deps \
+      --requirement /tmp/permit-preflight.lock \
+    && uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/contracts/bin/python --require-hashes --no-deps \
+      --requirement contracts.requirements \
+    && uv pip check --python /opt/contracts/bin/python
+
 FROM scratch AS cosign-license
 ARG COSIGN_VERSION
 ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
@@ -440,9 +454,9 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       --no-cache \
       --no-deps \
       --requirement /tmp/python/permit-preflight.lock \
-    && (cd /tmp/foundation-wheels \
-      && uv pip install --python /opt/venv/bin/python --require-hashes --no-deps \
-        --requirement contracts.requirements) \
+    && uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/venv/bin/python --require-hashes --no-deps \
+      --requirement contracts.requirements \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
@@ -679,6 +693,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
 
 FROM edge-runtime-base AS edge-runtime
 
+COPY --from=foundation-contracts /opt/contracts /opt/contracts
 COPY --from=edge-runtime-interfaces /opt/robotics_ws/install /opt/robotics_ws/install
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
 RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
@@ -692,7 +707,8 @@ RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
-ENV HOME=/home/ubuntu \
+ENV PATH="/opt/contracts/bin:${PATH}" \
+    HOME=/home/ubuntu \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 WORKDIR /workspace
@@ -1080,9 +1096,9 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       --no-cache \
       --no-deps \
       --requirement /tmp/python/acceptance-observer.lock \
-    && (cd /tmp/foundation-wheels \
-      && uv pip install --python /opt/venv/bin/python --require-hashes --no-deps \
-        --requirement harness.requirements) \
+    && uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/venv/bin/python --require-hashes --no-deps \
+      --requirement harness.requirements \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
@@ -1133,6 +1149,8 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD ["/usr/local/bin/robotics-entrypoint", "ros2", "pkg", "prefix", "performance_test"]
 
 FROM ${SIMULATION_BASE_IMAGE} AS simulation
+
+COPY --from=foundation-contracts /opt/contracts /opt/contracts
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
@@ -1235,7 +1253,8 @@ RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
-ENV HOME=/home/ubuntu \
+ENV PATH="/opt/contracts/bin:${PATH}" \
+    HOME=/home/ubuntu \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 

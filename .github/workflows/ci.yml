@@ -47,6 +47,12 @@ jobs:
         run: bash scripts/ci/foundation/import-sources.sh
       - name: Test foundation pin generation
         run: python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
+      - name: Install the pinned contracts CLI for producer tests
+        run: |
+          uv sync --project dependencies/robotics-runtime --locked \
+            --package robotics-runtime-contracts --no-default-groups --no-editable
+          contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
+          echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture

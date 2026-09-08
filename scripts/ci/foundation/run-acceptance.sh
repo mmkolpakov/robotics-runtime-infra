@@ -40,6 +40,13 @@ mkdir -p \
   "${artifact_dir}"
 cp "${scenario_source}" "${run_dir}/scenario.yaml"
 lscpu --json >"${run_dir}/configuration/host-topology.json"
+"${foundation_bin}/python" -c '
+import json
+import platform
+release = platform.freedesktop_os_release()
+print(json.dumps({"os": release["ID"], "os_version": release["VERSION_ID"],
+                  "architecture": platform.machine(), "kernel": platform.release()}))
+' >"${run_dir}/configuration/host-platform.json"
 
 export ROBOTICS_RUN_ID
 ROBOTICS_RUN_ID="$(
@@ -398,6 +405,7 @@ cp "${run_dir}/evidence/evidence-index.json" "${artifact_dir}/"
 cp "${run_dir}/evidence/metrics.otlp.json" "${artifact_dir}/"
 cp "${fastdds_profile}" "${artifact_dir}/fastdds-profile.xml"
 cp "${run_dir}/configuration/host-topology.json" "${artifact_dir}/"
+cp "${run_dir}/configuration/host-platform.json" "${artifact_dir}/"
 cp "${run_dir}/configuration/runtime-resources.json" "${artifact_dir}/"
 cp "${run_dir}/results/qualification-statement.json" "${artifact_dir}/"
 cp "${run_dir}/results/qualification.sigstore.json" "${artifact_dir}/"
