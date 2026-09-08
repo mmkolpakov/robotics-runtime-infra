@@ -32,3 +32,10 @@ harness_version="$(
 )"
 test "${contracts_version}" = "$(jq -er '.packages.contracts.version' config/foundation-lock.json)"
 test "${harness_version}" = "$(jq -er '.packages.harness.version' config/foundation-lock.json)"
+
+# The contracts CLI has its own interpreter; it must not replace the runtime's
+# Python, whose ROS message bindings depend on the distribution's NumPy build.
+docker run --rm --network none --env PYTHONDONTWRITEBYTECODE=1 \
+  "${SIMULATION_IMAGE}" python3 -c \
+  'import numpy; from rclpy.node import Node; from robotics_runtime_infra import simulation_control'
+docker run --rm --network none "${SIMULATION_IMAGE}" robotics-contracts --version

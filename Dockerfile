@@ -715,12 +715,12 @@ RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
     && source "/opt/ros/${ROS_DISTRO}/setup.bash" \
     && source /opt/robotics_ws/install/setup.bash \
     && ros2 interface show \
-      robotics_observability_msgs/msg/TraceContext > /dev/null
+      robotics_observability_msgs/msg/TraceContext > /dev/null \
+    && ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
-ENV PATH="/opt/contracts/bin:${PATH}" \
-    HOME=/home/ubuntu \
+ENV HOME=/home/ubuntu \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 WORKDIR /workspace
@@ -1261,12 +1261,12 @@ COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
 RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
     yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
       > /usr/share/robotics-runtime/foundation-lock.json \
-    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json
+    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json \
+    && ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
-ENV PATH="/opt/contracts/bin:${PATH}" \
-    HOME=/home/ubuntu \
+ENV HOME=/home/ubuntu \
     ROBOTICS_INFRA_REVISION="${VCS_REF}"
 USER ubuntu
 
