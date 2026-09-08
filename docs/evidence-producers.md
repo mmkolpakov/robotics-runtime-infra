@@ -22,15 +22,57 @@ index. Index output cannot replace an evidence source, summary or receipt.
 
 Local artifacts need no receipt. An uploaded artifact requires an
 `artifact-receipt.v1` tied to its exact URI, byte digest, size, media type,
-immutable object version and run. After the external provenance verifier has
-produced a passing verification record and retained its dependencies, create it:
+immutable object version and run. The evidence image includes `retained-artifact`
+and the digest-pinned Cosign binary. Prepare a retention predicate from a
+confirmed registration and the original recording:
+
+```sh
+source=/spool/recording_0.mcap
+digest=$(sha256sum "$source" | cut -d' ' -f1)
+registration="/evidence/state/registrations/0-${digest}.json"
+retained-artifact predicate --registration "$registration" --source "$source" \
+  > /evidence/retention-predicate.json
+cosign attest-blob --yes --key /run/secrets/evidence.key \
+  --predicate /evidence/retention-predicate.json \
+  --type https://robotics-runtime.dev/attestations/artifact-retention/v1 \
+  --bundle /evidence/retention.sigstore.json "$source"
+```
+
+Run signing where the producer's private key is available. Supply the public
+verification key independently through the verifier's trust configuration.
+The verifier snapshots the registration, bundle and public key, downloads the
+exact S3 `VersionId`, checks the full response range, size, media type and SHA-256,
+and asks Cosign to verify the signature and recording digest. It also checks
+that the authenticated predicate names this URI, version and run:
+
+```sh
+retained-artifact verify --registration "$registration" \
+  --bundle /evidence/retention.sigstore.json --key /run/trust/evidence.pub \
+  --output /evidence/provenance/recording-0
+```
+
+The public key is the trust anchor in this mode; its original PEM bytes are
+retained as `trust-policy.pem`. Verification identifies it by byte SHA-256 and
+does not claim a Fulcio identity or transparency-log inclusion. No key supplied
+inside a bundle becomes trusted. Both in-toto Statement v0.1 (emitted by Cosign
+3.1.3 `attest-blob`) and v1 are supported for this retention predicate; the
+authenticated payload bytes are preserved unchanged.
+
+AWS credentials, region and `AWS_ENDPOINT_URL` use the normal AWS CLI environment.
+The caller needs permission to read the selected object version. The default
+download limit is 1 GiB, configurable with `--max-artifact-bytes`; temporary
+readback bytes use the output filesystem and are removed after verification.
+The output directory must be new. It is published only after all checks pass.
+It contains `artifact-verification.v1`, the raw signed statement, public key,
+Sigstore bundle and the S3 response metadata. Create the receipt with the exact
+three provenance dependencies:
 
 ```sh
 evidence-sink receipt /spool/recording_0.mcap 0 \
-  --verification /evidence/provenance/verification.json \
-  --dependency /evidence/provenance/statement.json \
-  --dependency /evidence/provenance/trust-policy.json \
-  --dependency /evidence/provenance/verification-evidence.json
+  --verification /evidence/provenance/recording-0/artifact-verification.json \
+  --dependency /evidence/provenance/recording-0/statement.json \
+  --dependency /evidence/provenance/recording-0/trust-policy.pem \
+  --dependency /evidence/provenance/recording-0/verification-evidence.sigstore.json
 evidence-sink finalize
 ```
 
@@ -46,6 +88,6 @@ mount; the default Compose mount is read-only. Re-finalization after deletion
 requires restoring the original files, since the public writer rechecks bytes.
 With only local artifacts, merely selecting S3 mode reports no remote upload.
 
-Qualification wrappers and the complete external S3 verifier/consumer handoff
-are still being migrated on the integration branch. The local producer tests
-do not establish live S3, signature, or end-to-end qualification.
+`test/ci/test_retained_artifact.py` uses real Cosign signatures and explicitly
+simulated S3 responses to test byte, run, version, key and range mismatches.
+The live S3 verifier/consumer handoff remains a separate integration gate.

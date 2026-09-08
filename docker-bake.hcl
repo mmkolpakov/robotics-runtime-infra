@@ -506,6 +506,10 @@ target "evidence-sink" {
   target    = "evidence-sink"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"]
+  args = {
+    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_VERSION = COSIGN_VERSION
+  }
 }
 
 target "policy-tooling" {

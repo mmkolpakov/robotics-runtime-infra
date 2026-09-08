@@ -15,3 +15,4 @@ ROBOTICS_CONTRACTS_CLI="${foundation_bin}/robotics-contracts" \
   bats test/qualification/qualification.bats
 ROBOTICS_CONTRACTS_CLI="${foundation_bin}/robotics-contracts" \
   bash test/qualification/real-cosign.sh
+"${foundation_bin}/python" -m unittest discover -s test/ci -p test_retained_artifact.py -v

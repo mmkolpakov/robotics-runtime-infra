@@ -514,6 +514,7 @@ case "${1:-watch}" in
     python3 -c 'import mcap; print(mcap.__version__)'
     rclone version | head -n 1
     aws --version
+    cosign version --json
     ;;
   *)
     fail "unknown command: $1"

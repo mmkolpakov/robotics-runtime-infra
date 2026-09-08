@@ -528,14 +528,15 @@ ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
+ARG COSIGN_VERSION
 
 LABEL org.opencontainers.image.title="Robotics evidence sink" \
-      org.opencontainers.image.description="Validated MCAP segment upload and evidence-index finalization." \
+      org.opencontainers.image.description="Validated MCAP retention, signed object verification and evidence-index finalization." \
       org.opencontainers.image.version="${IMAGE_VERSION}" \
       org.opencontainers.image.created="${IMAGE_CREATED}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="${IMAGE_SOURCE}" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="MIT AND Apache-2.0"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -545,6 +546,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/evidence-sink.lock /tmp/python/evidence-sink.lock
+COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
+COPY --from=cosign-license --chmod=0444 /LICENSE \
+  /usr/share/licenses/cosign/LICENSE
 
 RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,readonly \
     UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
@@ -555,6 +559,8 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,rea
       inotify-tools \
       jq \
       python3 \
+    && test "$(cosign version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]')" = \
+      "${COSIGN_VERSION}" \
     && mkdir -p /usr/share/robotics-runtime \
     && uv venv --no-cache --python /usr/bin/python3 /opt/venv \
     && uv pip install \
@@ -591,6 +597,7 @@ RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws
 
 COPY --chmod=0555 docker/evidence-sink/evidence-sink /usr/local/bin/evidence-sink
 COPY --chmod=0555 docker/evidence-sink/mcap-summary /usr/local/bin/mcap-summary
+COPY --chmod=0555 docker/evidence-sink/retained-artifact.py /usr/local/bin/retained-artifact
 
 USER evidence
 WORKDIR /work
