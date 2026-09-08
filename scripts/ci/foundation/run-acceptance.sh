@@ -238,7 +238,7 @@ sudo chown -R 1000:1000 "${run_dir}"
 sudo chown -R 10001:10001 "${run_dir}/evidence"
 "${compose[@]}" --profile stepped --profile record --profile observability \
   up --detach --no-build --wait --wait-timeout 120 \
-  simulation simulation-stepper recorder otel-collector \
+  simulation recorder otel-collector \
   "${extra_services[@]}"
 collector_health_address="$("${compose[@]}" port otel-collector 13133)"
 curl --fail --silent --show-error \
@@ -246,6 +246,15 @@ curl --fail --silent --show-error \
   "http://${collector_health_address}/"
 simulation_container="$("${compose[@]}" ps -q simulation)"
 test -n "${simulation_container}"
+bash "${script_dir}/collect-simulation-provider.sh" \
+  "${simulation_container}" "${run_dir}" "${artifact_dir}/provider" \
+  "${ROBOTICS_SIMULATION_OCI_DIGEST}"
+sudo install -o 1000 -g 1000 -m 0644 \
+  "${artifact_dir}/provider/bindings.json" "${run_dir}/provider-bindings.json"
+# The conformance probe controls pause/step/resume itself. Start the periodic
+# stepper only after the probe has finished, before the observation window.
+"${compose[@]}" --profile stepped \
+  up --detach --no-build --wait --wait-timeout 120 simulation-stepper
 runtime_resources="${artifact_dir}/runtime-resources.json"
 docker inspect "${simulation_container}" | jq '.[0].HostConfig | {
   NanoCpus,
@@ -269,8 +278,8 @@ foundation_validate_document \
 fastdds_profile="${root}/config/fastdds/udp-only.xml"
 fastdds_profile_sha256="$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)"
 jq -e --arg digest "${fastdds_profile_sha256}" \
-  '.schema_version == "runtime-manifest.v2" and
-   .data_plane.fastdds_profile_sha256 == $digest and
+  '.schema_version == "runtime-manifest.v1" and
+   .data_plane.middleware_configuration_sha256 == $digest and
    ([.configuration_artifacts[].kind] | sort) ==
      ["host_topology", "runtime_resources"]' \
   "${run_dir}/runtime-manifest.json" >/dev/null
@@ -354,6 +363,11 @@ qualification_inputs=(
   --evidence "other_evidence:fastdds-profile.xml=${fastdds_profile}"
   --evidence "other_evidence:host-topology.json=${run_dir}/configuration/host-topology.json"
   --evidence "other_evidence:runtime-resources.json=${run_dir}/configuration/runtime-resources.json"
+  --artifact "qualification_profile:providers/profile.json=${artifact_dir}/provider/profile.json"
+  --artifact "provider_conformance:providers/conformance.json=${artifact_dir}/provider/conformance.json"
+  --artifact "other_evidence:providers/configuration.json=${artifact_dir}/provider/configuration.json"
+  --artifact "other_evidence:providers/observation.json=${artifact_dir}/provider/observation.json"
+  --artifact "other_evidence:providers/world.sdf=${artifact_dir}/provider/world.sdf"
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
@@ -373,14 +387,14 @@ scripts/qualification/verify-bundle \
   --key "${run_dir}/results/qualification.pub" \
   "${qualification_inputs[@]}"
 
-jq -e '.status == "passed"' \
+jq -e '.status == "passed" and .evaluation_mode == "live"' \
   "${run_dir}/results/acceptance-result.json"
 jq -e \
   '.per_domain_aggregate == "passed" and
    .cross_domain_e2e.status == "unevaluated"' \
   "${run_dir}/results/acceptance-aggregate.json"
 jq -e '
-  [.segments[].media_type]
+  [.artifacts[].media_type]
   | contains(["application/x-ndjson"])
 ' "${run_dir}/evidence/evidence-index.json"
 contracts_revision="$(

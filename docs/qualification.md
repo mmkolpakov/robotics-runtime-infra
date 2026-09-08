@@ -93,6 +93,23 @@ every ROS participant through `compose.foundation.yaml`, and
 therefore binds the acceptance result to both the runtime manifest and the DDS
 profile bytes that the runtime loaded.
 
+Before starting the periodic stepper, the foundation runner executes the standard
+`simulation_interfaces` pause, exact-step and resume probe in the running simulator.
+The simulator's `world_sdf_file` parameter identifies the retained SDF; its declared
+physics step must agree with the measured clock delta and the scenario policy.
+The world parameter and file bytes must remain unchanged throughout the probe.
+The baseline accepts worlds under `/opt/robotics_ws/` and `/run/robotics/` after
+resolving symlinks. A consumer requiring another asset root needs an explicit
+collector change.
+
+`artifacts/provider/` retains the raw probe report, world, observed Gazebo version
+and configuration, qualification profile, and validated `conformance-result.v1`.
+The runtime manifest binds their SHA-256 digests; both ephemeral and keyless
+qualification include the same subjects. This profile covers simulation control
+and clock stepping. Sensor fidelity, product scenes and flight dynamics require
+their own profiles and probes. A failed probe stops qualification before a
+provider binding is produced.
+
 ## Independent policy
 
 The verifier receives `qualification-policy.v1` separately from the signed

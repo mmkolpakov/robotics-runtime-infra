@@ -53,6 +53,10 @@ jobs:
             --package robotics-runtime-contracts --extra mcap --no-default-groups --no-editable
           contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
           echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
+      - name: Test simulation provider evidence
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_simulation_provider.py -v
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture

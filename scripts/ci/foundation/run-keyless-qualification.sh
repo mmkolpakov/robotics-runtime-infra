@@ -77,6 +77,11 @@ qualification_inputs=(
   --evidence other_evidence:fastdds-profile.xml=artifacts/fastdds-profile.xml
   --evidence other_evidence:host-topology.json=artifacts/host-topology.json
   --evidence other_evidence:runtime-resources.json=artifacts/runtime-resources.json
+  --artifact qualification_profile:providers/profile.json=artifacts/provider/profile.json
+  --artifact provider_conformance:providers/conformance.json=artifacts/provider/conformance.json
+  --artifact other_evidence:providers/configuration.json=artifacts/provider/configuration.json
+  --artifact other_evidence:providers/observation.json=artifacts/provider/observation.json
+  --artifact other_evidence:providers/world.sdf=artifacts/provider/world.sdf
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
