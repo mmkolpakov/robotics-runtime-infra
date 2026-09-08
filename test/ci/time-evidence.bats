@@ -34,6 +34,34 @@ mutate() {
   [ "${status}" -eq 0 ]
 }
 
+set_source_age() {
+  jq -b --argjson age "$1" '
+    (
+      .resourceMetrics[0].scopeMetrics[0].metrics[0].gauge.dataPoints[0].timeUnixNano |
+      tonumber / 1000000
+    ) as $observed_ms |
+    .resourceMetrics[0].resource.attributes |= map(
+      if .key == "robotics.clock.sample_unix_ms"
+      then .value.doubleValue = ($observed_ms - $age) else . end
+    ) |
+    .resourceMetrics[0].scopeMetrics[0].metrics |= map(
+      if .name == "robotics.hardware.message.age"
+      then .gauge.dataPoints[0].asDouble = $age else . end
+    )' "${FIXTURES}/time-evidence.jsonl" >"${BATS_TEST_TMPDIR}/evidence.json"
+}
+
+@test "Chrony source age includes its one second reference-time uncertainty" {
+  set_source_age 2000
+  run verify
+  [ "${status}" -eq 0 ]
+}
+
+@test "Chrony source age beyond the uncertainty and delivery budget is rejected" {
+  set_source_age 2001
+  run verify
+  [ "${status}" -eq 1 ]
+}
+
 @test "old records cannot be refreshed with new collector timestamps, hash and window" {
   mutate 'walk(if type == "object" and has("timeUnixNano")
     then .timeUnixNano = "1785000060000000000" else . end)'

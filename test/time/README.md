@@ -16,6 +16,8 @@ randomizes its published reference time backwards by up to one second. The
 sampler retains this conservative timestamp without subtracting an assumed
 random offset. The Chrony fixture's age budget is therefore two seconds: one for
 that uncertainty and one for polling and export. PTP keeps a one-second budget.
+The downstream physical-attach CI validator applies the same Chrony budget,
+including rejection immediately above its two-second boundary.
 See `fuzz_ref_time` in the
 [Chrony 4.5 implementation](https://github.com/mlichvar/chrony/blob/4.5/reference.c).
 This source cannot reliably qualify a subsecond freshness requirement; such a

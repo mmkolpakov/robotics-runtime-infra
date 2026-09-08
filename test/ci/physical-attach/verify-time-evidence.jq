@@ -15,6 +15,11 @@ def absolute:
 def values($samples; $name):
   [$samples[] | select(.name == $name) | .value];
 
+# Chrony tracking reference time includes up to 1s of deliberate randomization.
+# This CI fixture budgets that uncertainty plus 1s for polling and export, just
+# like the host-time producer. Preserve the reported source time and actual age.
+def max_source_age_ms: 2000;
+
 [
   .[] |
   .resourceMetrics[]? as $resource |
@@ -74,10 +79,10 @@ all(
   .attributes["robotics.clock.sample_unix_ms"] as $source_ms |
   ($source_ms | type) == "number" and $source_ms > 0 and
   $source_ms <= (.observed_at / 1000000) and
-  (.observed_at / 1000000 - $source_ms) <= 1000 and
+  (.observed_at / 1000000 - $source_ms) <= max_source_age_ms and
   # An old record cannot be refreshed by rewriting only the collector timestamp
   # or by wrapping it in a new measurement window.
-  ($now_ns / 1000000 - $source_ms) <= ($max_age_ns / 1000000 + 1000) and
+  ($now_ns / 1000000 - $source_ms) <= ($max_age_ns / 1000000 + max_source_age_ms) and
   (if .name == "robotics.hardware.message.age" then
     (.value - (.observed_at / 1000000 - $source_ms) | absolute) <= 1
    else true end)
@@ -98,5 +103,5 @@ all(
 (values($samples; "robotics.hardware.clock.offset") | map(absolute) | max) <= 5 and
 (values($samples; "robotics.hardware.clock.drift") | map(absolute) | max) <= 20 and
 (values($samples; "robotics.hardware.message.age") | min) >= 0 and
-(values($samples; "robotics.hardware.message.age") | max) <= 1000 and
+(values($samples; "robotics.hardware.message.age") | max) <= max_source_age_ms and
 all(values($samples; "robotics.hardware.clock.monotonic")[]; . == 1)
