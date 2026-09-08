@@ -718,7 +718,7 @@ LABEL org.opencontainers.image.title="Robotics sensor runtime" \
 USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD ["/bin/bash", "-lc", "ros2 pkg prefix cv_bridge && gst-launch-1.0 --version"]
+  CMD ["/usr/local/bin/robotics-entrypoint", "/bin/bash", "-c", "ros2 pkg prefix cv_bridge && gst-launch-1.0 --version"]
 
 FROM edge-runtime AS inference-cpu
 
@@ -1104,7 +1104,7 @@ LABEL org.opencontainers.image.title="ROS 2 data-plane benchmark" \
 USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD ["ros2", "pkg", "prefix", "performance_test"]
+  CMD ["/usr/local/bin/robotics-entrypoint", "ros2", "pkg", "prefix", "performance_test"]
 
 FROM ${SIMULATION_BASE_IMAGE} AS simulation
 
