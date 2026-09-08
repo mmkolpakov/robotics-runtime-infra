@@ -615,7 +615,7 @@ sha256sum runs/current/authorization-output/serial-preflight.json
 Use the first digest as `identity_sha256` and the second as
 `preflight_evidence_sha256`.
 
-Create a structurally valid permit draft with the pinned contracts 0.15.4 CLI,
+Create a structurally valid permit draft with the workspace's pinned contracts CLI,
 review every
 target and digest, then sign it with the documented Cosign flow:
 
@@ -641,14 +641,19 @@ The command does not authorize execution and does not create or hold signing
 keys. Physical profiles still require independent operator and safety-approver
 attestations.
 
-The physical Compose profiles are preflight and observation candidates. The
-current `edge-attach`, `hil`, and `real-observation` observer commands omit
-required `robotics-acceptance verify` arguments. Hosted physical-attach CI
-substitutes a ROS telemetry probe, so its success proves the synthetic
-authorization/transport path, not a completed live acceptance result. The
-foundation simulation path supplies the full observer arguments. Physical
-profile acceptance needs the planned command repair and an independent run;
-do not treat preflight success as product or hardware qualification.
+The `edge-attach`, `hil`, and `real-observation` services invoke the full verifier
+with explicit run/domain identities, an acceptance run context and a writable
+measurement-completion marker. Inputs and evidence are mounted read-only. Follow
+the [attach run lifecycle](docs/edge-attach.md) when preparing these files.
+Foundation CI runs the default `edge-attach-observer` command against real Gazebo
+and ROS, then requires a live `passed` result and verified qualification bundle.
+
+Physical profiles remain preflight and observation candidates. Their separate
+hosted test uses a ROS telemetry probe to exercise synthetic authorization and
+SROS2 transport; it does not produce a full physical acceptance verdict. That
+needs an approved scenario bound to the permit and hardware timing evidence
+collected during the actual observation window. Preflight success is not product
+or hardware qualification.
 
 The Compose policy rejects `/dev/ttyUSB*`, `/dev/ttyACM*`, wildcards, and a
 complete `/dev` mapping. Runtime manifests carry the reviewed stable identity
