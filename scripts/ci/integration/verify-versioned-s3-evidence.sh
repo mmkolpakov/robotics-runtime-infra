@@ -8,7 +8,6 @@ evidence_dir="${PWD}/artifacts/evidence-s3"
 project="evidence-s3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 mkdir -p "${evidence_dir}"
 printf 'opaque controller evidence\n' >"${evidence_dir}/controller.log"
-sudo chown -R 10001:10001 "${evidence_dir}"
 export EVIDENCE_ARTIFACT_MEDIA_TYPES='application/json,application/x-ndjson,application/junit+xml,text/plain,application/vnd.in-toto+json,application/vnd.example.controller-log'
 export ROBOTICS_BAG_DIR="${PWD}/test/fixtures/playback/golden"
 export ROBOTICS_EVIDENCE_DIR="${evidence_dir}"
@@ -20,10 +19,20 @@ compose=(
   -f compose.evidence.test.yaml
 )
 cleanup() {
+  local status=$?
   "${compose[@]}" --profile test --profile evidence \
     down --volumes --remove-orphans || true
+  # CI retains private-mode state files too. Restore ownership only after the
+  # containers stop, so the runner can archive both successful and failed runs.
+  if ! sudo chown -R "$(id -u):$(id -g)" "${evidence_dir}"; then
+    if ((status == 0)); then
+      status=1
+    fi
+  fi
+  return "${status}"
 }
 trap cleanup EXIT
+sudo chown -R 10001:10001 "${evidence_dir}"
 "${compose[@]}" --profile test --profile evidence \
   run --rm evidence-finalize artifact \
   /evidence/controller.log application/vnd.example.controller-log 900001
