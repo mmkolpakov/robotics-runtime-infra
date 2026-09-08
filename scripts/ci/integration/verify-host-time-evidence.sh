@@ -14,7 +14,7 @@ sudo chown 100:101 \
   "${HOST_TIME_SOCKET_DIR}" "${HOST_TIME_UNSYNC_SOCKET_DIR}" \
   "${HOST_TIME_CHRONY_EVIDENCE}" "${HOST_TIME_CHRONY_UNSYNC_EVIDENCE}" \
   "${HOST_TIME_PTP_EVIDENCE}" "${HOST_TIME_PTP_UNSYNC_EVIDENCE}"
-sudo chmod 0770 "${HOST_TIME_SOCKET_DIR}" "${HOST_TIME_UNSYNC_SOCKET_DIR}"
+sudo chmod 2770 "${HOST_TIME_SOCKET_DIR}" "${HOST_TIME_UNSYNC_SOCKET_DIR}"
 
 trap host_time_cleanup EXIT
 export HOST_TIME_MEASUREMENT_STARTED_NS
@@ -48,6 +48,18 @@ run_chrony_case() (
 
   "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 time-fixture
   "${compose[@]}" up --detach --no-build time-evidence-chrony
+  host_time_wait_for_collector time-evidence-chrony "${compose[@]}"
+  # Exercise the same timestamp parser and publisher as the host timer. The
+  # local-reference Chrony daemon is a synthetic fixture, not a lab NTP source.
+  for _ in {1..10}; do
+    "${compose[@]}" exec -T time-fixture \
+      chronyc -c -n -h /run/robotics-time/chronyd.sock tracking |
+      sudo bash scripts/time/sample.sh chrony "${socket_dir}" --stdin
+    if host_time_has_samples "${evidence_dir}/hardware-time.otlp.json"; then
+      break
+    fi
+    sleep 0.25
+  done
   host_time_wait_for_evidence \
     "${evidence_dir}/hardware-time.otlp.json" "${compose[@]}"
   "${compose[@]}" stop --timeout 10 time-evidence-chrony time-fixture
@@ -65,10 +77,13 @@ run_ptp_case() (
   local sample="$2"
   local evidence_dir="$3"
   local expected="$4"
+  local stale="${5:-false}"
+  local sample_dir="${HOST_TIME_WORK}/${name}-samples"
+  sudo install -d -o 100 -g 101 -m 2770 "${sample_dir}"
   local compose=(
     env
     ROBOTICS_CHRONY_IDENTITY=100:101
-    "ROBOTICS_PTP_SAMPLE_FILE=${sample}"
+    "ROBOTICS_PTP_SAMPLE_DIR=${sample_dir}"
     "ROBOTICS_TIME_EVIDENCE_DIR=${evidence_dir}"
     docker compose
     --project-name "host-time-${name}-${GITHUB_RUN_ID:-local}"
@@ -79,6 +94,20 @@ run_ptp_case() (
   trap '"${compose[@]}" down --volumes --remove-orphans || true' EXIT
 
   "${compose[@]}" up --detach --no-build time-evidence-ptp
+  host_time_wait_for_collector time-evidence-ptp "${compose[@]}"
+  for _ in {1..10}; do
+    if [[ "${stale}" == true ]]; then
+      cat "${sample}"
+    else
+      # Fixture PHC is in PTP/TAI; TIME_PROPERTIES_DATA_SET specifies 37s.
+      sed -E "s/(ingress_time[[:space:]]+)[0-9]+/\\1$(( $(date -u +%s%N) + 37000000000 ))/" \
+        "${sample}"
+    fi | sudo bash scripts/time/sample.sh ptp "${sample_dir}" --stdin
+    if host_time_has_samples "${evidence_dir}/hardware-time.otlp.json"; then
+      break
+    fi
+    sleep 0.25
+  done
   host_time_wait_for_evidence \
     "${evidence_dir}/hardware-time.otlp.json" "${compose[@]}"
   "${compose[@]}" stop --timeout 10 time-evidence-ptp
@@ -87,12 +116,9 @@ run_ptp_case() (
   if [[ "${expected}" == true ]]; then
     host_time_require_clean_log "${HOST_TIME_WORK}/${name}-collector.log"
   fi
-  if [[ "${expected}" == true ]]; then
-    host_time_verify_timing \
-      ptp "${evidence_dir}/hardware-time.otlp.json" true
-  else
-    host_time_require_no_samples "${evidence_dir}/hardware-time.otlp.json"
-  fi
+  host_time_verify_timing \
+    ptp "${evidence_dir}/hardware-time.otlp.json" "${expected}" \
+    "$(if [[ "${stale}" == true ]]; then printf true; else printf '%s' "${expected}"; fi)"
 )
 
 run_chrony_case \
@@ -105,6 +131,8 @@ run_ptp_case ptp test/time/pmc.fixture "${HOST_TIME_PTP_EVIDENCE}" true
 run_ptp_case \
   ptp-unsync test/time/pmc-unsynchronized.fixture \
   "${HOST_TIME_PTP_UNSYNC_EVIDENCE}" false
+sudo install -d -o 100 -g 101 -m 0770 "${HOST_TIME_WORK}/ptp-stale"
+run_ptp_case ptp-stale test/time/pmc.fixture "${HOST_TIME_WORK}/ptp-stale" false true
 
 export HOST_TIME_MEASUREMENT_FINISHED_NS
 HOST_TIME_MEASUREMENT_FINISHED_NS="$(date -u +%s%N)"

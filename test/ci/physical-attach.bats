@@ -620,7 +620,7 @@ setup() {
 
 @test "time evidence policy accepts only its fresh measurement window" {
   common_args=(
-    --arg evidence_sha256 fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2
+    --arg evidence_sha256 ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba
     --arg run_id test-run
     --arg source_revision local
     --arg workflow_run_attempt 1
@@ -656,7 +656,7 @@ setup() {
     ' _ \
       "${FIXTURES}/time-evidence.jsonl" \
       "${FIXTURES}/verify-time-evidence.jq" \
-      fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2 \
+      ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba \
       "${FIXTURES}/time-evidence-window.json"
   [ "${status}" -eq 1 ]
 
@@ -690,7 +690,9 @@ setup() {
     start_ns="$((now_ns - 2000000000))"
     jq \
       --arg sample_ns "${sample_ns}" \
-      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns else . end)" \
+      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns
+        elif type == \"object\" and .key? == \"robotics.clock.sample_unix_ms\"
+        then .value.doubleValue = ((\$sample_ns | tonumber) / 1000000 - 10) else . end)" \
       "$2" >"${work_root}/evidence.json"
     jq -n \
       --arg evidence_sha256 "$(sha256_file "${work_root}/evidence.json")" \

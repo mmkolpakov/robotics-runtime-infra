@@ -462,7 +462,20 @@ interfaces, PTP domain, and acceptance thresholds remain site configuration.
 Install `config/time/chrony-command-socket.conf` as
 `/etc/chrony/conf.d/robotics-command-socket.conf` and
 `tmpfiles.d/robotics-time.conf` as `/etc/tmpfiles.d/robotics-time.conf`. Run
-`systemd-tmpfiles --create`, restart Chrony, and start the evidence collector:
+`systemd-tmpfiles --create` and restart Chrony. Install the sampler (requires
+host `bash`, `jq`, `chronyc`, and coreutils) and both
+`systemd/robotics-chrony-sample.*` units under `/etc/systemd/system`:
+
+```bash
+sudo install -d /usr/local/libexec/robotics-time
+sudo install -m 0755 scripts/time/sample.sh /usr/local/libexec/robotics-time/
+sudo install -m 0644 scripts/time/normalize-sample.jq /usr/local/libexec/robotics-time/
+sudo install -m 0644 systemd/robotics-chrony-sample.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now robotics-chrony-sample.timer
+```
+
+Start the evidence collector:
 
 ```bash
 export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
@@ -482,11 +495,18 @@ The fragment changes the Unix command socket to
 well. Review those commands before restarting Chrony. See the
 [Chrony 4.5 command-access documentation](https://chrony-project.org/doc/4.5/chrony.conf.html#bindcmdaddress).
 `ROBOTICS_TIME_SOCKET_DIR` defaults to `/run/robotics-time`; the collector runs
-as `ROBOTICS_CHRONY_IDENTITY` and needs access to the socket directory.
+as `ROBOTICS_CHRONY_IDENTITY` and reads the sampler's `chrony.log` in that
+directory. The sampler obtains the original reference timestamp from
+[`chronyc -c tracking`](https://chrony-project.org/doc/4.5/chronyc.html#tracking);
+the Collector chrony receiver does not expose that timestamp.
 
 For PTP, install `config/time/ptp4l.conf` through host configuration
 management and install both `systemd/robotics-ptp-sample.*` units under
-`/etc/systemd/system`. The timer only queries the read-only `ptp4lro` socket:
+`/etc/systemd/system`, using the same sampler installed above. The timer
+queries `TIME_STATUS_NP` and `TIME_PROPERTIES_DATA_SET` through the read-only
+`ptp4lro` socket. Hardware timestamps use the reported, valid UTC offset to
+convert `ingress_time` from the PTP timescale; software timestamping is not
+supported by this sampler. Unknown timescales are rejected.
 
 ```bash
 sudo systemctl daemon-reload
@@ -504,9 +524,20 @@ offset in milliseconds, drift in ppm, message age in milliseconds, and a
 monotonic-clock flag. `ptp4l` and `phc2sys` remain host services; the collectors
 receive no network device, PHC device, or Linux capability.
 Use one time collector per output directory: both use the same filename.
-Current message-age and monotonic metrics are derived collector observations,
-not proof of source freshness or hardware clock monotonicity. Physical timing
-qualification remains pending the time-evidence corrections and a live host run.
+Message age is measured from the source timestamp, which is retained in the
+`robotics.clock.sample_unix_ms` metric attribute. The physical-attach verifier
+cross-checks that timestamp against reported age and rejects old or future
+samples. Re-reading an old log cannot refresh its age. The one-second age
+limit requires a source update interval suitable for that limit; a normal
+long-poll NTP configuration may fail it legitimately.
+
+Each sampler keeps its latest two complete records (`chrony.log[.1]` or
+`pmc.log[.1]`) by atomic replacement. PTP Compose therefore mounts
+`ROBOTICS_PTP_SAMPLE_DIR` (default `/run/robotics-time`), replacing the former
+single-file `ROBOTICS_PTP_SAMPLE_FILE` mount. Use only one sampler per output
+file. The monotonic flag still represents synchronization status, not proof
+of hardware clock monotonicity. Linux collector/rotation integration and
+physical timing qualification require CI and a live host run.
 
 The hosted physical-attach test binds its synthetic target to the SPKI digest
 of the generated SROS2 telemetry-source certificate. That identity proves the
