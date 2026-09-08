@@ -28,7 +28,9 @@ def relative_file(path: Path, root: Path, *, exists: bool = True) -> str:
     resolved = path.expanduser().resolve(strict=exists)
     relative = resolved.relative_to(root).as_posix()
     if relative == "." or ":" in relative or "\\" in relative:
-        raise ValueError("receipt inputs require portable paths beneath the evidence directory")
+        raise ValueError(
+            "receipt inputs require portable paths beneath the evidence directory"
+        )
     if exists and not resolved.is_file():
         raise ValueError("receipt inputs must be regular files")
     return relative
@@ -85,11 +87,15 @@ def bind(arguments: argparse.Namespace) -> dict[str, Any]:
     if registration.get("upload_status") != "confirmed" or receipt.get(
         "run_id"
     ) != registration.get("run_id"):
-        raise ValueError("receipt inputs require a confirmed registration for the same run")
+        raise ValueError(
+            "receipt inputs require a confirmed registration for the same run"
+        )
     digest = next(iter(files["receipts"]))
     files["receipts"][digest] = destination
     registration["receipt_sha256"] = digest
-    registration["receipt_inputs"] = {group: list(files[group].values()) for group in GROUPS}
+    registration["receipt_inputs"] = {
+        group: list(files[group].values()) for group in GROUPS
+    }
     return registration
 
 
@@ -108,7 +114,9 @@ def registered_paths(registration: dict[str, Any], root: Path) -> dict[str, list
                 raise ValueError("receipt input registry requires relative paths")
             path = root / name
             if relative_file(path, root) != name:
-                raise ValueError("receipt input registry requires canonical relative paths")
+                raise ValueError(
+                    "receipt input registry requires canonical relative paths"
+                )
             paths.append(path)
         result[group] = paths
     if len(result["receipts"]) != 1 or len(result["verifications"]) != 1:
@@ -163,7 +171,9 @@ def main() -> int:
         collect.add_argument(f"--{name}", type=Path, required=True)
     arguments = parser.parse_args()
     try:
-        document = bind(arguments) if arguments.command == "bind" else inventory(arguments)
+        document = (
+            bind(arguments) if arguments.command == "bind" else inventory(arguments)
+        )
         encoded = dumps_canonical(document)
         if len(encoded) > MAX_DOCUMENT_BYTES:
             raise ValueError("receipt input metadata exceeds the document size limit")
