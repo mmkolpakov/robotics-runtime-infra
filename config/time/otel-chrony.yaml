@@ -1,14 +1,12 @@
 ---
 receivers:
-  chrony:
-    endpoint: unix:///run/robotics-time/chronyd.sock
-    file_mount_path: /run/robotics-time
-    timeout: 5s
-    collection_interval: 1s
-    initial_delay: 100ms
-    metrics:
-      ntp.frequency.offset:
-        enabled: true
+  file_log/chrony:
+    include: [/run/robotics-time/chrony.log]
+    start_at: beginning
+    poll_interval: 100ms
+    operators:
+      - type: json_parser
+        parse_to: body
 
 processors:
   resource/clock:
@@ -19,53 +17,50 @@ processors:
       - key: robotics.clock.source
         action: upsert
         value: chronyc_tracking
-  metrics_transform/clock:
-    transforms:
-      - include: ntp.time.correction
-        action: insert
-        new_name: robotics.hardware.clock.offset
-        operations:
-          - action: experimental_scale_value
-            experimental_scale: 1000
-      - include: ntp.frequency.offset
-        action: insert
-        new_name: robotics.hardware.clock.drift
-      - include: ntp.time.correction
-        action: insert
-        new_name: robotics.hardware.message.age
-      - include: ntp.time.correction
-        action: insert
-        new_name: robotics.hardware.clock.monotonic
-  transform/clock:
+  transform/source:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - >-
+            set(log.attributes["robotics.clock.sample_unix_ms"],
+            Double(log.body["source_unix_ms"]))
+  transform/age:
     error_mode: propagate
     metric_statements:
-      - context: metric
-        statements:
-          - set(metric.unit, "ms") where metric.name == "robotics.hardware.clock.offset"
-          - set(metric.unit, "ppm") where metric.name == "robotics.hardware.clock.drift"
-          - set(metric.unit, "ms") where metric.name == "robotics.hardware.message.age"
-          - set(metric.unit, "1") where metric.name == "robotics.hardware.clock.monotonic"
       - context: datapoint
         statements:
           - >-
-            set(datapoint.value_double, 1.0) where
-            metric.name == "robotics.hardware.clock.monotonic" and
-            datapoint.attributes["leap.status"] != "unsynchronised"
-          - >-
-            set(datapoint.value_double, 0.0) where
-            metric.name == "robotics.hardware.clock.monotonic" and
-            datapoint.attributes["leap.status"] == "unsynchronised"
-          - >-
             set(datapoint.value_double,
-            Double(UnixNano(Now()) - UnixNano(datapoint.time)) / 1000000.0) where
+            Double(UnixNano(datapoint.time)) / 1000000.0 -
+            datapoint.attributes["robotics.clock.sample_unix_ms"]) where
             metric.name == "robotics.hardware.message.age"
-  filter/contract:
+
+connectors:
+  signal_to_metrics/clock:
     error_mode: propagate
-    metrics:
-      metric:
-        - >-
-          not IsMatch(name,
-          "^robotics\\.hardware\\.(clock\\.(offset|drift|monotonic)|message\\.age)$")
+    logs:
+      - name: robotics.hardware.clock.offset
+        unit: ms
+        attributes: &sample-attributes
+          - key: robotics.clock.sample_unix_ms
+        gauge:
+          value: Double(log.body["offset_ms"])
+      - name: robotics.hardware.clock.drift
+        unit: ppm
+        attributes: *sample-attributes
+        gauge:
+          value: Double(log.body["drift_ppm"])
+      - name: robotics.hardware.message.age
+        unit: ms
+        attributes: *sample-attributes
+        gauge:
+          value: "0.0"
+      - name: robotics.hardware.clock.monotonic
+        unit: "1"
+        attributes: *sample-attributes
+        gauge:
+          value: Int(log.body["monotonic"])
 
 exporters:
   file/contract:
@@ -79,11 +74,11 @@ service:
     logs:
       level: info
   pipelines:
+    logs:
+      receivers: [file_log/chrony]
+      processors: [resource/clock, transform/source]
+      exporters: [signal_to_metrics/clock]
     metrics:
-      receivers: [chrony]
-      processors:
-        - resource/clock
-        - metrics_transform/clock
-        - transform/clock
-        - filter/contract
+      receivers: [signal_to_metrics/clock]
+      processors: [transform/age]
       exporters: [file/contract]

@@ -4,7 +4,7 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
-ARG RCLONE_IMAGE=rclone/rclone:1.75.0@sha256:b06aed988cf5967de7c25be5925240983981c757f4ed1ac9d2fa659d51d60548
+ARG RCLONE_IMAGE=rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
@@ -19,10 +19,10 @@ ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG SENSOR_INFERENCE_BASE=inference-cpu
-ARG UBUNTU_SNAPSHOT=20260726T000000Z
-ARG OPENSSL_VERSION=3.0.13-0ubuntu3.11
+ARG UBUNTU_SNAPSHOT=20260908T000000Z
+ARG OPENSSL_VERSION=3.0.13-0ubuntu3.15
 ARG CA_CERTIFICATES_VERSION=20260601~24.04.1
-ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136
+ARG LINUX_LIBC_DEV_VERSION=6.8.0-139.139
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 
@@ -718,7 +718,7 @@ LABEL org.opencontainers.image.title="Robotics sensor runtime" \
 USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD ["/bin/bash", "-lc", "ros2 pkg prefix cv_bridge && gst-launch-1.0 --version"]
+  CMD ["/usr/local/bin/robotics-entrypoint", "/bin/bash", "-c", "ros2 pkg prefix cv_bridge && gst-launch-1.0 --version"]
 
 FROM edge-runtime AS inference-cpu
 
@@ -1104,7 +1104,7 @@ LABEL org.opencontainers.image.title="ROS 2 data-plane benchmark" \
 USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD ["ros2", "pkg", "prefix", "performance_test"]
+  CMD ["/usr/local/bin/robotics-entrypoint", "ros2", "pkg", "prefix", "performance_test"]
 
 FROM ${SIMULATION_BASE_IMAGE} AS simulation
 

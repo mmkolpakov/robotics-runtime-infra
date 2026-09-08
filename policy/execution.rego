@@ -63,6 +63,18 @@ deny contains "trust policy lifetime must be between one and 1800 seconds" if {
 	object.get(trust_policy, "max_permit_lifetime_seconds", 0) > 1800
 }
 
+deny contains "permit issued_at must be a valid RFC3339 timestamp" if {
+	not valid_issued_at
+}
+
+deny contains "permit expires_at must be a valid RFC3339 timestamp" if {
+	not valid_expires_at
+}
+
+deny contains "permit expires_at must be after issued_at" if {
+	expires_at_ns <= issued_at_ns
+}
+
 deny contains "permit is not active yet" if {
 	time.now_ns() < issued_at_ns
 }
@@ -147,6 +159,16 @@ image_subjects := [subject |
 
 issued_at_ns := time.parse_rfc3339_ns(permit.issued_at)
 expires_at_ns := time.parse_rfc3339_ns(permit.expires_at)
+
+valid_issued_at if {
+	is_string(permit.issued_at)
+	is_number(issued_at_ns)
+}
+
+valid_expires_at if {
+	is_string(permit.expires_at)
+	is_number(expires_at_ns)
+}
 
 array_set(values) := {value | some value in values}
 

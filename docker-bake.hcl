@@ -23,11 +23,11 @@ variable "SOURCE_DATE_EPOCH" {
 }
 
 variable "UBUNTU_SNAPSHOT" {
-  default = "20260726T000000Z"
+  default = "20260908T000000Z"
 }
 
 variable "LINUX_LIBC_DEV_VERSION" {
-  default = "6.8.0-136.136"
+  default = "6.8.0-139.139"
 }
 
 variable "ROS_SNAPSHOT" {
@@ -51,7 +51,7 @@ variable "RKNN_SOURCE" {
 }
 
 variable "COSIGN_IMAGE" {
-  default = "cgr.dev/chainguard/cosign:latest@sha256:f3161bc5cc63d55c1a19bc6a26e30db2e528e84bf154b91dbf8f79dce91d3ca7"
+  default = "cgr.dev/chainguard/cosign:latest@sha256:2af5cabe038577e02b21be3b6e2622c2cd2659dcdef2bdc0fbf5f64e16965a88"
   validation {
     condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
     error_message = "COSIGN_IMAGE must pin the qualified Chainguard image by digest."
@@ -59,7 +59,7 @@ variable "COSIGN_IMAGE" {
 }
 
 variable "COSIGN_VERSION" {
-  default = "3.1.2"
+  default = "3.1.3"
   validation {
     condition = COSIGN_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", COSIGN_VERSION)
     error_message = "COSIGN_VERSION must be a semantic version."

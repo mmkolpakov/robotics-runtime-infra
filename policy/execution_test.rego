@@ -52,6 +52,44 @@ test_future_permit_is_denied if {
 	"permit is not active yet" in violations(candidate)
 }
 
+test_missing_permit_timestamps_are_denied if {
+	every field in ["issued_at", "expires_at"] {
+		candidate := json.patch(data.execution_valid, [
+			{"op": "remove", "path": sprintf("/permit/%s", [field])},
+			{"op": "remove", "path": sprintf("/statement/predicate/%s", [field])},
+		])
+		sprintf("permit %s must be a valid RFC3339 timestamp", [field]) in violations(candidate)
+		verification := execution.verification with input as candidate with time.now_ns as fixed_now
+		verification == null
+	}
+}
+
+test_malformed_permit_timestamps_are_denied if {
+	every field in ["issued_at", "expires_at"] {
+		every value in [null, "", "not-a-date", 123, false, [], {}, "2026-07-14T12:00:00"] {
+			candidate := json.patch(data.execution_valid, [
+				{"op": "replace", "path": sprintf("/permit/%s", [field]), "value": value},
+				{"op": "replace", "path": sprintf("/statement/predicate/%s", [field]), "value": value},
+			])
+			sprintf("permit %s must be a valid RFC3339 timestamp", [field]) in violations(candidate)
+			verification := execution.verification with input as candidate with time.now_ns as fixed_now
+			verification == null
+		}
+	}
+}
+
+test_empty_permit_lifetime_is_denied if {
+	candidate := json.patch(data.execution_valid, [
+		{"op": "replace", "path": "/permit/issued_at", "value": "2026-07-14T12:00:00Z"},
+		{"op": "replace", "path": "/statement/predicate/issued_at", "value": "2026-07-14T12:00:00Z"},
+		{"op": "replace", "path": "/permit/expires_at", "value": "2026-07-14T12:00:00Z"},
+		{"op": "replace", "path": "/statement/predicate/expires_at", "value": "2026-07-14T12:00:00Z"},
+	])
+	"permit expires_at must be after issued_at" in violations(candidate)
+	verification := execution.verification with input as candidate with time.now_ns as fixed_now
+	verification == null
+}
+
 test_tampered_statement_predicate_is_denied if {
 	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/statement/predicate/nonce", "value": "ffffffffffffffffffffffffffffffff"}])
 	"statement predicate does not equal the validated permit" in violations(candidate)

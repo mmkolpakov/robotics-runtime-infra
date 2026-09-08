@@ -88,7 +88,7 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "authorization renderer binds one identity across permit and statement" {
+@test "released authorization renderer binds registry identity across permit and statement" {
   run bash -c '
     set -Eeuo pipefail
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
@@ -106,21 +106,31 @@ setup() {
       "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" \
       >"${work_root}/target-evidence.json"
     docker() {
+      if test "$1" = buildx; then
+        test "$#" -eq 6
+        test "$2 $3 $4" = "imagetools inspect --format"
+        test "$5" = "{{json .Manifest}}"
+        test "$6" = "acceptance-observer@sha256:$(printf "%064d" 1)"
+        printf "{\"digest\":\"sha256:%064d\",\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\"}\n" 1
+        return
+      fi
       test "$1" = image
       test "$2" = inspect
+      test "$#" -eq 3
       case "$3" in
-        acceptance-observer)
-          printf "sha256:%064d\n" 1
+        acceptance-observer@*)
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"acceptance-observer@sha256:%064d\"]}]\n" 9 1
           ;;
         permit-preflight)
-          printf "sha256:%064d\n" 2
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"permit-preflight@sha256:%064d\"]}]\n" 8 2
           ;;
         *)
           return 64
           ;;
       esac
     }
-    OBSERVER_IMAGE=acceptance-observer
+    ROBOTICS_RUNTIME_MODE=released
+    OBSERVER_IMAGE="acceptance-observer@sha256:$(printf "%064d" 1)"
     PERMIT_PREFLIGHT_IMAGE=permit-preflight
     write_trust_policy
     write_permit_case \
@@ -618,7 +628,7 @@ setup() {
 
 @test "time evidence policy accepts only its fresh measurement window" {
   common_args=(
-    --arg evidence_sha256 fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2
+    --arg evidence_sha256 ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba
     --arg run_id test-run
     --arg source_revision local
     --arg workflow_run_attempt 1
@@ -654,7 +664,7 @@ setup() {
     ' _ \
       "${FIXTURES}/time-evidence.jsonl" \
       "${FIXTURES}/verify-time-evidence.jq" \
-      fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2 \
+      ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba \
       "${FIXTURES}/time-evidence-window.json"
   [ "${status}" -eq 1 ]
 
@@ -688,7 +698,9 @@ setup() {
     start_ns="$((now_ns - 2000000000))"
     jq \
       --arg sample_ns "${sample_ns}" \
-      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns else . end)" \
+      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns
+        elif type == \"object\" and .key? == \"robotics.clock.sample_unix_ms\"
+        then .value.doubleValue = ((\$sample_ns | tonumber) / 1000000 - 10) else . end)" \
       "$2" >"${work_root}/evidence.json"
     jq -n \
       --arg evidence_sha256 "$(sha256_file "${work_root}/evidence.json")" \
@@ -726,7 +738,8 @@ setup() {
     production="$1"
     core="$2"
     ci="$3"
-    ! grep -F -- "--insecure-ignore-tlog" "${production}" "${core}"
+    # The core inspects the flag for evidence, but must never add it to a call.
+    ! grep -F -- "--insecure-ignore-tlog" "${production}"
     ! grep -F -- "authorize-offline-test" "${production}" "${core}"
     ! grep -F -- "verify-offline-test-attestation" "${production}" "${core}"
     grep -F -- "--insecure-ignore-tlog" "${ci}"

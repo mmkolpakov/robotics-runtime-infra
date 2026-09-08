@@ -101,9 +101,16 @@ EOF
 
 @test "reviewed OpenVEX policy is scoped to the kernel header package" {
   run jq -e '
+    def reviewed_headers:
+      [
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04"},
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=arm64&distro=ubuntu-24.04"}
+      ];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 3
+    and .version == 5
+    and (.statements | length == 184)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 129)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -111,7 +118,14 @@ EOF
     and all(
       .statements[];
       (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
-      and .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
+      and (
+        .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
+        or (
+          .products == reviewed_headers
+          and (.impact_statement | contains("Sources: https://"))
+          and (.impact_statement | contains("does not qualify the host kernel or hardware"))
+        )
+      )
       and .status == "not_affected"
       and .justification == "vulnerable_code_not_present"
     )
@@ -127,18 +141,75 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
-@test "Ubuntu package snapshot and kernel headers are pinned together" {
-  run grep -F 'ARG UBUNTU_SNAPSHOT=20260726T000000Z' Dockerfile
+@test "OpenVEX additions match all completed image residual evidence" {
+  run jq -e \
+    --slurpfile images security/vex/linux-libc-dev-2026-09-08.images.json \
+    --slurpfile ci security/vex/linux-libc-dev-2026-09-08.ci.json \
+    --slurpfile review security/vex/linux-libc-dev-2026-09-08.evidence.json '
+    $ci[0] as $ci
+    | $review[0] as $review
+    | $images[0] as $images
+    | [$images.observed_purls[] | {"@id": .}] as $products
+    | [.statements[] | select(.products == $products)] as $new
+    | ([ $new[].vulnerability.name ] | sort) == ([ $ci.findings[].cve ] | sort)
+      and ($ci.findings | length == 129)
+      and ($ci.findings | map(select(.severity == "HIGH")) | length == 124)
+      and ($ci.findings | map(select(.severity == "CRITICAL")) | length == 5)
+      and all($ci.findings[];
+        .package == "linux-libc-dev"
+        and .installed_version == "6.8.0-139.139"
+        and .purl == $ci.report.purl
+        and .fixed_version == ""
+      )
+      and $ci.report.architecture == "amd64"
+      and $ci.comparison.observed_purls == [$ci.report.purl]
+      and $review.active_new_statement_purls == $images.observed_purls
+      and $images.run == $ci.run
+      and $images.report_count == 5
+      and ($images.reports | length == 5)
+      and ([ $images.reports[].purl ] | unique) == $images.observed_purls
+      and all($images.reports[];
+        .residual_cves == ([ $new[].vulnerability.name ] | sort)
+        and .high_critical_counts == {"CRITICAL": 5, "HIGH": 124}
+        and .package == "linux-libc-dev"
+        and .installed_version == "6.8.0-139.139"
+        and .purl == ("pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=" + .architecture + "&distro=ubuntu-24.04")
+        and .checked_out_revision == $ci.run.checked_out_merge_sha
+        and .revision_label_matches_checkout == (.image_revision == .checked_out_revision)
+        and (.revision_label_matches_checkout or .image_id_matches_build_export == true)
+        and .removed_fixed_cves == $ci.comparison.removed_fixed_cves
+        and .unexpected_cves == []
+        and .candidate_missing_cves == []
+        and .severity_mismatches == []
+        and .fixed_version_findings == []
+      )
+      and $review.report_sha256 == $ci.comparison.baseline_report_sha256
+      and ([ $review.rows[] | select(.observed_in_rebuilt_ci) | .cve ] | sort)
+        == ([ $ci.findings[].cve ] | sort)
+      and ([ $review.rows[] | select(.reported_fixed_version != "") | .cve ] | sort)
+        == $ci.comparison.removed_fixed_cves
+      and ($ci.comparison.removed_fixed_cves | length == 6)
+      and ([ $new[].vulnerability.name ] - $ci.comparison.removed_fixed_cves | length == 129)
+      and $ci.comparison.unexpected_cves == []
+      and $ci.comparison.unreviewed_residual_cves == []
+      and $ci.comparison.candidate_missing_from_residual == []
+      and $ci.comparison.severity_mismatches == []
+  ' security/vex/linux-libc-dev.openvex.json
   [ "${status}" -eq 0 ]
-  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136' Dockerfile
+}
+
+@test "Ubuntu package snapshot and kernel headers are pinned together" {
+  run grep -F 'ARG UBUNTU_SNAPSHOT=20260908T000000Z' Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-139.139' Dockerfile
   [ "${status}" -eq 0 ]
   run grep -F \
     'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
     docker/apt/use-package-snapshots
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"linux-libc-dev=${LINUX_LIBC_DEV_VERSION}"' Dockerfile)" -eq 2 ]
-  run grep -F 'default = "20260726T000000Z"' docker-bake.hcl
+  run grep -F 'default = "20260908T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
-  run grep -F 'default = "6.8.0-136.136"' docker-bake.hcl
+  run grep -F 'default = "6.8.0-139.139"' docker-bake.hcl
   [ "${status}" -eq 0 ]
 }

@@ -3,6 +3,9 @@
 # This module is sourced by physical-attach.sh and uses its coordinator state.
 # shellcheck disable=SC2034,SC2154
 
+# shellcheck source=scripts/ci/image-identity.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/image-identity.sh"
+
 acquire_host_lock() {
   local lock_file="${ROBOTICS_PHYSICAL_ATTACH_LOCK_FILE:-/run/lock/robotics-runtime-infra-physical-attach.lock}"
 
@@ -18,6 +21,7 @@ verify_released_verifier_provenance() {
   local canonical_repository
   local evidence_tmp
   local signer_workflow
+  local verification_status
 
   canonical_repository="mmkolpakov/robotics-runtime-infra"
   signer_workflow="${canonical_repository}/.github/workflows/release-image.yml"
@@ -36,15 +40,21 @@ verify_released_verifier_provenance() {
 
   ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE="${work_root}/verifier-attestation.json"
   evidence_tmp="${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}.tmp"
-  umask 077
-  gh attestation verify "oci://${PERMIT_PREFLIGHT_IMAGE}" \
-    --repo "${canonical_repository}" \
-    --signer-workflow "${signer_workflow}" \
-    --source-digest "${ROBOTICS_RELEASE_SOURCE_SHA}" \
-    --source-ref "${ROBOTICS_RELEASE_SOURCE_REF}" \
-    --deny-self-hosted-runners \
-    --bundle-from-oci \
-    --format json >"${evidence_tmp}"
+  (
+    umask 077
+    gh attestation verify "oci://${PERMIT_PREFLIGHT_IMAGE}" \
+      --repo "${canonical_repository}" \
+      --signer-workflow "${signer_workflow}" \
+      --source-digest "${ROBOTICS_RELEASE_SOURCE_SHA}" \
+      --source-ref "${ROBOTICS_RELEASE_SOURCE_REF}" \
+      --deny-self-hosted-runners \
+      --bundle-from-oci \
+      --format json >"${evidence_tmp}"
+  ) || {
+    verification_status=$?
+    rm -f -- "${evidence_tmp}"
+    return "${verification_status}"
+  }
   jq -e 'type == "array" and length > 0' "${evidence_tmp}" >/dev/null || {
     printf 'verifier provenance evidence is empty or malformed\n' >&2
     rm -f "${evidence_tmp}"

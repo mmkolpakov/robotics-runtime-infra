@@ -12,6 +12,8 @@ cd "${root}"
 readonly foundation_bin="${root}/tooling/foundation/.venv/bin"
 # shellcheck source=scripts/ci/lib.sh
 source "${root}/scripts/ci/lib.sh"
+# shellcheck source=scripts/ci/image-identity.sh
+source "${root}/scripts/ci/image-identity.sh"
 
 foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE
 command -v cosign >/dev/null 2>&1 || {
@@ -62,10 +64,11 @@ export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
 export ROBOTICS_RECORD_REGEX='^(/clock|/robotics/runtime_probe)$'
 export ROBOTICS_SIMULATION_OCI_DIGEST
 export ROBOTICS_SIMULATION_OCI_REFERENCE
-ROBOTICS_SIMULATION_OCI_DIGEST="$(
-  docker image inspect "${SIMULATION_IMAGE}" --format '{{.Id}}'
+simulation_identity="$(
+  ci_image_identity "${SIMULATION_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}"
 )"
-ROBOTICS_SIMULATION_OCI_REFERENCE="${SIMULATION_IMAGE}@${ROBOTICS_SIMULATION_OCI_DIGEST}"
+ROBOTICS_SIMULATION_OCI_DIGEST="$(jq -er '.digest' <<<"${simulation_identity}")"
+ROBOTICS_SIMULATION_OCI_REFERENCE="$(jq -er '.reference' <<<"${simulation_identity}")"
 
 profiles=(
   --profile stepped

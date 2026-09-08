@@ -18,11 +18,33 @@ host_time_cleanup() {
   sudo rm -rf "${HOST_TIME_WORK}"
 }
 
+host_time_wait_for_collector() {
+  local service="$1"
+  shift
+  for _ in {1..30}; do
+    if "$@" logs --no-color "${service}" 2>&1 |
+      grep -F 'Everything is ready' >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  "$@" logs --no-color "${service}" >&2 || true
+  return 1
+}
+
+host_time_has_samples() {
+  local path="$1"
+  test -s "${path}" && jq -s -e '
+    [.[] | .resourceMetrics[]? | .scopeMetrics[]? | .metrics[]? |
+      .gauge.dataPoints[]?] | length > 0
+  ' "${path}" >/dev/null 2>&1
+}
+
 host_time_wait_for_evidence() {
   local path="$1"
   shift
   for _ in {1..30}; do
-    test -s "${path}" && return 0
+    host_time_has_samples "${path}" && return 0
     sleep 1
   done
   "$@" logs --no-color >&2 || true
@@ -41,6 +63,7 @@ host_time_verify_timing() {
   local protocol="$1"
   local evidence="$2"
   local expected="$3"
+  local monotonic="${4:-${expected}}"
   docker run --rm \
     --volume "${evidence}:/metrics.otlp.json:ro" \
     --entrypoint /opt/venv/bin/python \
@@ -61,9 +84,9 @@ result = evaluate_hardware_timing(
     load_otlp_json_metrics("/metrics.otlp.json"),
 )
 assert result.sample_count >= 1
-assert result.monotonic is expected
+assert result.monotonic is (sys.argv[3] == "true")
 assert result.within_policy is expected
-' "${protocol}" "${expected}"
+' "${protocol}" "${expected}" "${monotonic}"
 }
 
 host_time_require_no_samples() {

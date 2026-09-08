@@ -5,6 +5,7 @@ set -Eeuo pipefail
 
 readonly CASES=(
   positive
+  offline-bypass
   wrong-target
   wrong-signer
   command-publish-denied
@@ -400,6 +401,10 @@ run_case_positive() {
   sign_role "${case_dir}" approver
   write_runtime_manifest_input
   start_sros2_observer "${case_dir}"
+  jq -e '
+    .decision == "allow" and
+    ([.signers[].transparency_log_verified] == [true, true])
+  ' "${work_root}/preflight-positive/output/execution-verification.json" >/dev/null
   prepare_preflight_directories \
     "${work_root}/preflight-positive/nonces" \
     "${work_root}/preflight-replay/output"
@@ -410,6 +415,21 @@ run_case_positive() {
     "${work_root}/preflight-replay/output/execution-verification.json" \
     77
   record_case positive
+}
+
+run_case_offline_bypass() {
+  local case_dir="${work_root}/positive"
+  local state_dir="${work_root}/preflight-offline-bypass"
+
+  prepare_preflight_directories "${state_dir}/nonces" "${state_dir}/output"
+  expect_preflight_denial \
+    "${case_dir}" \
+    "signer has no transparency-log proof" \
+    "${state_dir}/nonces" \
+    "${state_dir}/output/execution-verification.json" \
+    65 authorize-offline-test
+  require_empty_nonce_store "${state_dir}/nonces"
+  record_case offline-bypass
 }
 
 run_case_wrong_target() {
@@ -452,7 +472,7 @@ run_case_wrong_signer() {
     "${work_root}/preflight-wrong-signer/output"
   expect_preflight_denial \
     "${case_dir}" \
-    "offline attestation signature verification failed" \
+    "logged attestation verification failed" \
     "${work_root}/preflight-wrong-signer/nonces" \
     "${work_root}/preflight-wrong-signer/output/execution-verification.json" \
     65
@@ -482,6 +502,7 @@ run_cases() {
   )"
 
   run_case_positive "${issued_at}" "${expires_at}" "${target_identity}"
+  run_case_offline_bypass
   run_case_wrong_target "${wrong_target_identity}"
   run_case_wrong_signer
   verify_command_publish_denied

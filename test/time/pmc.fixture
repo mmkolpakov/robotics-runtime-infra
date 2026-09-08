@@ -8,13 +8,8 @@ sending: GET TIME_STATUS_NP
 		lastGmPhaseChange          0x0000'0000000000000000.0000
 		gmPresent                  true
 		gmIdentity                 000000.fffe.000001
-sending: GET TIME_STATUS_NP
-	000000.fffe.000001-0 seq 1 RESPONSE MANAGEMENT TIME_STATUS_NP
-		master_offset              -300000
-		ingress_time               1784023201000000000
-		cumulativeScaledRateOffset +0.000001750
-		scaledLastGmPhaseChange    0
-		gmTimeBaseIndicator        0
-		lastGmPhaseChange          0x0000'0000000000000000.0000
-		gmPresent                  true
-		gmIdentity                 000000.fffe.000001
+sending: GET TIME_PROPERTIES_DATA_SET
+	000000.fffe.000001-0 seq 1 RESPONSE MANAGEMENT TIME_PROPERTIES_DATA_SET
+		currentUtcOffset          37
+		currentUtcOffsetValid     1
+		ptpTimescale              1

@@ -176,6 +176,10 @@ jobs:
         env:
           COSIGN_PASSWORD: test-only
         run: scripts/ci/integration/verify-cosign-dsse-boundary-and-tamper-rejection.sh
+      - name: Verify logged permit authorization and denial boundaries
+        env:
+          COSIGN_PASSWORD: test-only
+        run: bash scripts/ci/integration/verify-logged-permit-preflight.sh
       - name: Verify synthetic physical attach end to end
         env:
           COSIGN_PASSWORD: test-only
@@ -302,6 +306,8 @@ jobs:
       - uses: ./.github/actions/setup-buildx
       - name: Require the native ARM64 runner
         run: test "$(uname -m)" = aarch64
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the RK3588 runtime without publishing vendor artifacts
         run: >-
           docker buildx bake --file docker-bake.hcl
@@ -337,6 +343,8 @@ jobs:
         run: scripts/ci/amd-supply-chain/verify-the-signed-rocm-package-channel.sh
       - name: Verify the locked AMD wheel
         run: scripts/ci/amd-supply-chain/verify-the-locked-amd-wheel.sh
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the AMD runtime and conformance images
         run: >-
           docker buildx bake --file docker-bake.hcl amd

@@ -8,6 +8,7 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   permit-preflight-ci verify-offline-test-attestation STATEMENT BUNDLE PUBLIC_KEY
+  permit-preflight-ci authorize-logged-test PUBLIC_KEY_DIR PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUST_POLICY REQUEST NONCE_DIR OUTPUT
   permit-preflight-ci authorize-offline-test PUBLIC_KEY_DIR PERMIT STATEMENT OPERATOR_BUNDLE APPROVER_BUNDLE TRUST_POLICY REQUEST NONCE_DIR OUTPUT
 EOF
   exit 64
@@ -36,6 +37,30 @@ verify_offline_attestation() {
   assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
 }
 
+verify_logged_attestation() {
+  statement="$1"
+  bundle="$2"
+  public_key="$3"
+  decoded_statement="$4"
+  trusted_root=/usr/share/robotics-runtime/trust/sigstore-trusted-root.json
+  require_file "${trusted_root}"
+  assert_single_json_document "${statement}"
+  assert_single_json_document "${bundle}"
+  digest="$(statement_subject_digest "${statement}")"
+  predicate_type="$(execution_permit_predicate_type "${statement}")"
+  cosign verify-blob-attestation \
+    --bundle "${bundle}" \
+    --key "${public_key}" \
+    --trusted-root "${trusted_root}" \
+    --digest "${digest}" \
+    --digestAlg sha256 \
+    --type "${predicate_type}" || {
+    printf 'logged attestation verification failed: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+}
+
 verify_role_attestation() {
   test "$#" -eq 6 || usage
   role="$1"
@@ -46,26 +71,39 @@ verify_role_attestation() {
     operator | approver) ;;
     *) usage ;;
   esac
-  verify_offline_attestation \
+  # Ephemeral CI keys identify only the explicitly named synthetic principals.
+  # They must never be reported as a Fulcio/OIDC identity from an input permit.
+  test "$4" = "ci.${role}" &&
+    test "$5" = https://github.com/sigstore/cosign/key || {
+    printf 'keyed CI verification requires the synthetic %s principal\n' "${role}" >&2
+    exit 65
+  }
+  case "${ci_authorization_mode}" in
+    authorize-logged-test) role_verifier=verify_logged_attestation ;;
+    authorize-offline-test) role_verifier=verify_offline_attestation ;;
+    *) usage ;;
+  esac
+  "${role_verifier}" \
     "${statement}" \
     "${bundle}" \
-    "${offline_key_dir}/${role}.pub" \
+    "${ci_key_dir}/${role}.pub" \
     "${decoded_statement}"
 }
 
 command_name="${1:-}"
 case "${command_name}" in
-  authorize-offline-test)
+  authorize-logged-test | authorize-offline-test)
     test "$#" -eq 10 || usage
     shift
-    offline_key_dir="$1"
+    ci_authorization_mode="${command_name}"
+    ci_key_dir="$1"
     shift
-    test -d "${offline_key_dir}" && test ! -L "${offline_key_dir}" || {
-      printf 'offline key directory must be a non-symlink directory\n' >&2
+    test -d "${ci_key_dir}" && test ! -L "${ci_key_dir}" || {
+      printf 'CI key directory must be a non-symlink directory\n' >&2
       exit 66
     }
-    require_file "${offline_key_dir}/operator.pub"
-    require_file "${offline_key_dir}/approver.pub"
+    require_file "${ci_key_dir}/operator.pub"
+    require_file "${ci_key_dir}/approver.pub"
     authorize_common "$@"
     ;;
   verify-offline-test-attestation)

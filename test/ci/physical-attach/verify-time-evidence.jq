@@ -66,7 +66,21 @@ all($samples[]; .observed_at >= $window_start and .observed_at <= $window_end) a
 all(
   $points[];
   (map(.name) | sort) == $required_sorted and
-  length == 4
+  length == 4 and
+  (map(.attributes["robotics.clock.sample_unix_ms"]) | unique | length) == 1
+) and
+all(
+  $samples[];
+  .attributes["robotics.clock.sample_unix_ms"] as $source_ms |
+  ($source_ms | type) == "number" and $source_ms > 0 and
+  $source_ms <= (.observed_at / 1000000) and
+  (.observed_at / 1000000 - $source_ms) <= 1000 and
+  # An old record cannot be refreshed by rewriting only the collector timestamp
+  # or by wrapping it in a new measurement window.
+  ($now_ns / 1000000 - $source_ms) <= ($max_age_ns / 1000000 + 1000) and
+  (if .name == "robotics.hardware.message.age" then
+    (.value - (.observed_at / 1000000 - $source_ms) | absolute) <= 1
+   else true end)
 ) and
 all(
   $samples[];
@@ -83,5 +97,6 @@ all(
 ) and
 (values($samples; "robotics.hardware.clock.offset") | map(absolute) | max) <= 5 and
 (values($samples; "robotics.hardware.clock.drift") | map(absolute) | max) <= 20 and
+(values($samples; "robotics.hardware.message.age") | min) >= 0 and
 (values($samples; "robotics.hardware.message.age") | max) <= 1000 and
 all(values($samples; "robotics.hardware.clock.monotonic")[]; . == 1)

@@ -7,13 +7,25 @@ certificate verification remain delegated to Cosign.
 ## Prerequisites
 
 - Bash 5 or newer
-- Cosign 3.1.2
+- Cosign 3.1.3
 - jq 1.6 or newer
-- robotics-runtime-contracts 0.15.4 or newer (Python 3.12+ for local installs)
+- robotics-runtime-contracts 0.15.4, within `>=0.15.4,<0.16` (Python 3.12+ for local installs)
+
+The matching harness pin is 0.17.1, within `>=0.17.1,<0.18`. Contracts 0.16 /
+harness 0.18 use a different document generation and cannot replace this pair
+without the [coordinated migration](compatibility.md#foundation-generations).
 
 `ROBOTICS_CONTRACTS_CLI` may point to an executable from an isolated
 installation. Otherwise, the scripts resolve `robotics-contracts` from `PATH`
 or from the imported foundation environment.
+
+Cosign 3.1.3 is the minimum security baseline for
+[GHSA-fx35-mq7g-6g98](https://github.com/sigstore/cosign/security/advisories/GHSA-fx35-mq7g-6g98),
+which affects legacy JSON bundle verification through 3.1.2. The
+[current upstream release](https://github.com/sigstore/cosign/releases/tag/v3.1.3)
+was checked on 2026-09-07. CI pins the CLI version; `docker-bake.hcl` pins the
+multi-platform Chainguard image digest and the same version. Update both
+together: the preflight image build checks the embedded binary version.
 
 ## Produce and sign
 
