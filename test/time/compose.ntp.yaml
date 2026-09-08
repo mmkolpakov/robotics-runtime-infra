@@ -1,12 +1,16 @@
 ---
 services:
-  time-fixture:
+  time-source:
     image: "${HOST_IO_FIXTURE_IMAGE}"
     user: "${ROBOTICS_CHRONY_IDENTITY:?set fixture _chrony UID:GID}"
     init: true
-    networks: [time-fixture]
     read_only: true
-    command: [chronyd, -U, -d, -x, -f, /etc/chrony/chrony.conf]
+    command:
+      - sh
+      - -ec
+      - >-
+        install -d -m 0700 /tmp/chrony;
+        exec chronyd -U -d -x -f /etc/chrony/chrony.conf
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -15,17 +19,20 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m
     volumes:
       - type: bind
-        source: "${ROBOTICS_TIME_SOCKET_DIR}"
-        target: /run/robotics-time
-      - type: bind
-        source: "${ROBOTICS_CHRONY_FIXTURE_CONFIG}"
+        source: ./config/time/chrony-source-fixture.conf
         target: /etc/chrony/chrony.conf
         read_only: true
     healthcheck:
-      test: [CMD-SHELL, "test -S /run/robotics-time/chronyd.sock"]
+      test: [CMD, chronyc, -n, -h, /tmp/chrony/chronyd.sock, tracking]
       interval: 1s
       timeout: 1s
       retries: 30
+    networks: [time-fixture]
+
+  time-fixture:
+    depends_on:
+      time-source:
+        condition: service_healthy
 
 networks:
   time-fixture:

@@ -245,6 +245,7 @@ jobs:
           path: |
             artifacts/benchmarks/
             artifacts/evidence-s3/
+            artifacts/host-time/
             artifacts/provider-conformance/
             artifacts/runtime/
             artifacts/security/

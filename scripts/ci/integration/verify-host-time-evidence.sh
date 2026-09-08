@@ -44,20 +44,25 @@ run_chrony_case() (
     --file test/time/compose.yaml
     --profile time-chrony
   )
-  trap '"${compose[@]}" down --volumes --remove-orphans || true' EXIT
+  if [[ "${expected}" == true ]]; then
+    compose+=(--file test/time/compose.ntp.yaml)
+  fi
+  trap '"${compose[@]}" logs --no-color >"${HOST_TIME_WORK}/${name}-compose.log" 2>&1 || true;
+    "${compose[@]}" down --volumes --remove-orphans || true' EXIT
 
   "${compose[@]}" up --detach --no-build --wait --wait-timeout 30 time-fixture
   if [[ "${expected}" == true ]]; then
     "${compose[@]}" exec -T time-fixture \
-      chronyc -n -h /run/robotics-time/chronyd.sock waitsync 30 0 0 1
+      chronyc -n -h /run/robotics-time/chronyd.sock waitsync 60 0.005 20 1
   fi
   "${compose[@]}" up --detach --no-build time-evidence-chrony
   host_time_wait_for_collector time-evidence-chrony "${compose[@]}"
   # Exercise the same timestamp parser and publisher as the host timer. The
-  # local-reference Chrony daemon is a synthetic fixture, not a lab NTP source.
+  # NTP pair is an isolated fixture, not a qualified lab time source.
   for _ in {1..10}; do
     "${compose[@]}" exec -T time-fixture \
       chronyc -c -n -h /run/robotics-time/chronyd.sock tracking |
+      tee -a "${HOST_TIME_WORK}/${name}-tracking.csv" |
       sudo bash scripts/time/sample.sh chrony "${socket_dir}" --stdin
     if host_time_has_samples "${evidence_dir}/hardware-time.otlp.json"; then
       break
