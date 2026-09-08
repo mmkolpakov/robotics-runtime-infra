@@ -24,7 +24,9 @@ from opentelemetry.trace import (
     TraceState,
     set_span_in_context,
 )
+from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.publisher import Publisher
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -133,20 +135,22 @@ def write_observation(path: Path, observation: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def wait_for_subscriber(node: Node, topic: str, timeout_sec: float) -> int:
+def wait_for_subscriber(node: Node, publisher: Publisher, timeout_sec: float) -> int:
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
-        count = node.count_subscribers(topic)
+        count = publisher.get_subscription_count()
         if count >= 1:
             return count
         rclpy.spin_once(node, timeout_sec=0.1)
-    raise RuntimeError(f"{topic} has no matched subscriber after {timeout_sec} seconds")
+    raise RuntimeError(
+        f"{publisher.topic_name} has no matched subscriber after {timeout_sec} seconds"
+    )
 
 
 def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[str, Any]:
     publisher = node.create_publisher(TraceContext, topic, qos_profile())
     started_at = iso8601_now()
-    subscriber_count = wait_for_subscriber(node, topic, DISCOVERY_TIMEOUT_SEC)
+    subscriber_count = wait_for_subscriber(node, publisher, DISCOVERY_TIMEOUT_SEC)
     ready_path = Path(required_environment("ROBOTICS_DESTINATION_READY"))
     expected = {
         "run_id": required_environment("ROBOTICS_RUN_ID"),
@@ -206,6 +210,8 @@ def publish(node: Node, tracer: trace.Tracer, topic: str, count: int) -> dict[st
         raise RuntimeError("producer traceparent values are not unique")
     if first_message_at_ns is None:
         raise RuntimeError("publisher emitted no messages")
+    if not publisher.wait_for_all_acked(Duration(seconds=10)):
+        raise RuntimeError("bridge did not acknowledge all published messages")
     return {
         "schema_version": "transport-probe-observation.v1",
         "role": "source",
@@ -275,7 +281,7 @@ def subscribe(
     ready = False
     while time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.1)
-        if not ready and node.count_publishers(topic) >= 1:
+        if not ready and subscription.get_publisher_count() >= 1:
             write_observation(
                 Path(required_environment("ROBOTICS_DESTINATION_READY")),
                 {
