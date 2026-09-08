@@ -17,8 +17,14 @@ probe observations, OTLP traces, evidence index and transport verdict.
 
 Each run publishes 20 messages by default. `ROBOTICS_MESSAGE_COUNT` controls this
 count for both paths. The publisher waits for the bridge subscription and the
-destination's discovered bridge publisher. This barrier carries the run identity,
+destination's matched bridge publisher and waits for reliable acknowledgments
+before destroying the source publisher. This barrier carries the run identity,
 topic and type hash and is written atomically inside the new run directory.
+
+Fast DDS discovery uses `SYSTEM_DEFAULT` so the retained UDP-only XML controls
+transports. Jazzy's `LOCALHOST` override adds shared memory independently of that
+XML, which is incompatible with these containers' private IPC namespaces. The
+Compose network remains internal. The frozen Cyclone DDS path keeps `LOCALHOST`.
 
 Successful transport qualification requires every message and trace relationship
 to pass the shared contracts. These checks cover transport; they do not execute

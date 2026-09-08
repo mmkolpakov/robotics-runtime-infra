@@ -55,8 +55,10 @@ services:
     network_mode: service:zenoh-source-plane
     environment:
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
 
   transport-subscriber:
     network_mode: service:zenoh-destination-plane
     environment:
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
