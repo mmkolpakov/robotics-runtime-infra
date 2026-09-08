@@ -66,6 +66,8 @@ jobs:
         run: bash scripts/ci/foundation/run-runtime.sh
       - name: Run two isolated three-repository acceptance paths
         run: bash scripts/ci/foundation/run-acceptance-isolation.sh
+      - name: Run the default edge-attach verifier against live simulation
+        run: bash scripts/ci/foundation/run-edge-attach.sh
       - name: Capture foundation logs
         if: always()
         run: |

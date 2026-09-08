@@ -5,7 +5,9 @@ x-edge-attach-observer: &edge-attach-observer
   network_mode: service:edge-attach-data-plane
   read_only: true
   environment:
+    FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
     RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"
+    RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
     RMW_IMPLEMENTATION: rmw_fastrtps_cpp
     ROS_AUTOMATIC_DISCOVERY_RANGE: SUBNET
     ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
@@ -62,10 +64,24 @@ services:
       - /input/scenario.yaml
       - --runtime
       - /input/runtime-manifest.json
+      - --run-id
+      - "${ROBOTICS_RUN_ID:-}"
+      - --domain-id
+      - "${ROBOTICS_DOMAIN_ID:-}"
+      - --run-context
+      - /input/acceptance-run.json
       - --evidence-index
-      - /input/evidence-index.json
+      - /evidence/evidence-index.json
+      - --receipt-inventory
+      - /evidence/receipt-inventory.json
+      - --otel-metrics
+      - /evidence/metrics.otlp.jsonl
+      - --measurement-complete
+      - /results/measurement-complete
       - --output
       - /results
+      - --diagnostic-output
+      - /results/diagnostic.json
     volumes:
       - type: bind
         source: "${ROBOTICS_RUN_INPUT_DIR:-./runs/current/input}"
@@ -74,6 +90,19 @@ services:
       - type: bind
         source: "${ROBOTICS_RESULTS_DIR:-./runs/current/results}"
         target: /results
+      - type: bind
+        source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
+        target: /evidence
+        read_only: true
+      - type: bind
+        source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
+        target: /evidence/recordings
+        read_only: true
+        # Create EVIDENCE_DIR/recordings before attaching the observer.
+      - type: bind
+        source: ./config/fastdds
+        target: /etc/robotics/fastdds
+        read_only: true
     depends_on:
       edge-attach-data-plane:
         condition: service_started
@@ -143,12 +172,22 @@ services:
       - /authorization/execution-permit.json
       - --verification
       - /authorization-output/execution-verification.json
+      - --run-id
+      - "${ROBOTICS_RUN_ID:-}"
+      - --domain-id
+      - "${ROBOTICS_DOMAIN_ID:-}"
+      - --run-context
+      - /input/acceptance-run.json
       - --evidence-index
       - /evidence/evidence-index.json
       - --otel-metrics
       - /evidence/hardware-time.otlp.json
+      - --measurement-complete
+      - /results/measurement-complete
       - --output
       - /results
+      - --diagnostic-output
+      - /results/diagnostic.json
     environment:
       FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
       RCUTILS_COLORIZED_OUTPUT: "${RCUTILS_COLORIZED_OUTPUT:-1}"

@@ -6,6 +6,11 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "${script_dir}/lib.sh"
 
 readonly evidence_metrics_segment_index=900000
+observer_mode="${ROBOTICS_FOUNDATION_OBSERVER:-embedded}"
+case "${observer_mode}" in
+  embedded|edge-attach) ;;
+  *) printf 'unknown foundation observer: %s\n' "${observer_mode}" >&2; exit 64 ;;
+esac
 
 root="$(foundation_repository_root)"
 cd "${root}"
@@ -198,6 +203,7 @@ resolved_model_relative="$(realpath --relative-to="${root}" "${resolved_model}")
 ci_require_policy_allows policy/foundation.rego foundation "${policy_input_relative}"
 ci_require_policy_allows policy/compose.rego compose "${resolved_model_relative}"
 observer=""
+attached_compose=()
 publish_acceptance_results() {
   mkdir -p "${artifact_dir}/acceptance-results"
   sudo cp -a "${run_dir}/results/." "${artifact_dir}/acceptance-results/"
@@ -228,6 +234,11 @@ cleanup() {
   if [[ -n "${observer}" ]]; then
     docker logs "${observer}" \
       > "${artifact_dir}/foundation-observer.log" 2>&1 || true
+  fi
+  if ((${#attached_compose[@]})); then
+    foundation_compose_logs \
+      "${artifact_dir}/edge-attach.log" "${attached_compose[@]}"
+    foundation_compose_down "${attached_compose[@]}"
   fi
   foundation_compose_down "${compose[@]}" "${profiles[@]}"
   return "${status}"
@@ -287,11 +298,36 @@ jq -e --arg digest "${fastdds_profile_sha256}" \
   up --detach --no-build --wait --wait-timeout 120 \
   runtime-probe-publisher runtime-metrics
 
-observer="$(
-  "${compose[@]}" --profile acceptance run --detach \
-    --name "${project}-observer" --no-deps acceptance-observer
-)"
+observer_compose=("${compose[@]}" --profile acceptance)
+observer_service=acceptance-observer
 measurement_complete="${run_dir}/measurement-complete"
+if [[ "${observer_mode}" == edge-attach ]]; then
+  export ROBOTICS_RUN_INPUT_DIR="${run_dir}"
+  export ROBOTICS_RESULTS_DIR="${run_dir}/results"
+  export ROBOTICS_ATTACH_NETWORK
+  ROBOTICS_ATTACH_NETWORK="$(docker inspect "${simulation_container}" | jq -er '
+    .[0].NetworkSettings.Networks | keys |
+    if length == 1 then .[0] else error("expected one simulation network") end
+  ')"
+  attached_compose=(docker compose -p "${project}-attach"
+    -f "${root}/compose.yaml" -f "${root}/compose.edge-attach.yaml"
+    --profile edge-attach)
+  attached_model="${run_dir}/edge-attach-compose.json"
+  "${attached_compose[@]}" config --format json >"${attached_model}"
+  cp "${attached_model}" "${artifact_dir}/"
+  ci_require_policy_allows policy/compose.rego compose \
+    "$(realpath --relative-to="${root}" "${attached_model}")"
+  "${attached_compose[@]}" up --detach --no-build edge-attach-data-plane
+  observer_compose=("${attached_compose[@]}")
+  observer_service=edge-attach-observer
+  measurement_complete="${run_dir}/results/measurement-complete"
+fi
+# Use the service's actual default verify command in both modes. Its marker
+# closes the same live measurement window before recording/evidence finalization.
+observer="$(
+  "${observer_compose[@]}" run --detach \
+    --name "${project}-observer" --no-deps "${observer_service}"
+)"
 while [[ ! -f "${measurement_complete}" ]]; do
   if [[ "$(docker inspect --format '{{.State.Running}}' "${observer}")" != true ]]; then
     observer_status="$(docker wait "${observer}")"
