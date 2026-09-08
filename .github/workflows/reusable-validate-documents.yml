@@ -9,7 +9,7 @@ on:
         required: true
         type: string
       documents:
-        description: Newline-delimited paths relative to the caller repository.
+        description: Newline-delimited SCHEMA=PATH entries; paths are relative to the caller repository.
         required: true
         type: string
 
@@ -55,23 +55,4 @@ jobs:
       - name: Validate caller documents
         env:
           DOCUMENTS: ${{ inputs.documents }}
-        run: |
-          consumer_root="$(realpath consumer)"
-          validated=0
-          while IFS= read -r document; do
-            document="${document%$'\r'}"
-            test -n "${document}" || continue
-            candidate="$(realpath -e "${consumer_root}/${document}")"
-            case "${candidate}" in
-              "${consumer_root}"/*) ;;
-              *)
-                printf 'document escapes caller repository: %s\n' \
-                  "${document}" >&2
-                exit 64
-                ;;
-            esac
-            tooling/dependencies/robotics-runtime/.venv/bin/robotics-contracts \
-              validate "${candidate}"
-            validated=$((validated + 1))
-          done <<<"${DOCUMENTS}"
-          test "${validated}" -gt 0
+        run: bash tooling/scripts/ci/foundation/validate-caller-documents.sh consumer

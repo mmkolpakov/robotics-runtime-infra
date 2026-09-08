@@ -27,6 +27,10 @@ qualification predicate `/qualification-bundle/v1`, and OTLP metrics with
 media type `application/x-ndjson`. Neither upgrading one package nor matching
 a `schema_version` string establishes compatibility. Reusable workflows use
 the exact same workspace lock and therefore participate in the migration.
+The `documents` input to `reusable-validate-documents.yml` changes from bare
+paths to explicit `SCHEMA=PATH` entries. Update callers when changing their
+infra commit pin; document-provided discriminators no longer select the role
+that the workflow validates.
 
 ## Hardware Dependency Limits
 

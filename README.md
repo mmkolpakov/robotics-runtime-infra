@@ -677,11 +677,26 @@ WSL2 support boundaries and host diagnostics are in [WSL2](docs/wsl2.md).
 Consumer repositories can call three narrow reusable workflows by an exact
 40-character infra commit SHA:
 
-- `reusable-validate-documents.yml` validates caller-owned contract documents;
+- `reusable-validate-documents.yml` validates caller-owned documents against
+  explicitly selected contract roles;
 - `reusable-qualify.yml` runs the locked foundation and returns a signed
   qualification package;
 - `reusable-verify-qualification.yml` verifies a retained package with a
   public key or keyless Sigstore policy.
+
+The document-validation workflow requires one `SCHEMA=PATH` entry per line in
+its `documents` input. For example:
+
+```yaml
+documents: |
+  acceptance-scenario.v1=acceptance/scenario.yaml
+  runtime-manifest.v1=artifacts/runtime-manifest.json
+```
+
+Paths are relative to the caller repository and must remain inside it after
+resolving symlinks. A valid document with another role is rejected. The
+qualification workflow also checks its input as `acceptance-scenario.v1`
+before building images.
 
 The caller keeps product sources and secrets in its own repository. See the
 [minimal Compose consumer](examples/minimal-consumer/README.md) and the
