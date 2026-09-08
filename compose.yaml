@@ -173,6 +173,8 @@ services:
         source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
         target: /evidence/recordings
         read_only: true
+        # Create EVIDENCE_DIR/recordings before starting the observer: the parent
+        # /evidence mount is read-only and cannot create this nested mountpoint.
       - type: bind
         source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
         target: /evidence

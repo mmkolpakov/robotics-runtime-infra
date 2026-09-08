@@ -35,7 +35,7 @@ rm -rf "${run_dir}"
 mkdir -p \
   "${run_dir}/bags" \
   "${run_dir}/configuration" \
-  "${run_dir}/evidence" \
+  "${run_dir}/evidence/recordings" \
   "${run_dir}/results" \
   "${artifact_dir}"
 cp "${scenario_source}" "${run_dir}/scenario.yaml"
