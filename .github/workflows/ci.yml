@@ -192,6 +192,7 @@ jobs:
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
       - name: Build the amd64 CPU product
+        id: runtime_images
         run: >-
           docker buildx bake --file docker-bake.hcl cpu ci-only
           --load
@@ -223,8 +224,10 @@ jobs:
       - name: Verify the local high-throughput profile
         run: scripts/ci/integration/verify-the-local-high-throughput-profile.sh
       - name: Verify cross-domain Trace Context transport
+        if: ${{ !cancelled() && steps.runtime_images.outcome == 'success' }}
         run: test/transport/run
       - name: Compare the frozen Zenoh transport
+        if: ${{ !cancelled() && steps.runtime_images.outcome == 'success' }}
         run: test/zenoh/run
       - name: Benchmark the supported ROS data planes
         run: scripts/ci/integration/benchmark-the-supported-ros-data-planes.sh
