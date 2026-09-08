@@ -13,7 +13,7 @@ setup() {
 
 @test "evidence producing overlays reject an unset run identity" {
   local overlay
-  for overlay in evidence record sensor-inference zenoh; do
+  for overlay in evidence record sensor-inference transport; do
     run env -u ROBOTICS_RUN_ID ROBOTICS_DOMAIN_ID=primary \
       docker compose -f "${ROOT}/compose.yaml" -f "${ROOT}/compose.${overlay}.yaml" config --quiet
     [ "${status}" -ne 0 ]
