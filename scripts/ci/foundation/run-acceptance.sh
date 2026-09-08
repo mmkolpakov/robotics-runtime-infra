@@ -19,6 +19,8 @@ readonly foundation_bin="${root}/dependencies/robotics-runtime/.venv/bin"
 source "${root}/scripts/ci/lib.sh"
 # shellcheck source=scripts/ci/image-identity.sh
 source "${root}/scripts/ci/image-identity.sh"
+# shellcheck source=scripts/ci/foundation/run-policy.sh
+source "${script_dir}/run-policy.sh"
 
 foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE
 command -v cosign >/dev/null 2>&1 || {
@@ -44,6 +46,9 @@ mkdir -p \
   "${run_dir}/results" \
   "${artifact_dir}"
 cp "${scenario_source}" "${run_dir}/scenario.yaml"
+foundation_require_scenario_policy "${foundation_bin}/python" \
+  "${run_dir}/scenario.yaml" "runs/${project}/scenario-policy-input.json"
+cp "${run_dir}/scenario-policy-input.json" "${artifact_dir}/"
 lscpu --json >"${run_dir}/configuration/host-topology.json"
 "${foundation_bin}/python" -c '
 import json
@@ -202,6 +207,9 @@ policy_input_relative="$(realpath --relative-to="${root}" "${policy_input}")"
 resolved_model_relative="$(realpath --relative-to="${root}" "${resolved_model}")"
 ci_require_policy_allows policy/foundation.rego foundation "${policy_input_relative}"
 ci_require_policy_allows policy/compose.rego compose "${resolved_model_relative}"
+foundation_require_release_images_policy "${resolved_model}" \
+  "runs/${project}/release-images-policy-input.json"
+cp "${run_dir}/release-images-policy-input.json" "${artifact_dir}/"
 observer=""
 attached_compose=()
 publish_acceptance_results() {
@@ -317,6 +325,9 @@ if [[ "${observer_mode}" == edge-attach ]]; then
   cp "${attached_model}" "${artifact_dir}/"
   ci_require_policy_allows policy/compose.rego compose \
     "$(realpath --relative-to="${root}" "${attached_model}")"
+  foundation_require_release_images_policy "${attached_model}" \
+    "runs/${project}/edge-attach-release-policy-input.json"
+  cp "${run_dir}/edge-attach-release-policy-input.json" "${artifact_dir}/"
   "${attached_compose[@]}" up --detach --no-build edge-attach-data-plane
   observer_compose=("${attached_compose[@]}")
   observer_service=edge-attach-observer

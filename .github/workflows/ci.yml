@@ -93,6 +93,8 @@ jobs:
         run: |
           docker buildx bake --file docker-bake.hcl policy-tooling --load --set '*.platform=linux/amd64'
           docker run --rm local/robotics-runtime-infra/policy-tooling:ci version
+      - name: Verify policies on consumer execution inputs
+        run: bats test/policy/run-policy.bats
       - name: Verify policy format and unit tests
         run: scripts/ci/static-analysis/verify-policy-format-and-tests.sh
       - name: Verify execution authorization policy
