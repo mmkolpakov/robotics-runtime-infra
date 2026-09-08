@@ -3,7 +3,7 @@
     "robotics-runtime": {
       "type": "git",
       "url": "https://github.com/mmkolpakov/robotics-runtime.git",
-      "version": "04fd1ddac0c812157feba42209dfd71792dbf602"
+      "version": "ffa52628a22de88302aa5735ecd6e2669e858d57"
     }
   }
 }

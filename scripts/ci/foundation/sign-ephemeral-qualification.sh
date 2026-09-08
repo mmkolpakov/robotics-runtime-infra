@@ -26,9 +26,14 @@ command -v cosign >/dev/null 2>&1 || {
 
 work="$(mktemp -d)"
 cleanup() {
-  rm -rf -- "${work}"
+  rm -f -- "$work/qualification.key" "$work/qualification.pub" \
+    "$work/signing-config.json" "$work/trusted-root.json" "$work/qualification.sigstore.json"
+  rmdir -- "$work"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 export COSIGN_PASSWORD
 COSIGN_PASSWORD="$(

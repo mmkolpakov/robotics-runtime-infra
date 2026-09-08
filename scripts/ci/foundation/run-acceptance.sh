@@ -357,8 +357,8 @@ qualification_inputs=(
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
-    --mcap-summary "primary-${index}=${mcap_summaries[$index]}"
-    --evidence "raw_mcap:primary-${index}.mcap=${mcap_files[$index]}"
+    --recording-summary "primary-${index}=${mcap_summaries[$index]}"
+    --evidence "recording:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
 scripts/qualification/create-statement \

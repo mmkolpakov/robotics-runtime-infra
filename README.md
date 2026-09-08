@@ -597,7 +597,7 @@ target and digest, then sign it with the documented Cosign flow:
 scenario_sha256="$(sha256sum runs/current/input/scenario.yaml | cut -d' ' -f1)"
 robotics-contracts permit init \
   --scenario-sha256 "${scenario_sha256}" \
-  --image-digest "${ROBOTICS_TARGET_IMAGE_DIGEST}" \
+  --subject-digest "${ROBOTICS_TARGET_IMAGE_DIGEST}" \
   --trust-policy-sha256 "${ROBOTICS_TRUST_POLICY_SHA256}" \
   --environment hil \
   --target-id controller-alpha \
