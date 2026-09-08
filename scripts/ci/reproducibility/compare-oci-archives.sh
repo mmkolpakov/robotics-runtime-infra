@@ -43,7 +43,7 @@ diagnose_difference() {
   # Import names differ so both archives remain addressable in the same store.
   # Manifest equality above remains the gate, regardless of this tool's verdict.
   diffoci diff --platform linux/amd64 --pull never --ignore-image-name \
-    --report-dir "${report_dir}/diffoci" \
+    --report-file "${report_dir}/differences.json" \
     localhost/robotics-reproducibility:first \
     localhost/robotics-reproducibility:second
 }
