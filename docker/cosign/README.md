@@ -33,6 +33,12 @@ retains the release commit, patch SHA-256 and linked Go module versions in
 `/usr/share/robotics-runtime/cosign-build.txt`, plus the upstream license.
 Build timestamps are fixed for reproducibility.
 
+Execution verification keeps the base `cosign_version` and records the
+SHA-256 of the actual executable bytes in `cosign_subject_digest`. This is a
+binary subject, not an OCI image digest. The patched build is distinguished
+by these exact bytes and the retained build metadata. Preflight hashes the
+resolved executable; its policy rejects a missing or malformed digest.
+
 The existing real-signature, DSSE tamper, evidence handoff, reproducibility
 and HIGH/CRITICAL vulnerability gates remain required. No new CVE exception
 is added. Hosted fixture setup still uses the official v3.1.3 installer;
