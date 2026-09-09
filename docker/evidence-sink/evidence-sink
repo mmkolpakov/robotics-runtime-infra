@@ -192,6 +192,7 @@ upload_segment() (
   rclone copy "$(dirname "$file")" "$remote_dir" \
     --files-from-raw "$check_list" \
     --immutable \
+    --checksum \
     --metadata \
     --metadata-set content-type=application/mcap \
     --metadata-set "sha256=${sha256}" \
@@ -231,12 +232,22 @@ process_segment() {
   local file="$1" index sha256 size_bytes summary_path summary_sha256
   local summary_size_bytes duration_ns max_duration_ns
   [[ -f "$file" ]] || fail "segment does not exist: $file"
+  case "$file" in
+    *$'\n'*|*$'\r'*) fail 'MCAP path cannot contain line breaks' ;;
+  esac
   require_command mcap
   require_command mcap-summary
-  file="$(realpath -e "$file")"
-  case "${file##*/}" in
-    *$'\n'*|*$'\r'*) fail 'MCAP filename cannot contain line breaks' ;;
+  IFS= read -r -d '' file < <(realpath -ez -- "$file") || fail 'cannot resolve MCAP path'
+  case "$file" in
+    *$'\n'*|*$'\r'*) fail 'MCAP path cannot contain line breaks' ;;
   esac
+
+  # A raw rclone filter must identify the same native name on every supported
+  # backend. Generated segment names use this portable subset; reject encoded
+  # aliases before uploading rather than selecting a different neighboring file.
+  if [[ "$evidence_mode" == s3 && ! "${file##*/}" =~ ^[a-zA-Z0-9._\ %#()+@,=-]+$ ]]; then
+    fail 'S3 MCAP filename must use portable ASCII letters, digits, spaces or ._%#()+@,=-'
+  fi
 
   if ! mcap --color never doctor "$file" >/dev/null; then
     return 75
