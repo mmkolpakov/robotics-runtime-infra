@@ -30,7 +30,7 @@ setup() {
   mcap() { [[ "$1" == --color && "$3" == doctor ]]; }
   mcap-summary() { bash "${ROOT}/docker/evidence-sink/mcap-summary" "$@"; }
   rclone() {
-    local action="$1" file_list='' immutable=false one_way=false
+    local action="$1" file_list='' immutable=false checksum=false one_way=false
     local -a selected=()
     [[ "$action" == copy || "$action" == check ]] || return 1
     [[ "$2" == "$(dirname "$SOURCE")" ]] || return 1
@@ -40,6 +40,7 @@ setup() {
       case "$1" in
         --files-from-raw) file_list="$2"; shift 2 ;;
         --immutable) immutable=true; shift ;;
+        --checksum) checksum=true; shift ;;
         --one-way) one_way=true; shift ;;
         --metadata) shift ;;
         --metadata-set) shift 2 ;;
@@ -50,7 +51,7 @@ setup() {
     mapfile -t selected <"$file_list"
     [[ "${#selected[@]}" -eq 1 && "${selected[0]}" == "$(basename "$SOURCE")" ]] || return 1
     if [[ "$action" == copy ]]; then
-      [[ "$immutable" == true ]] || return 1
+      [[ "$immutable" == true && "$checksum" == true ]] || return 1
     else
       [[ "$one_way" == true ]] || return 1
     fi
@@ -116,8 +117,29 @@ setup() {
     cp "$SOURCE" "$file"
     run bash "$SINK" segment "$file"
     [ "$status" -ne 0 ]
-    [[ "$output" == *'MCAP filename cannot contain line breaks'* ]]
+    [[ "$output" == *'MCAP path cannot contain line breaks'* ]]
     [ ! -e "$UPLOAD_CALLS" ]
+  done
+}
+
+@test "a trailing newline cannot redirect segment registration to another file" {
+  file="${SOURCE}"$'\n'
+  cp "$SOURCE" "$file"
+  run bash "$SINK" segment "$file"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'MCAP path cannot contain line breaks'* ]]
+  [ ! -e "$UPLOAD_CALLS" ]
+}
+
+@test "nonportable source names cannot select rclone encoded aliases" {
+  for name in $'recording\t_0000.mcap' 'recording␉_0000.mcap' 'recording‛␉_0000.mcap'; do
+    file="${EVIDENCE_SPOOL_DIR}/${name}"
+    cp "$SOURCE" "$file"
+    run bash "$SINK" segment "$file"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'S3 MCAP filename must use portable ASCII'* ]]
+    [ ! -e "$UPLOAD_CALLS" ]
+    [ ! -e "$UPLOAD_AWS_CALLS" ]
   done
 }
 

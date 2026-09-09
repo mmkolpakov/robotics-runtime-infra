@@ -30,6 +30,17 @@ immutable object version and run. Registration rejects S3's mutable `null`
 version and records object keys as
 percent-encoded URIs, including spaces and reserved URI characters.
 
+S3 segment basenames use ASCII letters, digits, spaces and `. _ % # ( ) + @ , = -`,
+and end in `_<index>.mcap`. Configure the recorder to produce those names.
+The sink rejects other basenames before uploading because rclone's native and
+standard name encodings can otherwise select different files. Local-only
+registration does not impose this S3 filename restriction. Paths containing
+line breaks are rejected in both modes.
+
+Uploads compare content checksums and refuse to replace a different object.
+Restoring an identical spool file with a changed modification time reuses the
+existing retained object version. Temporary upload lists are removed on failure.
+
 The evidence image includes `retained-artifact` and the documented
 [Cosign dependency rebuild](../docker/cosign/README.md).
 Prepare a retention predicate from a confirmed registration and the

@@ -48,6 +48,17 @@ work="$(mktemp -d)"
 # Fixture private keys exist only in this container's tmpfs. Public verification
 # evidence is retained; no private key enters the mounted artifact directory.
 trap 'rm -f -- "$work"/*; rmdir -- "$work"' EXIT
+
+# A restored spool can have a different mtime. Equal bytes must reuse the
+# existing object version, including when the local registration was lost.
+retry_source="$work/$(basename "$source")"
+cp "$source" "$retry_source"
+touch -m -d '2030-01-01T00:00:00Z' "$retry_source"
+retry_registration_dir=/evidence/state/restored-spool
+EVIDENCE_REGISTRATION_DIR="$retry_registration_dir" evidence-sink segment "$retry_source"
+test "$(jq -er '.version_id' "$retry_registration_dir/0-${digest}.json")" = \
+  "$(jq -er '.version_id' "$registration")"
+
 export COSIGN_PASSWORD=retention-fixture-only
 cosign generate-key-pair --output-key-prefix "$work/signer"
 cosign generate-key-pair --output-key-prefix "$work/foreign"
