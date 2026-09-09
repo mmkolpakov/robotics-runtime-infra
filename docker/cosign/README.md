@@ -13,11 +13,14 @@ The upstream release and current Chainguard image contain affected Go modules:
   [GO-2026-6179](https://pkg.go.dev/vuln/GO-2026-6179) require
   `golang.org/x/mod v0.40.0`. Their sumdb fixes also require a fixed build
   toolchain; the builder is the digest-pinned Go 1.26.8 image.
+- [GHSA-hrxh-6v49-42gf](https://github.com/grpc/grpc-go/security/advisories/GHSA-hrxh-6v49-42gf)
+  and [CVE-2026-84304](https://github.com/grpc/grpc-go/security/advisories/GHSA-vp52-pcj8-j9qc)
+  require `google.golang.org/grpc v1.83.1`.
 
 The patch was generated from the release's module locks with Go 1.26.8:
 
 ```sh
-go get golang.org/x/crypto@v0.55.0 golang.org/x/mod@v0.40.0
+go get golang.org/x/crypto@v0.55.0 golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.1
 go mod verify
 git diff -- go.mod go.sum
 ```
@@ -27,7 +30,7 @@ x/text and x/tools. Their exact versions and checksums are retained in the
 patch. The build verifies the module cache and fixed dependency versions,
 compiles with `-mod=readonly`, and rejects any changes to the patched locks.
 
-The binary identifies itself as `v3.1.3+robotics.deps1` with a modified source
+The binary identifies itself as `v3.1.3+robotics.deps2` with a modified source
 tree. It is not an unmodified upstream release artifact. Each runtime image
 retains the release commit, patch SHA-256 and linked Go module versions in
 `/usr/share/robotics-runtime/cosign-build.txt`, plus the upstream license.
@@ -44,6 +47,6 @@ and HIGH/CRITICAL vulnerability gates remain required. No new CVE exception
 is added. Hosted fixture setup still uses the official v3.1.3 installer;
 container signing and verification exercise this dependency rebuild.
 
-Replace the patch with an upstream release once it contains both fixes.
+Replace the patch with an upstream release once it contains these fixes.
 Renovate tracks the release version and source commit together. A proposed
 update must regenerate or remove the patch and pass the same gates.
