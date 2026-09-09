@@ -45,7 +45,11 @@ flowchart LR
 The end-to-end handoff is machine-readable: a product repository supplies its
 workload and scenario, runtime infra emits observed runtime and evidence facts,
 and the harness emits an acceptance result plus JUnit. Each layer can evolve
-and be tested independently.
+within the [pinned compatibility pair](docs/compatibility.md#foundation-generations).
+This branch prepares the coordinated workspace migration. The source pin and
+package versions are generated in [the foundation lock](docs/foundation-compatibility.md).
+Legacy producers and fixtures are migrated together before the integration PR
+can merge; E2E-0 is not yet qualified.
 
 The shared document model lives in
 [`robotics-runtime-contracts`](https://github.com/mmkolpakov/robotics-runtime-contracts).
@@ -146,6 +150,7 @@ Release tags publish immutable digests for these images under
 | `acceptance-observer` | amd64, arm64 | Attach-only acceptance verification and JSON/JUnit results |
 | `benchmark` | amd64, arm64 | `performance_test` for ROS 2 transport measurements |
 | `evidence-sink` | amd64, arm64 | MCAP validation, checksums, S3-compatible upload and evidence finalization |
+| `permit-preflight` | amd64, arm64 | Verify execution permits, independent signatures, policy and nonce state before physical attachment |
 
 The simulation image is tested by running Gazebo and ROS 2 tests on amd64. The
 portable images are built for amd64 and arm64; hardware-specific accelerators
@@ -157,30 +162,35 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 
 | Component | Release baseline |
 | --- | --- |
-| OS | Ubuntu 24.04 packages from snapshot `20260726T000000Z` |
+| OS | Ubuntu 24.04 packages from snapshot `20260908T000000Z` |
 | ROS | ROS 2 Jazzy packages from snapshot `2026-06-18` |
 | Simulator | Gazebo Harmonic from the pinned Jazzy simulation image |
 | CPU inference | ONNX Runtime 1.27.0 |
 | Intel inference candidate | ONNX Runtime OpenVINO 1.24.1 with OpenVINO 2025.4.1 |
 | NVIDIA inference candidate | ONNX Runtime GPU 1.27.0, CUDA 13.3.0 and cuDNN 9 |
 | AMD inference candidate | ONNX Runtime MIGraphX 1.23.2 with ROCm 7.2.4 |
-| Jetson inference candidate | JetPack 7.2 host; source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11 |
+| Jetson inference candidate | Source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11; compatibility with JetPack 7.2 is unqualified |
 | RK3588 inference candidate | RKNN Toolkit2 and RKNN Runtime 2.3.2 |
 | Evidence format | rosbag2 MCAP and MCAP CLI 0.3.0 |
 | Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
 | CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
 | Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.15.4 |
-| Acceptance harness | `robotics-acceptance-harness` 0.17.1 |
+| Contracts | Source version from the [foundation lock](docs/foundation-compatibility.md) |
+| Acceptance harness | Same workspace revision as contracts |
 
 Base images, package snapshots, and Python artifacts are pinned in
-`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
-source of exact contracts and harness revisions. BuildKit embeds it and derives
-the runtime-readable `foundation-lock.json` used when a manifest is emitted.
-The non-published project in `tooling/foundation` owns the reproducible joint
-Python environment; each imported repository retains its own development lock.
-CI also requires each imported revision to be an exact release tag matching the
-package version installed in the acceptance observer image.
+`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` selects one
+immutable `robotics-runtime` commit. The generator checks both package versions
+against that workspace's `uv.lock`, exports hashed runtime dependencies with
+`uv export`, and derives the BuildKit context and compatibility document.
+Observer and permit-preflight wheels are built from the pinned context with
+locked build dependencies, then installed by their build-produced hashes.
+The imported workspace owns the joint Python environment; infra keeps no
+independent foundation `uv.lock`. See the
+[foundation update procedure](CONTRIBUTING.md#foundation-integration).
+Building this development candidate does not publish Python packages or prove
+a stable release pairing. Publication and foundation qualification remain
+required before release adoption.
 Ubuntu packages for both amd64 and arm64 resolve from the same signed,
 timestamped `snapshot.ubuntu.com` archive rather than from architecture-specific
 live mirrors.
@@ -190,6 +200,13 @@ image is published with an SBOM, BuildKit provenance, and an artifact
 attestation.
 
 Candidate versions are reproducible build inputs, not hardware support claims.
+NVIDIA's [JetPack 7.2 baseline](https://developer.nvidia.com/embedded/jetpack/downloads/archive-7.2)
+is Jetson Linux 39.2, CUDA 13.2.1, cuDNN 9.20.0 and TensorRT 10.16.2. The
+candidate container's CUDA 13.3 / TensorRT 11 stack differs from that host
+baseline. An image build or CUDA compatibility setting does not prove that
+pair works on Orin or Thor; a retained device qualification is still required.
+RKNN Toolkit2 2.3.2 has a separate, deliberately constrained converter stack;
+see [hardware dependency limits](docs/compatibility.md#hardware-dependency-limits).
 The current source line targets prerelease `v0.8.0-rc.1`; unqualified
 accelerator and physical-observation paths remain qualification-gated.
 
@@ -241,6 +258,14 @@ documented OpenVINO `LATENCY` hint with one stream. Set
 `THROUGHPUT` hint and OpenVINO-managed stream count. Both files use the official
 ONNX Runtime `load_config` provider option; neither fixes a core count or CPU
 model. Intel GPU system packages exist only in `inference-intel-gpu`.
+
+The Intel sensor runner requires `uv` and imports the exact workspace recorded
+in `foundation.repos`. It retains an acceptance run context, host facts and the
+standard simulation-interface probe before emitting `runtime-manifest.v1`.
+The provider configuration records the simulator container's local image ID;
+the runtime subject identifies the sensor inference image. Numeric parity,
+provider selection and performance limits must pass before model and runtime
+manifests are written. Use a new report directory for each invocation.
 
 Each hardware runner label identifies one exclusive physical resource pool.
 Qualification jobs are serialized by that label, use a unique Compose project,
@@ -372,7 +397,7 @@ runs/current/
 ├── bags/
 ├── evidence/
 │   ├── evidence-index.json
-│   ├── metrics.otlp.json
+│   ├── metrics.otlp.jsonl
 │   └── traces.otlp.jsonl
 └── results/
     ├── acceptance-result.json
@@ -385,14 +410,59 @@ by UID 1000; the evidence directory must be writable by UID 10001. Named
 volumes avoid host ownership concerns for interactive development.
 The sensor-inference qualification overlay runs both report writers as UID 1000
 so its isolated report tree has one non-root owner.
-Runtime manifests use `runtime-manifest.v2` and digest-link retained provider,
-host-topology, and container-resource configuration files when present.
+Runtime manifests use `runtime-manifest.v1` and bind retained provider profiles,
+conformance results, host topology, and container-resource configuration files.
 Intel sensor qualification also retains the exact ONNX fixture, observed NPY
 inputs, provider report, and a validated `model-artifact-manifest.v1` linking
 those artifacts to the runtime manifest.
 `ROBOTICS_TIME_EVIDENCE_DIR` is the separate bind mount used by host-owned
-Chrony and PTP collectors; it defaults to the run evidence directory. The host
-time directory is owned by the host `_chrony` UID/GID.
+Chrony and PTP collectors. Its literal Compose default is
+`./runs/current/evidence`; changing `ROBOTICS_RUN_DIR` or `ROBOTICS_EVIDENCE_DIR`
+does not change this default. Set it explicitly to a separate directory, such
+as `./runs/current/time-evidence`, owned by the host `_chrony` UID/GID with
+mode `0770`. Do not change the evidence-sink directory to `_chrony` ownership.
+When assembling a qualification bundle, retain the resulting time file in the
+run's evidence set and register it with the appropriate owner and checksum.
+
+On Linux, the foundation runner captures host facts and qualifies the running
+simulator before producing its runtime manifest and acceptance result. With
+Docker Buildx, uv, Bats, and Cosign 3.1.3 available, build and run the source
+foundation from the repository root:
+
+```bash
+export REGISTRY=local VERSION=foundation ROBOTICS_RUNTIME_MODE=source
+export SIMULATION_IMAGE="${REGISTRY}/robotics-runtime-infra/simulation:${VERSION}"
+export OBSERVER_IMAGE="${REGISTRY}/robotics-runtime-infra/acceptance-observer:${VERSION}"
+export EVIDENCE_IMAGE="${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"
+export POLICY_TOOLING_IMAGE="${REGISTRY}/robotics-runtime-infra/policy-tooling:${VERSION}"
+export VCS_REF IMAGE_CREATED SOURCE_DATE_EPOCH
+VCS_REF="$(git rev-parse HEAD)"
+IMAGE_CREATED="$(git show --no-patch --format=%cI HEAD)"
+SOURCE_DATE_EPOCH="$(git show --no-patch --format=%ct HEAD)"
+bash scripts/ci/foundation/import-sources.sh
+bash scripts/ci/foundation/validate-foundation.sh
+docker buildx bake --file docker-bake.hcl \
+  simulation acceptance-observer evidence-sink policy-tooling \
+  --load --set '*.platform=linux/amd64'
+bash scripts/ci/foundation/run-acceptance.sh
+```
+
+The runner creates a canonical run ID, retains the provider probe and world
+under `artifacts/<project>/provider/`, and supplies the manifest's host platform
+and provider bindings. Direct use of the `runtime-manifest` service requires
+those inputs to exist in the mounted run directory. The image supplies
+`ROBOTICS_INFRA_REVISION`; `ROBOTICS_RUNTIME_ID` defaults to
+`org.example.local-runtime`. Set that ID for a consuming runtime.
+Released mode uses reviewed `release.env` image references and independently
+verified registry manifest digests. `--env-file` supplies Compose interpolation;
+it does not export shell variables.
+`ROBOTICS_RUN_ID` and `ROBOTICS_DOMAIN_ID` must match the acceptance run and
+scenario when an observer is attached. `ROBOTICS_DOMAIN_ID` is a contract
+domain identifier; it is separate from the numeric DDS `ROS_DOMAIN_ID`.
+Evidence, recording, sensor-inference, and transport overlays require a run ID
+during Compose interpolation; sensor-inference also requires a domain ID.
+The base simulation model remains usable without an acceptance run. Its observer
+command validates both identifiers when invoked.
 
 The `robotics.*` metric namespace is reserved by the foundation. It includes
 clock, message delivery, inference latency, and
@@ -403,6 +473,8 @@ In S3 mode, `policy_observation.upload_lag_max_sec` is the largest whole-second
 age of any MCAP spool file observed during a sink scan: scan time minus the
 file's modification time, clamped to zero. It is not network transfer duration
 or object-store acknowledgement latency. Local-only runs report zero.
+The watcher follows nested recording directories recursively and retains a
+periodic rescan to handle directory creation races and missed filesystem events.
 
 Physical profiles additionally require `authorization-output` to be owned by
 UID/GID `10002:10002` with mode `0755`, and the persistent nonce store to be
@@ -419,38 +491,97 @@ interfaces, PTP domain, and acceptance thresholds remain site configuration.
 Install `config/time/chrony-command-socket.conf` as
 `/etc/chrony/conf.d/robotics-command-socket.conf` and
 `tmpfiles.d/robotics-time.conf` as `/etc/tmpfiles.d/robotics-time.conf`. Run
-`systemd-tmpfiles --create`, restart Chrony, and start the evidence collector:
+`systemd-tmpfiles --create` and restart Chrony. Install the sampler (requires
+host `bash`, `jq`, `chronyc`, and coreutils) and both
+`systemd/robotics-chrony-sample.*` units under `/etc/systemd/system`:
+
+```bash
+sudo install -d /usr/local/libexec/robotics-time
+sudo install -m 0755 scripts/time/sample.sh /usr/local/libexec/robotics-time/
+sudo install -m 0644 scripts/time/normalize-sample.jq /usr/local/libexec/robotics-time/
+sudo install -m 0644 systemd/robotics-chrony-sample.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now robotics-chrony-sample.timer
+```
+
+Start the evidence collector:
 
 ```bash
 export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
-install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
-  -m 0770 runs/current/evidence
+export ROBOTICS_TIME_EVIDENCE_DIR=./runs/current/time-evidence
+sudo install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
+  -m 0770 "${ROBOTICS_TIME_EVIDENCE_DIR}"
+sudo chronyc -h /run/robotics-time/chronyd.sock tracking
+sudo chronyc -h /run/robotics-time/chronyd.sock sources
 docker compose -f compose.yaml -f compose.time.yaml \
   --profile time-chrony up -d time-evidence-chrony
 ```
 
+The fragment changes the Unix command socket to
+`/run/robotics-time/chronyd.sock` and disables the UDP command port with
+`cmdport 0`; it does not add a second Unix socket. Host monitoring and any
+`chrony-wait.service` or site script using `chronyc` must use this path as
+well. Review those commands before restarting Chrony. See the
+[Chrony 4.5 command-access documentation](https://chrony-project.org/doc/4.5/chrony.conf.html#bindcmdaddress).
+`ROBOTICS_TIME_SOCKET_DIR` defaults to `/run/robotics-time`; the collector runs
+as `ROBOTICS_CHRONY_IDENTITY` and reads the sampler's `chrony.log` in that
+directory. The sampler obtains the original reference timestamp from
+[`chronyc -c tracking`](https://chrony-project.org/doc/4.5/chronyc.html#tracking);
+the Collector chrony receiver does not expose that timestamp.
+
 For PTP, install `config/time/ptp4l.conf` through host configuration
 management and install both `systemd/robotics-ptp-sample.*` units under
-`/etc/systemd/system`. The timer only queries the read-only `ptp4lro` socket:
+`/etc/systemd/system`, using the same sampler installed above. The timer
+queries `TIME_STATUS_NP` and `TIME_PROPERTIES_DATA_SET` through the read-only
+`ptp4lro` socket. Hardware timestamps use the reported, valid UTC offset to
+convert `ingress_time` from the PTP timescale; software timestamping is not
+supported by this sampler. Unknown timescales are rejected.
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now robotics-ptp-sample.timer
 export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
+export ROBOTICS_TIME_EVIDENCE_DIR=./runs/current/time-evidence
+sudo install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
+  -m 0770 "${ROBOTICS_TIME_EVIDENCE_DIR}"
 docker compose -f compose.yaml -f compose.time.yaml \
   --profile time-ptp up -d time-evidence-ptp
 ```
 
-Both profiles write `runs/current/evidence/hardware-time.otlp.json` with clock
+Both examples write `runs/current/time-evidence/hardware-time.otlp.json` with clock
 offset in milliseconds, drift in ppm, message age in milliseconds, and a
 monotonic-clock flag. `ptp4l` and `phc2sys` remain host services; the collectors
 receive no network device, PHC device, or Linux capability.
+Use one time collector per output directory: both use the same filename.
+Message age is measured from the source timestamp, which is retained in the
+`robotics.clock.sample_unix_ms` metric attribute. The physical-attach verifier
+cross-checks that timestamp against reported age and rejects old or future
+samples. Re-reading an old log cannot refresh its age. The one-second age
+limit requires a source update interval suitable for that limit; a normal
+long-poll NTP configuration may fail it legitimately.
+
+Each sampler keeps its latest two complete records (`chrony.log[.1]` or
+`pmc.log[.1]`) by atomic replacement. PTP Compose therefore mounts
+`ROBOTICS_PTP_SAMPLE_DIR` (default `/run/robotics-time`), replacing the former
+single-file `ROBOTICS_PTP_SAMPLE_FILE` mount. Use only one sampler per output
+file. The monotonic flag still represents synchronization status, not proof
+of hardware clock monotonicity. Linux collector/rotation integration and
+physical timing qualification require CI and a live host run.
 
 The hosted physical-attach test binds its synthetic target to the SPKI digest
 of the generated SROS2 telemetry-source certificate. That identity proves the
 CI authorization path only; it is not a hardware identity. Lab qualification
 must instead bind the permit to the reviewed hardware identity kind and its
 independently captured preflight evidence.
+
+The positive synthetic authorization uses two ephemeral CI keys and real Rekor
+entries. The CI-only `authorize-logged-test` command verifies the signatures and
+log proofs against the embedded Sigstore trusted root, then applies the unchanged
+execution policy and consumes the nonce. Its principals are limited to
+`ci.operator` and `ci.approver` with the Cosign key issuer; they are not OIDC
+identities. Signing requires access to public Rekor and publishes the synthetic
+attestations. The explicit offline-bypass case must be denied without an output
+or nonce consumption; it never substitutes for the positive path.
 
 For a serial controller, prefer `/dev/serial/by-id/...`. Sites that need a
 contract name may install a reviewed copy of
@@ -484,14 +615,15 @@ sha256sum runs/current/authorization-output/serial-preflight.json
 Use the first digest as `identity_sha256` and the second as
 `preflight_evidence_sha256`.
 
-Create a structurally valid permit draft with the contracts CLI, review every
+Create a structurally valid permit draft with the pinned contracts 0.15.4 CLI,
+review every
 target and digest, then sign it with the documented Cosign flow:
 
 ```bash
 scenario_sha256="$(sha256sum runs/current/input/scenario.yaml | cut -d' ' -f1)"
 robotics-contracts permit init \
   --scenario-sha256 "${scenario_sha256}" \
-  --image-digest "${ROBOTICS_TARGET_IMAGE_DIGEST}" \
+  --subject-digest "${ROBOTICS_TARGET_IMAGE_DIGEST}" \
   --trust-policy-sha256 "${ROBOTICS_TRUST_POLICY_SHA256}" \
   --environment hil \
   --target-id controller-alpha \
@@ -508,6 +640,15 @@ robotics-contracts permit init \
 The command does not authorize execution and does not create or hold signing
 keys. Physical profiles still require independent operator and safety-approver
 attestations.
+
+The physical Compose profiles are preflight and observation candidates. The
+current `edge-attach`, `hil`, and `real-observation` observer commands omit
+required `robotics-acceptance verify` arguments. Hosted physical-attach CI
+substitutes a ROS telemetry probe, so its success proves the synthetic
+authorization/transport path, not a completed live acceptance result. The
+foundation simulation path supplies the full observer arguments. Physical
+profile acceptance needs the planned command repair and an independent run;
+do not treat preflight success as product or hardware qualification.
 
 The Compose policy rejects `/dev/ttyUSB*`, `/dev/ttyACM*`, wildcards, and a
 complete `/dev` mapping. Runtime manifests carry the reviewed stable identity
@@ -562,11 +703,26 @@ WSL2 support boundaries and host diagnostics are in [WSL2](docs/wsl2.md).
 Consumer repositories can call three narrow reusable workflows by an exact
 40-character infra commit SHA:
 
-- `reusable-validate-documents.yml` validates caller-owned contract documents;
+- `reusable-validate-documents.yml` validates caller-owned documents against
+  explicitly selected contract roles;
 - `reusable-qualify.yml` runs the locked foundation and returns a signed
   qualification package;
 - `reusable-verify-qualification.yml` verifies a retained package with a
   public key or keyless Sigstore policy.
+
+The document-validation workflow requires one `SCHEMA=PATH` entry per line in
+its `documents` input. For example:
+
+```yaml
+documents: |
+  acceptance-scenario.v1=acceptance/scenario.yaml
+  runtime-manifest.v1=artifacts/runtime-manifest.json
+```
+
+Paths are relative to the caller repository and must remain inside it after
+resolving symlinks. A valid document with another role is rejected. The
+qualification workflow also checks its input as `acceptance-scenario.v1`
+before building images.
 
 The caller keeps product sources and secrets in its own repository. See the
 [minimal Compose consumer](examples/minimal-consumer/README.md) and the

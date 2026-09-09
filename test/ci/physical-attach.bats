@@ -88,13 +88,14 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "authorization renderer binds one identity across permit and statement" {
+@test "released authorization renderer binds registry identity across permit and statement" {
+  : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before this test}"
   run bash -c '
     set -Eeuo pipefail
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
     source "$1"
-    work_root="$(mktemp -d)"
-    trap "rm -rf -- \"${work_root}\"" EXIT
+    work_root="${BATS_TEST_TMPDIR}/permit-render"
+    mkdir "$work_root"
     target_identity="$(
       printf "controller-ci" | sha256sum | awk "{print \$1}"
     )"
@@ -106,21 +107,31 @@ setup() {
       "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" \
       >"${work_root}/target-evidence.json"
     docker() {
+      if test "$1" = buildx; then
+        test "$#" -eq 6
+        test "$2 $3 $4" = "imagetools inspect --format"
+        test "$5" = "{{json .Manifest}}"
+        test "$6" = "acceptance-observer@sha256:$(printf "%064d" 1)"
+        printf "{\"digest\":\"sha256:%064d\",\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\"}\n" 1
+        return
+      fi
       test "$1" = image
       test "$2" = inspect
+      test "$#" -eq 3
       case "$3" in
-        acceptance-observer)
-          printf "sha256:%064d\n" 1
+        acceptance-observer@*)
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"acceptance-observer@sha256:%064d\"]}]\n" 9 1
           ;;
         permit-preflight)
-          printf "sha256:%064d\n" 2
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"permit-preflight@sha256:%064d\"]}]\n" 8 2
           ;;
         *)
           return 64
           ;;
       esac
     }
-    OBSERVER_IMAGE=acceptance-observer
+    ROBOTICS_RUNTIME_MODE=released
+    OBSERVER_IMAGE="acceptance-observer@sha256:$(printf "%064d" 1)"
     PERMIT_PREFLIGHT_IMAGE=permit-preflight
     write_trust_policy
     write_permit_case \
@@ -128,6 +139,8 @@ setup() {
       "2026-07-26T12:00:00Z" \
       "2026-07-26T12:15:00Z" \
       "${target_identity}"
+    "$ROBOTICS_CONTRACTS_CLI" validate --schema execution-permit.v1 --quiet \
+      "${work_root}/case/execution-permit.json"
     scenario_sha256="$(
       jq -r ".scenario_sha256" \
         "${work_root}/case/execution-permit.json"
@@ -142,37 +155,11 @@ setup() {
     jq -e --slurpfile permit "${work_root}/case/execution-permit.json" "
       .predicate == \$permit[0] and
       .subject[0].digest.sha256 == \$permit[0].scenario_sha256 and
-      (\"sha256:\" + .subject[1].digest.sha256) == \$permit[0].image_digest and
-      \$permit[0].image_digest == \"sha256:$(printf "%064d" 1)\"
+      (\"sha256:\" + .subject[1].digest.sha256) == \$permit[0].subject_digest and
+      \$permit[0].subject_digest == \"sha256:$(printf "%064d" 1)\"
     " "${work_root}/case/execution-statement.json"
   ' _ "${SCRIPT}"
 
-  [ "${status}" -eq 0 ]
-}
-
-@test "runtime manifest filter binds revisions and physical evidence" {
-  run jq \
-    --arg architecture x86_64 \
-    --arg contracts_revision contracts-revision \
-    --arg harness_revision harness-revision \
-    --arg infra_revision infra-revision \
-    --arg image_digest "sha256:$(printf '%064d' 0)" \
-    --arg image_reference "local/synthetic-observer@sha256:$(printf '%064d' 0)" \
-    --arg kernel 6.8.0 \
-    --arg observer_policy_sha256 "$(printf '%064d' 1)" \
-    --arg target_evidence_sha256 "$(printf '%064d' 2)" \
-    --arg target_identity "$(printf '%064d' 3)" \
-    -f "${FIXTURES}/runtime-manifest.jq" \
-    "${REPOSITORY_ROOT}/test/physical/hil-runtime.input.json"
-  [ "${status}" -eq 0 ]
-  run jq -e '
-      .runtime_id == "ci.physical-attach-runtime" and
-      .execution.target_environment == "hil" and
-      .physical_targets[0].target_id == "controller-ci" and
-      .physical_targets[0].identity_kind == "x509_spki" and
-      (.physical_targets[0] | has("stable_device_path") | not) and
-      .clock.sync_protocol == "chrony_ntp"
-  ' <<<"${output}"
   [ "${status}" -eq 0 ]
 }
 
@@ -618,7 +605,7 @@ setup() {
 
 @test "time evidence policy accepts only its fresh measurement window" {
   common_args=(
-    --arg evidence_sha256 fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2
+    --arg evidence_sha256 ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba
     --arg run_id test-run
     --arg source_revision local
     --arg workflow_run_attempt 1
@@ -654,7 +641,7 @@ setup() {
     ' _ \
       "${FIXTURES}/time-evidence.jsonl" \
       "${FIXTURES}/verify-time-evidence.jq" \
-      fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2 \
+      ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba \
       "${FIXTURES}/time-evidence-window.json"
   [ "${status}" -eq 1 ]
 
@@ -688,7 +675,9 @@ setup() {
     start_ns="$((now_ns - 2000000000))"
     jq \
       --arg sample_ns "${sample_ns}" \
-      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns else . end)" \
+      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns
+        elif type == \"object\" and .key? == \"robotics.clock.sample_unix_ms\"
+        then .value.doubleValue = ((\$sample_ns | tonumber) / 1000000 - 10) else . end)" \
       "$2" >"${work_root}/evidence.json"
     jq -n \
       --arg evidence_sha256 "$(sha256_file "${work_root}/evidence.json")" \
@@ -726,7 +715,8 @@ setup() {
     production="$1"
     core="$2"
     ci="$3"
-    ! grep -F -- "--insecure-ignore-tlog" "${production}" "${core}"
+    # The core inspects the flag for evidence, but must never add it to a call.
+    ! grep -F -- "--insecure-ignore-tlog" "${production}"
     ! grep -F -- "authorize-offline-test" "${production}" "${core}"
     ! grep -F -- "verify-offline-test-attestation" "${production}" "${core}"
     grep -F -- "--insecure-ignore-tlog" "${ci}"

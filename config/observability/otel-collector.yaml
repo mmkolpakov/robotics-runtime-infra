@@ -25,7 +25,7 @@ processors:
 
 exporters:
   file/metrics:
-    path: /evidence/metrics.otlp.json
+    path: /evidence/metrics.otlp.jsonl
     format: json
     flush_interval: 1s
   file/traces:

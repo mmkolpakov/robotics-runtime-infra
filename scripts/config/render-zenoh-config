@@ -18,8 +18,8 @@ test -f "${contract}"
 mkdir -p "${output_dir}"
 
 jq -e '
-  .schema_version == "zenoh-channel.v1" and
-  .bridge.implementation == "zenoh-bridge-ros2dds" and
+  .schema_version == "transport-channel.v1" and
+  .implementation_binding.implementation_id == "zenoh_bridge_ros2dds" and
   (.source.ros_domain_id | type == "number" and . >= 0 and . <= 232) and
   (.destination.ros_domain_id | type == "number" and . >= 0 and . <= 232) and
   (.source.topic == .destination.topic) and
@@ -77,13 +77,14 @@ jq -S -n \
   }' >"${output_dir}/destination.json5"
 cp "${root}/config/zenoh/otel-collector.yaml" "${output_dir}/otel-collector.yaml"
 
-configuration_sha256="$({
+{
   printf 'source.json5\0'
   cat "${output_dir}/source.json5"
   printf '\0destination.json5\0'
   cat "${output_dir}/destination.json5"
   printf '\0'
-} | sha256sum | cut -d' ' -f1)"
+} >"${output_dir}/zenoh-configuration.bin"
+configuration_sha256="$(sha256sum "${output_dir}/zenoh-configuration.bin" | cut -d' ' -f1)"
 
 jq -S -n \
   --arg configuration_sha256 "${configuration_sha256}" \
@@ -96,7 +97,7 @@ jq -S -n \
   }' >"${output_dir}/render-manifest.json"
 
 if [[ "${verify}" == true ]]; then
-  expected="$(jq -er '.bridge.configuration_sha256' "${contract}")"
+  expected="$(jq -er '.implementation_binding.configuration_sha256' "${contract}")"
   test "${configuration_sha256}" = "${expected}" || {
     printf 'rendered Zenoh configuration digest differs: expected %s, got %s\n' \
       "${expected}" "${configuration_sha256}" >&2

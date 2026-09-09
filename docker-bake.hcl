@@ -23,11 +23,11 @@ variable "SOURCE_DATE_EPOCH" {
 }
 
 variable "UBUNTU_SNAPSHOT" {
-  default = "20260726T000000Z"
+  default = "20260908T000000Z"
 }
 
 variable "LINUX_LIBC_DEV_VERSION" {
-  default = "6.8.0-136.136"
+  default = "6.8.0-139.139"
 }
 
 variable "ROS_SNAPSHOT" {
@@ -37,6 +37,12 @@ variable "ROS_SNAPSHOT" {
 variable "ROSDISTRO_INDEX_REVISION" {
   default = "9f76014b84955f757306270d6860fa3bc1c30b57"
 }
+
+# FOUNDATION_GENERATED_START
+variable "FOUNDATION_SOURCE" {
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=eb9050b4397785965bfa29b31b131ced462afc61&checksum=eb9050b4397785965bfa29b31b131ced462afc61"
+}
+# FOUNDATION_GENERATED_END
 
 variable "ONNXRUNTIME_SOURCE" {
   default = "https://github.com/microsoft/onnxruntime.git?tag=v1.27.0&checksum=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5"
@@ -50,19 +56,35 @@ variable "RKNN_SOURCE" {
   default = "https://github.com/airockchip/rknn-toolkit2.git?tag=v2.3.2&checksum=42aa1d426c0a9e0869b6374edba009f7208a1926"
 }
 
-variable "COSIGN_IMAGE" {
-  default = "cgr.dev/chainguard/cosign:latest@sha256:f3161bc5cc63d55c1a19bc6a26e30db2e528e84bf154b91dbf8f79dce91d3ca7"
+variable "COSIGN_REVISION" {
+  default = "11926fa5bbbbde47e88fc006b625a17769b743b2"
   validation {
-    condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
-    error_message = "COSIGN_IMAGE must pin the qualified Chainguard image by digest."
+    condition = COSIGN_REVISION == regex("^[a-f0-9]{40}$", COSIGN_REVISION)
+    error_message = "COSIGN_REVISION must pin the reviewed release commit."
   }
 }
 
 variable "COSIGN_VERSION" {
-  default = "3.1.2"
+  default = "3.1.3"
   validation {
     condition = COSIGN_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", COSIGN_VERSION)
     error_message = "COSIGN_VERSION must be a semantic version."
+  }
+}
+
+variable "RCLONE_REVISION" {
+  default = "687d264b689b8c49a67e2e52a8a5e0caa01c04ce"
+  validation {
+    condition = RCLONE_REVISION == regex("^[a-f0-9]{40}$", RCLONE_REVISION)
+    error_message = "RCLONE_REVISION must pin the reviewed release commit."
+  }
+}
+
+variable "RCLONE_VERSION" {
+  default = "1.75.1"
+  validation {
+    condition = RCLONE_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", RCLONE_VERSION)
+    error_message = "RCLONE_VERSION must be a semantic version."
   }
 }
 
@@ -167,6 +189,12 @@ group "rknn" {
 target "_common" {
   context    = "."
   dockerfile = "Dockerfile"
+  contexts = {
+    "foundation-source" = FOUNDATION_SOURCE
+    "rclone-source" = "https://github.com/rclone/rclone.git?tag=v${RCLONE_VERSION}&checksum=${RCLONE_REVISION}"
+    "rclone-build" = "./docker/rclone"
+    "cosign-source" = "https://github.com/sigstore/cosign.git?tag=v${COSIGN_VERSION}&checksum=${COSIGN_REVISION}"
+  }
   args = {
     IMAGE_CREATED = IMAGE_CREATED
     IMAGE_SOURCE  = IMAGE_SOURCE
@@ -177,6 +205,8 @@ target "_common" {
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
+    RCLONE_REVISION          = RCLONE_REVISION
+    RCLONE_VERSION           = RCLONE_VERSION
   }
   labels = {
     "org.opencontainers.image.created"  = IMAGE_CREATED
@@ -497,6 +527,10 @@ target "evidence-sink" {
   target    = "evidence-sink"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"]
+  args = {
+    COSIGN_REVISION = COSIGN_REVISION
+    COSIGN_VERSION = COSIGN_VERSION
+  }
 }
 
 target "policy-tooling" {
@@ -512,7 +546,7 @@ target "permit-preflight" {
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight:${VERSION}"]
   args = {
-    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_REVISION = COSIGN_REVISION
     COSIGN_VERSION = COSIGN_VERSION
   }
 }
@@ -523,7 +557,7 @@ target "permit-preflight-ci" {
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight-ci:${VERSION}"]
   args = {
-    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_REVISION = COSIGN_REVISION
     COSIGN_VERSION = COSIGN_VERSION
   }
 }

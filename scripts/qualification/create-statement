@@ -16,22 +16,25 @@ usage: create-statement
   --aggregate PATH
   [--transport-qualification PATH]
   --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
-  --mcap-summary LABEL=PATH [--mcap-summary LABEL=PATH ...]
+  --recording-summary LABEL=PATH [--recording-summary LABEL=PATH ...]
   [--extension-schema URI=PATH ...]
   [--evidence KIND:LABEL=PATH ...]
+
+Alternatively supply the complete inventory with repeated --artifact KIND:SUBJECT=PATH.
+Named options and native artifact arguments may be combined.
   --output PATH
 
 Optional evidence KIND is one of:
   metrics, traces, junit, causal_chain_contract, channel_contract,
   channel_observation, model_manifest, dataset_manifest, execution_permit,
-  execution_verification, policy, raw_mcap, other_evidence
+  execution_verification, policy, recording, other_evidence, clock_relation, qualification_profile,
+  provider_conformance, artifact_receipt, artifact_verification, attestation,
+  verification, package
 EOF
   exit 64
 }
 
 qualification_parse_cli create "$@"
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT HUP INT TERM
-qualification_prepare "$work"
+qualification_prepare
 # shellcheck disable=SC2154
-qualification_write_statement "$work" "$output"
+qualification_write_statement "$output"

@@ -105,3 +105,22 @@ foundation_validate_document() {
     'import json, sys; from robotics_runtime_contracts import validate_document; validate_document(json.load(open(sys.argv[1], encoding="utf-8")))' \
     "${document}"
 }
+
+foundation_recording_duration() {
+  local python="$1"
+  local scenario="$2"
+
+  "${python}" - "${scenario}" <<'PY'
+import math
+import sys
+
+from robotics_runtime_contracts.serialization import load_mapping
+
+duration = load_mapping(sys.argv[1])["evidence_policy"]["max_segment_duration_sec"]
+# rosbag2 and the evidence sink accept whole seconds. Round down so a
+# fractional scenario limit is never enlarged, and never emit 0 (unbounded).
+if type(duration) not in (int, float) or not math.isfinite(duration) or duration < 1:
+    sys.exit("foundation recording requires a finite segment duration of at least 1 second")
+print(math.floor(duration))
+PY
+}

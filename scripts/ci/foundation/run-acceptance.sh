@@ -9,9 +9,11 @@ readonly evidence_metrics_segment_index=900000
 
 root="$(foundation_repository_root)"
 cd "${root}"
-readonly foundation_bin="${root}/tooling/foundation/.venv/bin"
+readonly foundation_bin="${root}/dependencies/robotics-runtime/.venv/bin"
 # shellcheck source=scripts/ci/lib.sh
 source "${root}/scripts/ci/lib.sh"
+# shellcheck source=scripts/ci/image-identity.sh
+source "${root}/scripts/ci/image-identity.sh"
 
 foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE
 command -v cosign >/dev/null 2>&1 || {
@@ -33,11 +35,18 @@ rm -rf "${run_dir}"
 mkdir -p \
   "${run_dir}/bags" \
   "${run_dir}/configuration" \
-  "${run_dir}/evidence" \
+  "${run_dir}/evidence/recordings" \
   "${run_dir}/results" \
   "${artifact_dir}"
 cp "${scenario_source}" "${run_dir}/scenario.yaml"
 lscpu --json >"${run_dir}/configuration/host-topology.json"
+"${foundation_bin}/python" -c '
+import json
+import platform
+release = platform.freedesktop_os_release()
+print(json.dumps({"os": release["ID"], "os_version": release["VERSION_ID"],
+                  "architecture": platform.machine(), "kernel": platform.release()}))
+' >"${run_dir}/configuration/host-platform.json"
 
 export ROBOTICS_RUN_ID
 ROBOTICS_RUN_ID="$(
@@ -57,15 +66,22 @@ export ROBOTICS_RUN_DIR="${run_dir}"
 export ROBOTICS_BAG_DIR="${run_dir}/bags"
 export ROBOTICS_EVIDENCE_DIR="${run_dir}/evidence"
 export ROBOTICS_MAX_BAG_SIZE=1048576
+# Compose uses this for both recorder rotation and evidence-sink validation.
+# Its 60-second default exceeds the stepped-smoke scenario's 30-second gate.
+export ROBOTICS_MAX_BAG_DURATION
+ROBOTICS_MAX_BAG_DURATION="$(
+  foundation_recording_duration "${foundation_bin}/python" "${run_dir}/scenario.yaml"
+)"
 export ROBOTICS_MAX_SEGMENT_SIZE_BYTES=2097152
 export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
 export ROBOTICS_RECORD_REGEX='^(/clock|/robotics/runtime_probe)$'
 export ROBOTICS_SIMULATION_OCI_DIGEST
 export ROBOTICS_SIMULATION_OCI_REFERENCE
-ROBOTICS_SIMULATION_OCI_DIGEST="$(
-  docker image inspect "${SIMULATION_IMAGE}" --format '{{.Id}}'
+simulation_identity="$(
+  ci_image_identity "${SIMULATION_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}"
 )"
-ROBOTICS_SIMULATION_OCI_REFERENCE="${SIMULATION_IMAGE}@${ROBOTICS_SIMULATION_OCI_DIGEST}"
+ROBOTICS_SIMULATION_OCI_DIGEST="$(jq -er '.digest' <<<"${simulation_identity}")"
+ROBOTICS_SIMULATION_OCI_REFERENCE="$(jq -er '.reference' <<<"${simulation_identity}")"
 
 profiles=(
   --profile stepped
@@ -198,10 +214,12 @@ publish_failure_evidence() {
   local source
   mkdir -p "${destination}"
   for source in \
-    "${run_dir}/evidence/metrics.otlp.json" \
-    "${run_dir}/evidence/evidence-index.json"; do
-    if [[ -f "${source}" ]]; then
-      sudo cp "${source}" "${destination}/"
+    "${run_dir}/evidence/metrics.otlp.jsonl" \
+    "${run_dir}/evidence/evidence-index.json" \
+    "${run_dir}/evidence/summaries" \
+    "${run_dir}/scenario.yaml"; do
+    if [[ -e "${source}" ]]; then
+      sudo cp -a "${source}" "${destination}/"
     fi
   done
   sudo chown -R "$(id -u):$(id -g)" "${destination}"
@@ -228,7 +246,7 @@ sudo chown -R 1000:1000 "${run_dir}"
 sudo chown -R 10001:10001 "${run_dir}/evidence"
 "${compose[@]}" --profile stepped --profile record --profile observability \
   up --detach --no-build --wait --wait-timeout 120 \
-  simulation simulation-stepper recorder otel-collector \
+  simulation recorder otel-collector \
   "${extra_services[@]}"
 collector_health_address="$("${compose[@]}" port otel-collector 13133)"
 curl --fail --silent --show-error \
@@ -236,6 +254,15 @@ curl --fail --silent --show-error \
   "http://${collector_health_address}/"
 simulation_container="$("${compose[@]}" ps -q simulation)"
 test -n "${simulation_container}"
+bash "${script_dir}/collect-simulation-provider.sh" \
+  "${simulation_container}" "${run_dir}" "${artifact_dir}/provider" \
+  "${ROBOTICS_SIMULATION_OCI_DIGEST}"
+sudo install -o 1000 -g 1000 -m 0644 \
+  "${artifact_dir}/provider/bindings.json" "${run_dir}/provider-bindings.json"
+# The conformance probe controls pause/step/resume itself. Start the periodic
+# stepper only after the probe has finished, before the observation window.
+"${compose[@]}" --profile stepped \
+  up --detach --no-build --wait --wait-timeout 120 simulation-stepper
 runtime_resources="${artifact_dir}/runtime-resources.json"
 docker inspect "${simulation_container}" | jq '.[0].HostConfig | {
   NanoCpus,
@@ -259,8 +286,8 @@ foundation_validate_document \
 fastdds_profile="${root}/config/fastdds/udp-only.xml"
 fastdds_profile_sha256="$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)"
 jq -e --arg digest "${fastdds_profile_sha256}" \
-  '.schema_version == "runtime-manifest.v2" and
-   .data_plane.fastdds_profile_sha256 == $digest and
+  '.schema_version == "runtime-manifest.v1" and
+   .data_plane.middleware_configuration_sha256 == $digest and
    ([.configuration_artifacts[].kind] | sort) ==
      ["host_topology", "runtime_resources"]' \
   "${run_dir}/runtime-manifest.json" >/dev/null
@@ -286,10 +313,10 @@ done
   runtime-metrics runtime-probe-publisher
 sleep 2
 "${compose[@]}" --profile observability stop otel-collector
-test -s "${run_dir}/evidence/metrics.otlp.json"
+test -s "${run_dir}/evidence/metrics.otlp.jsonl"
 "${compose[@]}" --profile evidence run --rm --no-deps \
   evidence-sink artifact \
-  /evidence/metrics.otlp.json application/json \
+  /evidence/metrics.otlp.jsonl application/x-ndjson \
   "${evidence_metrics_segment_index}"
 "${compose[@]}" --profile record stop recorder
 "${compose[@]}" --profile evidence run --rm evidence-finalize
@@ -317,7 +344,7 @@ sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
 
 mapfile -t mcap_summaries < <(
   find "${run_dir}/evidence/summaries" \
-    -maxdepth 1 -type f -name '*.mcap-summary.json' -print |
+    -maxdepth 1 -type f -name '*.recording-summary.json' -print |
     LC_ALL=C sort
 )
 mapfile -t mcap_files < <(
@@ -339,16 +366,21 @@ qualification_inputs=(
   --result "primary=${run_dir}/results/acceptance-result.json"
   --aggregate "${run_dir}/results/acceptance-aggregate.json"
   --evidence-index "primary=${run_dir}/evidence/evidence-index.json"
-  --evidence "metrics:metrics.otlp.json=${run_dir}/evidence/metrics.otlp.json"
+  --evidence "metrics:metrics.otlp.jsonl=${run_dir}/evidence/metrics.otlp.jsonl"
   --evidence "junit:junit.xml=${run_dir}/results/junit.xml"
   --evidence "other_evidence:fastdds-profile.xml=${fastdds_profile}"
   --evidence "other_evidence:host-topology.json=${run_dir}/configuration/host-topology.json"
   --evidence "other_evidence:runtime-resources.json=${run_dir}/configuration/runtime-resources.json"
+  --artifact "qualification_profile:providers/profile.json=${artifact_dir}/provider/profile.json"
+  --artifact "provider_conformance:providers/conformance.json=${artifact_dir}/provider/conformance.json"
+  --artifact "other_evidence:providers/configuration.json=${artifact_dir}/provider/configuration.json"
+  --artifact "other_evidence:providers/observation.json=${artifact_dir}/provider/observation.json"
+  --artifact "other_evidence:providers/world.sdf=${artifact_dir}/provider/world.sdf"
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
-    --mcap-summary "primary-${index}=${mcap_summaries[$index]}"
-    --evidence "raw_mcap:primary-${index}.mcap=${mcap_files[$index]}"
+    --recording-summary "primary-${index}=${mcap_summaries[$index]}"
+    --evidence "recording:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
 scripts/qualification/create-statement \
@@ -363,21 +395,21 @@ scripts/qualification/verify-bundle \
   --key "${run_dir}/results/qualification.pub" \
   "${qualification_inputs[@]}"
 
-jq -e '.status == "passed"' \
+jq -e '.status == "passed" and .evaluation_mode == "live"' \
   "${run_dir}/results/acceptance-result.json"
 jq -e \
   '.per_domain_aggregate == "passed" and
    .cross_domain_e2e.status == "unevaluated"' \
   "${run_dir}/results/acceptance-aggregate.json"
 jq -e '
-  [.segments[].media_type]
-  | contains(["application/json"])
+  [.artifacts[].media_type]
+  | contains(["application/x-ndjson"])
 ' "${run_dir}/evidence/evidence-index.json"
 contracts_revision="$(
-  git -C dependencies/robotics-runtime-contracts rev-parse HEAD
+  git -C dependencies/robotics-runtime rev-parse HEAD
 )"
 harness_revision="$(
-  git -C dependencies/robotics-acceptance-harness rev-parse HEAD
+  git -C dependencies/robotics-runtime rev-parse HEAD
 )"
 jq -e \
   --arg contracts_revision "${contracts_revision}" \
@@ -392,9 +424,10 @@ cp "${run_dir}/runtime-manifest.json" "${artifact_dir}/"
 cp "${run_dir}/acceptance-run.json" "${artifact_dir}/"
 cp "${run_dir}/scenario.yaml" "${artifact_dir}/"
 cp "${run_dir}/evidence/evidence-index.json" "${artifact_dir}/"
-cp "${run_dir}/evidence/metrics.otlp.json" "${artifact_dir}/"
+cp "${run_dir}/evidence/metrics.otlp.jsonl" "${artifact_dir}/"
 cp "${fastdds_profile}" "${artifact_dir}/fastdds-profile.xml"
 cp "${run_dir}/configuration/host-topology.json" "${artifact_dir}/"
+cp "${run_dir}/configuration/host-platform.json" "${artifact_dir}/"
 cp "${run_dir}/configuration/runtime-resources.json" "${artifact_dir}/"
 cp "${run_dir}/results/qualification-statement.json" "${artifact_dir}/"
 cp "${run_dir}/results/qualification.sigstore.json" "${artifact_dir}/"

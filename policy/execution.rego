@@ -11,6 +11,24 @@ signers := object.get(input, "verified_signers", [])
 
 default verification := null
 
+valid_cosign_binary_digest if {
+	is_string(artifacts.cosign_binary_digest)
+	regex.match("^sha256:[a-f0-9]{64}$", artifacts.cosign_binary_digest)
+}
+
+deny contains "Cosign binary digest must be an immutable SHA-256 digest" if {
+	not valid_cosign_binary_digest
+}
+
+valid_subject_digest if {
+	is_string(permit.subject_digest)
+	regex.match("^sha256:[a-f0-9]{64}$", permit.subject_digest)
+}
+
+deny contains "permit subject_digest must be an immutable SHA-256 digest" if {
+	not valid_subject_digest
+}
+
 deny contains "statement must use in-toto Statement v1" if {
 	object.get(statement, "_type", "") != "https://in-toto.io/Statement/v1"
 }
@@ -42,7 +60,7 @@ deny contains "statement must contain exactly one runtime image subject" if {
 
 deny contains "statement image digest does not match the permit" if {
 	count(image_subjects) == 1
-	expected := trim_prefix(object.get(permit, "image_digest", ""), "sha256:")
+	expected := trim_prefix(object.get(permit, "subject_digest", ""), "sha256:")
 	object.get(object.get(image_subjects[0], "digest", {}), "sha256", "") != expected
 }
 
@@ -61,6 +79,18 @@ deny contains "trust policy lifetime must be between one and 1800 seconds" if {
 
 deny contains "trust policy lifetime must be between one and 1800 seconds" if {
 	object.get(trust_policy, "max_permit_lifetime_seconds", 0) > 1800
+}
+
+deny contains "permit issued_at must be a valid RFC3339 timestamp" if {
+	not valid_issued_at
+}
+
+deny contains "permit expires_at must be a valid RFC3339 timestamp" if {
+	not valid_expires_at
+}
+
+deny contains "permit expires_at must be after issued_at" if {
+	expires_at_ns <= issued_at_ns
 }
 
 deny contains "permit is not active yet" if {
@@ -84,7 +114,7 @@ deny contains "observed scenario digest does not match the permit" if {
 }
 
 deny contains "observed image digest does not match the permit" if {
-	object.get(request, "image_digest", "") != object.get(permit, "image_digest", "")
+	object.get(request, "subject_digest", "") != object.get(permit, "subject_digest", "")
 }
 
 deny contains "observed target identity does not match the permit" if {
@@ -148,6 +178,16 @@ image_subjects := [subject |
 issued_at_ns := time.parse_rfc3339_ns(permit.issued_at)
 expires_at_ns := time.parse_rfc3339_ns(permit.expires_at)
 
+valid_issued_at if {
+	is_string(permit.issued_at)
+	is_number(issued_at_ns)
+}
+
+valid_expires_at if {
+	is_string(permit.expires_at)
+	is_number(expires_at_ns)
+}
+
 array_set(values) := {value | some value in values}
 
 expected_identity("operator") := object.get(permit, "operator_id", "")
@@ -179,7 +219,7 @@ verification := {
 	"target": object.get(permit, "target", {}),
 	"verified_at": time.format(time.now_ns()),
 	"cosign_version": object.get(artifacts, "cosign_version", ""),
-	"cosign_image_digest": object.get(artifacts, "cosign_image_digest", ""),
+	"cosign_subject_digest": artifacts.cosign_binary_digest,
 	"signers": signers,
 	"decision": "allow",
 } if {

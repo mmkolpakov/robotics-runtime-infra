@@ -1,0 +1,67 @@
+---
+schema_version: acceptance-scenario.v1
+scenario_id: org.example.runtime-infra.sensor-provider
+execution:
+  target_environment: simulation
+  hardware_scope: []
+  physical_effect: none
+  test_intent: interface_smoke
+  data_source: simulator
+  plant_backend: simulated_physics
+  time_mode: simulation_realtime
+  data_plane_profile: local_high_throughput
+  security_profile: none
+authorization:
+  mode: none
+forbidden_ros_graph:
+  topics: []
+  services: []
+  actions: []
+seed: 42
+timeouts:
+  startup_sec: 60
+  graph_ready_sec: 30
+  stable_for_sec: 1
+  execution_sec: 120
+  shutdown_sec: 30
+expected_ros_graph:
+  topics:
+    - name: /camera/image
+      type: sensor_msgs/msg/Image
+      qos_profile: sensor_data
+      min_publishers: 1
+      min_subscribers: 0
+      first_message_timeout_sec: 10
+  services: []
+  actions: []
+  lifecycle_nodes: []
+metric_definitions: []
+assertions: []
+evaluator_requirements: []
+provider_requirements:
+  capabilities: [simulated_physics]
+time_policy:
+  min_realtime_factor: 0.1
+  max_deadline_miss_ratio: 1
+  time_authority_min_samples: 30
+  max_time_authority_delivery_latency_p50_ms: 20
+  max_time_authority_delivery_latency_p95_ms: 50
+  max_time_authority_delivery_latency_ms: 1000
+data_plane_policy:
+  max_message_age_ms: 1000
+  max_loss_ratio: 1
+  shm_transport: true
+  data_sharing: false
+  private_ipc: true
+evidence_policy:
+  topics: [/camera/image]
+  recording_mode: bounded
+  compression: zstd
+  max_segment_size_bytes: 2097152
+  max_segment_duration_sec: 30
+  max_spool_size_bytes: 10485760
+  spool_high_watermark_ratio: 0.8
+  max_upload_lag_sec: 0
+  upload_mode: local_only
+  retention_class: pull-request-7d
+  remote_sink_allowed: false

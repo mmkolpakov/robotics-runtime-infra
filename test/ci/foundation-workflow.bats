@@ -9,8 +9,8 @@ setup() {
   ACCEPTANCE_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
   KEYLESS_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-keyless-qualification.sh"
   VALIDATION_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/validate-foundation.sh"
-  INTEGRATION_PROJECT="${REPOSITORY_ROOT}/tooling/foundation/pyproject.toml"
-  INTEGRATION_LOCK="${REPOSITORY_ROOT}/tooling/foundation/uv.lock"
+  INTEGRATION_PROJECT="${REPOSITORY_ROOT}/foundation.repos"
+  INTEGRATION_LOCK="${REPOSITORY_ROOT}/config/foundation-lock.json"
   QUALIFICATION_POLICY="${REPOSITORY_ROOT}/trust/qualification-policy.json"
   QUALIFICATION_ROOT="${REPOSITORY_ROOT}/trust/qualification.trusted-root.json"
   # shellcheck source=scripts/ci/foundation/lib.sh
@@ -19,16 +19,15 @@ setup() {
   source "${CI_LIBRARY}"
 }
 
-@test "runtime foundation owns the joint Python lock" {
-  [ -f "${INTEGRATION_PROJECT}" ]
-  [ -f "${INTEGRATION_LOCK}" ]
-  run grep -F 'foundation_project=tooling/foundation' "${VALIDATION_SCRIPT}"
+@test "runtime foundation imports one workspace and derives the package lock" {
+  run jq -e '.repositories | keys == ["robotics-runtime"]' "${INTEGRATION_PROJECT}"
   [ "${status}" -eq 0 ]
-  run grep -E 'uv sync --project .*dependencies/robotics-' "${VALIDATION_SCRIPT}"
-  [ "${status}" -eq 1 ]
-  run grep -F 'robotics-acceptance-harness' "${INTEGRATION_PROJECT}"
+  run jq -e '.workspace.uv_lock_sha256 | test("^[a-f0-9]{64}$")' "${INTEGRATION_LOCK}"
   [ "${status}" -eq 0 ]
-  run grep -F 'robotics-runtime-contracts' "${INTEGRATION_PROJECT}"
+  run grep -F 'foundation_project=dependencies/robotics-runtime' "${VALIDATION_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run jq -e '.packages.contracts.distribution == "robotics-runtime-contracts" and
+    .packages.harness.distribution == "robotics-acceptance-harness"' "${INTEGRATION_LOCK}"
   [ "${status}" -eq 0 ]
 }
 
@@ -40,6 +39,26 @@ setup() {
   run ci_require_policy_allows policy.rego missing input.json
 
   [ "${status}" -ne 0 ]
+}
+
+@test "source import preserves a dirty checkout before invoking vcs" {
+  local fixture="${BATS_TEST_TMPDIR}/import-fixture"
+  local checkout="${fixture}/dependencies/robotics-runtime"
+  mkdir -p "${fixture}/scripts/ci/foundation" "${checkout}"
+  cp "${REPOSITORY_ROOT}/scripts/ci/foundation/import-sources.sh" \
+    "${fixture}/scripts/ci/foundation/import-sources.sh"
+  git -C "${checkout}" init --quiet
+  printf 'original\n' >"${checkout}/input.txt"
+  git -C "${checkout}" add input.txt
+  git -C "${checkout}" -c user.name=Fixture \
+    -c user.email=fixture@example.invalid commit --quiet -m fixture
+  printf 'local edit\n' >"${checkout}/input.txt"
+
+  run bash "${fixture}/scripts/ci/foundation/import-sources.sh"
+
+  [ "${status}" -eq 65 ]
+  [[ "${output}" == *"has local changes"* ]]
+  [ "$(cat "${checkout}/input.txt")" = "local edit" ]
 }
 
 @test "consumer path validation resolves symlinks" {

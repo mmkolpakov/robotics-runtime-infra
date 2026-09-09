@@ -48,8 +48,8 @@ services:
         source: "${ROBOTICS_TIME_EVIDENCE_DIR:-./runs/current/evidence}"
         target: /evidence
       - type: bind
-        source: "${ROBOTICS_PTP_SAMPLE_FILE:-/run/robotics-time/pmc.log}"
-        target: /input/pmc.log
+        source: "${ROBOTICS_PTP_SAMPLE_DIR:-/run/robotics-time}"
+        target: /input
         read_only: true
         bind:
           create_host_path: false

@@ -3,10 +3,15 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 readonly spool_dir="${EVIDENCE_SPOOL_DIR:-/spool}"
-readonly receipt_dir="${EVIDENCE_RECEIPT_DIR:-/evidence/receipts}"
+readonly registration_dir="${EVIDENCE_REGISTRATION_DIR:-/evidence/state/registrations}"
 readonly summary_dir="${EVIDENCE_SUMMARY_DIR:-/evidence/summaries}"
 readonly state_dir="${EVIDENCE_STATE_DIR:-/evidence/state}"
 readonly index_path="${EVIDENCE_INDEX_PATH:-/evidence/evidence-index.json}"
+readonly receipt_dir="${EVIDENCE_RECEIPT_DIR:-/evidence/receipts}"
+readonly contracts_cli="${ROBOTICS_CONTRACTS_CLI:-robotics-contracts}"
+readonly receipt_inputs_cli="${ROBOTICS_RECEIPT_INPUTS_CLI:-receipt-inputs}"
+receipt_inventory_path="$(dirname "$index_path")/receipt-inventory.json"
+readonly receipt_inventory_path
 readonly run_id="${ROBOTICS_RUN_ID:-}"
 readonly retention_class="${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
 readonly evidence_mode="${EVIDENCE_MODE:-local}"
@@ -47,7 +52,21 @@ segment_index() {
   stem="$(basename "$1" .mcap)"
   index="${stem##*_}"
   [[ "$index" =~ ^[0-9]+$ ]] || fail "MCAP filename must end in _<index>.mcap: $1"
-  printf '%d\n' "$((10#$index))"
+  normalize_index "$index"
+}
+
+normalize_index() {
+  local index="$1"
+  [[ "$index" =~ ^[0-9]+$ ]] || fail 'artifact index must be a non-negative integer'
+  index="${index#"${index%%[!0]*}"}"
+  printf '%s\n' "${index:-0}"
+}
+
+registration_exists() {
+  local target="${registration_dir}/${1}-${2}.json"
+  [[ -e "$target" ]] || return 1
+  jq -e --arg run_id "$run_id" '.run_id == $run_id' "$target" >/dev/null || \
+    fail 'artifact registration belongs to another run or is invalid'
 }
 
 update_max_state() {
@@ -81,22 +100,23 @@ observe_spool() {
   update_max_state spool-peak-size-bytes "$size_bytes"
 }
 
-write_receipt() {
+write_registration() (
   local file="$1" index="$2" sha256="$3" size_bytes="$4"
   local uri="$5" upload_status="$6" version_id="$7"
   local media_type="$8" summary_path="${9:-}" summary_sha256="${10:-}"
   local summary_size_bytes="${11:-0}" summary_json=null
   local target temporary
 
-  target="${receipt_dir}/${index}-${sha256}.json"
-  if [[ -e "$target" ]]; then
+  target="${registration_dir}/${index}-${sha256}.json"
+  if registration_exists "$index" "$sha256"; then
     return 0
   fi
-  if compgen -G "${receipt_dir}/${index}-*.json" >/dev/null; then
+  if compgen -G "${registration_dir}/${index}-*.json" >/dev/null; then
     fail "segment index ${index} already has a different receipt"
   fi
 
-  temporary="$(mktemp "${receipt_dir}/.receipt.XXXXXX")" || fail 'cannot create receipt temporary file'
+  temporary="$(mktemp "${registration_dir}/.registration.XXXXXX")" || fail 'cannot create receipt temporary file'
+  trap 'rm -f -- "$temporary"' EXIT
   if [[ -n "$summary_path" ]]; then
     summary_json="$(jq -cS -n \
       --arg uri "file://${summary_path}" \
@@ -106,12 +126,14 @@ write_receipt() {
         uri: $uri,
         sha256: $sha256,
         size_bytes: $size_bytes,
-        media_type: "application/vnd.robotics.mcap-summary.v1+json"
+        media_type: "application/vnd.robotics.recording-summary.v1+json"
       }')"
   fi
   jq -cS -n \
     --arg uri "$uri" \
     --arg local_path "$file" \
+    --arg run_id "$run_id" \
+    --arg summary_path "$summary_path" \
     --arg media_type "$media_type" \
     --arg sha256 "$sha256" \
     --arg retention_class "$retention_class" \
@@ -121,6 +143,8 @@ write_receipt() {
     --argjson segment_index "$index" \
     --argjson summary "$summary_json" \
     '{
+      run_id: $run_id,
+      local_path: $local_path,
       uri: $uri,
       media_type: $media_type,
       sha256: $sha256,
@@ -130,12 +154,13 @@ write_receipt() {
       upload_status: $upload_status,
       checksum_verified: true
     }
-    + if $summary == null then {} else {mcap_summary: $summary} end
-    + if $upload_status == "local" then {local_path: $local_path}
-      else {version_id: $version_id} end' >"$temporary" || fail 'cannot write segment receipt'
-  chmod 0444 "$temporary" || fail 'cannot make segment receipt read-only'
-  mv "$temporary" "$target" || fail 'cannot publish segment receipt atomically'
-}
+    + if $summary == null then {} else
+        {recording_summary: $summary, recording_summary_path: $summary_path} end
+    + if $upload_status == "local" then {} else {version_id: $version_id} end' \
+    >"$temporary" || fail 'cannot write artifact registration'
+  chmod 0444 "$temporary" || fail 'cannot make artifact registration read-only'
+  mv "$temporary" "$target" || fail 'cannot publish artifact registration atomically'
+)
 
 verify_remote_versioning() {
   local status
@@ -146,32 +171,37 @@ verify_remote_versioning() {
   [[ "$status" == Enabled ]] || fail "bucket versioning is not enabled"
 }
 
-upload_segment() {
+upload_segment() (
   local file="$1" index="$2" sha256="$3" size_bytes="$4"
   local summary_path="$5" summary_sha256="$6" summary_size_bytes="$7"
-  local key remote remote_dir file_name check_list
+  local key encoded_key remote_dir file_name check_list
   local head_json remote_size remote_sha content_type version_id
 
+  require_command rclone
+  require_command aws
   verify_remote_versioning
   file_name="$(basename "$file")"
   remote_dir="${RCLONE_REMOTE:-evidence}:${EVIDENCE_BUCKET}/${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${sha256}/"
   key="${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${sha256}/${file_name}"
-  remote="${RCLONE_REMOTE:-evidence}:${EVIDENCE_BUCKET}/${key}"
+  check_list="$(mktemp)" || fail 'cannot create rclone check list'
+  trap 'rm -f -- "$check_list"' EXIT
+  printf '%s\n' "$file_name" >"$check_list" || fail 'cannot write rclone check list'
 
-  rclone copyto "$file" "$remote" \
+  # copyto does not enforce --immutable. Directory copy applies the immutable
+  # comparison, while the raw file list restricts the upload to this segment.
+  rclone copy "$(dirname "$file")" "$remote_dir" \
+    --files-from-raw "$check_list" \
     --immutable \
+    --checksum \
     --metadata \
     --metadata-set content-type=application/mcap \
     --metadata-set "sha256=${sha256}" \
     --metadata-set "run-id=${run_id}" \
     --metadata-set "segment-index=${index}" || fail "rclone upload failed for $key"
 
-  check_list="$(mktemp)" || fail 'cannot create rclone check list'
-  printf '%s\n' "$file_name" >"$check_list" || fail 'cannot write rclone check list'
   rclone check "$(dirname "$file")" "$remote_dir" \
     --files-from-raw "$check_list" \
     --one-way || fail "rclone verification failed for $key"
-  rm -f "$check_list"
 
   head_json="$(aws_cli s3api head-object \
     --bucket "${EVIDENCE_BUCKET}" \
@@ -181,26 +211,43 @@ upload_segment() {
   remote_size="$(jq -er '.ContentLength' <<<"$head_json")" || fail 'remote size is absent'
   remote_sha="$(jq -er '.Metadata.sha256' <<<"$head_json")" || fail 'remote SHA-256 is absent'
   content_type="$(jq -er '.ContentType' <<<"$head_json")" || fail 'remote media type is absent'
-  version_id="$(jq -er '.VersionId | select(length > 0)' <<<"$head_json")" || \
-    fail 'remote version ID is absent'
+  version_id="$(jq -er '.VersionId | select(type == "string" and length > 0 and . != "null")' <<<"$head_json")" || \
+    fail 'remote version ID must be a non-null string'
 
   [[ "$remote_size" == "$size_bytes" ]] || fail "remote size differs for $key"
   [[ "$remote_sha" == "$sha256" ]] || fail "remote SHA-256 differs for $key"
   [[ "$content_type" == application/mcap ]] || fail "remote media type differs for $key"
 
-  write_receipt "$file" "$index" "$sha256" "$size_bytes" \
-    "s3://${EVIDENCE_BUCKET}/${key}" confirmed "$version_id" application/mcap \
+  encoded_key="$(jq -rn --arg key "$key" '$key | split("/") | map(@uri) | join("/")')" || \
+    fail 'cannot encode the remote object URI'
+  write_registration "$file" "$index" "$sha256" "$size_bytes" \
+    "s3://${EVIDENCE_BUCKET}/${encoded_key}" confirmed "$version_id" application/mcap \
     "$summary_path" "$summary_sha256" "$summary_size_bytes"
 
-  if [[ "${EVIDENCE_DELETE_CONFIRMED_LOCAL:-false}" == true ]]; then
-    rm -- "$file"
-  fi
-}
+  # Keep original bytes until the public writer has rechecked every source at
+  # finalization. A confirmed upload alone does not establish receipt provenance.
+)
 
 process_segment() {
   local file="$1" index sha256 size_bytes summary_path summary_sha256
   local summary_size_bytes duration_ns max_duration_ns
   [[ -f "$file" ]] || fail "segment does not exist: $file"
+  case "$file" in
+    *$'\n'*|*$'\r'*) fail 'MCAP path cannot contain line breaks' ;;
+  esac
+  require_command mcap
+  require_command mcap-summary
+  IFS= read -r -d '' file < <(realpath -ez -- "$file") || fail 'cannot resolve MCAP path'
+  case "$file" in
+    *$'\n'*|*$'\r'*) fail 'MCAP path cannot contain line breaks' ;;
+  esac
+
+  # A raw rclone filter must identify the same native name on every supported
+  # backend. Generated segment names use this portable subset; reject encoded
+  # aliases before uploading rather than selecting a different neighboring file.
+  if [[ "$evidence_mode" == s3 && ! "${file##*/}" =~ ^[a-zA-Z0-9._\ %#()+@,=-]+$ ]]; then
+    fail 'S3 MCAP filename must use portable ASCII letters, digits, spaces or ._%#()+@,=-'
+  fi
 
   if ! mcap --color never doctor "$file" >/dev/null; then
     return 75
@@ -213,8 +260,8 @@ process_segment() {
     fail "segment exceeds EVIDENCE_MAX_SEGMENT_SIZE_BYTES: $file"
   fi
 
-  mkdir -p "$receipt_dir" "$summary_dir" || fail 'cannot create evidence directories'
-  summary_path="${summary_dir}/${index}-${sha256}.mcap-summary.json"
+  mkdir -p "$registration_dir" "$summary_dir" || fail 'cannot create evidence directories'
+  summary_path="${summary_dir}/${index}-${sha256}.recording-summary.json"
   if [[ ! -e "$summary_path" ]]; then
     mcap-summary "$file" "$summary_path" || fail "cannot summarize $file"
   fi
@@ -223,7 +270,8 @@ process_segment() {
   summary_size_bytes="$(stat -c '%s' "$summary_path")" || \
     fail "cannot stat summary for $file"
   jq -e --arg sha256 "$sha256" \
-    '.source_sha256 == $sha256 and .compressions == ["zstd"]' \
+    '.schema_version == "recording-summary.v1" and
+     .source_sha256 == $sha256 and .compressions == ["zstd"]' \
     "$summary_path" >/dev/null || fail "MCAP summary policy differs for $file"
   duration_ns="$(jq -er \
     '.statistics.message_end_time_ns - .statistics.message_start_time_ns' \
@@ -233,11 +281,11 @@ process_segment() {
     fail "segment exceeds EVIDENCE_MAX_SEGMENT_DURATION_SEC: $file"
   fi
 
-  if [[ -e "${receipt_dir}/${index}-${sha256}.json" ]]; then
+  if registration_exists "$index" "$sha256"; then
     return 0
   fi
   if [[ "$evidence_mode" == local ]]; then
-    write_receipt "$file" "$index" "$sha256" "$size_bytes" \
+    write_registration "$file" "$index" "$sha256" "$size_bytes" \
       "file://${file}" local "" application/mcap \
       "$summary_path" "$summary_sha256" "$summary_size_bytes"
   elif [[ "$evidence_mode" == s3 ]]; then
@@ -252,15 +300,15 @@ register_artifact() {
   local file="$1" media_type="$2" index="$3" sha256 size_bytes
   [[ -f "$file" ]] || fail "artifact does not exist: $file"
   [[ "$file" == /* ]] || fail 'artifact path must be absolute'
-  [[ "$index" =~ ^[0-9]+$ ]] || fail 'artifact index must be a non-negative integer'
+  index="$(normalize_index "$index")" || fail 'invalid artifact index'
   [[ "$media_type" =~ ^(application|audio|image|text|video)/[A-Za-z0-9.+-]+$ ]] || \
     fail "invalid artifact media type: $media_type"
   artifact_media_type_allowed "$media_type" || \
     fail "artifact media type is not allowed: $media_type"
   sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
   size_bytes="$(stat -c '%s' "$file")" || fail "cannot stat $file"
-  mkdir -p "$receipt_dir" || fail 'cannot create receipt directory'
-  write_receipt "$file" "$index" "$sha256" "$size_bytes" \
+  mkdir -p "$registration_dir" || fail 'cannot create receipt directory'
+  write_registration "$file" "$index" "$sha256" "$size_bytes" \
     "file://${file}" local "" "$media_type"
 }
 
@@ -276,77 +324,204 @@ scan_segments() {
   done < <(find "$spool_dir" -type f -name '*.mcap' -print0 | sort -z)
 }
 
-finalize_index() {
-  local segments temporary spool_peak upload_lag upload_mode remote_sink
-  scan_segments
-  if find "$spool_dir" -type f -name '*.mcap' -print -quit | grep -q .; then
-    while IFS= read -r -d '' file; do
-      process_segment "$file" || fail "unclosed or invalid segment: $file"
-    done < <(find "$spool_dir" -type f -name '*.mcap' -print0 | sort -z)
-  fi
-  compgen -G "${receipt_dir}/*.json" >/dev/null || fail 'no segment receipts exist'
+receipt_matches_registration() {
+  local receipt="$1" registration="$2"
+  jq -e --arg run_id "$run_id" --slurpfile registrations "$registration" '
+    ($registrations | length) == 1 and
+    .run_id == $run_id and
+    .artifact.uri == $registrations[0].uri and
+    .artifact.sha256 == $registrations[0].sha256 and
+    .artifact.size_bytes == $registrations[0].size_bytes and
+    .artifact.media_type == $registrations[0].media_type and
+    .artifact.immutable_revision == $registrations[0].version_id
+  ' "$receipt" >/dev/null || fail 'receipt does not match the uploaded artifact and run'
+}
 
-  segments="$(jq -s \
-    'sort_by(.segment_index)
-     | if (map(.segment_index) | unique | length) == length then .
-       else error("duplicate segment_index") end' \
-    "${receipt_dir}"/*.json)"
+register_receipt() (
+  local file="$1" index="$2" verification='' sha256 registration target template temporary path
+  local input_registry=''
+  local -a dependencies=() dependency_arguments=()
+  shift 2
+  while (( $# )); do
+    [[ $# -ge 2 ]] || fail 'receipt options require a path'
+    case "$1" in
+      --verification)
+        [[ -z "$verification" ]] || fail 'provide one verification document'
+        verification="$2"
+        ;;
+      --dependency) dependencies+=("$2") ;;
+      *) fail "unknown receipt option: $1" ;;
+    esac
+    shift 2
+  done
+  [[ -n "$verification" && ${#dependencies[@]} -gt 0 ]] || \
+    fail 'receipt requires --verification and --dependency paths'
+  index="$(normalize_index "$index")"
+  sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail 'cannot hash receipt source'
+  registration="${registration_dir}/${index}-${sha256}.json"
+  registration_exists "$index" "$sha256" || fail 'upload registration is missing'
+  jq -e '.upload_status == "confirmed"' "$registration" >/dev/null || \
+    fail 'receipt requires a confirmed remote upload'
+  mkdir -p "$receipt_dir"
+  target="${receipt_dir}/${index}-${sha256}.json"
+  for path in "$file" "$registration" "$verification" "${dependencies[@]}"; do
+    [[ ! "$path" -ef "$target" ]] || fail 'receipt output must not replace an input'
+  done
+  for path in "${dependencies[@]}"; do dependency_arguments+=(--dependency "$path"); done
+  template="$(mktemp "${receipt_dir}/.receipt-template.XXXXXX")"
+  temporary=''
+  trap 'rm -f -- "$template"; if [[ -n "$temporary" ]]; then rm -f -- "$temporary"; fi
+    if [[ -n "$input_registry" ]]; then rm -f -- "$input_registry"; fi' EXIT
+  temporary="$(mktemp "${receipt_dir}/.receipt.XXXXXX")"
+  jq -n --arg receipt_id "receipt-${index}-${sha256}" --arg run_id "$run_id" \
+    --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')" \
+    '{receipt_id: $receipt_id, run_id: $run_id, created_at: $created_at}' >"$template"
+  "$contracts_cli" artifact-receipt create --template "$template" --source "$file" \
+    --verification "$verification" "${dependency_arguments[@]}" --output "$temporary" >/dev/null
+  receipt_matches_registration "$temporary" "$registration"
+  require_command "$receipt_inputs_cli"
+  input_registry="$(mktemp "${registration_dir}/.receipt-inputs.XXXXXX")"
+  "$receipt_inputs_cli" bind --root "$(dirname "$index_path")" \
+    --registration "$registration" --receipt "$temporary" --destination "$target" \
+    --verification "$verification" "${dependency_arguments[@]}" >"$input_registry"
+  chmod 0444 "$input_registry"
+  mv -f -- "$input_registry" "$registration"
+  chmod 0444 "$temporary"
+  mv -f -- "$temporary" "$target"
+)
+
+protect_index_input() {
+  [[ ! "$1" -ef "$index_path" ]] || fail 'index output must not replace an evidence input'
+  [[ ! "$1" -ef "$receipt_inventory_path" ]] || fail 'inventory output must not replace an evidence input'
+}
+
+add_registered_artifact() {
+  local registration="$1" work="$2" file summary sha256 index receipt receipt_sha256=''
+  local -a summary_arguments=()
+  jq -e --arg run_id "$run_id" '.run_id == $run_id' "$registration" >/dev/null || \
+    fail 'artifact registration belongs to another run'
+  file="$(jq -er '.local_path' "$registration")"
+  protect_index_input "$file"
+  sha256="$(jq -er '.sha256' "$registration")"
+  index="$(jq -er '.segment_index' "$registration")"
+  case "$(jq -er '.upload_status' "$registration")" in
+    local) ;;
+    confirmed)
+      [[ "$evidence_mode" == s3 ]] || fail 'remote registration requires S3 evidence mode'
+      receipt="${receipt_dir}/${index}-${sha256}.json"
+      [[ -f "$receipt" ]] || fail "verified artifact receipt is missing for index ${index}"
+      protect_index_input "$receipt"
+      "$contracts_cli" validate --schema artifact-receipt.v1 --quiet "$receipt"
+      receipt_matches_registration "$receipt" "$registration"
+      receipt_sha256="$(sha256sum "$receipt" | cut -d' ' -f1)"
+      ;;
+    *) fail 'unsupported artifact upload status' ;;
+  esac
+  summary="$(jq -r '.recording_summary_path // empty' "$registration")"
+  if [[ -n "$summary" ]]; then
+    protect_index_input "$summary"
+    [[ "$(sha256sum "$summary" | cut -d' ' -f1)" == \
+      "$(jq -er '.recording_summary.sha256' "$registration")" ]] || \
+      fail 'recording summary changed after registration'
+    summary_arguments=(--recording-summary "$summary")
+  fi
+  jq --arg receipt_sha256 "$receipt_sha256" '{
+    artifact_id: ("artifact-" + (.segment_index | tostring)),
+    kind: (if .media_type == "application/mcap" then "recording" else "observation" end),
+    media_type, sha256, size_bytes, retention_class, segment_index,
+    storage_state: (if .upload_status == "local" then "local" else "retained" end)
+  } + if .upload_status == "confirmed" then {
+    uri, immutable_revision: .version_id, receipt_sha256: $receipt_sha256
+  } else {} end' "$registration" >"${work}/metadata.json"
+  "$contracts_cli" evidence-index add-artifact "${work}/draft.json" \
+    --source "$file" --metadata "${work}/metadata.json" "${summary_arguments[@]}" >/dev/null
+}
+
+finalize_index() (
+  local work spool_peak upload_lag upload_mode remote_sink registration
+  [[ -d "$spool_dir" ]] || fail 'evidence spool directory is unavailable'
+  [[ "$(realpath -m "$index_path")" != "$(realpath -m "$receipt_inventory_path")" ]] || \
+    fail 'index and receipt inventory must have different output paths'
+  require_command "$receipt_inputs_cli"
+  scan_segments
+  while IFS= read -r -d '' file; do
+    process_segment "$file" || fail "unclosed or invalid segment: $file"
+  done < <(find "$spool_dir" -type f -name '*.mcap' -print0 | sort -z)
+  compgen -G "${registration_dir}/*.json" >/dev/null || fail 'no artifact registrations exist'
   mkdir -p "$(dirname "$index_path")"
-  temporary="$(mktemp "$(dirname "$index_path")/.evidence-index.XXXXXX")" || \
-    fail 'cannot create evidence-index temporary file'
+  work="$(mktemp -d "$(dirname "$index_path")/.evidence-index.XXXXXX")"
+  trap 'rm -f -- "$work/registrations.jsonl" "$work/registration.json" "$work/template.json" \
+    "$work/metadata.json" "$work/draft.json" "$work/final.json" \
+    "$work/receipt-inventory.json"; rmdir -- "$work"' EXIT
+  jq -cs 'sort_by(.segment_index)
+    | if (map(.segment_index) | unique | length) != length then error("duplicate segment_index")
+      else .[] end' "${registration_dir}"/*.json >"${work}/registrations.jsonl"
   spool_peak="$(cat "${state_dir}/spool-peak-size-bytes" 2>/dev/null || printf '0')"
   upload_lag="$(cat "${state_dir}/upload-lag-max-sec" 2>/dev/null || printf '0')"
-  if [[ "$evidence_mode" == s3 ]]; then
-    upload_mode=closed_segments_during_run
-    remote_sink=true
-  else
-    upload_mode=local_only
-    remote_sink=false
-  fi
-  jq -cS -n \
-    --arg run_id "$run_id" \
-    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-    --arg recording_mode "$recording_mode" \
-    --arg compression "$compression" \
-    --arg upload_mode "$upload_mode" \
-    --argjson remote_sink "$remote_sink" \
-    --argjson spool_peak "$spool_peak" \
-    --argjson upload_lag "$upload_lag" \
-    --argjson segments "$segments" \
-    '{
-      schema_version: "evidence-index.v3",
-      run_id: $run_id,
-      generated_at: $generated_at,
-      finalized: true,
+  case "$evidence_mode" in
+    s3)
+      remote_sink="$(jq -s 'any(.[]; .upload_status == "confirmed")' "${work}/registrations.jsonl")"
+      if [[ "$remote_sink" == true ]]; then
+        upload_mode=closed_segments_during_run
+      else
+        upload_mode=local_only
+      fi
+      ;;
+    local) upload_mode=local_only; remote_sink=false ;;
+    *) fail "unsupported EVIDENCE_MODE: $evidence_mode" ;;
+  esac
+  jq -n --arg run_id "$run_id" --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg recording_mode "$recording_mode" --arg compression "$compression" \
+    --arg retention_class "$retention_class" --arg upload_mode "$upload_mode" \
+    --argjson remote_sink "$remote_sink" --argjson spool_peak "$spool_peak" \
+    --argjson upload_lag "$upload_lag" '{
+      run_id: $run_id, generated_at: $generated_at,
       policy_observation: {
-        recording_mode: $recording_mode,
-        compression: $compression,
-        upload_mode: $upload_mode,
-        remote_sink_used: $remote_sink,
-        spool_peak_size_bytes: $spool_peak,
+        recording_mode: $recording_mode, compression: $compression,
+        retention_class: $retention_class, upload_mode: $upload_mode,
+        remote_sink_used: $remote_sink, spool_peak_size_bytes: $spool_peak,
         upload_lag_max_sec: $upload_lag
-      },
-      segments: $segments
-    }' >"$temporary" || fail 'cannot write evidence index'
-  chmod 0444 "$temporary" || fail 'cannot make evidence index read-only'
-  mv "$temporary" "$index_path" || fail 'cannot publish evidence index atomically'
-}
+      }
+    }' >"${work}/template.json"
+  "$contracts_cli" evidence-index init --template "${work}/template.json" \
+    --output "${work}/draft.json" >/dev/null
+  while IFS= read -r registration; do
+    printf '%s\n' "$registration" >"${work}/registration.json"
+    add_registered_artifact "${work}/registration.json" "$work"
+  done <"${work}/registrations.jsonl"
+  "$contracts_cli" evidence-index finalize "${work}/draft.json" --output "${work}/final.json" >/dev/null
+  "$receipt_inputs_cli" inventory --root "$(dirname "$index_path")" \
+    --registrations "${work}/registrations.jsonl" --index "${work}/final.json" \
+    >"${work}/receipt-inventory.json"
+  chmod 0444 "${work}/receipt-inventory.json"
+  mv -f -- "${work}/receipt-inventory.json" "$receipt_inventory_path"
+  chmod 0444 "${work}/final.json"
+  mv -f -- "${work}/final.json" "$index_path"
+  if [[ "${EVIDENCE_DELETE_CONFIRMED_LOCAL:-false}" == true ]]; then
+    while IFS= read -r registration; do
+      if [[ "$(jq -r '.upload_status' <<<"$registration")" == confirmed ]]; then
+        rm -- "$(jq -er '.local_path' <<<"$registration")"
+      fi
+    done <"${work}/registrations.jsonl"
+  fi
+)
 
 watch_segments() {
   local status
+  require_command inotifywait
   while true; do
     scan_segments
     status=0
-    inotifywait --quiet \
+    inotifywait --quiet --recursive \
       --timeout "${EVIDENCE_RESCAN_INTERVAL_SEC:-2}" \
-      --event close_write,moved_to "$spool_dir" >/dev/null || status=$?
+      --event create,close_write,moved_to "$spool_dir" >/dev/null || status=$?
     if (( status != 0 && status != 2 )); then
       fail "cannot watch evidence spool: $spool_dir"
     fi
   done
 }
 
-for command in mcap mcap-summary rclone aws jq sha256sum inotifywait; do
+for command in jq sha256sum "$contracts_cli"; do
   require_command "$command"
 done
 
@@ -369,11 +544,17 @@ case "${1:-watch}" in
     require_run_id
     register_artifact "$2" "$3" "$4"
     ;;
+  receipt)
+    [[ $# -ge 7 ]] || fail 'usage: evidence-sink receipt FILE INDEX --verification PATH --dependency PATH ...'
+    require_run_id
+    register_receipt "$2" "$3" "${@:4}"
+    ;;
   versions)
     mcap --version
     python3 -c 'import mcap; print(mcap.__version__)'
     rclone version | head -n 1
     aws --version
+    cosign version --json
     ;;
   *)
     fail "unknown command: $1"

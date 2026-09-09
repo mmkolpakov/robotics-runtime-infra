@@ -1,13 +1,13 @@
 ---
-schema_version: acceptance-scenario.v4
+schema_version: acceptance-scenario.v1
 scenario_id: org.example.runtime-infra.stepped-smoke
 execution:
   target_environment: simulation
   hardware_scope: []
   physical_effect: none
   test_intent: interface_smoke
-  data_source: gazebo
-  plant_backend: gazebo_physics
+  data_source: simulator
+  plant_backend: simulated_physics
   time_mode: simulation_stepped
   data_plane_profile: standard_isolated
   security_profile: none
@@ -28,7 +28,7 @@ expected_ros_graph:
   topics:
     - name: /clock
       type: rosgraph_msgs/msg/Clock
-      qos_profile: sensor_data
+      qos_profile: system_default
       min_publishers: 1
       min_subscribers: 0
       first_message_timeout_sec: 10
@@ -42,6 +42,10 @@ expected_ros_graph:
   actions: []
   lifecycle_nodes: []
 assertions: []
+metric_definitions: []
+evaluator_requirements: []
+provider_requirements:
+  capabilities: [simulated_physics]
 time_policy:
   step_size_sec: 0.001
   max_skipped_steps: 0

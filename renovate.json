@@ -6,17 +6,21 @@
   ],
   "dependencyDashboard": true,
   "minimumReleaseAge": "3 days",
+  "automerge": false,
   "customManagers": [
     {
       "customType": "regex",
+      "description": "Track the rclone release tag and verified source commit together",
       "managerFilePatterns": [
         "/^docker-bake\\.hcl$/"
       ],
       "matchStrings": [
-        "variable \"COSIGN_IMAGE\" \\{\\s+default = \"(?<depName>cgr\\.dev/chainguard/cosign):(?<currentValue>latest)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+        "variable \"RCLONE_REVISION\" \\{\\s+default = \"(?<currentDigest>[a-f0-9]{40})\"[\\s\\S]*?variable \"RCLONE_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
+      "depNameTemplate": "rclone/rclone",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
     },
     {
       "customType": "regex",
@@ -25,14 +29,56 @@
         "/^Dockerfile$/"
       ],
       "matchStrings": [
-        "ARG YQ_REVISION=(?<currentDigest>[a-f0-9]{40})\\nARG YQ_BASE_VERSION=(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+        "ARG YQ_REVISION=(?<currentDigest>[a-f0-9]{40})\\r?\\nARG YQ_BASE_VERSION=(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
       ],
       "depNameTemplate": "mikefarah/yq",
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the Cosign release tag and verified source commit together",
+      "managerFilePatterns": [
+        "/^docker-bake\\.hcl$/"
+      ],
+      "matchStrings": [
+        "variable \"COSIGN_REVISION\" \\{\\s+default = \"(?<currentDigest>[a-f0-9]{40})\"[\\s\\S]*?variable \"COSIGN_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "sigstore/cosign",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
+    {
+      "description": "Keep OPA above the Go, crypto and gRPC fixes verified for CI 34305345505",
+      "matchDepNames": [
+        "openpolicyagent/opa"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "versionCompatibility": "^(?<version>\\d+\\.\\d+\\.\\d+)(?<compatibility>-static)$",
+      "versioning": "semver",
+      "allowedVersions": ">=1.20.2"
+    },
+    {
+      "description": "Keep the Cosign source and installer version in one reviewed update",
+      "matchPackageNames": [
+        "sigstore/cosign"
+      ],
+      "groupName": "cosign",
+      "minimumReleaseAge": "0 days",
+      "automerge": false
+    },
+    {
+      "description": "Do not restore Cosign releases affected by GHSA-fx35-mq7g-6g98",
+      "matchPackageNames": [
+        "sigstore/cosign"
+      ],
+      "allowedVersions": ">=3.1.3"
+    },
     {
       "description": "Keep runtime and CI dependencies reproducible",
       "matchManagers": [
@@ -41,20 +87,6 @@
         "github-actions"
       ],
       "rangeStrategy": "pin"
-    },
-    {
-      "description": "Qualify every Chainguard Cosign rebuild",
-      "matchDatasources": [
-        "docker"
-      ],
-      "matchPackageNames": [
-        "cgr.dev/chainguard/cosign"
-      ],
-      "minimumReleaseAge": "0 days",
-      "automerge": false,
-      "labels": [
-        "supply-chain"
-      ]
     },
     {
       "description": "Do not restore yq releases affected by CVE-2026-56852",

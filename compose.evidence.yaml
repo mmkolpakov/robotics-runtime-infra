@@ -8,6 +8,7 @@ x-evidence: &evidence
     AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-us-east-1}"
     AWS_ENDPOINT_URL: "${AWS_ENDPOINT_URL:-}"
     AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+    AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
     EVIDENCE_BUCKET: "${EVIDENCE_BUCKET:-}"
     EVIDENCE_ARTIFACT_MEDIA_TYPES: >-
       ${EVIDENCE_ARTIFACT_MEDIA_TYPES:-application/json,application/x-ndjson,application/junit+xml,text/plain,application/vnd.in-toto+json}
@@ -17,12 +18,21 @@ x-evidence: &evidence
       ${ROBOTICS_MAX_SEGMENT_SIZE_BYTES:-1073741824}
     EVIDENCE_MODE: "${EVIDENCE_MODE:-local}"
     EVIDENCE_PREFIX: "${EVIDENCE_PREFIX:-}"
+    EVIDENCE_SPOOL_DIR: /evidence/recordings
     RCLONE_CONFIG: /dev/null
+    RCLONE_CONFIG_EVIDENCE_TYPE: s3
+    RCLONE_CONFIG_EVIDENCE_ENV_AUTH: "true"
+    RCLONE_CONFIG_EVIDENCE_REGION: "${AWS_DEFAULT_REGION:-us-east-1}"
+    RCLONE_CONFIG_EVIDENCE_ENDPOINT: "${AWS_ENDPOINT_URL:-}"
+    # Select Other for generic S3-compatible HTTP endpoints.
+    RCLONE_CONFIG_EVIDENCE_PROVIDER: "${RCLONE_S3_PROVIDER:-AWS}"
+    RCLONE_CONFIG_EVIDENCE_FORCE_PATH_STYLE: "true"
+    # Custom remotes require a Compose override with their RCLONE_CONFIG_* keys.
     RCLONE_REMOTE: "${RCLONE_REMOTE:-evidence}"
     ROBOTICS_RETENTION_CLASS: "${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
     ROBOTICS_COMPRESSION: zstd
     ROBOTICS_RECORDING_MODE: "${ROBOTICS_RECORDING_MODE:-bounded}"
-    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
   security_opt:
     - no-new-privileges:true
   cap_drop:
@@ -32,7 +42,7 @@ x-evidence: &evidence
   volumes:
     - type: bind
       source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
-      target: /spool
+      target: /evidence/recordings
       read_only: true
     - type: bind
       source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"

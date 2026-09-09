@@ -4,13 +4,11 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
-ARG RCLONE_IMAGE=rclone/rclone:1.75.0@sha256:b06aed988cf5967de7c25be5925240983981c757f4ed1ac9d2fa659d51d60548
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
-ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
-ARG OPA_IMAGE=openpolicyagent/opa:1.19.0-static@sha256:2f42ca765bb739b40fc23ee625b3287012acdf8120ad4fcbdab68433a17be144
-# Policy targets receive the qualified reference from Docker Bake.
-ARG COSIGN_IMAGE=scratch
+ARG GO_BUILDER_IMAGE=golang:1.26.8@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff
+# Released binary module verification and platform digests: docker/opa/README.md.
+ARG OPA_IMAGE=openpolicyagent/opa:1.20.2-static@sha256:bb245e9e36be0d0ed486c240b606c56be7aba96014a4a87895fed4ba7a6dfa8d
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -19,29 +17,84 @@ ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG SENSOR_INFERENCE_BASE=inference-cpu
-ARG UBUNTU_SNAPSHOT=20260726T000000Z
-ARG OPENSSL_VERSION=3.0.13-0ubuntu3.11
+ARG UBUNTU_SNAPSHOT=20260908T000000Z
+ARG OPENSSL_VERSION=3.0.13-0ubuntu3.15
 ARG CA_CERTIFICATES_VERSION=20260601~24.04.1
-ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136
+ARG LINUX_LIBC_DEV_VERSION=6.8.0-139.139
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 
 FROM ${UV_IMAGE} AS uv
-FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${OPA_IMAGE} AS opa
-FROM ${COSIGN_IMAGE} AS cosign
 FROM ${ROS_BASE_IMAGE} AS ca-bootstrap
 
-FROM scratch AS cosign-license
+FROM ca-bootstrap AS foundation-wheels
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --from=uv /uv /uvx /usr/local/bin/
+# The named context is pinned by both Git ref and checksum in Docker Bake.
+# hadolint ignore=DL3022
+COPY --from=foundation-source / /src/foundation/
+COPY docker/python/foundation-build.lock /tmp/foundation-build.lock
+COPY config/foundation-lock.json /tmp/foundation-lock.json
+COPY scripts/ci/foundation/build-workspace-wheels.py /tmp/build-workspace-wheels.py
+RUN uv venv --no-cache --python /usr/bin/python3 /opt/build \
+    && uv pip install --python /opt/build/bin/python --require-hashes --no-deps \
+      --requirement /tmp/foundation-build.lock \
+    && python3 /tmp/build-workspace-wheels.py \
+      --source /src/foundation --metadata /tmp/foundation-lock.json \
+      --python /opt/build/bin/python --output /out
+
+FROM ca-bootstrap AS foundation-contracts
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --from=uv /uv /uvx /usr/local/bin/
+COPY docker/python/permit-preflight.lock /tmp/permit-preflight.lock
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro \
+    uv venv --no-cache --python /usr/bin/python3 /opt/contracts \
+    && uv pip install --python /opt/contracts/bin/python --require-hashes --no-deps \
+      --requirement /tmp/permit-preflight.lock \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/contracts/bin/python --require-hashes --no-deps \
+      --requirement contracts.requirements \
+    && uv pip check --python /opt/contracts/bin/python
+
+FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS rclone
+ARG TARGETOS
+ARG TARGETARCH
+ARG RCLONE_VERSION
+ARG RCLONE_REVISION
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# Bake verifies the release tag and commit; the local build context carries the patch.
+# hadolint ignore=DL3022
+COPY --from=rclone-source / /src/rclone/
+# hadolint ignore=DL3022
+COPY --from=rclone-build go-dependencies.patch /tmp/rclone-go-dependencies.patch
+# hadolint ignore=DL3022
+COPY --from=rclone-build --chmod=0555 build.sh /usr/local/bin/build-rclone
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    build-rclone
+
+FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS cosign
+ARG TARGETOS
+ARG TARGETARCH
 ARG COSIGN_VERSION
-ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
-  https://raw.githubusercontent.com/sigstore/cosign/v${COSIGN_VERSION}/LICENSE \
-  /LICENSE
+ARG COSIGN_REVISION
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# The release tag and its exact commit are checked by the named Git context.
+# hadolint ignore=DL3022
+COPY --from=cosign-source / /src/cosign/
+COPY docker/cosign/go-dependencies.patch /tmp/cosign-go-dependencies.patch
+COPY --chmod=0555 docker/cosign/build.sh /usr/local/bin/build-cosign
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    build-cosign
 
 FROM scratch AS opa-license
 ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
-  https://raw.githubusercontent.com/open-policy-agent/opa/1e32c796e8979b1bda2f768138500b1deb95ff24/LICENSE \
+  https://raw.githubusercontent.com/open-policy-agent/opa/b2c26708e9d55645d7f837db495031f7e4152594/LICENSE \
   /LICENSE
 
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
@@ -365,7 +418,6 @@ ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
-ARG COSIGN_IMAGE
 ARG COSIGN_VERSION
 
 LABEL org.opencontainers.image.title="Robotics execution permit preflight" \
@@ -381,26 +433,14 @@ ARG UBUNTU_SNAPSHOT
 ENV HOME=/home/preflight \
     PATH="/opt/venv/bin:${PATH}"
 
-RUN case "${COSIGN_IMAGE}" in \
-      *@sha256:????????????????????????????????????????????????????????????????) ;; \
-      *) printf 'COSIGN_IMAGE must be digest-pinned\n' >&2; exit 65 ;; \
-    esac \
-    && cosign_image_digest="${COSIGN_IMAGE##*@}" \
-    && case "${cosign_image_digest#sha256:}" in \
-      *[!a-f0-9]*) \
-        printf 'COSIGN_IMAGE digest must be lowercase hexadecimal\n' >&2; \
-        exit 65 ;; \
-      *) ;; \
-    esac \
-    && install -d -m 0555 \
+RUN install -d -m 0555 \
       /usr/local/lib/robotics-runtime \
       /usr/share/licenses/cosign \
-      /usr/share/robotics-runtime \
-    && printf '%s\n' "${cosign_image_digest}" \
-      > /usr/share/robotics-runtime/cosign-image-digest \
-    && chmod 0444 /usr/share/robotics-runtime/cosign-image-digest
-COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
-COPY --from=cosign-license --chmod=0444 /LICENSE \
+      /usr/share/robotics-runtime
+COPY --from=cosign /out/cosign /usr/local/bin/cosign
+COPY --from=cosign --chmod=0444 /out/cosign-build.txt \
+  /usr/share/robotics-runtime/cosign-build.txt
+COPY --from=cosign --chmod=0444 /src/cosign/LICENSE \
   /usr/share/licenses/cosign/LICENSE
 COPY --from=opa /opa /usr/local/bin/opa
 COPY --from=opa-license /LICENSE /usr/share/licenses/opa/LICENSE
@@ -408,7 +448,8 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY docker/python/permit-preflight.lock /tmp/python/permit-preflight.lock
 
-RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro \
+    export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
     && UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
@@ -422,6 +463,9 @@ RUN export DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
       --no-cache \
       --no-deps \
       --requirement /tmp/python/permit-preflight.lock \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/venv/bin/python --require-hashes --no-deps \
+      --requirement contracts.requirements \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
@@ -493,14 +537,15 @@ ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
+ARG COSIGN_VERSION
 
 LABEL org.opencontainers.image.title="Robotics evidence sink" \
-      org.opencontainers.image.description="Validated MCAP segment upload and evidence-index finalization." \
+      org.opencontainers.image.description="Validated MCAP retention, signed object verification and evidence-index finalization." \
       org.opencontainers.image.version="${IMAGE_VERSION}" \
       org.opencontainers.image.created="${IMAGE_CREATED}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="${IMAGE_SOURCE}" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="MIT AND Apache-2.0"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -510,8 +555,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/evidence-sink.lock /tmp/python/evidence-sink.lock
+COPY --from=cosign /out/cosign /usr/local/bin/cosign
+COPY --from=cosign --chmod=0444 /out/cosign-build.txt \
+  /usr/share/robotics-runtime/cosign-build.txt
+COPY --from=cosign --chmod=0444 /src/cosign/LICENSE \
+  /usr/share/licenses/cosign/LICENSE
 
-RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,readonly \
+    UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -519,6 +570,8 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       inotify-tools \
       jq \
       python3 \
+    && test "$(cosign version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]')" = \
+      "${COSIGN_VERSION}" \
     && mkdir -p /usr/share/robotics-runtime \
     && uv venv --no-cache --python /usr/bin/python3 /opt/venv \
     && uv pip install \
@@ -527,10 +580,13 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       --no-cache \
       --no-deps \
       --requirement /tmp/python/evidence-sink.lock \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/venv/bin/python --require-hashes --no-deps --no-cache \
+      --requirement contracts.requirements \
     && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
-    && /opt/venv/bin/python -B -c "from mcap.reader import make_reader" \
+    && /opt/venv/bin/python -B -c "from robotics_runtime_contracts.recordings import recording_summary_from_mcap; from mcap.reader import make_reader" \
     && rm -f /usr/local/bin/uv /usr/local/bin/uvx \
     && groupadd --gid 10001 evidence \
     && useradd --uid 10001 --gid 10001 --create-home evidence \
@@ -546,12 +602,18 @@ RUN UBUNTU_SNAPSHOT="${UBUNTU_SNAPSHOT}" \
       /var/log/dpkg.log
 
 COPY --from=mcap /mcap /usr/local/bin/mcap
-COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --from=rclone /out/rclone /usr/local/bin/rclone
+COPY --from=rclone --chmod=0444 /out/rclone-build.txt \
+  /usr/share/robotics-runtime/rclone-build.txt
+COPY --from=rclone --chmod=0444 /out/COPYING \
+  /usr/share/licenses/rclone/COPYING
 COPY --from=aws-cli /usr/local/aws-cli /usr/local/aws-cli
 RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws
 
 COPY --chmod=0555 docker/evidence-sink/evidence-sink /usr/local/bin/evidence-sink
 COPY --chmod=0555 docker/evidence-sink/mcap-summary /usr/local/bin/mcap-summary
+COPY --chmod=0555 docker/evidence-sink/retained-artifact.py /usr/local/bin/retained-artifact
+COPY --chmod=0555 docker/evidence-sink/receipt-inputs.py /usr/local/bin/receipt-inputs
 
 USER evidence
 WORKDIR /work
@@ -658,6 +720,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
 
 FROM edge-runtime-base AS edge-runtime
 
+COPY --from=foundation-contracts /opt/contracts /opt/contracts
 COPY --from=edge-runtime-interfaces /opt/robotics_ws/install /opt/robotics_ws/install
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
 RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
@@ -667,7 +730,8 @@ RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
     && source "/opt/ros/${ROS_DISTRO}/setup.bash" \
     && source /opt/robotics_ws/install/setup.bash \
     && ros2 interface show \
-      robotics_observability_msgs/msg/TraceContext > /dev/null
+      robotics_observability_msgs/msg/TraceContext > /dev/null \
+    && ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 
@@ -718,7 +782,7 @@ LABEL org.opencontainers.image.title="Robotics sensor runtime" \
 USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD ["/bin/bash", "-lc", "ros2 pkg prefix cv_bridge && gst-launch-1.0 --version"]
+  CMD ["/usr/local/bin/robotics-entrypoint", "/bin/bash", "-c", "ros2 pkg prefix cv_bridge && gst-launch-1.0 --version"]
 
 FROM edge-runtime AS inference-cpu
 
@@ -1051,13 +1115,18 @@ USER root
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/acceptance-observer.lock /tmp/python/acceptance-observer.lock
 
-RUN uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
+RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro \
+    uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/venv \
     && uv pip install \
       --python /opt/venv/bin/python \
       --require-hashes \
       --no-cache \
       --no-deps \
       --requirement /tmp/python/acceptance-observer.lock \
+    && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
+      --python /opt/venv/bin/python --require-hashes --no-deps \
+      --requirement harness.requirements \
+    && uv pip check --python /opt/venv/bin/python \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/robotics-runtime/python-packages.txt \
     && rm -rf /home/ubuntu/.cache/uv /tmp/python
@@ -1104,9 +1173,11 @@ LABEL org.opencontainers.image.title="ROS 2 data-plane benchmark" \
 USER ubuntu
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD ["ros2", "pkg", "prefix", "performance_test"]
+  CMD ["/usr/local/bin/robotics-entrypoint", "ros2", "pkg", "prefix", "performance_test"]
 
 FROM ${SIMULATION_BASE_IMAGE} AS simulation
+
+COPY --from=foundation-contracts /opt/contracts /opt/contracts
 
 ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
@@ -1205,7 +1276,8 @@ COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
 RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
     yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
       > /usr/share/robotics-runtime/foundation-lock.json \
-    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json
+    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json \
+    && ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 

@@ -31,7 +31,7 @@
     "predicate_type": "https://robotics-runtime-contracts.dev/attestations/execution-permit/v1",
     "permit_id": "ci.physical-attach-permit",
     "scenario_sha256": "",
-    "image_digest": "",
+    "subject_digest": "",
     "trust_policy_sha256": "",
     "target": {
       "environment": "hil",
@@ -59,7 +59,7 @@
   },
   "request": {
     "scenario_sha256": "",
-    "image_digest": "",
+    "subject_digest": "",
     "target": {
       "environment": "hil",
       "target_id": "controller-ci",

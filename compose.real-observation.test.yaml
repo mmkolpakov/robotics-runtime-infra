@@ -30,7 +30,7 @@ services:
   physical-permit-preflight:
     image: "${PERMIT_PREFLIGHT_CI_IMAGE:?set PERMIT_PREFLIGHT_CI_IMAGE for synthetic authorization tests}"
     command:
-      - authorize-offline-test
+      - authorize-logged-test
       - /test-keys
       - /authorization/execution-permit.json
       - /authorization/execution-statement.json

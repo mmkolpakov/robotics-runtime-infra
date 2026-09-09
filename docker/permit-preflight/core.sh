@@ -6,7 +6,7 @@ sha256_file() {
 }
 
 validate_contract() {
-  robotics-contracts validate --quiet "$1"
+  robotics-contracts validate --quiet --schema "$2" "$1"
 }
 
 assert_single_json_document() {
@@ -167,6 +167,63 @@ assert_bundle_statement() (
     "verified DSSE statement does not equal the supplied statement"
 )
 
+verify_role_with_transparency() (
+  # Scope the command wrapper to one role. Only a successful, actual cosign
+  # attestation invocation may supply this evidence; bundle fields cannot.
+  transparency_result="$1"
+  shift
+  test ! -e "${transparency_result}" || exit 73
+  # Invoked indirectly by verify_role_attestation from the selected CLI.
+  # shellcheck disable=SC2329
+  cosign() {
+    command cosign "$@" || return "$?"
+    test "${1:-}" = verify-blob-attestation || return 0
+    test ! -e "${transparency_result}" || return 65
+    ignore_tlog=false
+    private_infrastructure=false
+    shift
+    while test "$#" -gt 0; do
+      cosign_argument="$1"
+      shift
+      case "${cosign_argument}" in
+        --) break ;;
+        --insecure-ignore-tlog) ignore_tlog=true ;;
+        --private-infrastructure) private_infrastructure=true ;;
+        --insecure-ignore-tlog=*|--private-infrastructure=*)
+          case "${cosign_argument#*=}" in
+            false|False|FALSE|f|F|0) flag_value=false ;;
+            *) flag_value=true ;;
+          esac
+          case "${cosign_argument}" in
+            --insecure-ignore-tlog=*) ignore_tlog="${flag_value}" ;;
+            *) private_infrastructure="${flag_value}" ;;
+          esac
+          ;;
+        --bundle|--trusted-root|--certificate-identity|--certificate-oidc-issuer|--digest|--digestAlg|--type|--key)
+          # Do not mistake an option's string value for another flag.
+          test "$#" -gt 0 || return 65
+          shift
+          ;;
+        --bundle=*|--trusted-root=*|--certificate-identity=*|--certificate-oidc-issuer=*|--digest=*|--digestAlg=*|--type=*|--key=*) ;;
+        *)
+          printf 'unsupported cosign evidence argument: %s\n' "${cosign_argument}" >&2
+          return 65
+          ;;
+      esac
+    done
+    transparency_verified=true
+    if test "${ignore_tlog}" = true || test "${private_infrastructure}" = true; then
+      transparency_verified=false
+    fi
+    printf '%s\n' "${transparency_verified}" >"${transparency_result}"
+  }
+  verify_role_attestation "$@" || exit "$?"
+  test -s "${transparency_result}" || {
+    printf 'role verification did not invoke cosign attestation verification\n' >&2
+    exit 65
+  }
+)
+
 authorize_common() {
   test "$#" -eq 8 || {
     printf 'authorize_common requires eight arguments\n' >&2
@@ -182,7 +239,7 @@ authorize_common() {
   output="$8"
   execution_policy=/usr/share/robotics-runtime/policy/execution.rego
   policy_input_filter=/usr/share/robotics-runtime/policy/render-policy-input.jq
-  cosign_image_digest_file=/usr/share/robotics-runtime/cosign-image-digest
+  cosign_binary="$(command -v cosign)"
 
   for required in \
     "${permit}" \
@@ -193,13 +250,13 @@ authorize_common() {
     "${request}" \
     "${execution_policy}" \
     "${policy_input_filter}" \
-    "${cosign_image_digest_file}"; do
+    "${cosign_binary}"; do
     require_file "${required}"
   done
   assert_single_json_document "${trust_policy}"
   assert_single_json_document "${request}"
-  cosign_image_digest="$(cat "${cosign_image_digest_file}")"
-  require_sha256_digest "${cosign_image_digest}" "embedded Cosign image digest"
+  cosign_binary_digest="sha256:$(sha256_file "${cosign_binary}")"
+  require_sha256_digest "${cosign_binary_digest}" "executed Cosign binary digest"
   test ! -e "${output}" && test ! -L "${output}" || {
     printf 'authorization output already exists: %s\n' "${output}" >&2
     exit 73
@@ -214,9 +271,9 @@ authorize_common() {
   output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
   trap 'rm -rf "${work}"; rm -f "${output_tmp}"' EXIT HUP INT TERM
 
-  validate_contract "${permit}"
+  validate_contract "${permit}" execution-permit.v1
   jq -c '.predicate' "${statement}" >"${work}/predicate.json"
-  validate_contract "${work}/predicate.json"
+  validate_contract "${work}/predicate.json" execution-permit.v1
 
   operator_identity="$(jq -r '.operator_id' "${permit}")"
   approver_identity="$(jq -r '.approver_id' "${permit}")"
@@ -231,14 +288,14 @@ authorize_common() {
     exit 65
   }
 
-  verify_role_attestation \
+  verify_role_with_transparency "${work}/operator-transparency.json" \
     operator \
     "${statement}" \
     "${operator_bundle}" \
     "${operator_identity}" \
     "${operator_issuer}" \
     "${work}/operator-statement.json"
-  verify_role_attestation \
+  verify_role_with_transparency "${work}/approver-transparency.json" \
     approver \
     "${statement}" \
     "${approver_bundle}" \
@@ -255,19 +312,21 @@ authorize_common() {
   operator_bundle_sha256="$(sha256_file "${operator_bundle}")"
   approver_bundle_sha256="$(sha256_file "${approver_bundle}")"
   cosign_version="$(
-    cosign version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]'
+    "${cosign_binary}" version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]'
   )"
 
   jq -c -n \
     --arg approver_bundle_sha256 "${approver_bundle_sha256}" \
     --arg approver_identity "${approver_identity}" \
     --argjson approver_integrated_time "${approver_integrated_time}" \
+    --argjson approver_transparency_log_verified "$(cat "${work}/approver-transparency.json")" \
     --arg approver_issuer "${approver_issuer}" \
-    --arg cosign_image_digest "${cosign_image_digest}" \
+    --arg cosign_binary_digest "${cosign_binary_digest}" \
     --arg cosign_version "${cosign_version}" \
     --arg operator_bundle_sha256 "${operator_bundle_sha256}" \
     --arg operator_identity "${operator_identity}" \
     --argjson operator_integrated_time "${operator_integrated_time}" \
+    --argjson operator_transparency_log_verified "$(cat "${work}/operator-transparency.json")" \
     --arg operator_issuer "${operator_issuer}" \
     --arg permit_sha256 "${permit_sha256}" \
     --arg policy_sha256 "${policy_sha256}" \
@@ -296,7 +355,7 @@ authorize_common() {
     printf 'execution policy did not produce a verification record\n' >&2
     exit 65
   }
-  validate_contract "${output_tmp}"
+  validate_contract "${output_tmp}" execution-verification.v1
 
   nonce="$(jq -r '.nonce' "${permit}")"
   umask 077
@@ -341,16 +400,17 @@ materialize_runtime() {
     exit 73
   }
 
-  validate_contract "${template}"
-  validate_contract "${permit}"
-  validate_contract "${verification}"
+  validate_contract "${template}" runtime-manifest.v1
+  validate_contract "${permit}" execution-permit.v1
+  validate_contract "${verification}" execution-verification.v1
   permit_sha256="$(sha256_file "${permit}")"
   verification_sha256="$(sha256_file "${verification}")"
   trust_policy_sha256="$(sha256_file "${trust_policy}")"
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   output_tmp="$(mktemp "${output}.tmp.XXXXXX")"
-  trap 'rm -f "${output_tmp}"' EXIT HUP INT TERM
+  runtime_input="$(mktemp "${output}.input.XXXXXX")"
+  trap 'rm -f "${output_tmp}" "${runtime_input}"' EXIT HUP INT TERM
   jq \
     --arg generated_at "${generated_at}" \
     --arg permit_sha256 "${permit_sha256}" \
@@ -362,8 +422,9 @@ materialize_runtime() {
       .authorization.execution_verification_sha256 =
         $verification_sha256 |
       .authorization.trust_policy_sha256 = $trust_policy_sha256
-    ' "${template}" > "${output_tmp}"
-  validate_contract "${output_tmp}"
+    ' "${template}" > "${runtime_input}"
+  robotics-contracts runtime-manifest init \
+    --template "${runtime_input}" --output "${output_tmp}" >/dev/null
   chmod 0444 "${output_tmp}"
   mv "${output_tmp}" "${output}"
   output_tmp=

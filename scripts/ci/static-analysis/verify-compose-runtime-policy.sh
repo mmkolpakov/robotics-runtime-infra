@@ -15,7 +15,7 @@ jq -e '
       .target == "/evidence" and .read_only == true
     )
     and ($observer.command | index("/evidence/evidence-index.json")) != null
-    and ($observer.command | index("/evidence/metrics.otlp.json")) != null
+    and ($observer.command | index("/evidence/metrics.otlp.jsonl")) != null
 ' tmp/compose.json >/dev/null
 docker compose \
   -f compose.yaml \

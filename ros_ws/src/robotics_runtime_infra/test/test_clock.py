@@ -11,7 +11,7 @@ import launch.launch_description_sources
 import launch_testing.actions
 from ament_index_python.packages import get_package_share_directory
 from launch_testing_ros import WaitForTopics
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
 
 
@@ -42,7 +42,8 @@ class TestClock(unittest.TestCase):
             [("/clock", Clock)],
             timeout=60.0,
             messages_received_buffer_length=10,
-            qos_profile=qos_profile_sensor_data,
+            # A best-effort clock publisher cannot match this subscription.
+            qos_profile=QoSProfile(depth=1000, reliability=ReliabilityPolicy.RELIABLE),
         ) as topics:
             deadline = time.monotonic() + 10.0
             messages = topics.received_messages("/clock")

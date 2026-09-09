@@ -1,0 +1,15 @@
+{
+  "oidc_issuer": "https://token.actions.githubusercontent.com",
+  "core": {
+    "repository": "mmkolpakov/robotics-runtime",
+    "release_workflow": "release.yml",
+    "contracts_tag_prefix": "contracts-v",
+    "harness_tag_prefix": "harness-v"
+  },
+  "infra": {
+    "repository": "mmkolpakov/robotics-runtime-infra",
+    "release_workflow": "release-image.yml",
+    "qualification_workflow": "foundation-integration.yml",
+    "registry": "ghcr.io/mmkolpakov/robotics-runtime-infra"
+  }
+}

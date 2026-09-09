@@ -34,22 +34,39 @@ checks, and the integration of contracts, acceptance harness, and runtime.
 
 ## Foundation integration
 
-`foundation.repos` selects exact contracts and harness commits. The runtime
-repository owns their joint Python resolution in `tooling/foundation/uv.lock`;
-the imported repositories keep independent development locks.
+`foundation.repos` pins one immutable workspace commit. The imported workspace
+owns the joint `uv.lock`; `config/foundation-lock.json` binds the two package
+versions and source trees to that commit. Generated runtime locks are exports
+of the workspace lock and omit the two packages built into the images.
 
-After changing a revision in `foundation.repos`, refresh and validate the
-integration environment:
+After changing the commit, import the source and regenerate its derived inputs:
 
 ```bash
-bash scripts/ci/foundation/import-sources.sh
-uv lock --project tooling/foundation
+bash scripts/ci/foundation/import-sources.sh --refresh-pins
+python3 scripts/ci/foundation/sync-workspace-pins.py --check
+python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
 bash scripts/ci/foundation/validate-foundation.sh
 ```
 
-Only the runtime repository changes for a compatible foundation upgrade. A
-contracts release does not require a harness release unless the harness code or
-its declared compatibility range changes.
+The importer refuses to switch a checkout containing tracked local changes.
+Build backend dependencies are checked with the existing hash lock as version
+constraints. If the workspace changes `build-system.requires`, explicitly
+refresh that separate build lock and review the dependency changes:
+
+```bash
+python3 scripts/ci/foundation/sync-workspace-pins.py --refresh-build-lock
+```
+
+The development pin currently precedes stable workspace publication. Updates
+are manual until the first stable workspace release establishes a release tag
+baseline for Renovate. The obsolete managers for independent repositories and
+wheel URLs have been removed. This is a pending migration gate, not a claim
+that foundation release automation is already operational.
+
+Keep the migration in one integration PR until producers, fixtures, CLI
+arguments, retained evidence and both domain paths pass foundation-integration.
+Do not merge only the new source pin into an otherwise legacy infra checkout.
+Wheels built for this draft are source inputs, not published release assets.
 
 ## Change boundaries
 

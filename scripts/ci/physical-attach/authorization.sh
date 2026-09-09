@@ -5,6 +5,7 @@
 
 write_scenario_input_manifest() {
   local image
+  local local_image_id
   local repository_status
   local source_revision
 
@@ -24,8 +25,11 @@ write_scenario_input_manifest() {
     printf 'evidence\t%s\thardware-time-window.json\n' \
       "$(sha256_file "${ROBOTICS_TIME_EVIDENCE_WINDOW}")"
     while IFS= read -r image; do
+      # Bind the opaque local-store identifier separately from the verified
+      # registry digest used by the permit and runtime manifest.
+      local_image_id="$(docker image inspect "${image}" --format '{{.Id}}')" || return
       printf 'image\t%s\t%s\n' \
-        "$(docker image inspect "${image}" --format '{{.Id}}')" \
+        "${local_image_id}" \
         "${image}"
     done < <(
       real_compose \
@@ -35,13 +39,13 @@ write_scenario_input_manifest() {
         config --images | LC_ALL=C sort --unique
     )
     if test "${ROBOTICS_RUNTIME_MODE}" = released; then
-      test -s "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
+      test -s "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}" || return
       printf 'evidence\t%s\tverifier-attestation.json\n' \
         "$(sha256_file "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}")"
     fi
     printf 'measurement-run\t%s\thardware-time\n' \
       "${ROBOTICS_TIME_EVIDENCE_RUN_ID}"
-  } | LC_ALL=C sort >"${scenario_manifest}"
+  } | LC_ALL=C sort >"${scenario_manifest}" || return
   test -s "${scenario_manifest}"
 }
 
@@ -65,6 +69,7 @@ write_permit_case() {
   local target_identity
   local scenario_sha256
   local image_digest
+  local image_identity
   local trust_policy_sha256
   local interlock_sha256
   local checked_at
@@ -77,13 +82,12 @@ write_permit_case() {
   }
   target_identity="$(<"${work_root}/target-identity.sha256")"
   scenario_sha256="$(sha256_file "${scenario_manifest}")"
-  image_digest="$(
-    docker image inspect "${OBSERVER_IMAGE}" --format '{{.Id}}'
-  )"
+  image_identity="$(ci_image_identity "${OBSERVER_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}")" || return
+  image_digest="$(jq -er '.digest' <<<"${image_identity}")"
   trust_policy_sha256="$(sha256_file "${work_root}/trust-policy.json")"
   interlock_sha256="$(sha256_file "${target_evidence}")"
   checked_at="$(jq -r '.checked_at' "${target_evidence}")"
-  nonce="$(tr -d '-' </proc/sys/kernel/random/uuid)"
+  nonce="$(openssl rand -hex 16)" || return
 
   cp "${work_root}/trust-policy.json" "${case_dir}/trust-policy.json"
   jq \
@@ -100,7 +104,7 @@ write_permit_case() {
     --arg trust_policy_sha256 "${trust_policy_sha256}" '
       .permit |
       .scenario_sha256 = $scenario_sha256 |
-      .image_digest = $image_digest |
+      .subject_digest = $image_digest |
       .trust_policy_sha256 = $trust_policy_sha256 |
       .target.identity_sha256 = $target_identity |
       .issued_at = $issued_at |
@@ -123,7 +127,7 @@ write_permit_case() {
         },
         {
           name: "robotics-runtime-image",
-          digest: {sha256: (.image_digest | sub("^sha256:"; ""))}
+          digest: {sha256: (.subject_digest | sub("^sha256:"; ""))}
         }
       ],
       predicateType: .predicate_type,
@@ -140,7 +144,7 @@ write_permit_case() {
     --arg scenario_sha256 "${scenario_sha256}" '
       .request |
       .scenario_sha256 = $scenario_sha256 |
-      .image_digest = $image_digest |
+      .subject_digest = $image_digest |
       .target.identity_sha256 = $request_target_identity |
       .interlock_check.sha256 = $interlock_sha256 |
       .interlock_check.checked_at = $checked_at
@@ -171,6 +175,7 @@ sign_role() {
   permit_ci_cosign "${work_root}" attest-blob --yes \
     --key "keys/${role}.key" \
     --signing-config keys/signing-config.json \
+    --trusted-root /usr/share/robotics-runtime/trust/sigstore-trusted-root.json \
     --bundle "$(basename "${case_dir}")/${role}.sigstore.json" \
     --statement "$(basename "${case_dir}")/execution-statement.json"
   permit_ci_chmod \
@@ -228,14 +233,15 @@ prepare_preflight_directories() {
     "${output_dir}"
 }
 
-run_offline_preflight() {
+run_test_preflight() {
   local case_dir="$1"
   local nonce_dir="$2"
   local output="$3"
+  local mode="${4:-authorize-logged-test}"
   local case_mount
 
   case_mount="$(work_mount_path "${case_dir}")"
-  permit_ci_run "${work_root}" authorize-offline-test \
+  permit_ci_run "${work_root}" "${mode}" \
     /work/keys \
     "${case_mount}/execution-permit.json" \
     "${case_mount}/execution-statement.json" \
@@ -253,14 +259,15 @@ expect_preflight_denial() {
   local nonce_dir="$3"
   local output="$4"
   local expected_status="${5:-}"
+  local mode="${6:-authorize-logged-test}"
   local denial_log="${case_dir}/preflight-denial.log"
   local status
 
   set +e
-  run_offline_preflight \
+  run_test_preflight \
     "${case_dir}" \
     "${nonce_dir}" \
-    "${output}" >"${denial_log}" 2>&1
+    "${output}" "${mode}" >"${denial_log}" 2>&1
   status=$?
   set -e
   test "${status}" -ne 0 || {

@@ -28,7 +28,7 @@ test_valid_hil_permit_emits_verification if {
 	verification.schema_version == "execution-verification.v1"
 	verification.decision == "allow"
 	verification.verified_at == "2026-07-14T12:00:00Z"
-	verification.cosign_image_digest == data.execution_valid.artifacts.cosign_image_digest
+	verification.cosign_subject_digest == data.execution_valid.artifacts.cosign_binary_digest
 	count(verification.signers) == 2
 }
 
@@ -36,6 +36,18 @@ test_denied_permit_emits_no_verification if {
 	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/request/scenario_sha256", "value": "7777777777777777777777777777777777777777777777777777777777777777"}])
 	verification := execution.verification with input as candidate with time.now_ns as fixed_now
 	verification == null
+}
+
+test_invalid_cosign_binary_digest_is_denied if {
+	every digest in ["", null, 42, "sha256:abc"] {
+		candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/artifacts/cosign_binary_digest", "value": digest}])
+		"Cosign binary digest must be an immutable SHA-256 digest" in violations(candidate)
+	}
+}
+
+test_missing_cosign_binary_digest_is_denied if {
+	candidate := json.patch(data.execution_valid, [{"op": "remove", "path": "/artifacts/cosign_binary_digest"}])
+	"Cosign binary digest must be an immutable SHA-256 digest" in violations(candidate)
 }
 
 test_valid_real_observation_permit_is_allowed if {
@@ -52,6 +64,44 @@ test_future_permit_is_denied if {
 	"permit is not active yet" in violations(candidate)
 }
 
+test_missing_permit_timestamps_are_denied if {
+	every field in ["issued_at", "expires_at"] {
+		candidate := json.patch(data.execution_valid, [
+			{"op": "remove", "path": sprintf("/permit/%s", [field])},
+			{"op": "remove", "path": sprintf("/statement/predicate/%s", [field])},
+		])
+		sprintf("permit %s must be a valid RFC3339 timestamp", [field]) in violations(candidate)
+		verification := execution.verification with input as candidate with time.now_ns as fixed_now
+		verification == null
+	}
+}
+
+test_malformed_permit_timestamps_are_denied if {
+	every field in ["issued_at", "expires_at"] {
+		every value in [null, "", "not-a-date", 123, false, [], {}, "2026-07-14T12:00:00"] {
+			candidate := json.patch(data.execution_valid, [
+				{"op": "replace", "path": sprintf("/permit/%s", [field]), "value": value},
+				{"op": "replace", "path": sprintf("/statement/predicate/%s", [field]), "value": value},
+			])
+			sprintf("permit %s must be a valid RFC3339 timestamp", [field]) in violations(candidate)
+			verification := execution.verification with input as candidate with time.now_ns as fixed_now
+			verification == null
+		}
+	}
+}
+
+test_empty_permit_lifetime_is_denied if {
+	candidate := json.patch(data.execution_valid, [
+		{"op": "replace", "path": "/permit/issued_at", "value": "2026-07-14T12:00:00Z"},
+		{"op": "replace", "path": "/statement/predicate/issued_at", "value": "2026-07-14T12:00:00Z"},
+		{"op": "replace", "path": "/permit/expires_at", "value": "2026-07-14T12:00:00Z"},
+		{"op": "replace", "path": "/statement/predicate/expires_at", "value": "2026-07-14T12:00:00Z"},
+	])
+	"permit expires_at must be after issued_at" in violations(candidate)
+	verification := execution.verification with input as candidate with time.now_ns as fixed_now
+	verification == null
+}
+
 test_tampered_statement_predicate_is_denied if {
 	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/statement/predicate/nonce", "value": "ffffffffffffffffffffffffffffffff"}])
 	"statement predicate does not equal the validated permit" in violations(candidate)
@@ -63,8 +113,27 @@ test_wrong_scenario_is_denied if {
 }
 
 test_wrong_image_is_denied if {
-	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/request/image_digest", "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"}])
+	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/request/subject_digest", "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"}])
 	"observed image digest does not match the permit" in violations(candidate)
+}
+
+test_legacy_image_digest_does_not_authorize_execution if {
+	candidate := json.patch(data.execution_valid, [
+		{"op": "move", "from": "/permit/subject_digest", "path": "/permit/image_digest"},
+		{"op": "move", "from": "/statement/predicate/subject_digest", "path": "/statement/predicate/image_digest"},
+		{"op": "move", "from": "/request/subject_digest", "path": "/request/image_digest"},
+	])
+	"permit subject_digest must be an immutable SHA-256 digest" in violations(candidate)
+}
+
+test_malformed_subject_digest_is_denied if {
+	every value in [null, 1, "", "image:latest", "sha256:1234"] {
+		candidate := json.patch(data.execution_valid, [
+			{"op": "replace", "path": "/permit/subject_digest", "value": value},
+			{"op": "replace", "path": "/statement/predicate/subject_digest", "value": value},
+		])
+		"permit subject_digest must be an immutable SHA-256 digest" in violations(candidate)
+	}
 }
 
 test_wrong_target_identity_is_denied if {

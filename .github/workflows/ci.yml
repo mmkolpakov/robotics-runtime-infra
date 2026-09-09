@@ -23,9 +23,6 @@ env:
   HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
   # yamllint disable-line rule:line-length
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
-  ROBOTICS_CONTRACTS_REQUIREMENT: >-
-    robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.15.4/robotics_runtime_contracts-0.15.4-py3-none-any.whl#sha256=6a86e8ce96adcdf442b1680a7242282dbb33428458c5a8c7fc07952806971c1c
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -46,6 +43,35 @@ jobs:
       - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43  # 4.0.0
         with:
           bats-version: "1.14.0"
+      - name: Check the pinned foundation workspace
+        run: bash scripts/ci/foundation/import-sources.sh
+      - name: Test foundation pin generation
+        run: python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
+      - name: Install the pinned foundation CLIs for producer tests
+        run: |
+          uv sync --project dependencies/robotics-runtime --locked \
+            --all-packages --extra mcap --no-default-groups --no-editable
+          contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
+          echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
+      - name: Test simulation provider evidence
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_simulation_provider.py -v
+      - name: Test synthetic physical runtime observations
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_physical_runtime.py -v
+      - name: Test model manifest evidence binding
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_model_manifest.py -v
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Test retained artifact signatures and version binding
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_retained_artifact.py -v
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture
@@ -176,6 +202,10 @@ jobs:
         env:
           COSIGN_PASSWORD: test-only
         run: scripts/ci/integration/verify-cosign-dsse-boundary-and-tamper-rejection.sh
+      - name: Verify logged permit authorization and denial boundaries
+        env:
+          COSIGN_PASSWORD: test-only
+        run: bash scripts/ci/integration/verify-logged-permit-preflight.sh
       - name: Verify synthetic physical attach end to end
         env:
           COSIGN_PASSWORD: test-only
@@ -214,11 +244,13 @@ jobs:
           # Generated SROS2 keys and physical authorization inputs are never artifacts.
           path: |
             artifacts/benchmarks/
-            artifacts/evidence-s3/evidence-index.json
+            artifacts/evidence-s3/
+            artifacts/host-time/
             artifacts/provider-conformance/
             artifacts/runtime/
             artifacts/security/
             artifacts/test-results/
+            artifacts/zenoh/
           if-no-files-found: warn
           retention-days: 7
 
@@ -302,6 +334,8 @@ jobs:
       - uses: ./.github/actions/setup-buildx
       - name: Require the native ARM64 runner
         run: test "$(uname -m)" = aarch64
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the RK3588 runtime without publishing vendor artifacts
         run: >-
           docker buildx bake --file docker-bake.hcl
@@ -337,6 +371,8 @@ jobs:
         run: scripts/ci/amd-supply-chain/verify-the-signed-rocm-package-channel.sh
       - name: Verify the locked AMD wheel
         run: scripts/ci/amd-supply-chain/verify-the-locked-amd-wheel.sh
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the AMD runtime and conformance images
         run: >-
           docker buildx bake --file docker-bake.hcl amd
@@ -453,8 +489,28 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-buildx
+      - name: Install the pinned OCI comparison tool
+        env:
+          DIFFOCI_VERSION: v0.1.8
+          DIFFOCI_SHA256: 01e6b50c1568c9d61c758ef6da81869f2c26c852698d73dca961b3617effe949
+        run: |
+          mkdir -p "${RUNNER_TEMP}/diffoci-bin"
+          binary="${RUNNER_TEMP}/diffoci-bin/diffoci"
+          curl --fail --location --retry 3 --output "${binary}" \
+            "https://github.com/reproducible-containers/diffoci/releases/download/${DIFFOCI_VERSION}/diffoci-${DIFFOCI_VERSION}.linux-amd64"
+          printf '%s  %s\n' "${DIFFOCI_SHA256}" "${binary}" | sha256sum --check --strict
+          chmod 0555 "${binary}"
+          printf '%s\n' "${RUNNER_TEMP}/diffoci-bin" >>"${GITHUB_PATH}"
       - name: Rebuild the same OCI image twice
         run: scripts/ci/reproducibility/rebuild-the-same-oci-image-twice.sh
+      - name: Upload OCI manifests and file differences
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: reproducibility-${{ github.sha }}
+          path: artifacts/reproducibility/
+          if-no-files-found: warn
+          retention-days: 7
   ci:
     if: always()
     needs:

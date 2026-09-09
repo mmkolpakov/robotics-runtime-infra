@@ -17,50 +17,85 @@ prepare_sros2_identity() {
 
 write_runtime_manifest_input() {
   local runtime_dir="${work_root}/runtime"
-  local target_identity
-  local target_evidence_sha256
-  local observer_policy_sha256
-  local image_digest
-  local contracts_revision
-  local harness_revision
+  local inputs="${work_root}/runtime/inputs"
+  local image_identity
 
-  mkdir -p "${runtime_dir}"
-  chmod 0777 "${runtime_dir}"
-  target_identity="$(<"${work_root}/target-identity.sha256")"
-  target_evidence_sha256="$(sha256_file "${work_root}/target-evidence.json")"
-  observer_policy_sha256="$(
-    sha256_file "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml"
-  )"
-  image_digest="$(
-    docker image inspect "${OBSERVER_IMAGE}" --format '{{.Id}}'
-  )"
-  contracts_revision="$(
-    awk '
-      /^  robotics-runtime-contracts:/ {contracts = 1; next}
-      contracts && /^    version:/ {print $2; exit}
-    ' "${REPOSITORY_ROOT}/foundation.repos"
-  )"
-  harness_revision="$(
-    awk '
-      /^  robotics-acceptance-harness:/ {harness = 1; next}
-      harness && /^    version:/ {print $2; exit}
-    ' "${REPOSITORY_ROOT}/foundation.repos"
-  )"
+  mkdir -p "$inputs"
+  chmod 0777 "$runtime_dir"
+  image_identity="$(ci_image_identity "${OBSERVER_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}")" || return
+  cp "${REPOSITORY_ROOT}/test/physical/hil-runtime.input.json" "$inputs/template.json"
+  cp "${REPOSITORY_ROOT}/config/sros2/observer.policy.xml" "$inputs/observer.policy.xml"
+  cp "${work_root}/target-evidence.json" "$inputs/target-evidence.json"
+  cp "${work_root}/serial-received.txt" "$inputs/serial-received.txt"
+  cp "${work_root}/serial-reverse-received.txt" "$inputs/serial-reverse-received.txt"
+  cp "${work_root}/can-received.txt" "$inputs/can-received.txt"
+  python3 -c '
+import json
+import platform
+release = platform.freedesktop_os_release()
+print(json.dumps({"os": release["ID"], "os_version": release["VERSION_ID"],
+                  "architecture": platform.machine(), "kernel": platform.release()}))
+' >"$inputs/host-platform.json"
+  write_clock_facts "${ROBOTICS_TIME_EVIDENCE}" "$inputs/clock.json"
+  chmod 0444 "$inputs"/*
+  run_runtime_manifest_writer "$runtime_dir" "$image_identity"
+  cp "$runtime_dir/provider/runtime-manifest.input.json" "$runtime_dir/runtime-manifest.input.json"
+  export ROBOTICS_RUN_ID
+  ROBOTICS_RUN_ID="$(jq -er '.run_id' "$runtime_dir/provider/conformance.json")"
+}
 
-  jq \
-    --arg architecture "$(uname -m)" \
-    --arg contracts_revision "${contracts_revision}" \
-    --arg harness_revision "${harness_revision}" \
-    --arg infra_revision "$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)" \
-    --arg image_digest "${image_digest}" \
-    --arg image_reference "${OBSERVER_IMAGE}@${image_digest}" \
-    --arg kernel "$(uname -r)" \
-    --arg observer_policy_sha256 "${observer_policy_sha256}" \
-    --arg target_evidence_sha256 "${target_evidence_sha256}" \
-    --arg target_identity "${target_identity}" \
-    -f "${PHYSICAL_ATTACH_FIXTURE_ROOT}/runtime-manifest.jq" \
-    "${REPOSITORY_ROOT}/test/physical/hil-runtime.input.json" \
-    >"${runtime_dir}/runtime-manifest.input.json"
+run_runtime_manifest_writer() {
+  local runtime_dir="$1" image_identity="$2" workspace_revision
+  local -a run_arguments=()
+  workspace_revision="$(jq -er '.workspace.revision' "${REPOSITORY_ROOT}/config/foundation-lock.json")"
+  if [[ -n "${ROBOTICS_RUN_ID:-}" ]]; then
+    run_arguments+=(--run-id "$ROBOTICS_RUN_ID")
+  fi
+  docker run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges:true --tmpfs /tmp \
+    --mount "type=bind,src=${runtime_dir},dst=/runtime" \
+    --mount "type=bind,src=${PHYSICAL_ATTACH_MODULE_ROOT}/create-runtime-input.py,dst=/create-runtime-input.py,readonly" \
+    "${OBSERVER_IMAGE}" python3 /create-runtime-input.py \
+    --inputs /runtime/inputs --output /runtime/provider \
+    --subject-digest "$(jq -er '.digest' <<<"$image_identity")" \
+    --subject-reference "$(jq -er '.reference' <<<"$image_identity")" \
+    --workspace-revision "$workspace_revision" \
+    --infra-revision "$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)" \
+    --domain-id "${ROS_DOMAIN_ID:-92}" "${run_arguments[@]}"
+}
+
+write_clock_facts() {
+  # verify_time_evidence already checked the units, observation window and policy.
+  # Retain the largest absolute observed offset/drift, never fixed template values.
+  jq -s '
+    [.[].resourceMetrics[].scopeMetrics[].metrics[] as $metric |
+      ($metric.gauge.dataPoints // $metric.sum.dataPoints // [])[] |
+      {name: $metric.name, value: (.asDouble // (.asInt | tonumber))}]
+    | {offset_ms: ([.[] | select(.name == "robotics.hardware.clock.offset") | .value | fabs] | max),
+       drift_ppm: ([.[] | select(.name == "robotics.hardware.clock.drift") | .value | fabs] | max)}
+  ' "$1" >"$2"
+}
+
+retain_runtime_evidence() {
+  local destination filename
+  destination="$(mktemp -d "${report_output%.json}.runtime.XXXXXXXX")"
+  mkdir "$destination/inputs" "$destination/provider"
+  # Retain only public observations; the keystore and authorization inputs stay
+  # in the temporary work directory. Mount this directory at /runtime to replay
+  # the file URIs recorded by the provider.
+  for filename in template.json host-platform.json target-evidence.json \
+    serial-received.txt serial-reverse-received.txt can-received.txt \
+    clock.json observer.policy.xml; do
+    install -m 0644 "${work_root}/runtime/inputs/$filename" "$destination/inputs/$filename"
+  done
+  for filename in profile.json configuration.json conformance.json runtime-manifest.input.json; do
+    install -m 0644 "${work_root}/runtime/provider/$filename" "$destination/provider/$filename"
+  done
+  install -m 0644 "${work_root}/preflight-positive/output/runtime-manifest.json" \
+    "$destination/runtime-manifest.json"
+  jq --arg directory "$(basename "$destination")" \
+    '.runtime_evidence_directory = $directory' "$case_report" >"${case_report}.tmp"
+  mv "${case_report}.tmp" "$case_report"
 }
 
 run_observer_script() {

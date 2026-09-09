@@ -14,6 +14,9 @@ export IMAGE_SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
 export SOURCE_DATE_EPOCH="${epoch}"
 export VCS_REF="${GITHUB_SHA}"
 export VERSION=reproducibility
+export DIFFOCI_BACKEND=local
+export DIFFOCI_LOCAL_CACHE="${work_dir}/diffoci-cache"
+report_dir="${ROBOTICS_CI_REPRODUCIBILITY_ARTIFACT_DIR:-${PWD}/artifacts/reproducibility}"
 build=(
   docker buildx bake
   "--allow=fs.write=${work_dir}"
@@ -23,21 +26,9 @@ build=(
   --set evidence-sink.no-cache=true
   --set evidence-sink.platform=linux/amd64
 )
-"${build[@]}" --set \
+"${build[@]}" --set evidence-sink.tags=localhost/robotics-reproducibility:first --set \
   "evidence-sink.output=type=oci,dest=${work_dir}/first.tar,rewrite-timestamp=true"
-"${build[@]}" --set \
+"${build[@]}" --set evidence-sink.tags=localhost/robotics-reproducibility:second --set \
   "evidence-sink.output=type=oci,dest=${work_dir}/second.tar,rewrite-timestamp=true"
-first_digest="$(
-  tar -xOf "${work_dir}/first.tar" index.json |
-    jq -er '.manifests[0].digest'
-)"
-second_digest="$(
-  tar -xOf "${work_dir}/second.tar" index.json |
-    jq -er '.manifests[0].digest'
-)"
-if test "${first_digest}" != "${second_digest}"; then
-  printf 'first OCI manifest:  %s\n' "${first_digest}" >&2
-  printf 'second OCI manifest: %s\n' "${second_digest}" >&2
-  exit 1
-fi
-printf 'reproducible OCI manifest: %s\n' "${first_digest}"
+scripts/ci/reproducibility/compare-oci-archives.sh \
+  "${work_dir}/first.tar" "${work_dir}/second.tar" "${report_dir}"

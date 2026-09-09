@@ -1,25 +1,17 @@
 {
-  "schema_version": "runtime-manifest.v2",
+  "schema_version": "runtime-manifest.v1",
   "runtime_id": "org.example.controller-hil-runtime",
   "generated_at": "2026-07-14T12:00:00Z",
-  "oci_image": {
-    "reference": "ghcr.io/example/robotics-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  },
   "components": {
     "contracts_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "harness_revision": "cccccccccccccccccccccccccccccccccccccccc",
     "infra_revision": "dddddddddddddddddddddddddddddddddddddddd"
   },
-  "host": {
-    "os": "ubuntu",
-    "os_version": "24.04",
-    "architecture": "x86_64",
-    "kernel": "6.8.0"
-  },
   "ros": {
     "distribution": "jazzy",
-    "rmw_implementation": "rmw_fastrtps_cpp"
+    "rmw_implementation": "rmw_fastrtps_cpp",
+    "rmw_version": "0.0.0-template",
+    "domain_id": 92
   },
   "render": {
     "mode": "none",
@@ -75,5 +67,39 @@
     "sync_protocol": "mavlink_timesync",
     "offset_ms": 0.5,
     "drift_ppm": 2
-  }
+  },
+  "execution_subject": {
+    "kind": "oci_image",
+    "locator": "oci://ghcr.io/example/robotics-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "host_platform": {
+    "os": "ubuntu",
+    "os_version": "24.04",
+    "architecture": "x86_64",
+    "kernel": "6.8.0"
+  },
+  "execution_platform": {
+    "os": "ubuntu",
+    "os_version": "24.04",
+    "architecture": "x86_64",
+    "kernel": "6.8.0"
+  },
+  "evaluator_bindings": [],
+  "provider_bindings": [
+    {
+      "provider": {
+        "kind": "hardware_target",
+        "implementation_id": "template_provider",
+        "version": "template",
+        "configuration_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "target_id": "controller-alpha",
+      "capabilities": [
+        "live_observation"
+      ],
+      "qualification_profile_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "conformance_result_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
 }

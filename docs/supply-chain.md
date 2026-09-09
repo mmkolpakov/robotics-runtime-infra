@@ -29,7 +29,7 @@ The level is reassessed per release against the current
 
 | Tool | Supply-chain rule |
 | --- | --- |
-| Cosign | `permit-preflight` copies the binary from the digest-pinned Chainguard image in `docker-bake.hcl` and verifies its declared version during the build. GitHub-hosted foundation jobs use the SHA-pinned official installer action for the same version. |
+| Cosign | Runtime images rebuild the tag-and-commit-pinned release with a reviewed Go dependency patch. The build preserves module locks and records its revision, patch hash and linked modules. See the [rebuild policy](../docker/cosign/README.md). Hosted fixture setup uses the SHA-pinned official installer action for the same base version. |
 | OPA | BuildKit resolves the official multi-platform static image by immutable registry digest. |
 | yq | Docker rebuilds a verified upstream commit because the latest release still pins `golang.org/x/text` below the security-fixed version. The build checks the exact dependency version. |
 
@@ -47,3 +47,41 @@ embedded read-only in the verified image.
 Renovate may propose digest changes, but changes to tool versions or upstream
 revisions require review and the complete build, policy, signature, tamper,
 SBOM, and vulnerability checks.
+
+## Runtime image identity
+
+`scripts/ci/image-identity.sh` returns `reference`, `digest`, `kind`, and
+`local_image_id`. The last field is the opaque Docker image-store ID. It is
+not a portable config digest: the classic store uses a configuration digest,
+while the containerd store can use a manifest or index digest. No
+`config_digest` field is emitted. Existing scenario input manifests also
+record Docker `.Id`; those rows must be interpreted as local image-store
+identifiers, not portable configuration identities.
+
+Released mode requires a `repository@sha256:...` pin (optionally including a
+tag). The pin must match the local inspect result's `RepoDigests` and the
+remote descriptor returned by
+`docker buildx imagetools inspect --format '{{json .Manifest}}'` for that
+exact reference. Only OCI/Docker image manifests and indexes are accepted.
+Buildx is already part of the repository's image tooling. Registry access
+and credentials are required for pinned identity resolution; a missing
+Buildx command, failed lookup, malformed response, or digest mismatch fails
+the operation. There is no local-only fallback for pins in either mode.
+
+`RepoDigests` alone is not publication evidence: containerd synthesizes
+entries for unpublished local tags. Unpinned source images therefore always
+return `kind: local-image-id` and `local-image/image@<Docker .Id>`, with a
+warning and no registry request, even for an image that was previously
+pulled. This synthetic reference preserves the manifest emitter's interface
+and visibly marks development evidence; it cannot be pulled from a registry.
+Source permits/build records that carry only the digest retain the existing
+limitation that their schema cannot distinguish this local ID from a
+registry digest. Use a verified pin when registry identity is required.
+
+A successful remote lookup proves that the pinned manifest is available in
+the requested repository. It does not verify its signer or build provenance;
+the separate signature, attestation, and release trust checks remain required.
+See [Docker's imagetools API](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/)
+and Moby's containerd implementations of
+[inspect](https://github.com/moby/moby/blob/v28.0.0/daemon/containerd/image_inspect.go)
+and [local digest lookup](https://github.com/moby/moby/blob/v28.0.0/daemon/containerd/image.go).

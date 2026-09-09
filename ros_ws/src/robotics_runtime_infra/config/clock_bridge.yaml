@@ -4,4 +4,6 @@
   ros_type_name: rosgraph_msgs/msg/Clock
   gz_type_name: gz.msgs.Clock
   direction: GZ_TO_ROS
-  qos_profile: CLOCK
+  # The bridge default is reliable/volatile. CLOCK is best effort with depth 1
+  # and can lose discrete steps when concurrent acceptance runs load the host.
+  publisher_queue: 1000

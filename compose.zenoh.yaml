@@ -5,7 +5,7 @@ x-zenoh-probe-environment: &zenoh-probe-environment
   RCUTILS_COLORIZED_OUTPUT: "0"
   RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
   ROBOTICS_MESSAGE_COUNT: "${ROBOTICS_MESSAGE_COUNT:-20}"
-  ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+  ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
   ROBOTICS_TOPIC: /robotics/trace_context
   ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
 
@@ -119,7 +119,7 @@ services:
     network_mode: service:zenoh-source-plane
     environment:
       ROBOTICS_DOMAIN_ID: zenoh-source
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
       ROBOTICS_TRACE_FILE: /reports/source/traces.otlp.jsonl
     depends_on:
       zenoh-source-plane:
@@ -130,7 +130,7 @@ services:
     network_mode: service:zenoh-destination-plane
     environment:
       ROBOTICS_DOMAIN_ID: zenoh-destination
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
       ROBOTICS_TRACE_FILE: /reports/destination/traces.otlp.jsonl
     depends_on:
       zenoh-destination-plane:
@@ -188,11 +188,14 @@ services:
       - ALL
     profiles: [zenoh]
     environment:
-      EVIDENCE_INDEX_PATH: /reports/qualification/evidence-index.json
+      EVIDENCE_INDEX_PATH: /reports/evidence-index.json
       EVIDENCE_RECEIPT_DIR: /reports/qualification/evidence-receipts
+      EVIDENCE_REGISTRATION_DIR: /reports/qualification/evidence-state/registrations
+      EVIDENCE_SUMMARY_DIR: /reports/qualification/evidence-summaries
       EVIDENCE_SPOOL_DIR: /reports/qualification/evidence-spool
       EVIDENCE_STATE_DIR: /reports/qualification/evidence-state
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      EVIDENCE_ARTIFACT_MEDIA_TYPES: application/json,application/x-ndjson,application/octet-stream
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m
     volumes:
@@ -215,7 +218,7 @@ services:
     profiles: [zenoh]
     environment:
       HOME: /tmp
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID}"
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
       ROBOTICS_ZENOH_CONFIG_DIR: /etc/robotics/zenoh
       ROBOTICS_ZENOH_REPORT_DIR: /reports
     command:
@@ -225,7 +228,7 @@ services:
       - -c
       - |
         robotics-acceptance transport-evaluate \
-          --run-id "${ROBOTICS_RUN_ID}" \
+          --run-id "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}" \
           --scenario /opt/robotics/zenoh/scenario.yaml \
           --causal-chain /reports/qualification/causal-chain.json \
           --channel-contract /reports/qualification/channel.json \
@@ -233,9 +236,9 @@ services:
           --trace zenoh-source=/reports/source/traces.otlp.jsonl \
           --trace zenoh-destination=/reports/destination/traces.otlp.jsonl \
           --evidence-index \
-            zenoh-source=/reports/qualification/evidence-index.json \
+            zenoh-source=/reports/evidence-index.json \
           --evidence-index \
-            zenoh-destination=/reports/qualification/evidence-index.json \
+            zenoh-destination=/reports/evidence-index.json \
           --observation-output /reports/qualification/observations \
           --output /reports/qualification/transport-qualification.json
     tmpfs:
