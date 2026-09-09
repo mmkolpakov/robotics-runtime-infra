@@ -171,10 +171,10 @@ verify_remote_versioning() {
   [[ "$status" == Enabled ]] || fail "bucket versioning is not enabled"
 }
 
-upload_segment() {
+upload_segment() (
   local file="$1" index="$2" sha256="$3" size_bytes="$4"
   local summary_path="$5" summary_sha256="$6" summary_size_bytes="$7"
-  local key encoded_key remote remote_dir file_name check_list
+  local key encoded_key remote_dir file_name check_list
   local head_json remote_size remote_sha content_type version_id
 
   require_command rclone
@@ -183,9 +183,14 @@ upload_segment() {
   file_name="$(basename "$file")"
   remote_dir="${RCLONE_REMOTE:-evidence}:${EVIDENCE_BUCKET}/${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${sha256}/"
   key="${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${sha256}/${file_name}"
-  remote="${RCLONE_REMOTE:-evidence}:${EVIDENCE_BUCKET}/${key}"
+  check_list="$(mktemp)" || fail 'cannot create rclone check list'
+  trap 'rm -f -- "$check_list"' EXIT
+  printf '%s\n' "$file_name" >"$check_list" || fail 'cannot write rclone check list'
 
-  rclone copyto "$file" "$remote" \
+  # copyto does not enforce --immutable. Directory copy applies the immutable
+  # comparison, while the raw file list restricts the upload to this segment.
+  rclone copy "$(dirname "$file")" "$remote_dir" \
+    --files-from-raw "$check_list" \
     --immutable \
     --metadata \
     --metadata-set content-type=application/mcap \
@@ -193,12 +198,9 @@ upload_segment() {
     --metadata-set "run-id=${run_id}" \
     --metadata-set "segment-index=${index}" || fail "rclone upload failed for $key"
 
-  check_list="$(mktemp)" || fail 'cannot create rclone check list'
-  printf '%s\n' "$file_name" >"$check_list" || fail 'cannot write rclone check list'
   rclone check "$(dirname "$file")" "$remote_dir" \
     --files-from-raw "$check_list" \
     --one-way || fail "rclone verification failed for $key"
-  rm -f "$check_list"
 
   head_json="$(aws_cli s3api head-object \
     --bucket "${EVIDENCE_BUCKET}" \
@@ -223,7 +225,7 @@ upload_segment() {
 
   # Keep original bytes until the public writer has rechecked every source at
   # finalization. A confirmed upload alone does not establish receipt provenance.
-}
+)
 
 process_segment() {
   local file="$1" index sha256 size_bytes summary_path summary_sha256
@@ -232,6 +234,9 @@ process_segment() {
   require_command mcap
   require_command mcap-summary
   file="$(realpath -e "$file")"
+  case "${file##*/}" in
+    *$'\n'*|*$'\r'*) fail 'MCAP filename cannot contain line breaks' ;;
+  esac
 
   if ! mcap --color never doctor "$file" >/dev/null; then
     return 75
