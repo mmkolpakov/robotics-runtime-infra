@@ -18,8 +18,9 @@ go mod download
 go mod verify
 test "$(go list -m -f '{{.Version}}' golang.org/x/crypto)" = v0.55.0
 test "$(go list -m -f '{{.Version}}' golang.org/x/mod)" = v0.40.0
+test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = v1.83.1
 
-build_version="v${COSIGN_VERSION}+robotics.deps1"
+build_version="v${COSIGN_VERSION}+robotics.deps2"
 version_package=sigs.k8s.io/release-utils/version
 ldflags="-buildid= -X ${version_package}.gitVersion=${build_version}"
 ldflags+=" -X ${version_package}.gitCommit=${COSIGN_REVISION}"
