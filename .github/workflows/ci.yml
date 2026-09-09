@@ -72,6 +72,8 @@ jobs:
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
           -s test/ci -p test_retained_artifact.py -v
+      - name: Verify the pinned Cosign publisher
+        run: bash scripts/ci/static-analysis/verify-cosign-publisher.sh
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture

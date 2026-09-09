@@ -10,17 +10,15 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Track the rclone release tag and verified source commit together",
+      "description": "Track the publisher-verified Cosign image used by Docker Bake",
       "managerFilePatterns": [
         "/^docker-bake\\.hcl$/"
       ],
       "matchStrings": [
-        "variable \"RCLONE_REVISION\" \\{\\s+default = \"(?<currentDigest>[a-f0-9]{40})\"[\\s\\S]*?variable \"RCLONE_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+        "variable \"COSIGN_IMAGE\" \\{\\s+default = \"(?<depName>cgr\\.dev/chainguard/cosign):(?<currentValue>latest)@(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
-      "depNameTemplate": "rclone/rclone",
-      "datasourceTemplate": "github-tags",
-      "extractVersionTemplate": "^v(?<version>.*)$",
-      "versioningTemplate": "semver"
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
     },
     {
       "customType": "regex",
@@ -37,15 +35,15 @@
     },
     {
       "customType": "regex",
-      "description": "Track the Cosign release tag and verified source commit together",
+      "description": "Track the Cosign version required by the installed binary check",
       "managerFilePatterns": [
         "/^docker-bake\\.hcl$/"
       ],
       "matchStrings": [
-        "variable \"COSIGN_REVISION\" \\{\\s+default = \"(?<currentDigest>[a-f0-9]{40})\"[\\s\\S]*?variable \"COSIGN_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+        "variable \"COSIGN_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
       "depNameTemplate": "sigstore/cosign",
-      "datasourceTemplate": "github-tags",
+      "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.*)$",
       "versioningTemplate": "semver"
     }
@@ -64,9 +62,10 @@
       "allowedVersions": ">=1.20.2"
     },
     {
-      "description": "Keep the Cosign source and installer version in one reviewed update",
+      "description": "Keep the Cosign image, binary check and installer version in one reviewed update",
       "matchPackageNames": [
-        "sigstore/cosign"
+        "sigstore/cosign",
+        "cgr.dev/chainguard/cosign"
       ],
       "groupName": "cosign",
       "minimumReleaseAge": "0 days",

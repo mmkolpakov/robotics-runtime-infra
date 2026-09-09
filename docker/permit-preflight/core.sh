@@ -255,8 +255,9 @@ authorize_common() {
   done
   assert_single_json_document "${trust_policy}"
   assert_single_json_document "${request}"
-  cosign_binary_digest="sha256:$(sha256_file "${cosign_binary}")"
-  require_sha256_digest "${cosign_binary_digest}" "executed Cosign binary digest"
+  require_file /usr/share/robotics-runtime/cosign-image-digest
+  cosign_image_digest="$(cat /usr/share/robotics-runtime/cosign-image-digest)"
+  require_sha256_digest "${cosign_image_digest}" "Cosign publisher image digest"
   test ! -e "${output}" && test ! -L "${output}" || {
     printf 'authorization output already exists: %s\n' "${output}" >&2
     exit 73
@@ -321,7 +322,7 @@ authorize_common() {
     --argjson approver_integrated_time "${approver_integrated_time}" \
     --argjson approver_transparency_log_verified "$(cat "${work}/approver-transparency.json")" \
     --arg approver_issuer "${approver_issuer}" \
-    --arg cosign_binary_digest "${cosign_binary_digest}" \
+    --arg cosign_image_digest "${cosign_image_digest}" \
     --arg cosign_version "${cosign_version}" \
     --arg operator_bundle_sha256 "${operator_bundle_sha256}" \
     --arg operator_identity "${operator_identity}" \

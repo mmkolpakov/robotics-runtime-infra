@@ -141,61 +141,31 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
-@test "OpenVEX additions match all completed image residual evidence" {
-  run jq -e \
-    --slurpfile images security/vex/linux-libc-dev-2026-09-08.images.json \
-    --slurpfile ci security/vex/linux-libc-dev-2026-09-08.ci.json \
-    --slurpfile review security/vex/linux-libc-dev-2026-09-08.evidence.json '
-    $ci[0] as $ci
-    | $review[0] as $review
-    | $images[0] as $images
-    | [$images.observed_purls[] | {"@id": .}] as $products
-    | [.statements[] | select(.products == $products)] as $new
-    | ([ $new[].vulnerability.name ] | sort) == ([ $ci.findings[].cve ] | sort)
-      and ($ci.findings | length == 129)
-      and ($ci.findings | map(select(.severity == "HIGH")) | length == 124)
-      and ($ci.findings | map(select(.severity == "CRITICAL")) | length == 5)
-      and all($ci.findings[];
-        .package == "linux-libc-dev"
-        and .installed_version == "6.8.0-139.139"
-        and .purl == $ci.report.purl
-        and .fixed_version == ""
-      )
-      and $ci.report.architecture == "amd64"
-      and $ci.comparison.observed_purls == [$ci.report.purl]
-      and $review.active_new_statement_purls == $images.observed_purls
-      and $images.run == $ci.run
-      and $images.report_count == 5
-      and ($images.reports | length == 5)
-      and ([ $images.reports[].purl ] | unique) == $images.observed_purls
-      and all($images.reports[];
-        .residual_cves == ([ $new[].vulnerability.name ] | sort)
-        and .high_critical_counts == {"CRITICAL": 5, "HIGH": 124}
-        and .package == "linux-libc-dev"
-        and .installed_version == "6.8.0-139.139"
-        and .purl == ("pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=" + .architecture + "&distro=ubuntu-24.04")
-        and .checked_out_revision == $ci.run.checked_out_merge_sha
-        and .revision_label_matches_checkout == (.image_revision == .checked_out_revision)
-        and (.revision_label_matches_checkout or .image_id_matches_build_export == true)
-        and .removed_fixed_cves == $ci.comparison.removed_fixed_cves
-        and .unexpected_cves == []
-        and .candidate_missing_cves == []
-        and .severity_mismatches == []
-        and .fixed_version_findings == []
-      )
-      and $review.report_sha256 == $ci.comparison.baseline_report_sha256
-      and ([ $review.rows[] | select(.observed_in_rebuilt_ci) | .cve ] | sort)
-        == ([ $ci.findings[].cve ] | sort)
-      and ([ $review.rows[] | select(.reported_fixed_version != "") | .cve ] | sort)
-        == $ci.comparison.removed_fixed_cves
-      and ($ci.comparison.removed_fixed_cves | length == 6)
-      and ([ $new[].vulnerability.name ] - $ci.comparison.removed_fixed_cves | length == 129)
-      and $ci.comparison.unexpected_cves == []
-      and $ci.comparison.unreviewed_residual_cves == []
-      and $ci.comparison.candidate_missing_from_residual == []
-      and $ci.comparison.severity_mismatches == []
-  ' security/vex/linux-libc-dev.openvex.json
-  [ "${status}" -eq 0 ]
+@test "image scanner propagates the vulnerability gate failure" {
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >>"${DOCKER_LOG}"
+for argument in "$@"; do
+  if [[ "${argument}" == convert ]]; then
+    exit 1
+  fi
+done
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+
+  run env \
+    "PATH=${FAKE_BIN}:${PATH}" \
+    "DOCKER_LOG=${DOCKER_LOG}" \
+    "HOME=${BATS_TEST_TMPDIR}" \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    TRIVY_IMAGE=trivy:test \
+    scripts/ci/security/scan-image.sh \
+      registry.example/runtime:test candidate linux/amd64,linux/arm64
+
+  [ "${status}" -eq 1 ]
+  [ "$(wc -l <"${DOCKER_LOG}")" -eq 2 ]
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {

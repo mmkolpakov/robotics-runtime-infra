@@ -56,11 +56,11 @@ variable "RKNN_SOURCE" {
   default = "https://github.com/airockchip/rknn-toolkit2.git?tag=v2.3.2&checksum=42aa1d426c0a9e0869b6374edba009f7208a1926"
 }
 
-variable "COSIGN_REVISION" {
-  default = "11926fa5bbbbde47e88fc006b625a17769b743b2"
+variable "COSIGN_IMAGE" {
+  default = "cgr.dev/chainguard/cosign:latest@sha256:2af5cabe038577e02b21be3b6e2622c2cd2659dcdef2bdc0fbf5f64e16965a88"
   validation {
-    condition = COSIGN_REVISION == regex("^[a-f0-9]{40}$", COSIGN_REVISION)
-    error_message = "COSIGN_REVISION must pin the reviewed release commit."
+    condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
+    error_message = "COSIGN_IMAGE must pin the publisher-verified Chainguard image."
   }
 }
 
@@ -69,22 +69,6 @@ variable "COSIGN_VERSION" {
   validation {
     condition = COSIGN_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", COSIGN_VERSION)
     error_message = "COSIGN_VERSION must be a semantic version."
-  }
-}
-
-variable "RCLONE_REVISION" {
-  default = "687d264b689b8c49a67e2e52a8a5e0caa01c04ce"
-  validation {
-    condition = RCLONE_REVISION == regex("^[a-f0-9]{40}$", RCLONE_REVISION)
-    error_message = "RCLONE_REVISION must pin the reviewed release commit."
-  }
-}
-
-variable "RCLONE_VERSION" {
-  default = "1.75.1"
-  validation {
-    condition = RCLONE_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", RCLONE_VERSION)
-    error_message = "RCLONE_VERSION must be a semantic version."
   }
 }
 
@@ -191,9 +175,6 @@ target "_common" {
   dockerfile = "Dockerfile"
   contexts = {
     "foundation-source" = FOUNDATION_SOURCE
-    "rclone-source" = "https://github.com/rclone/rclone.git?tag=v${RCLONE_VERSION}&checksum=${RCLONE_REVISION}"
-    "rclone-build" = "./docker/rclone"
-    "cosign-source" = "https://github.com/sigstore/cosign.git?tag=v${COSIGN_VERSION}&checksum=${COSIGN_REVISION}"
   }
   args = {
     IMAGE_CREATED = IMAGE_CREATED
@@ -205,8 +186,6 @@ target "_common" {
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
-    RCLONE_REVISION          = RCLONE_REVISION
-    RCLONE_VERSION           = RCLONE_VERSION
   }
   labels = {
     "org.opencontainers.image.created"  = IMAGE_CREATED
@@ -528,7 +507,7 @@ target "evidence-sink" {
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"]
   args = {
-    COSIGN_REVISION = COSIGN_REVISION
+    COSIGN_IMAGE = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
 }
@@ -546,7 +525,7 @@ target "permit-preflight" {
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight:${VERSION}"]
   args = {
-    COSIGN_REVISION = COSIGN_REVISION
+    COSIGN_IMAGE = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
 }
@@ -557,7 +536,7 @@ target "permit-preflight-ci" {
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight-ci:${VERSION}"]
   args = {
-    COSIGN_REVISION = COSIGN_REVISION
+    COSIGN_IMAGE = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
 }

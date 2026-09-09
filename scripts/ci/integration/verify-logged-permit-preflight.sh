@@ -41,11 +41,11 @@ sign_role "${case_dir}" approver
 prepare_preflight_directories "${work_root}/positive-state/nonces" "${work_root}/positive-state/output"
 run_test_preflight "${case_dir}" "${work_root}/positive-state/nonces" \
   "${work_root}/positive-state/output/verification.json"
-cosign_binary_sha256="$(
-  docker run --rm --entrypoint sha256sum "${PERMIT_PREFLIGHT_CI_IMAGE}" \
-    /usr/local/bin/cosign | awk '{print $1}'
+cosign_image_digest="$(
+  docker buildx bake --file docker-bake.hcl permit-preflight-ci --print \
+    | jq -er '.target["permit-preflight-ci"].args.COSIGN_IMAGE | split("@")[1]'
 )"
-jq -e --arg cosign_digest "sha256:${cosign_binary_sha256}" '
+jq -e --arg cosign_digest "${cosign_image_digest}" '
   .decision == "allow" and ([.signers[].role] | sort) == ["approver", "operator"] and
   [.signers[].transparency_log_verified] == [true, true] and
   .cosign_subject_digest == $cosign_digest

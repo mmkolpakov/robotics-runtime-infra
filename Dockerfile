@@ -4,9 +4,12 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+ARG RCLONE_IMAGE=rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 ARG GO_BUILDER_IMAGE=golang:1.26.8@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff
+# Policy and evidence targets receive the publisher-verified image from Bake.
+ARG COSIGN_IMAGE=scratch
 # Released binary module verification and platform digests: docker/opa/README.md.
 ARG OPA_IMAGE=openpolicyagent/opa:1.20.2-static@sha256:bb245e9e36be0d0ed486c240b606c56be7aba96014a4a87895fed4ba7a6dfa8d
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
@@ -25,6 +28,8 @@ ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 
 FROM ${UV_IMAGE} AS uv
+FROM ${RCLONE_IMAGE} AS rclone
+FROM ${COSIGN_IMAGE} AS cosign
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${OPA_IMAGE} AS opa
 FROM ${ROS_BASE_IMAGE} AS ca-bootstrap
@@ -60,37 +65,16 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       --requirement contracts.requirements \
     && uv pip check --python /opt/contracts/bin/python
 
-FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS rclone
-ARG TARGETOS
-ARG TARGETARCH
-ARG RCLONE_VERSION
-ARG RCLONE_REVISION
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-# Bake verifies the release tag and commit; the local build context carries the patch.
-# hadolint ignore=DL3022
-COPY --from=rclone-source / /src/rclone/
-# hadolint ignore=DL3022
-COPY --from=rclone-build go-dependencies.patch /tmp/rclone-go-dependencies.patch
-# hadolint ignore=DL3022
-COPY --from=rclone-build --chmod=0555 build.sh /usr/local/bin/build-rclone
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    build-rclone
-
-FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS cosign
-ARG TARGETOS
-ARG TARGETARCH
+FROM scratch AS cosign-license
 ARG COSIGN_VERSION
-ARG COSIGN_REVISION
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-# The release tag and its exact commit are checked by the named Git context.
-# hadolint ignore=DL3022
-COPY --from=cosign-source / /src/cosign/
-COPY docker/cosign/go-dependencies.patch /tmp/cosign-go-dependencies.patch
-COPY --chmod=0555 docker/cosign/build.sh /usr/local/bin/build-cosign
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    build-cosign
+ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
+  https://raw.githubusercontent.com/sigstore/cosign/v${COSIGN_VERSION}/LICENSE \
+  /LICENSE
+
+FROM scratch AS rclone-license
+ADD --checksum=sha256:8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f45754cd04 \
+  https://raw.githubusercontent.com/rclone/rclone/687d264b689b8c49a67e2e52a8a5e0caa01c04ce/COPYING \
+  /COPYING
 
 FROM scratch AS opa-license
 ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
@@ -418,6 +402,7 @@ ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
+ARG COSIGN_IMAGE
 ARG COSIGN_VERSION
 
 LABEL org.opencontainers.image.title="Robotics execution permit preflight" \
@@ -433,14 +418,24 @@ ARG UBUNTU_SNAPSHOT
 ENV HOME=/home/preflight \
     PATH="/opt/venv/bin:${PATH}"
 
-RUN install -d -m 0555 \
+RUN case "${COSIGN_IMAGE}" in \
+      cgr.dev/chainguard/cosign:latest@sha256:????????????????????????????????????????????????????????????????) ;; \
+      *) printf 'COSIGN_IMAGE must pin the publisher image\n' >&2; exit 65 ;; \
+    esac \
+    && cosign_image_digest="${COSIGN_IMAGE##*@}" \
+    && case "${cosign_image_digest#sha256:}" in \
+      *[!a-f0-9]*) printf 'COSIGN_IMAGE digest must be lowercase hexadecimal\n' >&2; exit 65 ;; \
+      *) ;; \
+    esac \
+    && install -d -m 0555 \
       /usr/local/lib/robotics-runtime \
       /usr/share/licenses/cosign \
-      /usr/share/robotics-runtime
-COPY --from=cosign /out/cosign /usr/local/bin/cosign
-COPY --from=cosign --chmod=0444 /out/cosign-build.txt \
-  /usr/share/robotics-runtime/cosign-build.txt
-COPY --from=cosign --chmod=0444 /src/cosign/LICENSE \
+      /usr/share/robotics-runtime \
+    && printf '%s\n' "${cosign_image_digest}" \
+      > /usr/share/robotics-runtime/cosign-image-digest \
+    && chmod 0444 /usr/share/robotics-runtime/cosign-image-digest
+COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
+COPY --from=cosign-license --chmod=0444 /LICENSE \
   /usr/share/licenses/cosign/LICENSE
 COPY --from=opa /opa /usr/local/bin/opa
 COPY --from=opa-license /LICENSE /usr/share/licenses/opa/LICENSE
@@ -555,10 +550,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/evidence-sink.lock /tmp/python/evidence-sink.lock
-COPY --from=cosign /out/cosign /usr/local/bin/cosign
-COPY --from=cosign --chmod=0444 /out/cosign-build.txt \
-  /usr/share/robotics-runtime/cosign-build.txt
-COPY --from=cosign --chmod=0444 /src/cosign/LICENSE \
+COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
+COPY --from=cosign-license --chmod=0444 /LICENSE \
   /usr/share/licenses/cosign/LICENSE
 
 RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,readonly \
@@ -602,11 +595,8 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,rea
       /var/log/dpkg.log
 
 COPY --from=mcap /mcap /usr/local/bin/mcap
-COPY --from=rclone /out/rclone /usr/local/bin/rclone
-COPY --from=rclone --chmod=0444 /out/rclone-build.txt \
-  /usr/share/robotics-runtime/rclone-build.txt
-COPY --from=rclone --chmod=0444 /out/COPYING \
-  /usr/share/licenses/rclone/COPYING
+COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --from=rclone-license --chmod=0444 /COPYING /usr/share/licenses/rclone/COPYING
 COPY --from=aws-cli /usr/local/aws-cli /usr/local/aws-cli
 RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws
 
