@@ -10,6 +10,20 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "Track the rclone release tag and verified source commit together",
+      "managerFilePatterns": [
+        "/^docker-bake\\.hcl$/"
+      ],
+      "matchStrings": [
+        "variable \"RCLONE_REVISION\" \\{\\s+default = \"(?<currentDigest>[a-f0-9]{40})\"[\\s\\S]*?variable \"RCLONE_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "rclone/rclone",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
       "description": "Track the source-built yq release and commit together",
       "managerFilePatterns": [
         "/^Dockerfile$/"
