@@ -9,7 +9,7 @@
     policy_sha256: $policy_sha256,
     trust_policy_sha256: $trust_policy_sha256,
     cosign_version: $cosign_version,
-    cosign_image_digest: $cosign_image_digest
+    cosign_binary_digest: $cosign_binary_digest
   },
   verified_signers: [
     {

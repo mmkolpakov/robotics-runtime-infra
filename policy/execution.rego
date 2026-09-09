@@ -11,6 +11,15 @@ signers := object.get(input, "verified_signers", [])
 
 default verification := null
 
+valid_cosign_binary_digest if {
+	is_string(artifacts.cosign_binary_digest)
+	regex.match("^sha256:[a-f0-9]{64}$", artifacts.cosign_binary_digest)
+}
+
+deny contains "Cosign binary digest must be an immutable SHA-256 digest" if {
+	not valid_cosign_binary_digest
+}
+
 valid_subject_digest if {
 	is_string(permit.subject_digest)
 	regex.match("^sha256:[a-f0-9]{64}$", permit.subject_digest)
@@ -210,7 +219,7 @@ verification := {
 	"target": object.get(permit, "target", {}),
 	"verified_at": time.format(time.now_ns()),
 	"cosign_version": object.get(artifacts, "cosign_version", ""),
-	"cosign_subject_digest": object.get(artifacts, "cosign_image_digest", ""),
+	"cosign_subject_digest": artifacts.cosign_binary_digest,
 	"signers": signers,
 	"decision": "allow",
 } if {

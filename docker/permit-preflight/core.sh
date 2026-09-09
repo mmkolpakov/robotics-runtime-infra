@@ -239,7 +239,7 @@ authorize_common() {
   output="$8"
   execution_policy=/usr/share/robotics-runtime/policy/execution.rego
   policy_input_filter=/usr/share/robotics-runtime/policy/render-policy-input.jq
-  cosign_image_digest_file=/usr/share/robotics-runtime/cosign-image-digest
+  cosign_binary="$(command -v cosign)"
 
   for required in \
     "${permit}" \
@@ -250,13 +250,13 @@ authorize_common() {
     "${request}" \
     "${execution_policy}" \
     "${policy_input_filter}" \
-    "${cosign_image_digest_file}"; do
+    "${cosign_binary}"; do
     require_file "${required}"
   done
   assert_single_json_document "${trust_policy}"
   assert_single_json_document "${request}"
-  cosign_image_digest="$(cat "${cosign_image_digest_file}")"
-  require_sha256_digest "${cosign_image_digest}" "embedded Cosign image digest"
+  cosign_binary_digest="sha256:$(sha256_file "${cosign_binary}")"
+  require_sha256_digest "${cosign_binary_digest}" "executed Cosign binary digest"
   test ! -e "${output}" && test ! -L "${output}" || {
     printf 'authorization output already exists: %s\n' "${output}" >&2
     exit 73
@@ -312,7 +312,7 @@ authorize_common() {
   operator_bundle_sha256="$(sha256_file "${operator_bundle}")"
   approver_bundle_sha256="$(sha256_file "${approver_bundle}")"
   cosign_version="$(
-    cosign version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]'
+    "${cosign_binary}" version --json | jq -er '.gitVersion | ltrimstr("v") | split("+")[0]'
   )"
 
   jq -c -n \
@@ -321,7 +321,7 @@ authorize_common() {
     --argjson approver_integrated_time "${approver_integrated_time}" \
     --argjson approver_transparency_log_verified "$(cat "${work}/approver-transparency.json")" \
     --arg approver_issuer "${approver_issuer}" \
-    --arg cosign_image_digest "${cosign_image_digest}" \
+    --arg cosign_binary_digest "${cosign_binary_digest}" \
     --arg cosign_version "${cosign_version}" \
     --arg operator_bundle_sha256 "${operator_bundle_sha256}" \
     --arg operator_identity "${operator_identity}" \
