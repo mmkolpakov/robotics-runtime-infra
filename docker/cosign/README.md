@@ -15,12 +15,14 @@ The upstream release and current Chainguard image contain affected Go modules:
   toolchain; the builder is the digest-pinned Go 1.26.8 image.
 - [GHSA-hrxh-6v49-42gf](https://github.com/grpc/grpc-go/security/advisories/GHSA-hrxh-6v49-42gf)
   and [CVE-2026-84304](https://github.com/grpc/grpc-go/security/advisories/GHSA-vp52-pcj8-j9qc)
-  require `google.golang.org/grpc v1.83.1`.
+  require `google.golang.org/grpc v1.83.1`. The subsequent
+  [CVE-2026-84445](https://github.com/grpc/grpc-go/security/advisories/GHSA-2v4p-qf9q-27wj)
+  requires v1.83.2, which is the pinned version.
 
 The patch was generated from the release's module locks with Go 1.26.8:
 
 ```sh
-go get golang.org/x/crypto@v0.55.0 golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.1
+go get golang.org/x/crypto@v0.55.0 golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2
 go mod verify
 git diff -- go.mod go.sum
 ```
@@ -30,7 +32,7 @@ x/text and x/tools. Their exact versions and checksums are retained in the
 patch. The build verifies the module cache and fixed dependency versions,
 compiles with `-mod=readonly`, and rejects any changes to the patched locks.
 
-The binary identifies itself as `v3.1.3+robotics.deps2` with a modified source
+The binary identifies itself as `v3.1.3+robotics.deps3` with a modified source
 tree. It is not an unmodified upstream release artifact. Each runtime image
 retains the release commit, patch SHA-256 and linked Go module versions in
 `/usr/share/robotics-runtime/cosign-build.txt`, plus the upstream license.

@@ -72,6 +72,22 @@ variable "COSIGN_VERSION" {
   }
 }
 
+variable "RCLONE_REVISION" {
+  default = "687d264b689b8c49a67e2e52a8a5e0caa01c04ce"
+  validation {
+    condition = RCLONE_REVISION == regex("^[a-f0-9]{40}$", RCLONE_REVISION)
+    error_message = "RCLONE_REVISION must pin the reviewed release commit."
+  }
+}
+
+variable "RCLONE_VERSION" {
+  default = "1.75.1"
+  validation {
+    condition = RCLONE_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", RCLONE_VERSION)
+    error_message = "RCLONE_VERSION must be a semantic version."
+  }
+}
+
 group "default" {
   targets = ["simulation"]
 }
@@ -175,6 +191,8 @@ target "_common" {
   dockerfile = "Dockerfile"
   contexts = {
     "foundation-source" = FOUNDATION_SOURCE
+    "rclone-source" = "https://github.com/rclone/rclone.git?tag=v${RCLONE_VERSION}&checksum=${RCLONE_REVISION}"
+    "rclone-build" = "./docker/rclone"
     "cosign-source" = "https://github.com/sigstore/cosign.git?tag=v${COSIGN_VERSION}&checksum=${COSIGN_REVISION}"
   }
   args = {
@@ -187,6 +205,8 @@ target "_common" {
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
+    RCLONE_REVISION          = RCLONE_REVISION
+    RCLONE_VERSION           = RCLONE_VERSION
   }
   labels = {
     "org.opencontainers.image.created"  = IMAGE_CREATED
