@@ -52,6 +52,18 @@
   ],
   "packageRules": [
     {
+      "description": "Keep OPA above the Go, crypto and gRPC fixes verified for CI 34305345505",
+      "matchDepNames": [
+        "openpolicyagent/opa"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "versionCompatibility": "^(?<version>\\d+\\.\\d+\\.\\d+)(?<compatibility>-static)$",
+      "versioning": "semver",
+      "allowedVersions": ">=1.20.2"
+    },
+    {
       "description": "Keep the Cosign source and installer version in one reviewed update",
       "matchPackageNames": [
         "sigstore/cosign"
