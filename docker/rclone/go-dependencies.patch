@@ -1,0 +1,80 @@
+diff --git a/go.mod b/go.mod
+index 443a53e..4c2c412 100644
+--- a/go.mod
++++ b/go.mod
+@@ -96,7 +96,7 @@ require (
+ 	go.etcd.io/bbolt v1.5.0
+ 	goftp.io/server/v2 v2.0.3
+ 	golang.org/x/crypto v0.56.0
+-	golang.org/x/net v0.57.0
++	golang.org/x/net v0.58.0
+ 	golang.org/x/oauth2 v0.36.0
+ 	golang.org/x/sync v0.22.0
+ 	golang.org/x/sys v0.47.0
+@@ -116,6 +116,7 @@ require (
+ 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
+ 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
+ 	github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2 // indirect
++	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.34.0 // indirect
+ 	github.com/ProtonMail/bcrypt v0.0.0-20211005172633-e235017c1baf // indirect
+ 	github.com/ProtonMail/gluon v0.17.1-0.20230724134000-308be39be96e // indirect
+ 	github.com/ProtonMail/go-srp v0.0.7 // indirect
+@@ -243,6 +244,7 @@ require (
+ 	github.com/sorairolake/lzip-go v0.3.8 // indirect
+ 	github.com/spacemonkeygo/monkit/v3 v3.0.25-0.20251022131615-eb24eb109368 // indirect
+ 	github.com/spf13/afero v1.15.0 // indirect
++	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
+ 	github.com/stangelandcl/ppmd v0.1.1 // indirect
+ 	github.com/tinylib/msgp v1.6.4 // indirect
+ 	github.com/tklauser/go-sysconf v0.4.0 // indirect
+@@ -263,8 +265,9 @@ require (
+ 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
+ 	golang.org/x/image v0.45.0 // indirect
+ 	golang.org/x/tools v0.48.0 // indirect
++	google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800 // indirect
+ 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260715232425-e75dac1f907d // indirect
+-	google.golang.org/grpc v1.84.0-dev.0.20260723093437-b6eac429d7b6 // indirect
++	google.golang.org/grpc v1.83.2 // indirect
+ 	google.golang.org/protobuf v1.36.11 // indirect
+ 	gopkg.in/ini.v1 v1.67.3 // indirect
+ 	gopkg.in/yaml.v2 v2.4.0 // indirect
+diff --git a/go.sum b/go.sum
+index 42d02d0..d917a48 100644
+--- a/go.sum
++++ b/go.sum
+@@ -30,6 +30,8 @@ github.com/FilenCloudDienste/filen-sdk-go v0.0.39 h1:tgV5jYL6dsXop9TpDTIQU6UwJjw
+ github.com/FilenCloudDienste/filen-sdk-go v0.0.39/go.mod h1:0cBhKXQg49XbKZZfk5TCDa3sVLP+xMxZTWL+7KY0XR0=
+ github.com/Files-com/files-sdk-go/v3 v3.3.194 h1:dtOFxSTWWRpkmvXa6ycNiw8dVDu1wkgzcXyVV1VafNc=
+ github.com/Files-com/files-sdk-go/v3 v3.3.194/go.mod h1:rl0WumSN9gSo775DgvQv+wMQ8rlb0ES/1hU5jkMtLXg=
++github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.34.0 h1:yzIYdwuro811Z27D3T80Wkd3rqZzb0K43nner7Eh1yE=
++github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.34.0/go.mod h1:pJTkW8hEUIIi3Pf65lPZOnn4Y81yCllX6IWk2jNXdkM=
+ github.com/IBM/go-sdk-core/v5 v5.23.1 h1:fxLusCG+GlGY1SM7BYAAiiSFhzKUs5zqs0P8knDqeFU=
+ github.com/IBM/go-sdk-core/v5 v5.23.1/go.mod h1:yO+OQpByKDLTvpEcsFFexgzpeR8eRfCFWAYzxkAu4bk=
+ github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAwZ/2OOE=
+@@ -547,6 +549,8 @@ github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiT
+ github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
+ github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
+ github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
++github.com/spiffe/go-spiffe/v2 v2.8.1 h1:eXZMLsu+3MLEPJyGJkolqtVrteZfQdUpOWj6LTiDl/E=
++github.com/spiffe/go-spiffe/v2 v2.8.1/go.mod h1:47Q0Q9/AqGha8QLHp+kxpH4Wca7X7EnOtlIJy3mxZ3U=
+ github.com/stangelandcl/ppmd v0.1.1 h1:c25QazhlWUn5nmR1QOzafKhQxBicAr7GGCKER2aJ8H8=
+ github.com/stangelandcl/ppmd v0.1.1/go.mod h1:Rrv7M+/2P5jYr/GMLhBl7Ug3uJ1bUiVzr5LbbaV6xgY=
+ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
+@@ -685,6 +689,8 @@ golang.org/x/net v0.7.0/go.mod h1:2Tu9+aMcznHK/AK1HMvgo6xiTLG5rD5rZLDS+rp2Bjs=
+ golang.org/x/net v0.8.0/go.mod h1:QVkue5JL9kW//ek3r6jTKnTFis1tRmNAW2P1shuFdJc=
+ golang.org/x/net v0.57.0 h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=
+ golang.org/x/net v0.57.0/go.mod h1:KpXc8iv+r3XplLAG/f7Jsf9RPszJzdR0f58q9vGOuEU=
++golang.org/x/net v0.58.0 h1:ynWG7rqYi4ccpTEuPZ2QGWHktVEM9DMCj9yzDE0Q7To=
++golang.org/x/net v0.58.0/go.mod h1:YwCddHnFlT7eLQqVprV19OnhLGtc5xOKgE0RyqgfWAU=
+ golang.org/x/oauth2 v0.36.0 h1:peZ/1z27fi9hUOFCAZaHyrpWG5lwe0RJEEEeH0ThlIs=
+ golang.org/x/oauth2 v0.36.0/go.mod h1:YDBUJMTkDnJS+A4BP4eZBjCqtokkg1hODuPjwiGPO7Q=
+ golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+@@ -760,6 +766,8 @@ google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800 h1:
+ google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800/go.mod h1:FPk7EXUKMtImne7AmknoYjT4QXqKIzzRbeQIXzLk6fQ=
+ google.golang.org/genproto/googleapis/rpc v0.0.0-20260715232425-e75dac1f907d h1:Jkpk39hlTZOIp3RbfvNX9R8Hv+Sw0X89nlU/xFOErsc=
+ google.golang.org/genproto/googleapis/rpc v0.0.0-20260715232425-e75dac1f907d/go.mod h1:4Hqkh8ycfw05ld/3BWL7rJOSfebL2Q+DVDeRgYgxUU8=
++google.golang.org/grpc v1.83.2 h1:EManeRomTObA0BU7I8vXgg/78uE5MJ9M8B39EX2WscU=
++google.golang.org/grpc v1.83.2/go.mod h1:YPI1hK3kDked6iHvgX3tR0y+nX/qpMFKhPgFsokw1S8=
+ google.golang.org/grpc v1.84.0-dev.0.20260723093437-b6eac429d7b6 h1:HfjjkdGIa8u9sP9EW5WCygy0kQDuTI/Tax4j//t24Fo=
+ google.golang.org/grpc v1.84.0-dev.0.20260723093437-b6eac429d7b6/go.mod h1:ljCht0DrxQrXBDRTZp52Qxh3Ffk8CdYm2sj4O2QN2C0=
+ google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
