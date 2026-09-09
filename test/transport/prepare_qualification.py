@@ -3,25 +3,20 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import time
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-from robotics_acceptance_harness.result import (
-    write_contract_json,
-)
-from robotics_acceptance_harness.traces import (
-    TraceInputError,
-    load_otlp_json_traces,
-)
+from robotics_acceptance_harness.traces import load_otlp_json_traces
+from robotics_runtime_contracts.writers import write_document
 
 MESSAGE_TYPE: Final = "robotics_observability_msgs/msg/TraceContext"
 TOPIC: Final = "/robotics/trace_context"
-SOURCE_DOMAIN: Final = "zenoh-source"
-DESTINATION_DOMAIN: Final = "zenoh-destination"
-PRODUCER_SPAN: Final = "robotics.zenoh.publish"
-CONSUMER_SPAN: Final = "robotics.zenoh.receive"
+SOURCE_DOMAIN: Final = "transport-source"
+DESTINATION_DOMAIN: Final = "transport-destination"
+PRODUCER_SPAN: Final = "robotics.transport.publish"
+CONSUMER_SPAN: Final = "robotics.transport.receive"
 
 
 def required_environment(name: str) -> str:
@@ -39,8 +34,7 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def parse_timestamp(value: str) -> datetime:
-    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
-    parsed = datetime.fromisoformat(normalized)
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise RuntimeError(f"timestamp {value!r} has no timezone")
     return parsed.astimezone(UTC)
@@ -50,16 +44,7 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def retain_configuration(paths: tuple[Path, ...], output: Path) -> str:
-    # Keep the exact bytes that the bridge configuration digest identifies.
-    with output.open("wb") as stream:
-        for path in paths:
-            stream.write(path.name.encode("utf-8") + b"\0")
-            stream.write(path.read_bytes() + b"\0")
-    return sha256(output)
-
-
-def wait_for_trace_evidence(
+def validate_trace_evidence(
     path: Path,
     *,
     run_id: str,
@@ -67,36 +52,16 @@ def wait_for_trace_evidence(
     span_name: str,
     expected_count: int,
 ) -> None:
-    deadline = time.monotonic() + 30.0
-    stable_size: int | None = None
-    stable_observations = 0
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            spans = load_otlp_json_traces(
-                path,
-                expected_run_id=run_id,
-                expected_domain_id=domain_id,
-            )
-            selected = [span for span in spans if span.name == span_name]
-            if len(selected) != expected_count or len(spans) != expected_count:
-                raise RuntimeError(
-                    f"{path} contains {len(selected)}/{expected_count} "
-                    f"{span_name!r} spans and {len(spans)} total spans"
-                )
-            size = path.stat().st_size
-            if size == stable_size:
-                stable_observations += 1
-            else:
-                stable_size = size
-                stable_observations = 0
-            if stable_observations >= 2:
-                return
-        except (OSError, RuntimeError, TraceInputError, ValueError) as error:
-            last_error = error
-            stable_observations = 0
-        time.sleep(0.25)
-    raise RuntimeError(f"trace evidence did not stabilize: {last_error}")
+    # The runner stops and flushes both Collectors before invoking this producer.
+    spans = load_otlp_json_traces(
+        path, expected_run_id=run_id, expected_domain_id=domain_id
+    )
+    selected = [span for span in spans if span.name == span_name]
+    if len(selected) != expected_count or len(spans) != expected_count:
+        raise RuntimeError(
+            f"{path} contains {len(selected)}/{expected_count} "
+            f"{span_name!r} spans and {len(spans)} total spans"
+        )
 
 
 def validate_probe(
@@ -108,7 +73,7 @@ def validate_probe(
     expected_count: int,
 ) -> None:
     expected = {
-        "schema_version": "zenoh-probe-observation.v1",
+        "schema_version": "transport-probe-observation.v1",
         "run_id": run_id,
         "domain_id": domain_id,
         "role": role,
@@ -121,9 +86,9 @@ def validate_probe(
                 f"{domain_id} probe field {key!r} is "
                 f"{observation.get(key)!r}; expected {value!r}"
             )
-    if not isinstance(observation.get("type_hash"), str) or not str(
-        observation["type_hash"]
-    ).startswith("RIHS01_"):
+    if not isinstance(observation.get("type_hash"), str) or not re.fullmatch(
+        r"RIHS01_[0-9a-f]{64}", observation["type_hash"]
+    ):
         raise RuntimeError(f"{domain_id} probe has no REP-2011 type hash")
     if int(observation["publishers"]) < 1 or int(observation["subscribers"]) < 1:
         raise RuntimeError(f"{domain_id} did not observe both ROS endpoint roles")
@@ -146,12 +111,36 @@ def validate_probe(
         raise RuntimeError(f"{domain_id} probe timestamps are reversed")
 
 
-def main() -> None:
-    run_id = required_environment("ROBOTICS_RUN_ID")
-    report_dir = Path(required_environment("ROBOTICS_ZENOH_REPORT_DIR")).resolve()
-    config_dir = Path(required_environment("ROBOTICS_ZENOH_CONFIG_DIR")).resolve()
-    message_count = int(os.environ.get("ROBOTICS_MESSAGE_COUNT", "20"))
-
+def prepare(report_dir: Path, run_id: str, message_count: int) -> None:
+    if message_count < 1:
+        raise ValueError("message count must be positive")
+    configuration_path = report_dir / "configuration/implementation.json"
+    configuration = load_json(configuration_path)
+    required_files = {
+        "ros2.domain_bridge": {"domain-bridge.yaml", "udp-only.xml", "version.txt"},
+        "zenoh_bridge_ros2dds": {"source.json5", "destination.json5", "version.txt"},
+    }
+    if configuration.get("schema_version") != "transport-implementation.v1":
+        raise ValueError("unsupported bridge implementation metadata")
+    expected_files = required_files.get(configuration.get("implementation_id"))
+    if expected_files is None:
+        raise ValueError("unsupported bridge implementation")
+    artifacts = configuration.get("artifacts", [])
+    names = [artifact["path"] for artifact in artifacts]
+    if len(names) != len(expected_files) or set(names) != expected_files:
+        raise ValueError(
+            "retained bridge configuration inventory is incomplete or duplicated"
+        )
+    if not re.fullmatch(
+        r"sha256:[0-9a-f]{64}", configuration.get("image_config_digest", "")
+    ):
+        raise ValueError("bridge image configuration digest is missing or invalid")
+    for artifact in configuration["artifacts"]:
+        path = (configuration_path.parent / artifact["path"]).resolve()
+        if not path.is_relative_to(configuration_path.parent.resolve()):
+            raise ValueError("bridge configuration is outside the retained directory")
+        if sha256(path) != artifact["sha256"]:
+            raise ValueError("retained bridge configuration digest mismatch")
     source_trace = report_dir / "source" / "traces.otlp.jsonl"
     destination_trace = report_dir / "destination" / "traces.otlp.jsonl"
     source_observation_path = report_dir / "source" / "probe.json"
@@ -181,14 +170,14 @@ def main() -> None:
             "source and destination do not share one Linux realtime clock"
         )
 
-    wait_for_trace_evidence(
+    validate_trace_evidence(
         source_trace,
         run_id=run_id,
         domain_id=SOURCE_DOMAIN,
         span_name=PRODUCER_SPAN,
         expected_count=message_count,
     )
-    wait_for_trace_evidence(
+    validate_trace_evidence(
         destination_trace,
         run_id=run_id,
         domain_id=DESTINATION_DOMAIN,
@@ -220,10 +209,10 @@ def main() -> None:
         + "\n",
         encoding="utf-8",
     )
-    write_contract_json(
+    write_document(
         {
             "schema_version": "clock-relation.v1",
-            "relation_id": "zenoh-source-destination-clock",
+            "relation_id": "transport-source-destination-clock",
             "run_id": run_id,
             "scenario_sha256": sha256(scenario_path),
             "source_domain_id": SOURCE_DOMAIN,
@@ -246,10 +235,10 @@ def main() -> None:
         },
         output_dir / "clock-relation.json",
     )
-    channel_path = write_contract_json(
+    channel_path = write_document(
         {
             "schema_version": "transport-channel.v1",
-            "channel_id": "zenoh.trace-context",
+            "channel_id": "transport.trace-context",
             "source": {
                 "domain_id": SOURCE_DOMAIN,
                 "ros_domain_id": 31,
@@ -265,15 +254,9 @@ def main() -> None:
                 "type_hash": destination_observation["type_hash"],
             },
             "implementation_binding": {
-                "implementation_id": "zenoh_bridge_ros2dds",
-                "version": "1.9.0",
-                "configuration_sha256": retain_configuration(
-                    (
-                        config_dir / "source.json5",
-                        config_dir / "destination.json5",
-                    ),
-                    output_dir / "zenoh-configuration.bin",
-                ),
+                "implementation_id": configuration["implementation_id"],
+                "version": configuration["version"],
+                "configuration_sha256": sha256(configuration_path),
             },
             "qos": {
                 "reliability": "reliable",
@@ -303,17 +286,17 @@ def main() -> None:
         },
         output_dir / "channel.json",
     )
-    write_contract_json(
+    write_document(
         {
             "schema_version": "causal-chain.v1",
-            "chain_id": "zenoh.trace-context.e2e",
+            "chain_id": "transport.trace-context.e2e",
             "required_domain_ids": [
                 SOURCE_DOMAIN,
                 DESTINATION_DOMAIN,
             ],
             "channel_contracts": [
                 {
-                    "channel_id": "zenoh.trace-context",
+                    "channel_id": "transport.trace-context",
                     "sha256": sha256(channel_path),
                 }
             ],
@@ -326,4 +309,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    prepare(
+        Path(required_environment("ROBOTICS_TRANSPORT_REPORT_DIR")).resolve(),
+        required_environment("ROBOTICS_RUN_ID"),
+        int(required_environment("ROBOTICS_MESSAGE_COUNT")),
+    )

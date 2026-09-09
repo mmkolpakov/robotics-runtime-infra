@@ -147,8 +147,12 @@
       ]
     },
     {
-      "name": "zenoh",
-      "files": ["compose.yaml", "compose.zenoh.yaml"]
+      "name": "domain-bridge",
+      "files": ["compose.yaml", "compose.transport.yaml"]
+    },
+    {
+      "name": "zenoh-frozen",
+      "files": ["compose.yaml", "compose.transport.yaml", "test/compose/compose.zenoh.yaml"]
     }
   ]
 }

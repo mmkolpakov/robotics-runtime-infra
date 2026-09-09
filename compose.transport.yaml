@@ -1,0 +1,171 @@
+---
+x-transport-environment: &transport-environment
+  HOME: /tmp
+  PYTHONUNBUFFERED: "1"
+  RCUTILS_COLORIZED_OUTPUT: "0"
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  FASTRTPS_DEFAULT_PROFILES_FILE: /reports/configuration/udp-only.xml
+  ROBOTICS_MESSAGE_COUNT: "${ROBOTICS_MESSAGE_COUNT:-20}"
+  ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
+  ROBOTICS_TOPIC: /robotics/trace_context
+  ROBOTICS_DESTINATION_READY: /reports/destination/ready.json
+  # Jazzy LOCALHOST adds SHM despite the XML transport list. Keep the configured
+  # UDP transport across containers with private IPC on this isolated network.
+  ROS_AUTOMATIC_DISCOVERY_RANGE: SYSTEM_DEFAULT
+
+x-transport-probe: &transport-probe
+  image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
+  user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [transport]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m
+  volumes:
+    - type: bind
+      source: "${ROBOTICS_TRANSPORT_REPORT_DIR:-./artifacts/transport}"
+      target: /reports
+    - type: bind
+      source: ./test/transport
+      target: /opt/robotics/transport
+      read_only: true
+  healthcheck:
+    disable: true
+
+x-transport-otel: &transport-otel
+  image: >-
+    otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+  user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
+  command: [--config=/etc/robotics/transport/otel-collector.yaml]
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  profiles: [transport]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=32m
+  volumes:
+    - type: bind
+      source: ./config/transport/otel-collector.yaml
+      target: /etc/robotics/transport/otel-collector.yaml
+      read_only: true
+    - type: bind
+      source: "${ROBOTICS_TRANSPORT_REPORT_DIR:-./artifacts/transport}"
+      target: /reports
+  networks: [transport-backbone]
+
+services:
+  transport-plane:
+    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    profiles: [domain-bridge]
+    networks: [transport-backbone]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  transport-bridge:
+    <<: *transport-probe
+    profiles: [domain-bridge]
+    network_mode: service:transport-plane
+    environment: *transport-environment
+    command:
+      - ros2
+      - run
+      - domain_bridge
+      - domain_bridge
+      - /reports/configuration/domain-bridge.yaml
+    depends_on:
+      transport-plane:
+        condition: service_started
+
+  transport-source-otel:
+    <<: *transport-otel
+    environment:
+      ROBOTICS_DOMAIN_ID: transport-source
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
+      ROBOTICS_TRACE_FILE: /reports/source/traces.otlp.jsonl
+
+  transport-destination-otel:
+    <<: *transport-otel
+    environment:
+      ROBOTICS_DOMAIN_ID: transport-destination
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
+      ROBOTICS_TRACE_FILE: /reports/destination/traces.otlp.jsonl
+
+  transport-subscriber:
+    <<: *transport-probe
+    network_mode: service:transport-plane
+    environment:
+      <<: *transport-environment
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://transport-destination-otel:4318
+      ROBOTICS_DOMAIN_ID: transport-destination
+      ROBOTICS_OBSERVATION_PATH: /reports/destination/probe.json
+      ROS_DOMAIN_ID: "32"
+    command: [python3, /opt/robotics/transport/probe.py, subscribe]
+    depends_on:
+      transport-destination-otel:
+        condition: service_started
+
+  transport-publisher:
+    <<: *transport-probe
+    network_mode: service:transport-plane
+    environment:
+      <<: *transport-environment
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://transport-source-otel:4318
+      ROBOTICS_DOMAIN_ID: transport-source
+      ROBOTICS_OBSERVATION_PATH: /reports/source/probe.json
+      ROS_DOMAIN_ID: "31"
+    command: [python3, /opt/robotics/transport/probe.py, publish]
+    depends_on:
+      transport-source-otel:
+        condition: service_started
+
+  transport-evidence:
+    image: "${EVIDENCE_IMAGE:-local/robotics-runtime-infra/evidence-sink:dev}"
+    user: "${ROBOTICS_HOST_UID:-1000}:${ROBOTICS_HOST_GID:-1000}"
+    init: true
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    profiles: [transport]
+    environment:
+      EVIDENCE_INDEX_PATH: /reports/evidence-index.json
+      EVIDENCE_RECEIPT_DIR: /reports/qualification/evidence-receipts
+      EVIDENCE_REGISTRATION_DIR: /reports/qualification/evidence-state/registrations
+      EVIDENCE_SUMMARY_DIR: /reports/qualification/evidence-summaries
+      EVIDENCE_SPOOL_DIR: /reports/qualification/evidence-spool
+      EVIDENCE_STATE_DIR: /reports/qualification/evidence-state
+      EVIDENCE_ARTIFACT_MEDIA_TYPES: application/json,application/x-ndjson,application/octet-stream
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_TRANSPORT_REPORT_DIR:-./artifacts/transport}"
+        target: /reports
+    healthcheck:
+      disable: true
+
+  transport-evaluator:
+    <<: *transport-probe
+    image: "${OBSERVER_IMAGE:-local/robotics-runtime-infra/acceptance-observer:dev}"
+    network_mode: none
+    environment:
+      HOME: /tmp
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
+      ROBOTICS_MESSAGE_COUNT: "${ROBOTICS_MESSAGE_COUNT:-20}"
+      ROBOTICS_TRANSPORT_REPORT_DIR: /reports
+    command: [bash, /opt/robotics/transport/evaluate]
+
+networks:
+  transport-backbone:
+    internal: true

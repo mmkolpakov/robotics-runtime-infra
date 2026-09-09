@@ -52,6 +52,12 @@
   ],
   "packageRules": [
     {
+      "description": "Freeze the Zenoh bridge baseline until transport equivalence is qualified",
+      "matchFileNames": ["test/compose/compose.zenoh.yaml"],
+      "matchPackageNames": ["eclipse/zenoh-bridge-ros2dds"],
+      "enabled": false
+    },
+    {
       "description": "Keep OPA above the Go, crypto and gRPC fixes verified for CI 34305345505",
       "matchDepNames": [
         "openpolicyagent/opa"
