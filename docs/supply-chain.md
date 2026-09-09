@@ -29,7 +29,7 @@ The level is reassessed per release against the current
 
 | Tool | Supply-chain rule |
 | --- | --- |
-| Cosign | `permit-preflight` copies the binary from the digest-pinned Chainguard image in `docker-bake.hcl` and verifies its declared version during the build. GitHub-hosted foundation jobs use the SHA-pinned official installer action for the same version. |
+| Cosign | Runtime images rebuild the tag-and-commit-pinned release with a reviewed Go dependency patch. The build preserves module locks and records its revision, patch hash and linked modules. See the [rebuild policy](../docker/cosign/README.md). Hosted fixture setup uses the SHA-pinned official installer action for the same base version. |
 | OPA | BuildKit resolves the official multi-platform static image by immutable registry digest. |
 | yq | Docker rebuilds a verified upstream commit because the latest release still pins `golang.org/x/text` below the security-fixed version. The build checks the exact dependency version. |
 

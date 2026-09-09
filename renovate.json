@@ -10,17 +10,6 @@
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/^docker-bake\\.hcl$/"
-      ],
-      "matchStrings": [
-        "variable \"COSIGN_IMAGE\" \\{\\s+default = \"(?<depName>cgr\\.dev/chainguard/cosign):(?<currentValue>latest)@(?<currentDigest>sha256:[a-f0-9]{64})\""
-      ],
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    },
-    {
-      "customType": "regex",
       "description": "Track the source-built yq release and commit together",
       "managerFilePatterns": [
         "/^Dockerfile$/"
@@ -34,24 +23,23 @@
     },
     {
       "customType": "regex",
-      "description": "Track the Cosign version paired with the container digest",
+      "description": "Track the Cosign release tag and verified source commit together",
       "managerFilePatterns": [
         "/^docker-bake\\.hcl$/"
       ],
       "matchStrings": [
-        "variable \"COSIGN_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+        "variable \"COSIGN_REVISION\" \\{\\s+default = \"(?<currentDigest>[a-f0-9]{40})\"[\\s\\S]*?variable \"COSIGN_VERSION\" \\{\\s+default = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
       "depNameTemplate": "sigstore/cosign",
-      "datasourceTemplate": "github-releases",
+      "datasourceTemplate": "github-tags",
       "extractVersionTemplate": "^v(?<version>.*)$",
       "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
     {
-      "description": "Keep the Cosign image, build version and installer inputs in one reviewed update",
+      "description": "Keep the Cosign source and installer version in one reviewed update",
       "matchPackageNames": [
-        "cgr.dev/chainguard/cosign",
         "sigstore/cosign"
       ],
       "groupName": "cosign",
@@ -73,20 +61,6 @@
         "github-actions"
       ],
       "rangeStrategy": "pin"
-    },
-    {
-      "description": "Qualify every Chainguard Cosign rebuild",
-      "matchDatasources": [
-        "docker"
-      ],
-      "matchPackageNames": [
-        "cgr.dev/chainguard/cosign"
-      ],
-      "minimumReleaseAge": "0 days",
-      "automerge": false,
-      "labels": [
-        "supply-chain"
-      ]
     },
     {
       "description": "Do not restore yq releases affected by CVE-2026-56852",
