@@ -96,6 +96,21 @@ aws s3api put-object --bucket "$EVIDENCE_BUCKET" --key "$key" \
 changed_version="$(jq -er '.VersionId | select(type == "string" and length > 0 and . != "null")' \
   "$work/changed-object.json")"
 test "$changed_version" != "$(jq -er '.version_id' "$registration")"
+
+# A retry without the local registration must not overwrite another latest
+# version. The signed original remains readable through its retained VersionId.
+retry_registrations=/evidence/state/rejected-reupload
+if EVIDENCE_REGISTRATION_DIR="$retry_registrations" evidence-sink segment "$source" \
+  >"$work/reupload.log" 2>&1; then
+  printf 'evidence sink overwrote an existing different object\n' >&2
+  exit 1
+fi
+grep -F 'rclone upload failed' "$work/reupload.log"
+test ! -e "$retry_registrations/0-${digest}.json"
+latest_version="$(aws s3api head-object --bucket "$EVIDENCE_BUCKET" --key "$key" \
+  --query VersionId --output text --no-cli-pager)"
+test "$latest_version" = "$changed_version"
+
 jq --arg revision "$changed_version" '.version_id = $revision' \
   "$registration" >"$work/changed-registration.json"
 if retained-artifact verify --registration "$work/changed-registration.json" \
