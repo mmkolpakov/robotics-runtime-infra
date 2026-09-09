@@ -76,6 +76,12 @@ export ROBOTICS_RUN_DIR="${run_dir}"
 export ROBOTICS_BAG_DIR="${run_dir}/bags"
 export ROBOTICS_EVIDENCE_DIR="${run_dir}/evidence"
 export ROBOTICS_MAX_BAG_SIZE=1048576
+# Compose uses this for both recorder rotation and evidence-sink validation.
+# Its 60-second default exceeds the stepped-smoke scenario's 30-second gate.
+export ROBOTICS_MAX_BAG_DURATION
+ROBOTICS_MAX_BAG_DURATION="$(
+  foundation_recording_duration "${foundation_bin}/python" "${run_dir}/scenario.yaml"
+)"
 export ROBOTICS_MAX_SEGMENT_SIZE_BYTES=2097152
 export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
 export ROBOTICS_RECORD_REGEX='^(/clock|/robotics/runtime_probe)$'
@@ -223,9 +229,11 @@ publish_failure_evidence() {
   mkdir -p "${destination}"
   for source in \
     "${run_dir}/evidence/metrics.otlp.jsonl" \
-    "${run_dir}/evidence/evidence-index.json"; do
-    if [[ -f "${source}" ]]; then
-      sudo cp "${source}" "${destination}/"
+    "${run_dir}/evidence/evidence-index.json" \
+    "${run_dir}/evidence/summaries" \
+    "${run_dir}/scenario.yaml"; do
+    if [[ -e "${source}" ]]; then
+      sudo cp -a "${source}" "${destination}/"
     fi
   done
   sudo chown -R "$(id -u):$(id -g)" "${destination}"
