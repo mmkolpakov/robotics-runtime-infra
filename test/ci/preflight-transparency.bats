@@ -91,7 +91,7 @@ verify_role() {
   run jq -n \
     --arg approver_bundle_sha256 digest --arg approver_identity approver \
     --argjson approver_integrated_time 1 --arg approver_issuer issuer \
-    --arg cosign_image_digest digest --arg cosign_version 3.1.3 \
+    --arg cosign_binary_digest digest --arg cosign_version 3.1.3 \
     --arg operator_bundle_sha256 digest --arg operator_identity operator \
     --argjson operator_integrated_time 1 --arg operator_issuer issuer \
     --arg permit_sha256 digest --arg policy_sha256 digest \
@@ -103,6 +103,8 @@ verify_role() {
     -f "${PREFLIGHT}/render-policy-input.jq"
   [ "${status}" -eq 0 ]
   jq -e '.verified_signers | map(.transparency_log_verified) == [true, false]' <<<"${output}"
+  jq -e '.artifacts.cosign_binary_digest == "digest" and
+    (.artifacts | has("cosign_image_digest") | not)' <<<"${output}"
 }
 
 @test "failed cosign and missing invocation cannot produce verified evidence" {
