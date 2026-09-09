@@ -41,9 +41,14 @@ sign_role "${case_dir}" approver
 prepare_preflight_directories "${work_root}/positive-state/nonces" "${work_root}/positive-state/output"
 run_test_preflight "${case_dir}" "${work_root}/positive-state/nonces" \
   "${work_root}/positive-state/output/verification.json"
-jq -e '
+cosign_binary_sha256="$(
+  docker run --rm --entrypoint sha256sum "${PERMIT_PREFLIGHT_CI_IMAGE}" \
+    /usr/local/bin/cosign | awk '{print $1}'
+)"
+jq -e --arg cosign_digest "sha256:${cosign_binary_sha256}" '
   .decision == "allow" and ([.signers[].role] | sort) == ["approver", "operator"] and
-  [.signers[].transparency_log_verified] == [true, true]
+  [.signers[].transparency_log_verified] == [true, true] and
+  .cosign_subject_digest == $cosign_digest
 ' "${work_root}/positive-state/output/verification.json" >/dev/null
 test "$(sudo cat "${work_root}/positive-state/nonces/0123456789abcdef0123456789abcdef/permit_sha256")" = \
   "$(sha256_file "${case_dir}/execution-permit.json")"

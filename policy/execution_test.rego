@@ -28,7 +28,7 @@ test_valid_hil_permit_emits_verification if {
 	verification.schema_version == "execution-verification.v1"
 	verification.decision == "allow"
 	verification.verified_at == "2026-07-14T12:00:00Z"
-	verification.cosign_subject_digest == data.execution_valid.artifacts.cosign_image_digest
+	verification.cosign_subject_digest == data.execution_valid.artifacts.cosign_binary_digest
 	count(verification.signers) == 2
 }
 
@@ -36,6 +36,18 @@ test_denied_permit_emits_no_verification if {
 	candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/request/scenario_sha256", "value": "7777777777777777777777777777777777777777777777777777777777777777"}])
 	verification := execution.verification with input as candidate with time.now_ns as fixed_now
 	verification == null
+}
+
+test_invalid_cosign_binary_digest_is_denied if {
+	every digest in ["", null, 42, "sha256:abc"] {
+		candidate := json.patch(data.execution_valid, [{"op": "replace", "path": "/artifacts/cosign_binary_digest", "value": digest}])
+		"Cosign binary digest must be an immutable SHA-256 digest" in violations(candidate)
+	}
+}
+
+test_missing_cosign_binary_digest_is_denied if {
+	candidate := json.patch(data.execution_valid, [{"op": "remove", "path": "/artifacts/cosign_binary_digest"}])
+	"Cosign binary digest must be an immutable SHA-256 digest" in violations(candidate)
 }
 
 test_valid_real_observation_permit_is_allowed if {
