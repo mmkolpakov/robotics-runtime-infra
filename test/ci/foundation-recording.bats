@@ -66,15 +66,21 @@ prepare_orchestration_fixture() {
   local scripts="${FIXTURE}/scripts/ci"
   local bin="${FIXTURE}/dependencies/robotics-runtime/.venv/bin"
   mkdir -p "${scripts}/foundation" "${bin}"
-  cp "${REPOSITORY_ROOT}/scripts/ci/foundation/"{lib.sh,run-acceptance.sh} \
+  cp "${REPOSITORY_ROOT}/scripts/ci/foundation/"{lib.sh,run-acceptance.sh,run-policy.sh} \
     "${scripts}/foundation/"
   : >"${scripts}/image-identity.sh"
   # Keep the real orchestration and duration parser; stop at the first Compose
   # call. Image lookup, host inventory and run creation are unit fixtures.
+  # The policy spy retains the actual parsed input and can reject the run.
   cat >"${scripts}/lib.sh" <<'SH'
 cosign() { :; }
 lscpu() { printf '{}\n'; }
 ci_image_identity() { printf '{"digest":"fixture","reference":"fixture"}\n'; }
+ci_require_policy_allows() {
+  [[ "$1" == policy/scenario.rego && "$2" == scenario ]] || return 65
+  cp -- "$3" "${FOUNDATION_SCENARIO_POLICY_INPUT}"
+  return "${FOUNDATION_SCENARIO_POLICY_STATUS}"
+}
 docker() {
   printf '%s\n' "${ROBOTICS_MAX_BAG_DURATION:-unset}" >"${FOUNDATION_RECORDING_ENV}"
   return 88
@@ -92,6 +98,8 @@ SH
   chmod +x "${bin}/python" "${bin}/robotics-acceptance"
   export FOUNDATION_REAL_PYTHON="${FOUNDATION_PYTHON}"
   export FOUNDATION_RECORDING_ENV="${BATS_TEST_TMPDIR}/compose-duration"
+  export FOUNDATION_SCENARIO_POLICY_INPUT="${BATS_TEST_TMPDIR}/scenario-policy-input.json"
+  export FOUNDATION_SCENARIO_POLICY_STATUS=0
   export ROBOTICS_FOUNDATION_SCENARIO="${SCENARIO}"
   export ROBOTICS_FOUNDATION_RUN_ID=recording-unit
   export ROBOTICS_FOUNDATION_ARTIFACT_DIR="${FIXTURE}/artifacts"
@@ -104,7 +112,20 @@ SH
   printf '{"evidence_policy":{"max_segment_duration_sec":7}}\n' >"${SCENARIO}"
   run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
   [ "${status}" -eq 88 ]
+  jq -e '.evidence_policy.max_segment_duration_sec == 7' \
+    "${FOUNDATION_SCENARIO_POLICY_INPUT}" >/dev/null
   [ "$(cat "${FOUNDATION_RECORDING_ENV}")" = 7 ]
+}
+
+@test "acceptance stops before Compose when the scenario policy rejects the run" {
+  prepare_orchestration_fixture
+  export FOUNDATION_SCENARIO_POLICY_STATUS=23
+  printf '{"evidence_policy":{"max_segment_duration_sec":7}}\n' >"${SCENARIO}"
+  run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
+  [ "${status}" -eq 23 ]
+  jq -e '.evidence_policy.max_segment_duration_sec == 7' \
+    "${FOUNDATION_SCENARIO_POLICY_INPUT}" >/dev/null
+  [ ! -e "${FOUNDATION_RECORDING_ENV}" ]
 }
 
 @test "acceptance stops before Compose if the scenario duration cannot be configured" {
