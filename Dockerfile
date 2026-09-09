@@ -7,10 +7,8 @@ ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0a
 ARG RCLONE_IMAGE=rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
 ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
-ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
+ARG GO_BUILDER_IMAGE=golang:1.26.8@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff
 ARG OPA_IMAGE=openpolicyagent/opa:1.19.0-static@sha256:2f42ca765bb739b40fc23ee625b3287012acdf8120ad4fcbdab68433a17be144
-# Policy targets receive the qualified reference from Docker Bake.
-ARG COSIGN_IMAGE=scratch
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -30,7 +28,6 @@ FROM ${UV_IMAGE} AS uv
 FROM ${RCLONE_IMAGE} AS rclone
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${OPA_IMAGE} AS opa
-FROM ${COSIGN_IMAGE} AS cosign
 FROM ${ROS_BASE_IMAGE} AS ca-bootstrap
 
 FROM ca-bootstrap AS foundation-wheels
@@ -64,11 +61,20 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       --requirement contracts.requirements \
     && uv pip check --python /opt/contracts/bin/python
 
-FROM scratch AS cosign-license
+FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS cosign
+ARG TARGETOS
+ARG TARGETARCH
 ARG COSIGN_VERSION
-ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 \
-  https://raw.githubusercontent.com/sigstore/cosign/v${COSIGN_VERSION}/LICENSE \
-  /LICENSE
+ARG COSIGN_REVISION
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# The release tag and its exact commit are checked by the named Git context.
+# hadolint ignore=DL3022
+COPY --from=cosign-source / /src/cosign/
+COPY docker/cosign/go-dependencies.patch /tmp/cosign-go-dependencies.patch
+COPY --chmod=0555 docker/cosign/build.sh /usr/local/bin/build-cosign
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    build-cosign
 
 FROM scratch AS opa-license
 ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
@@ -396,7 +402,6 @@ ARG IMAGE_CREATED=1970-01-01T00:00:00Z
 ARG IMAGE_SOURCE=https://github.com/mmkolpakov/robotics-runtime-infra
 ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
-ARG COSIGN_IMAGE
 ARG COSIGN_VERSION
 
 LABEL org.opencontainers.image.title="Robotics execution permit preflight" \
@@ -412,26 +417,14 @@ ARG UBUNTU_SNAPSHOT
 ENV HOME=/home/preflight \
     PATH="/opt/venv/bin:${PATH}"
 
-RUN case "${COSIGN_IMAGE}" in \
-      *@sha256:????????????????????????????????????????????????????????????????) ;; \
-      *) printf 'COSIGN_IMAGE must be digest-pinned\n' >&2; exit 65 ;; \
-    esac \
-    && cosign_image_digest="${COSIGN_IMAGE##*@}" \
-    && case "${cosign_image_digest#sha256:}" in \
-      *[!a-f0-9]*) \
-        printf 'COSIGN_IMAGE digest must be lowercase hexadecimal\n' >&2; \
-        exit 65 ;; \
-      *) ;; \
-    esac \
-    && install -d -m 0555 \
+RUN install -d -m 0555 \
       /usr/local/lib/robotics-runtime \
       /usr/share/licenses/cosign \
-      /usr/share/robotics-runtime \
-    && printf '%s\n' "${cosign_image_digest}" \
-      > /usr/share/robotics-runtime/cosign-image-digest \
-    && chmod 0444 /usr/share/robotics-runtime/cosign-image-digest
-COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
-COPY --from=cosign-license --chmod=0444 /LICENSE \
+      /usr/share/robotics-runtime
+COPY --from=cosign /out/cosign /usr/local/bin/cosign
+COPY --from=cosign --chmod=0444 /out/cosign-build.txt \
+  /usr/share/robotics-runtime/cosign-build.txt
+COPY --from=cosign --chmod=0444 /src/cosign/LICENSE \
   /usr/share/licenses/cosign/LICENSE
 COPY --from=opa /opa /usr/local/bin/opa
 COPY --from=opa-license /LICENSE /usr/share/licenses/opa/LICENSE
@@ -546,8 +539,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/evidence-sink.lock /tmp/python/evidence-sink.lock
-COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
-COPY --from=cosign-license --chmod=0444 /LICENSE \
+COPY --from=cosign /out/cosign /usr/local/bin/cosign
+COPY --from=cosign --chmod=0444 /out/cosign-build.txt \
+  /usr/share/robotics-runtime/cosign-build.txt
+COPY --from=cosign --chmod=0444 /src/cosign/LICENSE \
   /usr/share/licenses/cosign/LICENSE
 
 RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,readonly \
