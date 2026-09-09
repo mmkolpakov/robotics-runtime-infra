@@ -10,3 +10,6 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.txt text eol=lf
+
+# Unified diff context prefixes Go indentation tabs with a space.
+docker/cosign/go-dependencies.patch whitespace=-space-before-tab

@@ -30,8 +30,9 @@ immutable object version and run. Registration rejects S3's mutable `null`
 version and records object keys as
 percent-encoded URIs, including spaces and reserved URI characters.
 
-The evidence image includes `retained-artifact` and the digest-pinned Cosign
-binary. Prepare a retention predicate from a confirmed registration and the
+The evidence image includes `retained-artifact` and the documented
+[Cosign dependency rebuild](../docker/cosign/README.md).
+Prepare a retention predicate from a confirmed registration and the
 original recording:
 
 ```sh
