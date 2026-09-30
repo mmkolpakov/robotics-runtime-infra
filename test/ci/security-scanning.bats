@@ -108,9 +108,9 @@ EOF
       ];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 5
-    and (.statements | length == 184)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 129)
+    and .version == 6
+    and (.statements | length == 185)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 130)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)

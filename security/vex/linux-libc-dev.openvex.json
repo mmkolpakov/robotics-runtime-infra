@@ -2,8 +2,8 @@
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-09-08",
   "author": "mmkolpakov",
-  "timestamp": "2026-09-08T06:33:49Z",
-  "version": 5,
+  "timestamp": "2026-09-30T08:00:00Z",
+  "version": 6,
   "statements": [
     {
       "vulnerability": {
@@ -840,6 +840,22 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "Review 2026-09-08, Ubuntu noble linux-libc-dev 6.8.0-139.139, amd64/arm64 only. The Linux CNA identifies net/ipv6/ip6_output.c. These are kernel implementation/internal-header paths, not exported UAPI implementations. Both reviewed binary payloads contain only usr/include headers and two documentation files; the identified implementation is not supplied by linux-libc-dev. A similarly named installed UAPI header is not an internal kernel header. Host-kernel applicability remains separate. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/53xxx/CVE-2026-53362.json; https://git.kernel.org/stable/c/14200d435af9a9eeb444f529fc2f689a236b7962. Package payload SHA256: amd64 f8292b3414cac372ec28ba484a45e3f18b3ac5fc7872ca82661835286f1c5865; arm64 673684ae380e365c4aacbba22ee233d7d2aebe695a87d4dbc62cf873febb970a. This statement does not qualify the host kernel or hardware. Observed amd64 residual: https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401272. Observed arm64 residuals: https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401531, https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401828."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-53365"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Review 2026-09-30, Ubuntu noble linux-libc-dev 6.8.0-139.139, amd64/arm64 only. The Linux CNA identifies net/vmw_vsock/virtio_transport_common.c. These are kernel implementation/internal-header paths, not exported UAPI implementations. Both reviewed binary payloads contain only usr/include headers and two documentation files; the identified implementation is not supplied by linux-libc-dev. A similarly named installed UAPI header is not an internal kernel header. Host-kernel applicability remains separate. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/53xxx/CVE-2026-53365.json; https://git.kernel.org/stable/c/293fe8f2d1b5ac464ca16a8eba09571bbbb34ba9. Package payload SHA256: amd64 f8292b3414cac372ec28ba484a45e3f18b3ac5fc7872ca82661835286f1c5865; arm64 673684ae380e365c4aacbba22ee233d7d2aebe695a87d4dbc62cf873febb970a. This statement does not qualify the host kernel or hardware. Observed amd64 residual: https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/36674519995/job/109756676680. Observed arm64 residuals: https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/36674519995/job/109756676693, https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/36674519995/job/109756676770."
     },
     {
       "vulnerability": {
