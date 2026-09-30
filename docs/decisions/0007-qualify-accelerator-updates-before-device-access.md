@@ -7,9 +7,9 @@
 
 The NVIDIA, Jetson and RK3588 inference paths are qualification-gated, and no
 protected device runner exists yet. Holding their dependencies until a device
-can qualify them left known advisories in the images: the RKNN converter
-pinned onnx 1.18.0, protobuf 4.25.4 and torch 2.4.0, all with published
-advisories.
+can qualify them left the images behind their upstream releases and kept
+known advisories: the RKNN converter pinned onnx 1.18.0, protobuf 4.25.4 and
+torch 2.4.0, all with published advisories.
 
 RKNN Toolkit2 2.3.2 is the newest vendor release on GitHub and PyPI. Its
 package metadata caps protobuf at 4.25.4, torch at 2.4.0 and NumPy at 1.26.4.
@@ -60,11 +60,20 @@ Checks that run without devices:
 | --- | --- | --- |
 | RK3588 converter | Vendor `onnx_edit` example; 16-bit and 8-bit conversions run on the RKNN simulator and compared with the ONNX Runtime CPU provider (`probes/rknn_simulator_conformance.py`) | `rknn-converter-verification`, CI job `rknn-supply-chain` |
 | RK3588 runtime | ARM64 image build under emulation, `uv pip check`, `rknnlite` import | CI job `rknn-arm64-image` |
+| ONNX Runtime CPU | `provider-conformance-cpu`: provider identity, no fallback, tensor parity | CI job `integration` |
+| ONNX Runtime CUDA on amd64 | Image build and `CUDAExecutionProvider` availability without a GPU | CI job `nvidia-image` |
+| Jetson | Verification of the pinned ONNX Runtime source; the image is not built in CI | CI job `nvidia-jetson-supply-chain` |
+
+A workstation GPU, including one under WSL2, may run the provider test before
+a merge. The pull request records that evidence; it does not qualify a
+target.
 
 Device qualification that remains pending:
 
 | Target | Procedure |
 | --- | --- |
+| NVIDIA GPU on amd64 Linux | Publish the conformance image with `publish-conformance-image.yml` (target `nvidia-x86`), then dispatch `hardware-qualification.yml` from `main` with `target=nvidia-x86`, the image reference by digest and the source SHA. It runs on a runner labelled `robotics-nvidia-gpu` in the `accelerator-nvidia` environment. |
+| Jetson Orin or Thor | The same with target `jetson-orin` or `jetson-thor` and runner label `robotics-jetson-orin` or `robotics-jetson-thor`. |
 | RK3588 | The generic hardware workflow has no RK3588 target. On a board with the RKNPU driver, run the published `provider-conformance-rknn-rk3588` image by digest: `RKNN_CONFORMANCE_IMAGE=<ref@digest> ROBOTICS_RKNN_RENDER_GID="$(getent group render \| cut -d: -f3)" docker compose -f compose.yaml -f compose.rknn.yaml --profile rknn-rk3588 run --rm provider-conformance-rknn-rk3588`. Then convert a model with the converter image, run it on the NPU and compare the outputs with the simulator report for the same inputs. |
 
 Retain the image digests, command output and both reports as the
