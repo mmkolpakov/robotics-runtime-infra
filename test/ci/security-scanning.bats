@@ -101,9 +101,16 @@ EOF
 
 @test "reviewed OpenVEX policy is scoped to the kernel header package" {
   run jq -e '
+    def reviewed_headers:
+      [
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"},
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"}
+      ];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 3
+    and .version == 7
+    and (.statements | length == 183)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 128)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -111,7 +118,14 @@ EOF
     and all(
       .statements[];
       (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
-      and .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
+      and (
+        .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
+        or (
+          .products == reviewed_headers
+          and (.impact_statement | contains("Sources: https://"))
+          and (.impact_statement | contains("does not qualify the host kernel or hardware"))
+        )
+      )
       and .status == "not_affected"
       and .justification == "vulnerable_code_not_present"
     )
@@ -127,18 +141,96 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
+@test "Bake group scanner scans every image before failing the gate" {
+  cat >"${BATS_TEST_TMPDIR}/bake-plan.json" <<'EOF'
+{
+  "target": {
+    "runtime": {
+      "tags": ["registry.example/runtime:test"]
+    },
+    "conformance": {
+      "tags": ["registry.example/conformance:test"]
+    }
+  }
+}
+EOF
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if test "$1 $2 $3 $4 $5" = "buildx bake --file docker-bake.hcl --print"; then
+  cat "${BAKE_PLAN}"
+  exit 0
+fi
+printf '%s\n' "$*" >>"${DOCKER_LOG}"
+if [[ " $* " == *" --format sarif "* && "$*" == *"/reports/accelerator-conformance-"* ]]; then
+  exit 1
+fi
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+
+  run env \
+    "PATH=${FAKE_BIN}:${PATH}" \
+    "BAKE_PLAN=${BATS_TEST_TMPDIR}/bake-plan.json" \
+    "DOCKER_LOG=${DOCKER_LOG}" \
+    "HOME=${BATS_TEST_TMPDIR}" \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    TRIVY_IMAGE=trivy:test \
+    scripts/ci/security/scan-bake-group.sh accelerator
+
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"vulnerability gate failed for registry.example/conformance:test"* ]]
+  [[ "${output}" != *"vulnerability gate failed for registry.example/runtime:test"* ]]
+  [ "$(grep -Fc -- 'registry.example/runtime:test' "${DOCKER_LOG}")" -eq 1 ]
+  [ "$(grep -Fc -- 'registry.example/conformance:test' "${DOCKER_LOG}")" -eq 1 ]
+  [ "$(grep -Fc -- '--format table' "${DOCKER_LOG}")" -eq 1 ]
+}
+
+@test "image scanner propagates the vulnerability gate failure" {
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >>"${DOCKER_LOG}"
+for argument in "$@"; do
+  if [[ "${argument}" == convert ]]; then
+    exit 1
+  fi
+done
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+
+  run env \
+    "PATH=${FAKE_BIN}:${PATH}" \
+    "DOCKER_LOG=${DOCKER_LOG}" \
+    "HOME=${BATS_TEST_TMPDIR}" \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    TRIVY_IMAGE=trivy:test \
+    scripts/ci/security/scan-image.sh \
+      registry.example/runtime:test candidate linux/amd64,linux/arm64
+
+  [ "${status}" -eq 1 ]
+  [ "$(wc -l <"${DOCKER_LOG}")" -eq 6 ]
+  [ "$(grep -Fc -- '--format table' "${DOCKER_LOG}")" -eq 2 ]
+  [[ "${output}" == *"vulnerability gate failed: registry.example/runtime:test linux-amd64"* ]]
+  [[ "${output}" == *"vulnerability gate failed: registry.example/runtime:test linux-arm64"* ]]
+}
+
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
-  run grep -F 'ARG UBUNTU_SNAPSHOT=20260726T000000Z' Dockerfile
+  run grep -F 'ARG UBUNTU_SNAPSHOT=20260930T000000Z' Dockerfile
   [ "${status}" -eq 0 ]
-  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136' Dockerfile
+  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142' Dockerfile
   [ "${status}" -eq 0 ]
   run grep -F \
     'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
     docker/apt/use-package-snapshots
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"linux-libc-dev=${LINUX_LIBC_DEV_VERSION}"' Dockerfile)" -eq 2 ]
-  run grep -F 'default = "20260726T000000Z"' docker-bake.hcl
+  run grep -F 'ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16' Dockerfile
   [ "${status}" -eq 0 ]
-  run grep -F 'default = "6.8.0-136.136"' docker-bake.hcl
+  [ "$(grep -Fc '"libssl3t64=${OPENSSL_VERSION}"' Dockerfile)" -eq 2 ]
+  run grep -F 'default = "20260930T000000Z"' docker-bake.hcl
+  [ "${status}" -eq 0 ]
+  run grep -F 'default = "6.8.0-142.142"' docker-bake.hcl
   [ "${status}" -eq 0 ]
 }

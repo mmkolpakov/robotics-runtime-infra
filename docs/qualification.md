@@ -7,7 +7,7 @@ certificate verification remain delegated to Cosign.
 ## Prerequisites
 
 - Bash 5 or newer
-- Cosign 3.1.2
+- Cosign 3.1.3
 - jq 1.6 or newer
 - robotics-runtime-contracts 0.15.4 or newer (Python 3.12+ for local installs)
 
