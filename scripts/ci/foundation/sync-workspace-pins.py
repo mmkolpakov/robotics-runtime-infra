@@ -18,6 +18,7 @@ PACKAGES = {
     "contracts": "robotics-runtime-contracts",
     "harness": "robotics-acceptance-harness",
 }
+RELEASE_TAG = re.compile(r"harness-v(\d+\.\d+\.\d+)")
 
 
 def git(workspace: Path, *args: str) -> bytes:
@@ -43,7 +44,29 @@ def workspace_pin(root: Path) -> dict[str, str]:
         raise ValueError("foundation source must match the configured core repository")
     if not re.fullmatch(r"[a-f0-9]{40}", pin.get("version", "")):
         raise ValueError("foundation version must be an immutable full Git commit")
+    release = pin.get("release")
+    if release is not None and not (
+        isinstance(release, str) and RELEASE_TAG.fullmatch(release)
+    ):
+        raise ValueError("foundation release must be a harness-vX.Y.Z tag")
     return pin
+
+
+def release_pair(
+    workspace: Path, revision: str, release: str, packages: dict[str, Any]
+) -> tuple[str, str]:
+    """Bind the pinned commit to its harness tag and the released contracts."""
+    tagged = git(workspace, "rev-parse", f"refs/tags/{release}^{{commit}}")
+    if tagged.decode().strip() != revision:
+        raise ValueError(f"{release} does not point to the pinned commit")
+    match = RELEASE_TAG.fullmatch(release)
+    if match is None or packages["harness"]["version"] != match.group(1):
+        raise ValueError(f"harness version does not match {release}")
+    contracts = f"contracts-v{packages['contracts']['version']}"
+    tree = git(workspace, "rev-parse", f"refs/tags/{contracts}:packages/contracts")
+    if tree.decode().strip() != packages["contracts"]["git_tree"]:
+        raise ValueError(f"contracts source differs from {contracts}")
+    return release, contracts
 
 
 def requirements(project: dict[str, Any]) -> list[str]:
@@ -168,6 +191,8 @@ def outputs(
             .strip(),
         }
         metadata[directory] = data
+    release = pin.get("release")
+    pair = release_pair(workspace, revision, release, packages) if release else None
     epoch = git(workspace, "show", "-s", "--format=%ct", revision).decode().strip()
     source = f"{pin['url']}?ref={revision}&checksum={revision}"
     foundation = {
@@ -207,10 +232,28 @@ def outputs(
             for p in packages.values()
         ],
         "",
-        "The current pin is a development candidate, not a published release pair.",
+        *(
+            [
+                f"The pin is the published release pair `{pair[0]}` and `{pair[1]}`.",
+                "The pinned commit is the harness tag, and its contracts source is",
+                "identical to the contracts tag.",
+            ]
+            if pair
+            else [
+                "The current pin is a development candidate, "
+                "not a published release pair.",
+            ]
+        ),
         "Both packages are built from this source with locked build dependencies.",
         "CI checks the imported revision, workspace lock and installed image versions.",
-        "Stable release adoption remains gated on publication and foundation qualification.",
+        *(
+            []
+            if pair
+            else [
+                "Stable release adoption remains gated on publication "
+                "and foundation qualification.",
+            ]
+        ),
         "",
     ]
     return {

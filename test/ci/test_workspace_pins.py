@@ -74,20 +74,24 @@ source = {{ editable = "packages/{directory}" }}
         self.git("add", ".")
         self.git("commit", "--quiet", "-m", "fixture")
 
-    def set_pin(self, revision):
+    def set_pin(self, revision, release=None):
+        pin = {
+            "type": "git",
+            "url": "https://github.com/mmkolpakov/robotics-runtime.git",
+        }
+        if release is not None:
+            pin["release"] = release
+        pin["version"] = revision
         (self.root / "foundation.repos").write_text(
-            json.dumps(
-                {
-                    "repositories": {
-                        "robotics-runtime": {
-                            "type": "git",
-                            "url": "https://github.com/mmkolpakov/robotics-runtime.git",
-                            "version": revision,
-                        }
-                    }
-                }
-            )
+            json.dumps({"repositories": {"robotics-runtime": pin}})
         )
+
+    def release_outputs(self):
+        with (
+            patch.object(pins, "export_lock", return_value="packaging==26.3\n"),
+            patch.object(pins, "export_build_lock", return_value="hatchling==1.29.0\n"),
+        ):
+            return pins.outputs(self.root, self.workspace)
 
     def test_rejects_a_branch_instead_of_a_commit(self):
         self.set_pin("main")
@@ -135,6 +139,46 @@ source = {{ editable = "packages/{directory}" }}
         result = json.loads(path.read_text())
         self.assertEqual(result["workspace"]["revision"], self.revision)
         self.assertEqual(result["packages"]["contracts"]["version"], "1.2.3")
+
+    def test_rejects_a_release_that_is_not_a_harness_tag(self):
+        for release in ("main", "contracts-v1.2.3", "harness-v1.2", 7):
+            self.set_pin(self.revision, release)
+            with self.assertRaisesRegex(ValueError, "harness-vX.Y.Z"):
+                pins.workspace_pin(self.root)
+
+    def test_binds_a_release_pin_to_both_published_tags(self):
+        self.git("tag", "harness-v1.2.3")
+        self.git("tag", "contracts-v1.2.3")
+        self.set_pin(self.revision, "harness-v1.2.3")
+        docs = self.release_outputs()[self.root / "docs/foundation-compatibility.md"]
+        self.assertIn("`harness-v1.2.3` and `contracts-v1.2.3`", docs)
+        self.assertNotIn("development candidate", docs)
+
+    def test_rejects_a_release_tag_at_another_commit(self):
+        self.git("tag", "harness-v1.2.3")
+        self.git("tag", "contracts-v1.2.3")
+        self.write("README.md", "after the release\n")
+        self.commit()
+        self.set_pin(self.git("rev-parse", "HEAD").strip(), "harness-v1.2.3")
+        with self.assertRaisesRegex(ValueError, "does not point to the pinned"):
+            self.release_outputs()
+
+    def test_rejects_a_harness_version_that_differs_from_its_tag(self):
+        self.git("tag", "harness-v1.2.4")
+        self.git("tag", "contracts-v1.2.3")
+        self.set_pin(self.revision, "harness-v1.2.4")
+        with self.assertRaisesRegex(ValueError, "harness version"):
+            self.release_outputs()
+
+    def test_rejects_contracts_that_differ_from_their_release_tag(self):
+        self.git("tag", "contracts-v1.2.3")
+        self.write("packages/contracts/schema.json", "{}\n")
+        self.commit()
+        revision = self.git("rev-parse", "HEAD").strip()
+        self.git("tag", "harness-v1.2.3")
+        self.set_pin(revision, "harness-v1.2.3")
+        with self.assertRaisesRegex(ValueError, "contracts source differs"):
+            self.release_outputs()
 
     def test_rejects_two_generated_blocks_before_any_write(self):
         path = self.root / "docker-bake.hcl"
