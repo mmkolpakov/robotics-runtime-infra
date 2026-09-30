@@ -119,6 +119,14 @@ jobs:
           --workdir /work
           "${RENOVATE_IMAGE}"
           renovate-config-validator --strict renovate.json
+      - name: Test Renovate foundation extraction and updates
+        run: >-
+          docker run --rm
+          --volume "${PWD}:/work:ro"
+          --workdir /work
+          "${RENOVATE_IMAGE}"
+          bash -euc 'node test/renovate/check-pins.mjs
+          "$(dirname "$(dirname "$(readlink -f "$(command -v renovate)")")")"'
       - name: Audit GitHub Actions
         env:
           GH_TOKEN: ${{ github.token }}

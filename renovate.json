@@ -9,6 +9,19 @@
   "automerge": false,
   "customManagers": [
     {
+      "customType": "jsonata",
+      "description": "Track the published harness release and immutable foundation workspace commit",
+      "managerFilePatterns": [
+        "/^foundation\\.repos$/"
+      ],
+      "fileFormat": "json",
+      "matchStrings": [
+        "repositories.\"robotics-runtime\"[type = 'git' and url = 'https://github.com/mmkolpakov/robotics-runtime.git'][$type(release) = 'string' and $type(version) = 'string'][$match(release, /^harness-v[0-9]+\\.[0-9]+\\.[0-9]+$/) and $match(version, /^[a-f0-9]{40}$/)].{'depName': 'mmkolpakov/robotics-runtime', 'currentValue': release, 'currentDigest': version}"
+      ],
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^harness-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
+    },
+    {
       "customType": "regex",
       "description": "Track the publisher-verified Cosign image used by Docker Bake",
       "managerFilePatterns": [
@@ -49,6 +62,23 @@
     }
   ],
   "packageRules": [
+    {
+      "description": "Qualify the foundation release pair after regenerating its derived inputs",
+      "matchManagers": [
+        "custom.jsonata"
+      ],
+      "matchFileNames": [
+        "foundation.repos"
+      ],
+      "matchPackageNames": [
+        "mmkolpakov/robotics-runtime"
+      ],
+      "ignoreUnstable": true,
+      "automerge": false,
+      "prBodyNotes": [
+        "Run `bash scripts/ci/foundation/import-sources.sh --refresh-pins` on this branch and include the generated inputs before merging. Published contracts/harness compatibility and foundation qualification remain required; see test/renovate/README.md."
+      ]
+    },
     {
       "description": "Keep OPA above the Go, crypto and gRPC fixes verified for CI 34305345505",
       "matchDepNames": [
