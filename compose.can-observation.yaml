@@ -5,7 +5,7 @@ services:
 
   can-observation-client:
     # yamllint disable-line rule:line-length
-    image: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
+    image: busybox:1.37.0-musl@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092
     profiles: [can-observation]
     init: true
     stdin_open: true
