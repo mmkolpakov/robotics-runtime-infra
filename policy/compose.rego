@@ -4,6 +4,19 @@ import rego.v1
 
 host_control_fields := {"provider", "use_api_socket", "pre_start", "post_start", "pre_stop"}
 
+host_namespace_fields := {"userns_mode": "user", "cgroup": "cgroup", "uts": "UTS"}
+
+unconfined_security_options := {
+	"apparmor:unconfined",
+	"apparmor=unconfined",
+	"label:disable",
+	"label=disable",
+	"seccomp:unconfined",
+	"seccomp=unconfined",
+	"systempaths:unconfined",
+	"systempaths=unconfined",
+}
+
 deny contains message if {
 	some name, service in input.services
 	service.privileged == true
@@ -33,6 +46,34 @@ deny contains message if {
 	some name, service in input.services
 	service.pid == "host"
 	message := sprintf("service %q joins the host PID namespace", [name])
+}
+
+deny contains message if {
+	some name, service in input.services
+	some field, namespace in host_namespace_fields
+	object.get(service, field, "") == "host"
+	message := sprintf("service %q joins the host %s namespace", [name, namespace])
+}
+
+deny contains message if {
+	some name, service in input.services
+	some option in object.get(service, "security_opt", [])
+	lower(option) in unconfined_security_options
+	message := sprintf("service %q disables kernel confinement with %s", [name, option])
+}
+
+deny contains message if {
+	some name, service in input.services
+	not real_observation_profile(service)
+	count(object.get(service, "device_cgroup_rules", [])) > 0
+	message := sprintf("service %q adds a device cgroup rule", [name])
+}
+
+deny contains message if {
+	some name, service in input.services
+	some volume in object.get(service, "volumes", [])
+	host_system_mount(volume)
+	message := sprintf("service %q mounts the host system path %s", [name, volume_source(volume)])
 }
 
 deny contains message if {
@@ -192,6 +233,30 @@ volume_source(volume) := source if {
 volume_source(volume) := source if {
 	is_string(volume)
 	source := split(volume, ":")[0]
+}
+
+# Read-only files below /proc and /sys, such as the device-tree identity,
+# stay available; the kernel interfaces themselves and the host root do not.
+host_system_mount(volume) if {
+	volume_source(volume) in {"/", "/proc", "/proc/", "/sys", "/sys/"}
+}
+
+host_system_mount(volume) if {
+	some prefix in ["/proc/", "/sys/"]
+	startswith(volume_source(volume), prefix)
+	not read_only_volume(volume)
+}
+
+read_only_volume(volume) if {
+	is_object(volume)
+	object.get(volume, "read_only", false) == true
+}
+
+read_only_volume(volume) if {
+	is_string(volume)
+	parts := split(volume, ":")
+	count(parts) > 2
+	"ro" in split(parts[2], ",")
 }
 
 docker_socket(source) if {
