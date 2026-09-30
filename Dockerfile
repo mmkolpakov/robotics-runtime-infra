@@ -4,11 +4,12 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
-ARG RCLONE_IMAGE=rclone/rclone:1.75.0@sha256:b06aed988cf5967de7c25be5925240983981c757f4ed1ac9d2fa659d51d60548
-ARG AWS_CLI_IMAGE=public.ecr.aws/aws-cli/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
+ARG RCLONE_IMAGE=rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
+ARG AWS_CLI_IMAGE=amazon/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
-ARG GO_BUILDER_IMAGE=golang:1.26.5@sha256:079e59808d2d252516e27e3f3a9c003740dee7f75e55aa71528766d52bcfc16a
-ARG OPA_IMAGE=openpolicyagent/opa:1.19.0-static@sha256:2f42ca765bb739b40fc23ee625b3287012acdf8120ad4fcbdab68433a17be144
+ARG GO_BUILDER_IMAGE=golang:1.26.8@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff
+# Released binary module verification and platform digests: docker/opa/README.md.
+ARG OPA_IMAGE=openpolicyagent/opa:1.20.2-static@sha256:bb245e9e36be0d0ed486c240b606c56be7aba96014a4a87895fed4ba7a6dfa8d
 # Policy targets receive the qualified reference from Docker Bake.
 ARG COSIGN_IMAGE=scratch
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
@@ -19,10 +20,10 @@ ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG SENSOR_INFERENCE_BASE=inference-cpu
-ARG UBUNTU_SNAPSHOT=20260726T000000Z
-ARG OPENSSL_VERSION=3.0.13-0ubuntu3.11
+ARG UBUNTU_SNAPSHOT=20260930T000000Z
+ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16
 ARG CA_CERTIFICATES_VERSION=20260601~24.04.1
-ARG LINUX_LIBC_DEV_VERSION=6.8.0-136.136
+ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 
@@ -41,7 +42,7 @@ ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf3
 
 FROM scratch AS opa-license
 ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
-  https://raw.githubusercontent.com/open-policy-agent/opa/1e32c796e8979b1bda2f768138500b1deb95ff24/LICENSE \
+  https://raw.githubusercontent.com/open-policy-agent/opa/b2c26708e9d55645d7f837db495031f7e4152594/LICENSE \
   /LICENSE
 
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
@@ -570,6 +571,7 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -604,7 +606,12 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libssl-dev=${OPENSSL_VERSION}" \
+      "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
+      "openssl=${OPENSSL_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
+      "${OPENSSL_VERSION}" \
     && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
@@ -1114,6 +1121,7 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -1156,7 +1164,12 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libssl-dev=${OPENSSL_VERSION}" \
+      "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
+      "openssl=${OPENSSL_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
+      "${OPENSSL_VERSION}" \
     && uv pip install \
       --system \
       --break-system-packages \

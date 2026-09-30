@@ -30,6 +30,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+failed=()
 while IFS=$'\t' read -r target image; do
   if test -n "${platform}"; then
     docker buildx bake --file docker-bake.hcl "${target}" \
@@ -45,9 +46,16 @@ while IFS=$'\t' read -r target image; do
   if test -n "${platform}"; then
     scan_args+=("${platform}")
   fi
-  scripts/ci/security/scan-image.sh "${scan_args[@]}"
+  if ! scripts/ci/security/scan-image.sh "${scan_args[@]}"; then
+    failed+=("${image}")
+  fi
   if test -n "${loaded_image}"; then
     docker image rm --force "${loaded_image}" >/dev/null
     loaded_image=
   fi
 done <<<"${targets}"
+
+if test "${#failed[@]}" -gt 0; then
+  printf 'vulnerability gate failed for %s\n' "${failed[@]}" >&2
+  exit 1
+fi

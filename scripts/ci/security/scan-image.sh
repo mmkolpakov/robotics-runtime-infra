@@ -46,8 +46,10 @@ trivy=(
   --config /work/trivy.yaml
   --ignorefile /work/.trivyignore
   --vex /work/security/vex/linux-libc-dev.openvex.json
+  --vex /work/security/vex/go-modules.openvex.json
 )
 
+failed=()
 for platform in "${platforms[@]}"; do
   platform_args=()
   platform_id=local
@@ -68,12 +70,26 @@ for platform in "${platforms[@]}"; do
     --format json \
     --output "${raw_report}" \
     "${image}"
-  docker run --rm \
+  if ! docker run --rm \
     --volume "${security_artifact_dir}:/reports" \
     "${TRIVY_IMAGE}" convert \
     --format sarif \
     --output "/reports/${report_id}-${platform_id}.sarif" \
     --severity HIGH,CRITICAL \
     --exit-code 1 \
-    "${raw_report}"
+    "${raw_report}"; then
+    failed+=("${image} ${platform_id}")
+    # Print the blocking findings; the reports stay in the artifact.
+    docker run --rm \
+      --volume "${security_artifact_dir}:/reports" \
+      "${TRIVY_IMAGE}" convert \
+      --format table \
+      --severity HIGH,CRITICAL \
+      "${raw_report}" || true
+  fi
 done
+
+if test "${#failed[@]}" -gt 0; then
+  printf 'vulnerability gate failed: %s\n' "${failed[@]}" >&2
+  exit 1
+fi
