@@ -141,6 +141,51 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
+@test "Bake group scanner scans every image before failing the gate" {
+  cat >"${BATS_TEST_TMPDIR}/bake-plan.json" <<'EOF'
+{
+  "target": {
+    "runtime": {
+      "tags": ["registry.example/runtime:test"]
+    },
+    "conformance": {
+      "tags": ["registry.example/conformance:test"]
+    }
+  }
+}
+EOF
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if test "$1 $2 $3 $4 $5" = "buildx bake --file docker-bake.hcl --print"; then
+  cat "${BAKE_PLAN}"
+  exit 0
+fi
+printf '%s\n' "$*" >>"${DOCKER_LOG}"
+if [[ " $* " == *" --format sarif "* && "$*" == *"/reports/accelerator-conformance-"* ]]; then
+  exit 1
+fi
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+
+  run env \
+    "PATH=${FAKE_BIN}:${PATH}" \
+    "BAKE_PLAN=${BATS_TEST_TMPDIR}/bake-plan.json" \
+    "DOCKER_LOG=${DOCKER_LOG}" \
+    "HOME=${BATS_TEST_TMPDIR}" \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    TRIVY_IMAGE=trivy:test \
+    scripts/ci/security/scan-bake-group.sh accelerator
+
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"vulnerability gate failed for registry.example/conformance:test"* ]]
+  [[ "${output}" != *"vulnerability gate failed for registry.example/runtime:test"* ]]
+  [ "$(grep -Fc -- 'registry.example/runtime:test' "${DOCKER_LOG}")" -eq 1 ]
+  [ "$(grep -Fc -- 'registry.example/conformance:test' "${DOCKER_LOG}")" -eq 1 ]
+  [ "$(grep -Fc -- '--format table' "${DOCKER_LOG}")" -eq 1 ]
+}
+
 @test "image scanner propagates the vulnerability gate failure" {
   cat >"${FAKE_BIN}/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -165,7 +210,10 @@ EOF
       registry.example/runtime:test candidate linux/amd64,linux/arm64
 
   [ "${status}" -eq 1 ]
-  [ "$(wc -l <"${DOCKER_LOG}")" -eq 2 ]
+  [ "$(wc -l <"${DOCKER_LOG}")" -eq 6 ]
+  [ "$(grep -Fc -- '--format table' "${DOCKER_LOG}")" -eq 2 ]
+  [[ "${output}" == *"vulnerability gate failed: registry.example/runtime:test linux-amd64"* ]]
+  [[ "${output}" == *"vulnerability gate failed: registry.example/runtime:test linux-arm64"* ]]
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
