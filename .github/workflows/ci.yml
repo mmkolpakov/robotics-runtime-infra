@@ -28,7 +28,7 @@ env:
     https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.15.4/robotics_runtime_contracts-0.15.4-py3-none-any.whl#sha256=6a86e8ce96adcdf442b1680a7242282dbb33428458c5a8c7fc07952806971c1c
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
-  TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+  TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
 
 jobs:
   static-analysis:
