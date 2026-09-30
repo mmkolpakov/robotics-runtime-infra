@@ -38,7 +38,7 @@ assert.equal(managers.length, 1, "exactly one foundation manager is required");
 const manager = managers[0];
 assert.equal(manager.customType, "jsonata");
 assert.deepEqual(getMatchingFiles(manager, candidateFiles), [packageFile]);
-const managerName = `custom.${manager.customType}`;
+const managerName = manager.customType;
 const extract = (content) => extractPackageFile(managerName, content, packageFile, manager);
 const fixtureText = await readFile(resolve(root, "test/renovate/stable.repos"), "utf8");
 const fixture = JSON.parse(fixtureText);
@@ -80,8 +80,8 @@ try {
   const formats = [
     ["LF", fixtureText.replaceAll("\r\n", "\n")],
     ["CRLF", fixtureText.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n")],
-    ["reordered JSON", JSON.stringify({ repositories: {
-      "robotics-runtime": { version: originalDigest, release: source.release, url: source.url, type: "git" },
+    ["compact JSON", JSON.stringify({ repositories: {
+      "robotics-runtime": { type: "git", url: source.url, release: source.release, version: originalDigest },
     } })],
     ["identical decoy values", JSON.stringify({
       unrelated: { release: source.release, version: originalDigest }, ...fixture,

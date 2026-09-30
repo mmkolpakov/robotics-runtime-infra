@@ -125,8 +125,7 @@ jobs:
           --volume "${PWD}:/work:ro"
           --workdir /work
           "${RENOVATE_IMAGE}"
-          bash -euc 'node test/renovate/check-pins.mjs
-          "$(dirname "$(dirname "$(readlink -f "$(command -v renovate)")")")"'
+          node test/renovate/check-pins.mjs /usr/local/renovate
       - name: Audit GitHub Actions
         env:
           GH_TOKEN: ${{ github.token }}
