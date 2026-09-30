@@ -22,7 +22,11 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from rclpy.node import Node
-from robotics_inference_conformance import profiled_providers, provider_options
+from robotics_inference_conformance import (
+    observed_rate_hz,
+    profiled_providers,
+    provider_options,
+)
 from sensor_msgs.msg import Image, LaserScan
 
 SERVICE_NAME: Final = "robotics-sensor-inference-probe"
@@ -64,6 +68,7 @@ class SensorInferenceProbe(Node):
         self.received = 0
         self.inferred = 0
         self.latencies_ms: list[float] = []
+        self.completed_ns: list[int] = []
         self.maximum_absolute_error = 0.0
         self.numerical_parity = True
         self.samples: list[np.ndarray] = []
@@ -178,6 +183,7 @@ class SensorInferenceProbe(Node):
         ):
             outputs = self.session.run(None, {self.model_input.name: tensor})
         latency_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
+        completed_ns = time.monotonic_ns()
         if not outputs or not np.isfinite(outputs[0]).all():
             raise RuntimeError("inference returned no finite output")
         reference_outputs = self.reference_session.run(
@@ -196,6 +202,7 @@ class SensorInferenceProbe(Node):
         )
 
         self.inferred += 1
+        self.completed_ns.append(completed_ns)
         self.latencies_ms.append(latency_ms)
         self.inference_counter.add(1, self.attributes)
         self.latency_histogram.record(latency_ms, self.attributes)
@@ -258,7 +265,7 @@ class SensorInferenceProbe(Node):
             "received_frames": self.received,
             "inference_count": self.inferred,
             "duration_sec": duration_sec,
-            "observed_rate_hz": self.inferred / duration_sec,
+            "observed_rate_hz": observed_rate_hz(self.completed_ns),
             "latency_ms": {
                 "p50": percentile(self.latencies_ms, 0.50),
                 "p95": percentile(self.latencies_ms, 0.95),
