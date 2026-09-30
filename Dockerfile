@@ -20,10 +20,10 @@ ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG SENSOR_INFERENCE_BASE=inference-cpu
-ARG UBUNTU_SNAPSHOT=20260908T000000Z
-ARG OPENSSL_VERSION=3.0.13-0ubuntu3.15
+ARG UBUNTU_SNAPSHOT=20260930T000000Z
+ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16
 ARG CA_CERTIFICATES_VERSION=20260601~24.04.1
-ARG LINUX_LIBC_DEV_VERSION=6.8.0-139.139
+ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142
 ARG ROS_SNAPSHOT=2026-06-18
 ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
 
@@ -622,6 +622,7 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -656,7 +657,12 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libssl-dev=${OPENSSL_VERSION}" \
+      "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
+      "openssl=${OPENSSL_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
+      "${OPENSSL_VERSION}" \
     && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
@@ -1175,6 +1181,7 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -1217,7 +1224,12 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libssl-dev=${OPENSSL_VERSION}" \
+      "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
+      "openssl=${OPENSSL_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
+      "${OPENSSL_VERSION}" \
     && uv pip install \
       --system \
       --break-system-packages \

@@ -103,14 +103,14 @@ EOF
   run jq -e '
     def reviewed_headers:
       [
-        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=amd64&distro=ubuntu-24.04"},
-        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-139.139?arch=arm64&distro=ubuntu-24.04"}
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"},
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"}
       ];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 6
-    and (.statements | length == 185)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 130)
+    and .version == 7
+    and (.statements | length == 183)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 128)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -169,17 +169,20 @@ EOF
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
-  run grep -F 'ARG UBUNTU_SNAPSHOT=20260908T000000Z' Dockerfile
+  run grep -F 'ARG UBUNTU_SNAPSHOT=20260930T000000Z' Dockerfile
   [ "${status}" -eq 0 ]
-  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-139.139' Dockerfile
+  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142' Dockerfile
   [ "${status}" -eq 0 ]
   run grep -F \
     'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
     docker/apt/use-package-snapshots
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"linux-libc-dev=${LINUX_LIBC_DEV_VERSION}"' Dockerfile)" -eq 2 ]
-  run grep -F 'default = "20260908T000000Z"' docker-bake.hcl
+  run grep -F 'ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16' Dockerfile
   [ "${status}" -eq 0 ]
-  run grep -F 'default = "6.8.0-139.139"' docker-bake.hcl
+  [ "$(grep -Fc '"libssl3t64=${OPENSSL_VERSION}"' Dockerfile)" -eq 2 ]
+  run grep -F 'default = "20260930T000000Z"' docker-bake.hcl
+  [ "${status}" -eq 0 ]
+  run grep -F 'default = "6.8.0-142.142"' docker-bake.hcl
   [ "${status}" -eq 0 ]
 }
