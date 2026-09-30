@@ -1,0 +1,63 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/go-modules",
+  "author": "mmkolpakov",
+  "timestamp": "2026-09-30T12:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-56864"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/sigstore/cosign/v3@v3.1.3%2Bdirty",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/golang.org/x/mod@v0.38.0"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Review 2026-09-30, Chainguard cosign 3.1.3 image binary (index sha256:e7ef547a42e52b877a9069ee49e2caa6287c30bcb97d27df3ec5d22c0afdbb6f). GO-2026-6180 affects golang.org/x/mod/sumdb (Client.Lookup). Cosign v3.1.3 (source 11926fa5bbbbde47e88fc006b625a17769b743b2) does not import that package: govulncheck v1.8.0 (golang.org/x/vuln) reports it only at module level in source mode, and binary mode finds none of its symbols in the image binary. Sources: https://pkg.go.dev/vuln/GO-2026-6180. This statement applies only to the pinned binary and dependency versions named in products."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-56865"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/sigstore/cosign/v3@v3.1.3%2Bdirty",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/golang.org/x/mod@v0.38.0"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Review 2026-09-30, Chainguard cosign 3.1.3 image binary (index sha256:e7ef547a42e52b877a9069ee49e2caa6287c30bcb97d27df3ec5d22c0afdbb6f). GO-2026-6179 affects golang.org/x/mod/sumdb/tlog (tileHashReader.ReadHashes). Cosign v3.1.3 (source 11926fa5bbbbde47e88fc006b625a17769b743b2) does not import that package: govulncheck v1.8.0 (golang.org/x/vuln) reports it only at module level in source mode, and binary mode finds none of its symbols in the image binary. Sources: https://pkg.go.dev/vuln/GO-2026-6179. This statement applies only to the pinned binary and dependency versions named in products."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-84445"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/rclone/rclone@v1.75.1%2Bdirty",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/google.golang.org/grpc@v1.84.0-dev.0.20260723093437-b6eac429d7b6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Review 2026-09-30, rclone/rclone:1.75.1 image binary (index sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5). GO-2026-6443 (GHSA-2v4p-qf9q-27wj) panics gRPC servers created with xds.NewGRPCServer; the affected symbols are internal/transport http2Server.HandleStreams/operateHeaders and internal/xds/server RouteAndProcess. rclone v1.75.1 (source 687d264b689b8c49a67e2e52a8a5e0caa01c04ce) never calls xds.NewGRPCServer and starts no gRPC server; the evidence sink runs rclone only as an S3 client. govulncheck v1.8.0 (golang.org/x/vuln) in source mode lists GO-2026-6443 only under imported packages without a call path; the binary links the symbols through the grpc xds package. Sources: https://pkg.go.dev/vuln/GO-2026-6443; https://github.com/grpc/grpc-go/security/advisories/GHSA-2v4p-qf9q-27wj. This statement applies only to the pinned binary and dependency versions named in products."
+    }
+  ]
+}

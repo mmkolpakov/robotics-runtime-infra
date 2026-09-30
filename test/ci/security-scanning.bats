@@ -33,6 +33,7 @@ EOF
   [ "${status}" -eq 0 ]
   [ "$(wc -l <"${DOCKER_LOG}")" -eq 4 ]
   [ "$(grep -Fc -- '--vex /work/security/vex/linux-libc-dev.openvex.json' "${DOCKER_LOG}")" -eq 2 ]
+  [ "$(grep -Fc -- '--vex /work/security/vex/go-modules.openvex.json' "${DOCKER_LOG}")" -eq 2 ]
   run grep -F -- '--platform linux/amd64' "${DOCKER_LOG}"
   [ "${status}" -eq 0 ]
   run grep -F -- '--platform linux/arm64' "${DOCKER_LOG}"
@@ -184,6 +185,28 @@ EOF
   [ "$(grep -Fc -- 'registry.example/runtime:test' "${DOCKER_LOG}")" -eq 1 ]
   [ "$(grep -Fc -- 'registry.example/conformance:test' "${DOCKER_LOG}")" -eq 1 ]
   [ "$(grep -Fc -- '--format table' "${DOCKER_LOG}")" -eq 1 ]
+}
+
+@test "Go module OpenVEX statements are scoped to pinned binaries" {
+  run jq -e '
+    .["@context"] == "https://openvex.dev/ns/v0.2.0"
+    and .author == "mmkolpakov"
+    and (.statements | length == 3)
+    and all(
+      .statements[];
+      (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
+      and (.products | length == 1)
+      and (.products[0]["@id"] | test("^pkg:golang/[^@]+@v[0-9][^@]*$"))
+      and (.products[0].subcomponents | length == 1)
+      and (.products[0].subcomponents[0]["@id"] | test("^pkg:golang/[^@]+@v[0-9][^@]*$"))
+      and .status == "not_affected"
+      and (.justification == "vulnerable_code_not_present"
+        or .justification == "vulnerable_code_not_in_execute_path")
+      and (.impact_statement | contains("Sources: https://"))
+      and (.impact_statement | contains("sha256:"))
+    )
+  ' security/vex/go-modules.openvex.json
+  [ "${status}" -eq 0 ]
 }
 
 @test "image scanner propagates the vulnerability gate failure" {
