@@ -61,8 +61,13 @@ RUN printf '%s\n' \
     && useradd --create-home --uid 1000 --gid 1000 robotics \
     && rm -rf /var/lib/apt/lists/*
 
-COPY docker/python/rknn-converter.lock /tmp/python/rknn-converter.lock
+COPY docker/python/rknn-converter.lock \
+  docker/python/rknn-converter.pip-check \
+  docker/python/rknn_onnx_mapping_compat.py \
+  /tmp/python/
 
+# The toolkit caps protobuf and torch below the locked versions (ADR 0007).
+# Accept exactly those findings; any other dependency conflict fails the build.
 RUN --mount=type=cache,id=rknn-converter-uv,target=/root/.cache/uv,sharing=locked \
     uv venv --no-cache --python /usr/local/bin/python3 /opt/venv \
     && uv pip install \
@@ -70,11 +75,21 @@ RUN --mount=type=cache,id=rknn-converter-uv,target=/root/.cache/uv,sharing=locke
       --require-hashes \
       --no-deps \
       --requirement /tmp/python/rknn-converter.lock \
-    && uv pip check --python /opt/venv/bin/python \
+    && { uv pip check --python /opt/venv/bin/python >/tmp/python/pip-check.log 2>&1 \
+      || test "$?" -eq 1; } \
+    && grep '^The package ' /tmp/python/pip-check.log | sort \
+      | diff -u /tmp/python/rknn-converter.pip-check - \
+    && site_packages="$(/opt/venv/bin/python -c \
+      "import sysconfig; print(sysconfig.get_paths()['purelib'])")" \
+    && install -m 0444 /tmp/python/rknn_onnx_mapping_compat.py "${site_packages}/" \
+    && printf 'import rknn_onnx_mapping_compat\n' \
+      > "${site_packages}/rknn_onnx_mapping_compat.pth" \
     && install -d /usr/share/rknn-toolkit2 \
     && uv pip freeze --python /opt/venv/bin/python \
       > /usr/share/rknn-toolkit2/python-packages.txt \
     && /opt/venv/bin/python -B -c "import pkg_resources" \
+    && /opt/venv/bin/python -B -c \
+      "import onnx; assert onnx.mapping.NP_TYPE_TO_TENSOR_TYPE" \
     && python3 -B -c "from pathlib import Path; assert Path('/usr/share/licenses/rknn-toolkit2/LICENSE').stat().st_size > 0" \
     && rm -rf /tmp/python
 
@@ -100,6 +115,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=rknn-source --chown=robotics:robotics \
     rknn-toolkit2/examples/functions/onnx_edit/ \
     /opt/rknn-verification/
+COPY --chmod=0444 probes/rknn_simulator_conformance.py \
+    /opt/rknn-verification/rknn_simulator_conformance.py
 
 USER robotics
 WORKDIR /opt/rknn-verification
@@ -119,6 +136,13 @@ RUN --network=none printf '%s  %s\n' \
     && python3 test.py \
     && test -s concat_block.rknn \
     && test -s concat_block_edited.rknn \
+    && python3 rknn_simulator_conformance.py \
+      concat_block.onnx concat_block_input_0.npy concat_block_input_1.npy \
+      --report /tmp/rknn-simulator-fp16.json \
+    && python3 rknn_simulator_conformance.py \
+      concat_block.onnx concat_block_input_0.npy concat_block_input_1.npy \
+      --quantization-dataset dataset.txt --rtol 0.05 --atol 0.05 \
+      --report /tmp/rknn-simulator-int8.json \
     && sha256sum concat_block.rknn concat_block_edited.rknn \
       > /tmp/converter-output.sha256
 

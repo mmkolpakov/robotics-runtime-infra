@@ -1,0 +1,2 @@
+The package `rknn-toolkit2` requires `protobuf>=4.21.6,<=4.25.4`, but `6.33.6` is installed
+The package `rknn-toolkit2` requires `torch>=1.10.1,<=2.4.0`, but `2.14.0+cpu` is installed

@@ -230,9 +230,10 @@ terms are normative:
 | Apple silicon acceleration | Portable CPU image in a Linux VM only | No macOS-native, Metal, CoreML, or device qualification path | Unsupported |
 
 No accelerated target is qualified by the current revision. The generic
-hardware workflow covers NVIDIA, Intel, AMD, and Jetson; RK3588 uses its own
-workflow. A successful image build or provider import cannot promote a row to
-Qualified.
+hardware workflow covers NVIDIA, Intel, AMD, and Jetson; RK3588 follows the
+device procedure in
+[ADR 0007](docs/decisions/0007-qualify-accelerator-updates-before-device-access.md).
+A successful image build or provider import cannot promote a row to Qualified.
 
 Intel CPU qualification uses
 `config/inference/openvino-cpu-latency.json` by default. It selects the
