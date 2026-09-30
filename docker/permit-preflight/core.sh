@@ -217,7 +217,8 @@ verify_role_with_transparency() (
     fi
     printf '%s\n' "${transparency_verified}" >"${transparency_result}"
   }
-  verify_role_attestation "$@" || exit "$?"
+  # A plain call keeps errexit active inside the role verifier.
+  verify_role_attestation "$@"
   test -s "${transparency_result}" || {
     printf 'role verification did not invoke cosign attestation verification\n' >&2
     exit 65

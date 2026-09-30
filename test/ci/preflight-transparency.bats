@@ -26,6 +26,9 @@ load_role() {
   require_file() { :; }
   assert_single_json_document() { :; }
   statement_subject_digest() { printf '%064d\n' 0; }
+  execution_permit_predicate_type() {
+    printf '%s\n' https://robotics-runtime-contracts.dev/attestations/execution-permit/v1
+  }
   assert_bundle_statement() { return "${BUNDLE_STATUS:-0}"; }
   ci_key_dir=/fixture/keys
   ci_authorization_mode=authorize-offline-test
@@ -118,6 +121,29 @@ verify_role() {
   run verify_role "${BATS_TEST_TMPDIR}/missing.json"
   [ "${status}" -eq 65 ]
   [ ! -e "${BATS_TEST_TMPDIR}/missing.json" ]
+}
+
+@test "role verification stops at the first failed check" {
+  for entrypoint in permit-preflight permit-preflight-ci; do
+    load_role "${entrypoint}"
+    ci_authorization_mode=authorize-logged-test
+    statement_subject_digest() { return 65; }
+    run verify_role "${BATS_TEST_TMPDIR}/${entrypoint}-subject.json"
+    [ "${status}" -eq 65 ]
+    [ ! -e "${COSIGN_ARGV}" ]
+    [ ! -e "${BATS_TEST_TMPDIR}/${entrypoint}-subject.json" ]
+
+    load_role "${entrypoint}"
+    ci_authorization_mode=authorize-logged-test
+    assert_bundle_statement() { touch "${BATS_TEST_TMPDIR}/bundle-checked"; }
+    export COSIGN_STATUS=9
+    run verify_role "${BATS_TEST_TMPDIR}/${entrypoint}-cosign.json"
+    unset COSIGN_STATUS
+    [ "${status}" -eq 65 ]
+    [ ! -e "${BATS_TEST_TMPDIR}/bundle-checked" ]
+    [ ! -e "${BATS_TEST_TMPDIR}/${entrypoint}-cosign.json" ]
+    rm -f "${COSIGN_ARGV}"
+  done
 }
 
 @test "an invalid bundle still fails after a successful cosign invocation" {

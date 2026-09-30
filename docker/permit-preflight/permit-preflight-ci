@@ -21,8 +21,9 @@ verify_offline_attestation() {
   decoded_statement="$4"
   assert_single_json_document "${statement}"
   assert_single_json_document "${bundle}"
-  digest="$(statement_subject_digest "${statement}")"
-  predicate_type="$(execution_permit_predicate_type "${statement}")"
+  # Explicit exits: callers may run this where errexit is ignored.
+  digest="$(statement_subject_digest "${statement}")" || exit 65
+  predicate_type="$(execution_permit_predicate_type "${statement}")" || exit 65
   cosign verify-blob-attestation \
     --bundle "${bundle}" \
     --key "${public_key}" \
@@ -34,7 +35,7 @@ verify_offline_attestation() {
       "${bundle}" >&2
     exit 65
   }
-  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}" || exit 65
 }
 
 verify_logged_attestation() {
@@ -46,8 +47,9 @@ verify_logged_attestation() {
   require_file "${trusted_root}"
   assert_single_json_document "${statement}"
   assert_single_json_document "${bundle}"
-  digest="$(statement_subject_digest "${statement}")"
-  predicate_type="$(execution_permit_predicate_type "${statement}")"
+  # Explicit exits: callers may run this where errexit is ignored.
+  digest="$(statement_subject_digest "${statement}")" || exit 65
+  predicate_type="$(execution_permit_predicate_type "${statement}")" || exit 65
   cosign verify-blob-attestation \
     --bundle "${bundle}" \
     --key "${public_key}" \
@@ -58,7 +60,7 @@ verify_logged_attestation() {
     printf 'logged attestation verification failed: %s\n' "${bundle}" >&2
     exit 65
   }
-  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}" || exit 65
 }
 
 verify_role_attestation() {
