@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -17,6 +18,20 @@ def profiled_providers(profile_path: Path) -> list[str]:
             and event["args"].get("provider")
         }
     )
+
+
+def observed_rate_hz(completed_ns: Sequence[int]) -> float | None:
+    """Return the inference rate between the first and last completion.
+
+    Session creation, discovery and the wait for the first frame are outside
+    this window. Fewer than two completions do not define a rate.
+    """
+    if len(completed_ns) < 2:
+        return None
+    window_ns = completed_ns[-1] - completed_ns[0]
+    if window_ns <= 0:
+        return None
+    return (len(completed_ns) - 1) * 1_000_000_000 / window_ns
 
 
 def provider_options() -> tuple[dict[str, str], str | None]:
