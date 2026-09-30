@@ -46,6 +46,7 @@ trivy=(
   --config /work/trivy.yaml
   --ignorefile /work/.trivyignore
   --vex /work/security/vex/linux-libc-dev.openvex.json
+  --vex /work/security/vex/go-modules.openvex.json
 )
 
 failed=()
