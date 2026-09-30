@@ -110,12 +110,13 @@ setup() {
   action=.github/actions/setup-buildx/action.yml
   run grep -R -F 'tonistiigi/binfmt:latest' .github
   [ "${status}" -eq 1 ]
-  run grep -F \
-    'image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0' \
+  # Versions are tracked by Renovate; the test requires digest pins.
+  run grep -E \
+    '^ +image: docker\.io/tonistiigi/binfmt:[^@[:space:]]+@sha256:[a-f0-9]{64}$' \
     "${action}"
   [ "${status}" -eq 0 ]
-  run grep -F \
-    'image=moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' \
+  run grep -E \
+    '^ +image=moby/buildkit:v[0-9.]+@sha256:[a-f0-9]{64}$' \
     "${action}"
   [ "${status}" -eq 0 ]
   run grep -R -E 'uses: docker/setup-(qemu|buildx)-action@' \
