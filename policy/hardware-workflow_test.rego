@@ -19,6 +19,22 @@ test_protected_manual_workflow_is_allowed if {
 	count(violations) == 0
 }
 
+test_self_repository_action_is_allowed if {
+	candidate := object.union(safe_workflow, {"jobs": {"qualification": {
+		"steps": [{"uses": "$/.github/actions/setup-buildx"}],
+	}}})
+	violations := hardware_workflow.deny with input as candidate
+	count(violations) == 0
+}
+
+test_tag_pinned_action_is_denied if {
+	candidate := object.union(safe_workflow, {"jobs": {"qualification": {
+		"steps": [{"uses": "docker/login-action@v4"}],
+	}}})
+	violations := hardware_workflow.deny with input as candidate
+	count(violations) == 1
+}
+
 test_pull_request_hardware_workflow_is_denied if {
 	candidate := object.union(safe_workflow, {
 		"on": {"pull_request": {}},

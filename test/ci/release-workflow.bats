@@ -50,10 +50,10 @@ setup() {
 }
 
 @test "release workflow gates untagged candidates before promotion" {
-  run grep -F 'uses: ./.github/workflows/ci.yml' \
+  run grep -F 'uses: $/.github/workflows/ci.yml' \
     .github/workflows/release-image.yml
   [ "${status}" -eq 0 ]
-  run grep -F 'uses: ./.github/workflows/foundation-integration.yml' \
+  run grep -F 'uses: $/.github/workflows/foundation-integration.yml' \
     .github/workflows/release-image.yml
   [ "${status}" -eq 0 ]
   run grep -F 'push-by-digest=true' .github/workflows/release-image.yml

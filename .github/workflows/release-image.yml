@@ -47,14 +47,14 @@ jobs:
     needs: verify-source
     permissions:
       contents: read
-    uses: ./.github/workflows/ci.yml
+    uses: $/.github/workflows/ci.yml
 
   foundation-gate:
     needs: verify-source
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/foundation-integration.yml
+    uses: $/.github/workflows/foundation-integration.yml
 
   prepare:
     needs:
@@ -69,7 +69,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-buildx
+      - uses: $/.github/actions/setup-buildx
       - name: Resolve the declarative release plan
         id: plan
         run: scripts/ci/release/prepare-plan.sh
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-buildx
+      - uses: $/.github/actions/setup-buildx
         with:
           qemu: ${{ contains(matrix.platforms, 'linux/arm64') }}
       - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
@@ -239,7 +239,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-buildx
+      - uses: $/.github/actions/setup-buildx
       - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0  # v4.4.0
         with:
           registry: ghcr.io

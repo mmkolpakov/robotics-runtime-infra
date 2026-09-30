@@ -63,7 +63,9 @@ jobs:
       - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43  # 4.0.0
         with:
           bats-version: "1.14.0"
-      - uses: ./tooling/.github/actions/setup-buildx
+      # The action comes from the tooling checkout at the validated immutable
+      # tooling_ref, the same revision as the scripts below.
+      - uses: ./tooling/.github/actions/setup-buildx  # zizmor: ignore[self-repository]
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
           cosign-release: v3.1.3

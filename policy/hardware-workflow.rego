@@ -33,6 +33,7 @@ deny contains message if {
 	uses := object.get(step, "uses", "")
 	uses != ""
 	not startswith(uses, "./")
+	not startswith(uses, "$/")
 	not regex.match("^[^@]+@[a-f0-9]{40}$", uses)
 	message := sprintf("job %q uses an action without an immutable commit SHA", [name])
 }

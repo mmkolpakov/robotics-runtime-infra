@@ -8,3 +8,13 @@ self-hosted-runner:
     - robotics-jetson-thor
     - robotics-nvidia-gpu
     - robotics-rk3588
+
+# actionlint 1.7.12 predates GitHub's self-repository references (uses: $/...,
+# https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/).
+# Only its format errors for such references are ignored; drop this block once
+# a release accepts the syntax.
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      - 'specifying action "\$/[^"]+" in invalid format because ref is missing'
+      - 'reusable workflow call "\$/[^"]+" at "uses" is not following the format'
