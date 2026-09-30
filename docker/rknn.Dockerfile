@@ -100,6 +100,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=rknn-source --chown=robotics:robotics \
     rknn-toolkit2/examples/functions/onnx_edit/ \
     /opt/rknn-verification/
+COPY --chmod=0444 docker/rknn/simulator-parity.py /opt/rknn-verification/simulator-parity.py
 
 USER robotics
 WORKDIR /opt/rknn-verification
@@ -120,7 +121,8 @@ RUN --network=none printf '%s  %s\n' \
     && test -s concat_block.rknn \
     && test -s concat_block_edited.rknn \
     && sha256sum concat_block.rknn concat_block_edited.rknn \
-      > /tmp/converter-output.sha256
+      > /tmp/converter-output.sha256 \
+    && python3 -B simulator-parity.py
 
 ENTRYPOINT ["sha256sum"]
 CMD ["concat_block.rknn", "concat_block_edited.rknn"]

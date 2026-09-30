@@ -31,6 +31,8 @@
 !trust/qualification.trusted-root.json
 !docker/runtime/
 !docker/runtime/**
+!docker/rknn/
+!docker/rknn/**
 !test/
 !test/provider-conformance/
 !test/provider-conformance/**

@@ -6,6 +6,11 @@ revision="$(git ls-remote \
   refs/tags/v2.3.2 | awk '{print $1}')"
 test "${revision}" = \
   42aa1d426c0a9e0869b6374edba009f7208a1926
+# RKNN Toolkit2 2.3.2 reads onnx.mapping, which ONNX 1.19 removed.
+if ! grep -Eq '^onnx==1\.(1[0-8]|[0-9])\.' docker/python/rknn-converter.lock; then
+  echo "RKNN converter lock must keep ONNX below 1.19" >&2
+  exit 1
+fi
 if grep -Eq '^(nvidia-|triton==)' \
   docker/python/rknn-converter.lock; then
   echo "RKNN converter lock contains a prohibited GPU package" >&2
