@@ -3,7 +3,7 @@ services:
   runtime-manifest:
     environment:
       ROBOTICS_CLOCK_PROTOCOL: playback_clock
-      ROBOTICS_DATA_SOURCE: mcap_playback
+      ROBOTICS_DATA_SOURCE: recording_playback
       ROBOTICS_PLANT_BACKEND: recorded_data
       ROBOTICS_TIME_MODE: playback_clocked
 

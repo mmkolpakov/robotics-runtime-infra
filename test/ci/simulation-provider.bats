@@ -11,6 +11,7 @@ setup() {
   export PROVIDER_TEST_WORLD="/opt/robotics_ws/install/worlds/empty.sdf"
   export PROVIDER_TEST_MODE=success ROBOTICS_SIMULATOR_SERVICE_NAMESPACE=/simulator
   export PROVIDER_TEST_IMAGE_ID="sha256:$(printf '%064d' 9)"
+  export ROBOTICS_SIMULATION_LOCAL_IMAGE_ID="${PROVIDER_TEST_IMAGE_ID}"
   mkdir "${BATS_TEST_TMPDIR}/run"
   cp "${REPOSITORY_ROOT}/test/qualification/fixtures/acceptance-scenario.yaml" \
     "${BATS_TEST_TMPDIR}/run/scenario.yaml"
@@ -114,6 +115,31 @@ collect() {
   [[ "${output}" == *'immutable local image ID'* ]]
   [ ! -f "${PROVIDER_TEST_ROOT}/probed" ]
   [ ! -f "${DESTINATION}/bindings.json" ]
+}
+
+@test "simulator collector rejects a missing or invalid expected local image ID before probing" {
+  local expected
+  for expected in '' local/simulation:dev; do
+    export ROBOTICS_SIMULATION_LOCAL_IMAGE_ID="${expected}"
+    run collect
+    [ "${status}" -eq 65 ]
+    [[ "${output}" == *'expected simulator local image ID is missing or invalid'* ]]
+    [ ! -d "${DESTINATION}" ]
+    [ ! -f "${PROVIDER_TEST_ROOT}/probed" ]
+  done
+}
+
+@test "simulator collector rejects a different valid local image ID before probing" {
+  export ROBOTICS_SIMULATION_LOCAL_IMAGE_ID
+  ROBOTICS_SIMULATION_LOCAL_IMAGE_ID="sha256:$(printf '%064d' 8)"
+  run collect
+  [ "${status}" -eq 65 ]
+  [[ "${output}" == *'container local image ID does not match the selected image'* ]]
+  [ ! -f "${PROVIDER_TEST_ROOT}/probed" ]
+  [ ! -f "${DESTINATION}/world.sdf" ]
+  [ ! -f "${DESTINATION}/configuration.json" ]
+  [ ! -f "${DESTINATION}/bindings.json" ]
+  [ ! -f "${DESTINATION}/conformance.json" ]
 }
 
 @test "simulation provider collector preserves a probe failure without bindings" {

@@ -66,6 +66,7 @@ assert_previous_output_preserved() {
     .ros.domain_id == 42 and .ros.rmw_version == "8.4.1-fixture-package" and
     .components.contracts_revision == .components.harness_revision and
     .provider_bindings[0].target_id == "simulation-primary" and
+    .clock == {basis: "ros_time", sync_protocol: "sim_clock", offset_ms: 0, drift_ppm: 0} and
     (.data_plane.middleware_configuration_sha256 | length) == 64 and
     (has("oci_image") or has("gazebo") or has("host") | not)' "${OUTPUT}"
   [ "${status}" -eq 0 ]
@@ -101,4 +102,44 @@ assert_previous_output_preserved() {
   run bash "${EMITTER}" "${OUTPUT}"
   [ "${status}" -eq 42 ]
   assert_previous_output_preserved
+}
+
+@test "stock simulation rejects clock declarations that contradict its ROS time" {
+  local time_mode basis
+  for time_mode in simulation_realtime simulation_stepped; do
+    for basis in system_time ptp_time; do
+      printf 'previous\n' >"${OUTPUT}"
+      run env ROBOTICS_TIME_MODE="${time_mode}" ROBOTICS_CLOCK_BASIS="${basis}" \
+        bash "${EMITTER}" "${OUTPUT}"
+      assert_previous_output_preserved
+      [[ "${output}" == *'simulation requires ros_time with sim_clock'* ]]
+    done
+    printf 'previous\n' >"${OUTPUT}"
+    run env ROBOTICS_TIME_MODE="${time_mode}" ROBOTICS_CLOCK_PROTOCOL=none \
+      bash "${EMITTER}" "${OUTPUT}"
+    assert_previous_output_preserved
+    [[ "${output}" == *'simulation requires ros_time with sim_clock'* ]]
+  done
+}
+
+@test "recorded playback retains its distinct clock declaration" {
+  jq '.[0].provider.kind = "recording_source"' \
+    "${ROBOTICS_PROVIDER_BINDINGS_FILE}" >"${BATS_TEST_TMPDIR}/recording-source.json"
+  export ROBOTICS_PROVIDER_BINDINGS_FILE="${BATS_TEST_TMPDIR}/recording-source.json"
+  local -a playback_environment
+  run "${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}" \
+    - "${REPOSITORY_ROOT}/compose.playback.yaml" <<'PY'
+import sys
+from robotics_runtime_contracts import load_mapping
+values = load_mapping(sys.argv[1])["services"]["runtime-manifest"]["environment"]
+for name, value in values.items():
+    print(f"{name}={value}")
+PY
+  [ "${status}" -eq 0 ]
+  mapfile -t playback_environment <<<"${output}"
+  run env "${playback_environment[@]}" bash "${EMITTER}" "${OUTPUT}"
+  [ "${status}" -eq 0 ]
+  run jq -e '.execution.time_mode == "playback_clocked" and
+    .clock.sync_protocol == "playback_clock"' "${OUTPUT}"
+  [ "${status}" -eq 0 ]
 }

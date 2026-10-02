@@ -53,10 +53,15 @@ jobs:
             --all-packages --extra mcap --no-default-groups --no-editable
           contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
           echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
+          echo "ROBOTICS_FOUNDATION_PYTHON=${PWD}/dependencies/robotics-runtime/.venv/bin/python" >> "$GITHUB_ENV"
       - name: Test simulation provider evidence
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
           -s test/ci -p test_simulation_provider.py -v
+      - name: Test simulation control state and clock boundaries
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_simulation_control.py -v
       - name: Test declared consumer topic configuration
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover

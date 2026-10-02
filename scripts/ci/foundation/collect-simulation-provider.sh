@@ -18,12 +18,23 @@ namespace="${ROBOTICS_SIMULATOR_SERVICE_NAMESPACE:-/simulator}"
   printf 'invalid simulator service namespace: %s\n' "${namespace}" >&2
   exit 64
 }
+# Compare Docker's opaque local ID with the selected image's local ID, not the
+# execution subject digest (which may be a registry manifest or another runtime).
+expected_image_id="${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID:-}"
+[[ "${expected_image_id}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+  printf 'expected simulator local image ID is missing or invalid\n' >&2
+  exit 65
+}
 # The retained directory is new for this invocation. A failed probe cannot leave
 # a previously successful binding for the caller to reuse.
 mkdir "${output}"
 container_image_id="$(docker inspect --format '{{.Image}}' "${container}")"
 [[ "${container_image_id}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
   printf 'simulator container did not report an immutable local image ID\n' >&2
+  exit 65
+}
+[[ "${container_image_id}" == "${expected_image_id}" ]] || {
+  printf 'simulator container local image ID does not match the selected image\n' >&2
   exit 65
 }
 world_parameter="$(

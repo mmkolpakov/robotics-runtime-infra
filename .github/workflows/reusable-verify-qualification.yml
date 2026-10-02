@@ -98,6 +98,6 @@ jobs:
           contracts_dir="${GITHUB_WORKSPACE}/tooling/dependencies/robotics-runtime"
           export ROBOTICS_CONTRACTS_CLI="${contracts_dir}/.venv/bin/robotics-contracts"
           "${GITHUB_WORKSPACE}/tooling/scripts/qualification/verify-bundle" \
+            "${qualification_arguments[@]}" \
             --bundle "${BUNDLE}" \
-            "${verification_arguments[@]}" \
-            "${qualification_arguments[@]}"
+            "${verification_arguments[@]}"

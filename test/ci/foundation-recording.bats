@@ -75,7 +75,7 @@ prepare_orchestration_fixture() {
   cat >"${scripts}/lib.sh" <<'SH'
 cosign() { :; }
 lscpu() { printf '{}\n'; }
-ci_image_identity() { printf '{"digest":"fixture","reference":"fixture"}\n'; }
+ci_image_identity() { printf '{"digest":"fixture","reference":"fixture","local_image_id":"fixture"}\n'; }
 ci_require_policy_allows() {
   [[ "$1" == policy/scenario.rego && "$2" == scenario ]] || return 65
   cp -- "$3" "${FOUNDATION_SCENARIO_POLICY_INPUT}"
