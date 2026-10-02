@@ -68,17 +68,6 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/^docker-bake\\.hcl$/"
-      ],
-      "matchStrings": [
-        "variable \"COSIGN_IMAGE\" \\{\\s+default = \"(?<depName>cgr\\.dev/chainguard/cosign):(?<currentValue>latest)@(?<currentDigest>sha256:[a-f0-9]{64})\""
-      ],
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    },
-    {
-      "customType": "regex",
       "description": "Track digest-pinned tool images in workflow environments and local actions",
       "managerFilePatterns": [
         "/^\\.github/workflows/[^/]+\\.ya?ml$/",
