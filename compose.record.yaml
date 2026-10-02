@@ -21,7 +21,7 @@ x-recorder: &recorder
       source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
       target: /run/bags
     - type: bind
-      source: ./config/recording
+      source: "${ROBOTICS_RECORDING_CONFIG_DIR:-./config/recording}"
       target: /etc/robotics/recording
       read_only: true
   healthcheck:
@@ -44,6 +44,20 @@ services:
     <<: *recorder
     profiles: [record]
     command:
+      - bash
+      - -c
+      - |
+        set -eu
+        # Capture metadata is stamped by the recorder process, before native exec.
+        # Dataset governance and clock policy are explicit caller declarations.
+        exec "$$@" --custom-data \
+          "captured_at=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          "run_id=${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}" \
+          "retention_class=${ROBOTICS_RETENTION_CLASS:-pull-request-7d}" \
+          "dataset_license=${ROBOTICS_CAPTURE_LICENSE:-}" \
+          "data_classification=${ROBOTICS_CAPTURE_CLASSIFICATION:-}" \
+          "capture_clock_policy=${ROBOTICS_CAPTURE_CLOCK_POLICY:-}"
+      - recorder
       - ros2
       - bag
       - record
@@ -65,9 +79,6 @@ services:
       - "${ROBOTICS_MAX_CACHE_SIZE:-67108864}"
       - --use-sim-time
       - --disable-keyboard-controls
-      - --custom-data
-      - "run_id=${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
-      - "retention_class=${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
 
   recorder-snapshot:
     <<: *recorder

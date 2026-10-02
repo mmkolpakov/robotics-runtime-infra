@@ -212,6 +212,6 @@ setup() {
   done
   run grep -F 'mapfile -t qualification_inputs <qualification-arguments.txt' "${KEYLESS_SCRIPT}"
   [ "${status}" -eq 0 ]
-  run grep -F 'path: artifacts/qualification/' "${WORKFLOW}"
+  run grep -F "'artifacts/qualification/'" "${WORKFLOW}"
   [ "${status}" -eq 0 ]
 }

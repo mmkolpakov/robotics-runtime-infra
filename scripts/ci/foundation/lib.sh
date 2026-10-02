@@ -262,3 +262,36 @@ foundation_load_artifact_arguments() {
     FOUNDATION_ARTIFACT_ARGUMENTS+=("${option}" "${header}=${path}")
   done <"${arguments_file}"
 }
+
+
+# Invoke only after successful native bundle verification on these same subjects.
+foundation_explain_qualification() (
+  local package="$1" output="$2" desired="$3"
+  shift 3
+  local value index
+  local -a inputs scenarios=() runtimes=() datasets=() extensions=() arguments
+  cd "${package}" || return "$?"
+  mapfile -t inputs <qualification-arguments.txt
+  ((${#inputs[@]} % 2 == 0)) || return 65
+  for ((index=0; index<${#inputs[@]}; index+=2)); do
+    value="${inputs[index+1]}"
+    case "${inputs[index]}" in
+      --extension-schema) extensions+=(--extension-schema "${value}") ;;
+      --artifact)
+        case "${value%%=*}" in
+          scenario:scenario.json) scenarios+=("${value#*=}") ;;
+          runtime_manifest:runtime-manifests/primary.json) runtimes+=("${value#*=}") ;;
+          dataset_manifest:*) datasets+=("${value#*=}") ;;
+        esac
+        ;;
+      *) return 65 ;;
+    esac
+  done
+  ((${#scenarios[@]} == 1 && ${#runtimes[@]} == 1 && ${#datasets[@]} <= 1)) || return 65
+  arguments=(explain --scenario "${scenarios[0]}" --runtime "${runtimes[0]}" "${extensions[@]}")
+  if ((${#datasets[@]})); then
+    arguments+=(--dataset "${datasets[0]}")
+  fi
+  "$@" "${arguments[@]}" >"${output}" || return "$?"
+  jq -e --arg desired "${desired}" '.execution.data_source == $desired' "${output}" >/dev/null
+)

@@ -45,6 +45,7 @@ mkdir -p \
   "${run_dir}/configuration" \
   "${run_dir}/evidence/recordings" \
   "${run_dir}/results" \
+  "${run_dir}/logs" \
   "${artifact_dir}"
 cp "${scenario_source}" "${run_dir}/scenario.yaml"
 consumer_root="${ROBOTICS_FOUNDATION_CONSUMER_ROOT:-${root}}"
@@ -61,6 +62,32 @@ foundation_load_artifact_arguments "${consumer_root}" \
 foundation_require_scenario_policy "${foundation_bin}/python" \
   "${run_dir}/scenario.yaml" "runs/${project}/scenario-policy-input.json"
 cp "${run_dir}/scenario-policy-input.json" "${artifact_dir}/"
+# Use the public parser for YAML; this also rejects duplicate scenario keys.
+data_source="$("${foundation_bin}/python" - "${run_dir}/scenario.yaml" <<'PY'
+import sys
+from robotics_runtime_contracts import load_mapping
+print(load_mapping(sys.argv[1]).get("execution", {}).get("data_source", "simulator"))
+PY
+)"
+time_authority=sim_clock
+time_source=gazebo-clock
+case "${data_source}" in
+  simulator) ;;
+  recording_playback)
+    [[ "${observer_mode}" == embedded ]] || {
+      printf 'stock playback requires the embedded live observer\n' >&2; exit 64;
+    }
+    playback_inputs="${ROBOTICS_FOUNDATION_PLAYBACK_INPUTS:?prepared playback inputs are required}"
+    cp -a -- "${playback_inputs}/source" "${run_dir}/source"
+    cp -- "${playback_inputs}/dataset-manifest.json" "${run_dir}/dataset-manifest.json"
+    cp -- "${playback_inputs}/playback-inputs.json" "${run_dir}/configuration/playback-inputs.json"
+    cp -- "${root}/config/qualification/recorded-playback.json" "${run_dir}/profile.json"
+    foundation_validate_document "${foundation_bin}/python" "${run_dir}/dataset-manifest.json"
+    time_authority=playback_clock
+    time_source=rosbag2-player-clock
+    ;;
+  *) printf 'unsupported foundation data source: %s\n' "${data_source}" >&2; exit 64 ;;
+esac
 lscpu --json >"${run_dir}/configuration/host-topology.json"
 "${foundation_bin}/python" -c '
 import json
@@ -76,8 +103,8 @@ ROBOTICS_RUN_ID="$(
     --scenario "${run_dir}/scenario.yaml" \
     --output "${run_dir}/acceptance-run.json" \
     --domain primary=observer \
-    --time-authority sim_clock \
-    --time-source gazebo-clock
+    --time-authority "${time_authority}" \
+    --time-source "${time_source}"
 )"
 export ROBOTICS_DOMAIN_ID=primary
 foundation_validate_document \
@@ -86,6 +113,11 @@ foundation_validate_document \
 
 export ROBOTICS_RUN_DIR="${run_dir}"
 export ROBOTICS_BAG_DIR="${run_dir}/bags"
+# The recorder executes the retained capture configuration, not mutable defaults.
+mkdir -p "${run_dir}/configuration/capture"
+cp -- "${root}/config/recording/qos-overrides.yaml" \
+  "${root}/config/recording/mcap-writer.yaml" "${run_dir}/configuration/capture/"
+export ROBOTICS_RECORDING_CONFIG_DIR="${run_dir}/configuration/capture"
 export ROBOTICS_EVIDENCE_DIR="${run_dir}/evidence"
 export ROBOTICS_HOST_TOPOLOGY_CONFIG=/run/robotics/configuration/host-topology.json
 export ROBOTICS_RUNTIME_RESOURCES_CONFIG=/run/robotics/configuration/runtime-resources.json
@@ -104,6 +136,17 @@ topic_configuration="$(
 export ROBOTICS_METRICS_TOPIC ROBOTICS_RECORD_REGEX
 ROBOTICS_METRICS_TOPIC="$(jq -er '.metrics_topic' <<<"${topic_configuration}")"
 ROBOTICS_RECORD_REGEX="$(jq -er '.record_regex' <<<"${topic_configuration}")"
+if [[ "${data_source}" == recording_playback ]]; then
+  export ROBOTICS_DATASET_DIR="${run_dir}/source"
+  export ROBOTICS_PLAYBACK_BAG=/datasets/bag
+  export ROBOTICS_PLAYBACK_CONFIG_DIR="${run_dir}/source/qos"
+  export ROBOTICS_PLAYBACK_READINESS_TOPIC="${ROBOTICS_METRICS_TOPIC}"
+  export ROBOTICS_TIME_SOURCE_ID="${time_source}"
+  export ROBOTICS_PLAYBACK_RATE ROBOTICS_PLAYBACK_CLOCK_HZ ROBOTICS_PLAYBACK_START_OFFSET
+  ROBOTICS_PLAYBACK_RATE="$(jq -er '.rate' "${run_dir}/configuration/playback-inputs.json")"
+  ROBOTICS_PLAYBACK_CLOCK_HZ="$(jq -er '.clock_hz' "${run_dir}/configuration/playback-inputs.json")"
+  ROBOTICS_PLAYBACK_START_OFFSET="$(jq -er '.start_offset_sec' "${run_dir}/configuration/playback-inputs.json")"
+fi
 export ROBOTICS_SIMULATION_OCI_DIGEST
 export ROBOTICS_SIMULATION_OCI_REFERENCE
 export ROBOTICS_SIMULATION_LOCAL_IMAGE_ID
@@ -140,6 +183,13 @@ foundation_files=(
   compose.evidence.yaml
   compose.observability.yaml
 )
+if [[ "${data_source}" == recording_playback ]]; then
+  foundation_files=(compose.yaml compose.foundation.yaml compose.record.yaml
+    compose.evidence.yaml compose.observability.yaml compose.playback.yaml
+    compose.foundation-playback.yaml)
+  profiles=(--profile playback --profile test --profile record --profile acceptance
+    --profile evidence --profile observability)
+fi
 if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
   foundation_files+=(compose.released.yaml)
 fi
@@ -321,27 +371,108 @@ cleanup() {
 }
 trap cleanup EXIT
 
+collect_playback_provider() {
+  local gate probe path version
+  mkdir -p "${artifact_dir}/provider"
+  cp -- "${run_dir}/resolved-compose.json" "${artifact_dir}/provider/compose.json"
+  cp -- "${run_dir}/foundation-compose.json" "${artifact_dir}/provider/compose-original.json"
+  printf '%s\n' "${simulation_identity}" | tee "${artifact_dir}/provider/playback-image.json" \
+    >"${artifact_dir}/provider/probe-image.json"
+  docker run --rm --pull never "${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID}" \
+    ros2 pkg xml rosbag2_transport --tag version \
+    >"${artifact_dir}/provider/rosbag2-version.txt"
+  version="$(cat "${artifact_dir}/provider/rosbag2-version.txt")"
+  for path in compose.json compose-original.json playback-image.json probe-image.json; do
+    sudo install -o 1000 -g 1000 -m 0644 "${artifact_dir}/provider/${path}" "${run_dir}/${path}"
+  done
+  sudo install -o 1000 -g 1000 -m 0644 "${artifact_dir}/provider/rosbag2-version.txt" \
+    "${run_dir}/configuration/rosbag2-version.txt"
+  while IFS= read -r -d '' path; do
+    jq -cn --arg path "${path#"$run_dir/"}" \
+      --arg sha256 "$(sha256sum "${path}" | cut -d' ' -f1)" \
+      --argjson size "$(stat -c '%s' "${path}")" \
+      '{path: $path, sha256: $sha256, size_bytes: $size}'
+  done < <(find "${run_dir}/source" -type f -print0 | sort -z) \
+    >"${artifact_dir}/provider/sources.jsonl"
+  jq -n --arg version "${version}" --arg image "${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID}" \
+    --arg topic "${ROBOTICS_METRICS_TOPIC}" --slurpfile model "${run_dir}/compose.json" \
+    --slurpfile sources "${artifact_dir}/provider/sources.jsonl" \
+    '{version: $version, topic: $topic, message_type: "std_msgs/msg/UInt64",
+      expected_playback_image_id: $image, expected_probe_image_id: $image,
+      playback_command: $model[0].services.playback.command,
+      gate_command: $model[0].services["playback-gate"].command,
+      probe_command: $model[0].services["playback-probe"].command, sources: $sources}' \
+    >"${artifact_dir}/provider/configuration.json"
+  sudo install -o 1000 -g 1000 -m 0644 "${artifact_dir}/provider/configuration.json" \
+    "${run_dir}/configuration/provider.json"
+  "${compose[@]}" --profile observability up --detach --no-build runtime-metrics
+  "${compose[@]}" --profile playback --profile test up --detach --no-build \
+    playback-probe playback-gate
+  "${compose[@]}" --profile playback --profile test wait playback-gate playback-probe
+  gate="$("${compose[@]}" ps --all --quiet playback-gate)"
+  probe="$("${compose[@]}" ps --all --quiet playback-probe)"
+  local gate_logs=0 probe_logs=0
+  docker logs "${gate}" >"${artifact_dir}/provider/gate.log" 2>&1 || gate_logs=$?
+  docker logs "${probe}" >"${artifact_dir}/provider/probe.log" 2>&1 || probe_logs=$?
+  jq -n --argjson gate "$(docker inspect --format '{{.State.ExitCode}}' "${gate}")" \
+    --argjson probe "$(docker inspect --format '{{.State.ExitCode}}' "${probe}")" \
+    --argjson gate_logs "${gate_logs}" --argjson probe_logs "${probe_logs}" \
+    --arg playback_image "$(docker inspect --format '{{.Image}}' "${simulation_container}")" \
+    --arg gate_image "$(docker inspect --format '{{.Image}}' "${gate}")" \
+    --arg probe_image "$(docker inspect --format '{{.Image}}' "${probe}")" \
+    --arg log_sha256 "$(sha256sum "${artifact_dir}/provider/probe.log" | cut -d' ' -f1)" \
+    '{gate_exit_code: $gate, probe_exit_code: $probe, gate_logs_exit_code: $gate_logs,
+      probe_logs_exit_code: $probe_logs, playback_image_id: $playback_image,
+      gate_image_id: $gate_image, probe_image_id: $probe_image, probe_log_sha256: $log_sha256}' \
+    >"${artifact_dir}/provider/observation.json"
+  sudo install -o 1000 -g 1000 -m 0644 "${artifact_dir}/provider/observation.json" \
+    "${run_dir}/observation.json"
+  sudo install -o 1000 -g 1000 -m 0644 "${artifact_dir}/provider/gate.log" "${run_dir}/logs/playback-gate.log"
+  sudo install -o 1000 -g 1000 -m 0644 "${artifact_dir}/provider/probe.log" "${run_dir}/logs/playback-probe.log"
+  "${compose[@]}" --profile acceptance run --rm --no-deps --pull never \
+    --volume "${root}/scripts/ci/integration/create-playback-provider.py:/tmp/create-playback-provider.py:ro" \
+    runtime-manifest /opt/contracts/bin/python /tmp/create-playback-provider.py \
+    --run-dir /run/robotics --host-run-dir "${run_dir}" --run-id "${ROBOTICS_RUN_ID}" \
+    --subject-digest "${ROBOTICS_SIMULATION_OCI_DIGEST}" --output /run/robotics/conformance-result.json \
+    >"${artifact_dir}/provider/bindings.json"
+  cp -- "${run_dir}/profile.json" "${artifact_dir}/provider/profile.json"
+  cp -- "${run_dir}/conformance-result.json" "${artifact_dir}/provider/conformance.json"
+}
+
 sudo chown -R 1000:1000 "${run_dir}"
 sudo chown -R 10001:10001 "${run_dir}/evidence"
-"${compose[@]}" --profile stepped --profile record --profile observability \
-  up --detach --no-build --wait --wait-timeout 120 \
-  simulation recorder otel-collector \
-  "${extra_services[@]}"
+if [[ "${data_source}" == recording_playback ]]; then
+  "${compose[@]}" --profile playback --profile record --profile observability \
+    up --detach --no-build --wait --wait-timeout 120 playback recorder otel-collector \
+    "${extra_services[@]}"
+else
+  "${compose[@]}" --profile stepped --profile record --profile observability \
+    up --detach --no-build --wait --wait-timeout 120 simulation recorder otel-collector \
+    "${extra_services[@]}"
+fi
 collector_health_address="$("${compose[@]}" port otel-collector 13133)"
 curl --fail --silent --show-error \
   --retry 10 --retry-connrefused --retry-delay 1 \
   "http://${collector_health_address}/"
-simulation_container="$("${compose[@]}" ps -q simulation)"
-test -n "${simulation_container}"
-bash "${script_dir}/collect-simulation-provider.sh" \
-  "${simulation_container}" "${run_dir}" "${artifact_dir}/provider" \
-  "${ROBOTICS_SIMULATION_OCI_DIGEST}"
+if [[ "${data_source}" == recording_playback ]]; then
+  simulation_container="$("${compose[@]}" ps -q playback)"
+  test -n "${simulation_container}"
+  collect_playback_provider
+else
+  simulation_container="$("${compose[@]}" ps -q simulation)"
+  test -n "${simulation_container}"
+  bash "${script_dir}/collect-simulation-provider.sh" \
+    "${simulation_container}" "${run_dir}" "${artifact_dir}/provider" \
+    "${ROBOTICS_SIMULATION_OCI_DIGEST}"
+fi
 sudo install -o 1000 -g 1000 -m 0644 \
   "${artifact_dir}/provider/bindings.json" "${run_dir}/provider-bindings.json"
 # The conformance probe controls pause/step/resume itself. Start the periodic
 # stepper only after the probe has finished, before the observation window.
-"${compose[@]}" --profile stepped \
-  up --detach --no-build --wait --wait-timeout 120 simulation-stepper
+if [[ "${data_source}" == simulator ]]; then
+  "${compose[@]}" --profile stepped \
+    up --detach --no-build --wait --wait-timeout 120 simulation-stepper
+fi
 runtime_resources="${artifact_dir}/runtime-resources.json"
 docker inspect "${simulation_container}" | jq '.[0].HostConfig | {
   NanoCpus,
@@ -368,9 +499,10 @@ jq -e --arg digest "${fastdds_profile_sha256}" \
    ([.configuration_artifacts[].kind] | sort) ==
      ["host_topology", "runtime_resources"]' \
   "${run_dir}/runtime-manifest.json" >/dev/null
-"${compose[@]}" --profile acceptance --profile observability \
-  up --detach --no-build --wait --wait-timeout 120 \
-  runtime-probe-publisher runtime-metrics
+if [[ "${data_source}" == simulator ]]; then
+  "${compose[@]}" --profile acceptance --profile observability \
+    up --detach --no-build --wait --wait-timeout 120 runtime-probe-publisher runtime-metrics
+fi
 
 observer_compose=("${compose[@]}" --profile acceptance)
 observer_service=acceptance-observer
@@ -416,6 +548,11 @@ observer="$(
     --name "${project}-observer" --no-deps "${observer_service}"
 )"
 while [[ ! -f "${measurement_complete}" ]]; do
+  if [[ "${data_source}" == recording_playback &&
+    "$(docker inspect --format '{{.State.Running}}' "${simulation_container}")" != true ]]; then
+    printf 'recorded playback ended before the live measurement completed\n' >&2
+    exit 70
+  fi
   if [[ "$(docker inspect --format '{{.State.Running}}' "${observer}")" != true ]]; then
     observer_status="$(docker wait "${observer}")"
     printf 'acceptance observer exited before completing measurement: %s\n' \
@@ -424,8 +561,15 @@ while [[ ! -f "${measurement_complete}" ]]; do
   fi
   sleep 1
 done
-"${compose[@]}" --profile acceptance --profile observability stop \
-  runtime-metrics runtime-probe-publisher
+if [[ "${data_source}" == recording_playback ]]; then
+  [[ "$(docker inspect --format '{{.State.Running}}' "${simulation_container}")" == true ]] || {
+    printf 'recorded playback ended before the live completion proof\n' >&2; exit 70;
+  }
+  "${compose[@]}" --profile observability stop runtime-metrics
+  "${compose[@]}" --profile playback stop playback
+else
+  "${compose[@]}" --profile acceptance --profile observability stop runtime-metrics runtime-probe-publisher
+fi
 sleep 2
 "${compose[@]}" --profile observability stop otel-collector
 test -s "${run_dir}/evidence/metrics.otlp.jsonl"
@@ -491,14 +635,63 @@ qualification_inputs=(
   --evidence "other_evidence:fastdds-profile.xml=${fastdds_profile}"
   --evidence "other_evidence:host-topology.json=${run_dir}/configuration/host-topology.json"
   --evidence "other_evidence:runtime-resources.json=${run_dir}/configuration/runtime-resources.json"
+  --artifact "other_evidence:capture/qos-overrides.yaml=${run_dir}/configuration/capture/qos-overrides.yaml"
+  --artifact "other_evidence:capture/mcap-writer.yaml=${run_dir}/configuration/capture/mcap-writer.yaml"
   --artifact "qualification_profile:providers/profile.json=${artifact_dir}/provider/profile.json"
   --artifact "provider_conformance:providers/conformance.json=${artifact_dir}/provider/conformance.json"
   --artifact "other_evidence:providers/configuration.json=${artifact_dir}/provider/configuration.json"
   --artifact "other_evidence:providers/observation.json=${artifact_dir}/provider/observation.json"
-  --artifact "other_evidence:providers/world.sdf=${artifact_dir}/provider/world.sdf"
   --artifact "other_evidence:logs/foundation.log=${log_dir}/foundation.log"
   --artifact "other_evidence:logs/observer.log=${log_dir}/observer.log"
 )
+while IFS= read -r -d '' path; do
+  relative="${path#"$run_dir/bags/"}"
+  qualification_inputs+=(--artifact "other_evidence:capture/bags/${relative}=${path}")
+done < <(find "${run_dir}/bags" -type f -name metadata.yaml -print0 | sort -z)
+append_playback_raw() {
+  local kind="$1" subject="$2" path="$3" digest value existing_kind existing_path index
+  digest="$(sha256sum "${path}" | cut -d' ' -f1)"
+  # Native referenced raw links require one retained SHA/size match. Reuse
+  # already retained bytes, while preserving every distinct source input.
+  for ((index=0; index<${#qualification_inputs[@]}-1; index++)); do
+    case "${qualification_inputs[index]}" in --artifact|--evidence) ;; *) continue ;; esac
+    value="${qualification_inputs[index+1]}"
+    existing_kind="${value%%:*}"
+    case "${existing_kind}" in recording|metrics|junit|other_evidence) ;; *) continue ;; esac
+    [[ "${kind}" != recording || "${existing_kind}" == recording ]] || continue
+    existing_path="${value#*=}"
+    if [[ "$(sha256sum "${existing_path}" | cut -d' ' -f1)" == "${digest}" &&
+      "$(stat -c '%s' "${existing_path}")" == "$(stat -c '%s' "${path}")" ]]; then
+      return 0
+    fi
+  done
+  qualification_inputs+=(--artifact "${kind}:${subject}=${path}")
+}
+if [[ "${data_source}" == simulator ]]; then
+  qualification_inputs+=(--artifact "other_evidence:providers/world.sdf=${artifact_dir}/provider/world.sdf")
+else
+  input_digest="$(jq -er '.artifact.sha256' "${run_dir}/dataset-manifest.json")"
+  for path in "${mcap_files[@]}"; do
+    [[ "$(sha256sum "${path}" | cut -d' ' -f1)" != "${input_digest}" ]] || {
+      printf 'new playback observation cannot reuse its source recording bytes\n' >&2; exit 65;
+    }
+  done
+  qualification_inputs+=(--artifact "dataset_manifest:dataset-manifest.json=${run_dir}/dataset-manifest.json")
+  while IFS= read -r -d '' path; do
+    relative="${path#"$run_dir/"}"
+    kind=other_evidence
+    [[ "${path}" == *.mcap ]] && kind=recording
+    append_playback_raw "${kind}" "${relative}" "${path}"
+  done < <(find "${run_dir}/source" -type f -print0 | sort -z)
+  for relative in profile.json conformance-result.json observation.json \
+    configuration/provider.json configuration/rosbag2-version.txt configuration/playback-inputs.json \
+    logs/playback-gate.log logs/playback-probe.log playback-image.json probe-image.json compose-original.json compose.json; do
+    case "${relative}" in
+      profile.json|conformance-result.json|configuration/provider.json|observation.json) continue ;;
+    esac
+    append_playback_raw other_evidence "playback/${relative}" "${run_dir}/${relative}"
+  done
+fi
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
     --recording-summary "primary-${index}=${mcap_summaries[$index]}"
@@ -530,6 +723,12 @@ cp -- "${run_dir}/results/qualification-statement.json" \
     "${portable_inputs[@]}" \
     --bundle qualification.sigstore.json --key qualification.pub
 )
+
+if [[ "${data_source}" == recording_playback ]]; then
+  foundation_explain_qualification "${qualification_package}" \
+    "${artifact_dir}/playback-explain.json" recording_playback \
+    "${foundation_bin}/robotics-acceptance"
+fi
 
 jq -e '.status == "passed" and .evaluation_mode == "live"' \
   "${run_dir}/results/acceptance-result.json"

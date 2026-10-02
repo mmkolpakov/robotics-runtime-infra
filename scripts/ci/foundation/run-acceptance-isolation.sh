@@ -8,6 +8,12 @@ source "${script_dir}/lib.sh"
 root="$(foundation_repository_root)"
 cd "${root}"
 
+if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 &&
+  "${ROBOTICS_RUNTIME_MODE:-source}" != source ]]; then
+  printf 'same-job stock playback qualification requires source mode\n' >&2
+  exit 64
+fi
+
 base_run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 run_a="${base_run_id}-acceptance-a"
@@ -53,3 +59,24 @@ fi
 
 mkdir -p "${root}/artifacts"
 cp -a "${artifact_a}/." "${root}/artifacts/"
+
+
+if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 ]]; then
+  source_run="${root}/runs/${project_a}"
+  prepared="${root}/runs/${project_a}-playback-inputs"
+  # Prepare from the genuine finalized first stock phase, without rewriting it.
+  ROBOTICS_RUN_DIR="${source_run}" docker compose \
+    -f "${root}/compose.yaml" --profile acceptance run --rm --no-deps --pull never \
+    --user "$(id -u):$(id -g)" \
+    --volume "${source_run}:/source:ro" \
+    --volume "${source_run}:/run/robotics:ro" \
+    --volume "${root}/runs:/prepared" \
+    --volume "${root}/scripts/ci/integration/prepare-playback-inputs.py:/tmp/prepare-playback-inputs.py:ro" \
+    runtime-manifest /opt/contracts/bin/python /tmp/prepare-playback-inputs.py \
+    --source-run-dir /source --output "/prepared/${project_a}-playback-inputs" \
+    --host-output "${prepared}"
+  ROBOTICS_FOUNDATION_SCENARIO="${prepared}/scenario.json" \
+    ROBOTICS_FOUNDATION_PLAYBACK_INPUTS="${prepared}" \
+    run_acceptance "${base_run_id}-recorded-playback" \
+      "${root}/artifacts/playback" 54 "${base_run_id}-recorded-playback"
+fi

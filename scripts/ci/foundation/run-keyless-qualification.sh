@@ -54,7 +54,7 @@ uv sync --project "${foundation_project}" --locked --all-packages --no-default-g
 uv pip check --python "${foundation_project}/.venv/bin/python"
 export ROBOTICS_CONTRACTS_CLI="${foundation_project}/.venv/bin/robotics-contracts"
 
-qualification_package="${root}/artifacts/qualification"
+qualification_package="${ROBOTICS_FOUNDATION_QUALIFICATION_PACKAGE:-${root}/artifacts/qualification}"
 test -s "${qualification_package}/qualification-arguments.txt"
 test -s "${qualification_package}/qualification-statement.json"
 cd "${qualification_package}"
