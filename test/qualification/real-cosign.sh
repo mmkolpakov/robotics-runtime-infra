@@ -13,6 +13,7 @@ cleanup() {
   rm -f -- "$work/aggregate.json" "$work/statement.json" "$work/formatted.json" \
     "$work/qualification.sigstore.json" "$work/qualification.pub" \
     "$work/foreign.sigstore.json" "$work/foreign.pub" "$work/rejection.log"
+  rm -rf -- "$work/inputs" "$work/portable" "$work/relocated"
   rmdir -- "$work"
 }
 trap cleanup EXIT
@@ -22,7 +23,9 @@ trap 'exit 143' TERM
 
 # Test the adapter and real cryptographic boundary against the infra v1
 # regression inventory. ROS/provider observations remain labelled fixtures.
-fixtures="$root/test/qualification/fixtures"
+mkdir "$work/inputs"
+cp "$root/test/qualification/fixtures/"* "$work/inputs/"
+fixtures="$work/inputs"
 cp "$fixtures/acceptance-aggregate-transport.json" "$work/aggregate.json"
 artifact_arguments=()
 while IFS=$'\t' read -r kind subject file; do
@@ -45,6 +48,18 @@ scripts/qualification/verify-bundle \
   --bundle "${work}/qualification.sigstore.json" \
   --key "${work}/qualification.pub" \
   "${artifact_arguments[@]}"
+
+(
+  cd "$work"
+  "$root/scripts/qualification/package-artifacts" \
+    "${artifact_arguments[@]}" --output "$work/portable"
+  mv portable relocated
+  cd relocated
+  mapfile -t portable_arguments <qualification-arguments.txt
+  "$root/scripts/qualification/verify-bundle" \
+    "${portable_arguments[@]}" \
+    --bundle "$work/qualification.sigstore.json" --key "$work/qualification.pub"
+)
 
 bash scripts/ci/foundation/sign-ephemeral-qualification.sh \
   "${work}/statement.json" \
@@ -70,4 +85,4 @@ if scripts/qualification/verify-bundle \
   exit 1
 fi
 grep -F 'Sigstore verification failed for the supplied public key' "$work/rejection.log"
-printf 'real Cosign v1 qualification checks passed\n'
+printf 'real Cosign v1 qualification and portable copy checks passed\n'

@@ -38,7 +38,7 @@ services:
       - reliable
       - --qos-depth
       - "100"
-      - /robotics/runtime_probe
+      - "${ROBOTICS_METRICS_TOPIC:-/robotics/runtime_probe}"
       - std_msgs/msg/UInt64
       - "{data: 1}"
     environment:

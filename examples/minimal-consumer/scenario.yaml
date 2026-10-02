@@ -1,6 +1,6 @@
 ---
 schema_version: acceptance-scenario.v1
-scenario_id: org.example.runtime-infra.stepped-smoke
+scenario_id: org.example.minimal-consumer.stepped-uint64
 execution:
   target_environment: simulation
   hardware_scope: []
@@ -32,7 +32,7 @@ expected_ros_graph:
       min_publishers: 1
       min_subscribers: 0
       first_message_timeout_sec: 10
-    - name: /robotics/runtime_probe
+    - name: /example/sequence
       type: std_msgs/msg/UInt64
       qos_profile: system_default
       min_publishers: 1
@@ -60,7 +60,7 @@ data_plane_policy:
   data_sharing: false
   private_ipc: false
 evidence_policy:
-  topics: [/clock, /robotics/runtime_probe]
+  topics: [/clock, /example/sequence]
   recording_mode: bounded
   compression: zstd
   max_segment_size_bytes: 2097152

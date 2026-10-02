@@ -5,7 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 cd "${root}"
 
 foundation_project=dependencies/robotics-runtime
-foundation_bin="${foundation_project}/.venv/bin"
+foundation_bin="${root}/${foundation_project}/.venv/bin"
 
 bash scripts/ci/foundation/render-compatibility.sh \
   docs/foundation-compatibility.md --check

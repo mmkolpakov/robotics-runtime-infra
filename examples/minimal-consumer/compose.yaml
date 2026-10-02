@@ -1,7 +1,3 @@
 ---
-include:
-  - path: ../../compose.yaml
-
-name: robotics-runtime-consumer
-
+# Caller-owned services may be added here; foundation services stay in tooling.
 services: {}

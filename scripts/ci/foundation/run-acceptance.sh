@@ -33,7 +33,7 @@ run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 project="$(foundation_project_name acceptance "${run_id}" "${run_attempt}")"
 artifact_dir="$(foundation_artifact_dir "${root}" "${project}")"
 run_dir="${root}/runs/${project}"
-scenario_source="${ROBOTICS_FOUNDATION_SCENARIO:-test/acceptance/stepped-smoke.yaml}"
+scenario_source="${ROBOTICS_FOUNDATION_SCENARIO:-examples/minimal-consumer/scenario.yaml}"
 [[ -f "${scenario_source}" ]] || {
   printf 'foundation scenario does not exist: %s\n' "${scenario_source}" >&2
   exit 66
@@ -46,6 +46,9 @@ mkdir -p \
   "${run_dir}/results" \
   "${artifact_dir}"
 cp "${scenario_source}" "${run_dir}/scenario.yaml"
+consumer_root="${ROBOTICS_FOUNDATION_CONSUMER_ROOT:-${root}}"
+foundation_load_artifact_arguments "${consumer_root}" \
+  "${ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE:-}"
 foundation_require_scenario_policy "${foundation_bin}/python" \
   "${run_dir}/scenario.yaml" "runs/${project}/scenario-policy-input.json"
 cp "${run_dir}/scenario-policy-input.json" "${artifact_dir}/"
@@ -84,7 +87,12 @@ ROBOTICS_MAX_BAG_DURATION="$(
 )"
 export ROBOTICS_MAX_SEGMENT_SIZE_BYTES=2097152
 export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
-export ROBOTICS_RECORD_REGEX='^(/clock|/robotics/runtime_probe)$'
+topic_configuration="$(
+  foundation_scenario_topics "${foundation_bin}/python" "${run_dir}/scenario.yaml"
+)"
+export ROBOTICS_METRICS_TOPIC ROBOTICS_RECORD_REGEX
+ROBOTICS_METRICS_TOPIC="$(jq -er '.metrics_topic' <<<"${topic_configuration}")"
+ROBOTICS_RECORD_REGEX="$(jq -er '.record_regex' <<<"${topic_configuration}")"
 export ROBOTICS_SIMULATION_OCI_DIGEST
 export ROBOTICS_SIMULATION_OCI_REFERENCE
 simulation_identity="$(
@@ -132,7 +140,6 @@ policy_input="${run_dir}/foundation-policy-input.json"
 jq -n '{services: {}}' >"${consumer_model}"
 jq -n '{services: {}}' >"${consumer_source_model}"
 compose=("${foundation_compose[@]}")
-consumer_root="${ROBOTICS_FOUNDATION_CONSUMER_ROOT:-${root}}"
 if [[ -n "${ROBOTICS_FOUNDATION_COMPOSE_PROJECT:-}" ]]; then
   consumer_file="$(realpath -e "${ROBOTICS_FOUNDATION_COMPOSE_PROJECT}")"
   consumer_root="$(realpath -e "${consumer_root}")"
@@ -249,7 +256,7 @@ cleanup() {
     status="${observer_status}"
   fi
   foundation_compose_logs \
-    "${artifact_dir}/foundation-e2e.log" \
+    "${artifact_dir}/foundation-e2e.cleanup.log" \
     "${compose[@]}" "${profiles[@]}"
   if ((status != 0)); then
     publish_acceptance_results || true
@@ -257,7 +264,7 @@ cleanup() {
   fi
   if [[ -n "${observer}" ]]; then
     docker logs "${observer}" \
-      > "${artifact_dir}/foundation-observer.log" 2>&1 || true
+      > "${artifact_dir}/foundation-observer.cleanup.log" 2>&1 || true
   fi
   if ((${#attached_compose[@]})); then
     foundation_compose_logs \
@@ -420,6 +427,11 @@ export ROBOTICS_CONTRACTS_CLI="${foundation_bin}/robotics-contracts"
   printf 'Fast DDS profile changed during the foundation run\n' >&2
   exit 65
 }
+log_dir="${run_dir}/results/logs"
+mkdir -p "${log_dir}"
+"${compose[@]}" "${profiles[@]}" logs --no-color >"${log_dir}/foundation.log" 2>&1
+docker logs "${observer}" >"${log_dir}/observer.log" 2>&1
+chmod 0444 "${log_dir}/foundation.log" "${log_dir}/observer.log"
 qualification_inputs=(
   --scenario "${run_dir}/scenario.yaml"
   --runtime-manifest "primary=${run_dir}/runtime-manifest.json"
@@ -437,6 +449,8 @@ qualification_inputs=(
   --artifact "other_evidence:providers/configuration.json=${artifact_dir}/provider/configuration.json"
   --artifact "other_evidence:providers/observation.json=${artifact_dir}/provider/observation.json"
   --artifact "other_evidence:providers/world.sdf=${artifact_dir}/provider/world.sdf"
+  --artifact "other_evidence:logs/foundation.log=${log_dir}/foundation.log"
+  --artifact "other_evidence:logs/observer.log=${log_dir}/observer.log"
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
@@ -444,6 +458,14 @@ for index in "${!mcap_summaries[@]}"; do
     --evidence "recording:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
+qualification_inputs+=("${FOUNDATION_ARTIFACT_ARGUMENTS[@]}")
+qualification_package="$(realpath -e "${artifact_dir}")/qualification"
+(
+  # Reusable callers have sibling tooling, consumer and artifacts checkouts.
+  cd "${GITHUB_WORKSPACE:-${root}}"
+  "${root}/scripts/qualification/package-artifacts" \
+    --output "${qualification_package}" "${qualification_inputs[@]}"
+)
 scripts/qualification/create-statement \
   "${qualification_inputs[@]}" \
   --output "${run_dir}/results/qualification-statement.json"
@@ -451,10 +473,16 @@ bash scripts/ci/foundation/sign-ephemeral-qualification.sh \
   "${run_dir}/results/qualification-statement.json" \
   "${run_dir}/results/qualification.sigstore.json" \
   "${run_dir}/results/qualification.pub"
-scripts/qualification/verify-bundle \
-  --bundle "${run_dir}/results/qualification.sigstore.json" \
-  --key "${run_dir}/results/qualification.pub" \
-  "${qualification_inputs[@]}"
+cp -- "${run_dir}/results/qualification-statement.json" \
+  "${run_dir}/results/qualification.sigstore.json" \
+  "${run_dir}/results/qualification.pub" "${qualification_package}/"
+(
+  cd "${qualification_package}"
+  mapfile -t portable_inputs <qualification-arguments.txt
+  "${root}/scripts/qualification/verify-bundle" \
+    "${portable_inputs[@]}" \
+    --bundle qualification.sigstore.json --key qualification.pub
+)
 
 jq -e '.status == "passed" and .evaluation_mode == "live"' \
   "${run_dir}/results/acceptance-result.json"

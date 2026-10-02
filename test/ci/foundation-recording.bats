@@ -11,13 +11,13 @@ setup() {
 
 @test "foundation recording uses the smoke scenario's 30-second limit" {
   run foundation_recording_duration "${FOUNDATION_PYTHON}" \
-    "${REPOSITORY_ROOT}/test/acceptance/stepped-smoke.yaml"
+    "${REPOSITORY_ROOT}/examples/minimal-consumer/scenario.yaml"
   [ "${status}" -eq 0 ]
   [ "${output}" = 30 ]
 }
 
 @test "foundation recording honors a consumer's shorter segment limit" {
-  printf '{"evidence_policy":{"max_segment_duration_sec":7}}\n' >"${SCENARIO}"
+  printf '{"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock"]}}\n' >"${SCENARIO}"
   run foundation_recording_duration "${FOUNDATION_PYTHON}" "${SCENARIO}"
   [ "${status}" -eq 0 ]
   [ "${output}" = 7 ]
@@ -83,6 +83,8 @@ ci_require_policy_allows() {
 }
 docker() {
   printf '%s\n' "${ROBOTICS_MAX_BAG_DURATION:-unset}" >"${FOUNDATION_RECORDING_ENV}"
+  printf '%s\n' "${ROBOTICS_METRICS_TOPIC:-unset}" "${ROBOTICS_RECORD_REGEX:-unset}" \
+    >"${FOUNDATION_TOPIC_ENV}"
   return 88
 }
 SH
@@ -98,6 +100,7 @@ SH
   chmod +x "${bin}/python" "${bin}/robotics-acceptance"
   export FOUNDATION_REAL_PYTHON="${FOUNDATION_PYTHON}"
   export FOUNDATION_RECORDING_ENV="${BATS_TEST_TMPDIR}/compose-duration"
+  export FOUNDATION_TOPIC_ENV="${BATS_TEST_TMPDIR}/compose-topics"
   export FOUNDATION_SCENARIO_POLICY_INPUT="${BATS_TEST_TMPDIR}/scenario-policy-input.json"
   export FOUNDATION_SCENARIO_POLICY_STATUS=0
   export ROBOTICS_FOUNDATION_SCENARIO="${SCENARIO}"
@@ -109,7 +112,7 @@ SH
 
 @test "acceptance exports the scenario duration before Compose resolves recorder and sink" {
   prepare_orchestration_fixture
-  printf '{"evidence_policy":{"max_segment_duration_sec":7}}\n' >"${SCENARIO}"
+  printf '{"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock"]}}\n' >"${SCENARIO}"
   run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
   [ "${status}" -eq 88 ]
   jq -e '.evidence_policy.max_segment_duration_sec == 7' \
@@ -117,10 +120,25 @@ SH
   [ "$(cat "${FOUNDATION_RECORDING_ENV}")" = 7 ]
 }
 
+@test "acceptance configures the declared UInt64 and exact recording topics before Compose" {
+  prepare_orchestration_fixture
+  printf '%s\n' '{"expected_ros_graph":{"topics":[{"name":"/custom/probe","type":"std_msgs/msg/UInt64"}]},"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock","/custom/probe","/sensor/a.b"]}}' >"${SCENARIO}"
+  run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
+  [ "${status}" -eq 88 ]
+  local configured
+  mapfile -t configured <"${FOUNDATION_TOPIC_ENV}"
+  [ "${configured[0]}" = /custom/probe ]
+  local regex="${configured[1]}"
+  [[ /sensor/a.b =~ ${regex} ]]
+  [[ ! /sensor/axb =~ ${regex} ]]
+  [[ ! /robotics/runtime_probe =~ ${regex} ]]
+  [[ /custom/probe =~ ${regex} ]]
+}
+
 @test "acceptance stops before Compose when the scenario policy rejects the run" {
   prepare_orchestration_fixture
   export FOUNDATION_SCENARIO_POLICY_STATUS=23
-  printf '{"evidence_policy":{"max_segment_duration_sec":7}}\n' >"${SCENARIO}"
+  printf '{"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock"]}}\n' >"${SCENARIO}"
   run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
   [ "${status}" -eq 23 ]
   jq -e '.evidence_policy.max_segment_duration_sec == 7' \

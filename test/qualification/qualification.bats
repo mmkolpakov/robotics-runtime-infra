@@ -65,7 +65,7 @@ aggregate="$TEST_ROOT/artifacts/acceptance-aggregate.json"
 if [[ "$QUALIFICATION_FIXTURE_CASE" == transport ]]; then
   aggregate="$TEST_ROOT/artifacts/acceptance-aggregate-transport.json"
 fi
-[[ "$digest" == "$(sha256sum "$aggregate" | cut -d' ' -f1)" ]]
+[[ "$digest" == "${COSIGN_TEST_AGGREGATE_SHA256:-$(sha256sum "$aggregate" | cut -d' ' -f1)}" ]]
 [[ "$digest_algorithm" == sha256 ]]
 [[ "$predicate_type" == \
   https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1 ]]
@@ -152,7 +152,7 @@ bind_primary_runtime() {
 create_statement_and_bundle() {
   mapfile -t args < <(artifact_arguments)
   "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
-    "${args[@]}" --output "$TEST_ROOT/artifacts/statement.json"
+    "${args[@]}" "$@" --output "$TEST_ROOT/artifacts/statement.json"
   local payload
   payload="$(base64 -w 0 "$TEST_ROOT/artifacts/statement.json")"
   jq -n --arg payload "$payload" '{
@@ -326,4 +326,191 @@ verify_bundle() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *'Sigstore verification failed'* ]]
+}
+
+package_inventory() {
+  mapfile -t args < <(artifact_arguments)
+  (
+    cd "$TEST_ROOT"
+    "$REPOSITORY_ROOT/scripts/qualification/package-artifacts" \
+      --scenario "$TEST_ROOT/artifacts/acceptance-scenario.yaml" "${args[@]:2}" \
+      --output "$TEST_ROOT/portable" "$@"
+  )
+}
+
+verify_portable() {
+  local directory="$1"
+  local trust="${2:-$TEST_ROOT/artifacts}"
+  (
+    cd "$directory"
+    mapfile -t portable_arguments <qualification-arguments.txt
+    "$REPOSITORY_ROOT/scripts/qualification/verify-bundle" \
+      "${portable_arguments[@]}" --bundle "$trust/bundle.json" \
+      --trusted-root "$trust/trusted-root.json" --policy "$trust/policy.json"
+  )
+}
+
+@test "relocates exact YAML subjects and schema extras for independent verification" {
+  local artifacts="$TEST_ROOT/artifacts"
+  printf '%s\n' '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object"}' \
+    >"$artifacts/extension.schema.json"
+  printf '%s\n' 'type: object' >"$artifacts/extension.schema.yaml"
+  local nested="other_evidence:logs/copies/diagnostics.json=$artifacts/diagnostics.json"
+  create_statement_and_bundle --artifact "$nested"
+
+  run package_inventory --artifact "$nested" \
+    --extension-schema "urn:test:json=$artifacts/extension.schema.json" \
+    --extension-schema "urn:test:json-alias=$artifacts/extension.schema.json" \
+    --extension-schema "urn:test:yaml=$artifacts/extension.schema.yaml"
+
+  [ "$status" -eq 0 ]
+  cmp "$artifacts/acceptance-scenario.yaml" \
+    "$TEST_ROOT/portable/subjects/scenario.json/acceptance-scenario.yaml"
+  cmp "$artifacts/diagnostics.json" \
+    "$TEST_ROOT/portable/subjects/logs/copies/diagnostics.json/diagnostics.json"
+  cmp "$artifacts/extension.schema.yaml" \
+    "$TEST_ROOT/portable/extension-schemas/$(sha256 "$artifacts/extension.schema.yaml")/extension.schema.yaml"
+  run grep -F "$TEST_ROOT" "$TEST_ROOT/portable/qualification-arguments.txt"
+  [ "$status" -eq 1 ]
+  mkdir "$TEST_ROOT/independent-trust"
+  cp "$artifacts/bundle.json" "$artifacts/trusted-root.json" "$artifacts/policy.json" \
+    "$TEST_ROOT/independent-trust/"
+  export COSIGN_TEST_AGGREGATE_SHA256
+  COSIGN_TEST_AGGREGATE_SHA256="$(sha256 "$artifacts/acceptance-aggregate.json")"
+  mv "$TEST_ROOT/portable" "$TEST_ROOT/relocated"
+  mv "$artifacts" "$TEST_ROOT/unavailable-producer-inputs"
+
+  run verify_portable "$TEST_ROOT/relocated" "$TEST_ROOT/independent-trust"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'qualification bundle verified'* ]]
+  printf '%s\n' --bundle missing-bundle --trusted-root missing-root --policy missing-policy \
+    >>"$TEST_ROOT/relocated/qualification-arguments.txt"
+
+  run verify_portable "$TEST_ROOT/relocated" "$TEST_ROOT/independent-trust"
+
+  [ "$status" -eq 0 ]
+}
+
+@test "rejects a changed or missing portable subject through existing verification" {
+  create_statement_and_bundle
+  package_inventory
+  printf '%s\n' '{"diagnostics":"tampered"}' \
+    >"$TEST_ROOT/portable/subjects/evidence/diagnostics.json/diagnostics.json"
+
+  run verify_portable "$TEST_ROOT/portable"
+
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'authenticated statement does not exactly match'* ]]
+  rm "$TEST_ROOT/portable/subjects/evidence/diagnostics.json/diagnostics.json"
+
+  run verify_portable "$TEST_ROOT/portable"
+
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'required regular file is not readable'* ]]
+}
+
+@test "refuses existing outputs and paths outside the consumer root without writing" {
+  printf '%s\n' 'retained' >"$TEST_ROOT/sentinel"
+  mkdir "$TEST_ROOT/portable"
+  cp "$TEST_ROOT/sentinel" "$TEST_ROOT/portable/sentinel"
+  run package_inventory
+  [ "$status" -eq 65 ]
+  cmp "$TEST_ROOT/sentinel" "$TEST_ROOT/portable/sentinel"
+  rm -r "$TEST_ROOT/portable"
+  run package_inventory --output "$BATS_TEST_TMPDIR/outside-consumer"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'outside the consumer root'* ]]
+  [ ! -e "$BATS_TEST_TMPDIR/outside-consumer" ]
+  cp "$TEST_ROOT/artifacts/diagnostics.json" "$BATS_TEST_TMPDIR/outside-input.json"
+  run package_inventory --artifact "other_evidence:logs/outside.json=$BATS_TEST_TMPDIR/outside-input.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'outside the consumer root'* ]]
+  [ ! -e "$TEST_ROOT/portable" ]
+}
+
+@test "refuses missing inputs symlink paths and unsafe inventory subjects" {
+  rm "$TEST_ROOT/artifacts/diagnostics.json"
+  run package_inventory
+  [ "$status" -eq 65 ]
+  [ ! -e "$TEST_ROOT/portable" ]
+  cp "$FIXTURES/diagnostics.json" "$TEST_ROOT/artifacts/diagnostics.json"
+  ln -s "$TEST_ROOT/artifacts" "$TEST_ROOT/linked-inputs"
+  run package_inventory \
+    --artifact "other_evidence:logs/linked.json=$TEST_ROOT/linked-inputs/diagnostics.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'symlink path is not supported'* ]]
+  [ ! -e "$TEST_ROOT/portable" ]
+  run package_inventory --artifact "other_evidence:../escape=$TEST_ROOT/artifacts/diagnostics.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'non-canonical qualification subject name'* ]]
+  [ ! -e "$TEST_ROOT/portable" ]
+  run package_inventory --extension-schema "--key=$TEST_ROOT/artifacts/diagnostics.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'unsafe artifact or schema label'* ]]
+  [ ! -e "$TEST_ROOT/portable" ]
+}
+
+@test "refuses colliding storage paths and output symlink or input aliases" {
+  cp "$TEST_ROOT/artifacts/diagnostics.json" "$TEST_ROOT/x"
+  mkdir "$TEST_ROOT/inputs"
+  cp "$TEST_ROOT/x" "$TEST_ROOT/inputs/y"
+  run package_inventory --artifact "other_evidence:logs=$TEST_ROOT/x" \
+    --artifact "other_evidence:logs/x=$TEST_ROOT/inputs/y"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'file and directory paths collide'* ]]
+  [ ! -e "$TEST_ROOT/portable" ]
+  ln -s "$TEST_ROOT" "$TEST_ROOT/linked-output"
+  run package_inventory --output "$TEST_ROOT/linked-output/new"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'symlink path is not supported'* ]]
+  run package_inventory --output "$TEST_ROOT/artifacts/diagnostics.json"
+  [ "$status" -eq 65 ]
+  cmp "$FIXTURES/diagnostics.json" "$TEST_ROOT/artifacts/diagnostics.json"
+}
+
+@test "removes only its new output if source bytes change after validation" {
+  export REAL_CONTRACTS_CLI="$ROBOTICS_CONTRACTS_CLI"
+  cat >"$TEST_BIN/changing-contracts" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+"$REAL_CONTRACTS_CLI" "$@"
+printf '\n' >>"$TEST_ROOT/artifacts/diagnostics.json"
+EOF
+  chmod +x "$TEST_BIN/changing-contracts"
+  export ROBOTICS_CONTRACTS_CLI="$TEST_BIN/changing-contracts"
+  printf '%s\n' 'retained' >"$TEST_ROOT/sentinel"
+  run package_inventory
+  [ "$status" -eq 65 ]
+  [[ "$output" == *'input changed during packaging'* ]]
+  [ ! -e "$TEST_ROOT/portable" ]
+  [ "$(cat "$TEST_ROOT/sentinel")" = retained ]
+}
+
+@test "does not publish when the public CLI returns false empty or nonzero output" {
+  for response in false '{}' ''; do
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\n' "$response" >"$TEST_BIN/invalid-contracts"
+    chmod +x "$TEST_BIN/invalid-contracts"
+    export ROBOTICS_CONTRACTS_CLI="$TEST_BIN/invalid-contracts"
+    run package_inventory
+    [ "$status" -eq 65 ]
+    [ ! -e "$TEST_ROOT/portable" ]
+  done
+  printf '#!/usr/bin/env bash\nexit 13\n' >"$TEST_BIN/invalid-contracts"
+  run package_inventory
+  [ "$status" -eq 65 ]
+  [ ! -e "$TEST_ROOT/portable" ]
+}
+
+@test "refuses LF and CR paths before writing a portable arguments file" {
+  for control in $'\n' $'\r'; do
+    run package_inventory --output "$TEST_ROOT/bad${control}output"
+    [ "$status" -eq 65 ]
+    [[ "$output" == *'unsafe path'* ]]
+    [ ! -e "$TEST_ROOT/bad${control}output" ]
+    run package_inventory --extension-schema "urn:test:bad${control}uri=$TEST_ROOT/artifacts/diagnostics.json"
+    [ "$status" -eq 65 ]
+    [[ "$output" == *'unsafe artifact or schema label'* ]]
+    [ ! -e "$TEST_ROOT/portable" ]
+  done
 }
