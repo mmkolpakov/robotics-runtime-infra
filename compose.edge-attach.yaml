@@ -42,7 +42,8 @@ services:
     profiles: [simulation]
 
   edge-attach-data-plane:
-    image: registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
+    image: >-
+      ${EDGE_ATTACH_DATA_PLANE_IMAGE:-registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c}
     profiles: [edge-attach, hil, real-observation]
     read_only: true
     networks:

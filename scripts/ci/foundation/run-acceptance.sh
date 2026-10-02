@@ -19,10 +19,11 @@ readonly foundation_bin="${root}/dependencies/robotics-runtime/.venv/bin"
 source "${root}/scripts/ci/lib.sh"
 # shellcheck source=scripts/ci/image-identity.sh
 source "${root}/scripts/ci/image-identity.sh"
+# shellcheck source=scripts/ci/foundation/released-mode.sh
+source "${script_dir}/released-mode.sh"
 # shellcheck source=scripts/ci/foundation/run-policy.sh
 source "${script_dir}/run-policy.sh"
 
-foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE
 command -v cosign >/dev/null 2>&1 || {
   printf 'cosign is required for foundation qualification\n' >&2
   exit 69
@@ -47,6 +48,14 @@ mkdir -p \
   "${artifact_dir}"
 cp "${scenario_source}" "${run_dir}/scenario.yaml"
 consumer_root="${ROBOTICS_FOUNDATION_CONSUMER_ROOT:-${root}}"
+foundation_prepare_execution_mode "${consumer_root}" "${artifact_dir}/release"
+foundation_require_env EVIDENCE_IMAGE SIMULATION_IMAGE
+compose_environment=()
+if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
+  export ROBOTICS_INFRA_REVISION="${ROBOTICS_RELEASE_SOURCE_SHA}"
+  compose_environment=(--env-file "${ROBOTICS_RELEASE_LOCK_SNAPSHOT}")
+  bash "${script_dir}/verify-image-lock.sh"
+fi
 foundation_load_artifact_arguments "${consumer_root}" \
   "${ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE:-}"
 foundation_require_scenario_policy "${foundation_bin}/python" \
@@ -78,6 +87,8 @@ foundation_validate_document \
 export ROBOTICS_RUN_DIR="${run_dir}"
 export ROBOTICS_BAG_DIR="${run_dir}/bags"
 export ROBOTICS_EVIDENCE_DIR="${run_dir}/evidence"
+export ROBOTICS_HOST_TOPOLOGY_CONFIG=/run/robotics/configuration/host-topology.json
+export ROBOTICS_RUNTIME_RESOURCES_CONFIG=/run/robotics/configuration/runtime-resources.json
 export ROBOTICS_MAX_BAG_SIZE=1048576
 # Compose uses this for both recorder rotation and evidence-sink validation.
 # Its 60-second default exceeds the stepped-smoke scenario's 30-second gate.
@@ -129,8 +140,13 @@ foundation_files=(
   compose.evidence.yaml
   compose.observability.yaml
 )
-foundation_compose=(docker compose -p "${project}")
+if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
+  foundation_files+=(compose.released.yaml)
+fi
+foundation_compose=(docker compose "${compose_environment[@]}" -p "${project}")
+foundation_paths=()
 for file in "${foundation_files[@]}"; do
+  foundation_paths+=("${root}/${file}")
   foundation_compose+=(-f "${root}/${file}")
 done
 foundation_model="${run_dir}/foundation-compose.json"
@@ -156,6 +172,11 @@ if [[ -n "${ROBOTICS_FOUNDATION_COMPOSE_PROJECT:-}" ]]; then
   consumer_relative="$(realpath --relative-to="${consumer_root}" "${consumer_file}")"
   ci_yq_from_root "${consumer_root}" \
     -o=json "/input/${consumer_relative}" >"${consumer_source_model}"
+  if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]] &&
+    ! jq -e 'all(.services[]; has("build") | not)' "${consumer_source_model}" >/dev/null; then
+    printf 'released consumer Compose source must not declare builds\n' >&2
+    exit 65
+  fi
   consumer_source_relative="$(
     realpath --relative-to="${root}" "${consumer_source_model}"
   )"
@@ -170,7 +191,7 @@ if [[ -n "${ROBOTICS_FOUNDATION_COMPOSE_PROJECT:-}" ]]; then
     HOME="${HOME}" \
     PWD="${CI_REPO_ROOT}" \
     COMPOSE_DISABLE_ENV_FILE=1 \
-    docker compose \
+    docker compose "${compose_environment[@]}" \
     --project-directory "${consumer_root}" \
     -f "${consumer_file}" \
     config --no-normalize --format json >"${consumer_model}"
@@ -178,26 +199,20 @@ if [[ -n "${ROBOTICS_FOUNDATION_COMPOSE_PROJECT:-}" ]]; then
   wrapper="${run_dir}/compose.json"
   jq -n \
     --arg root "${root}" \
+    --argjson foundation_paths "$(printf '%s\n' "${foundation_paths[@]}" | jq -Rsc 'split("\n")[:-1]')" \
     --arg consumer_file "${consumer_model}" \
     --arg consumer_root "${consumer_root}" \
     '{
       include: [
         {
-          path: [
-            ($root + "/compose.yaml"),
-            ($root + "/compose.foundation.yaml"),
-            ($root + "/compose.stepped.yaml"),
-            ($root + "/compose.record.yaml"),
-            ($root + "/compose.evidence.yaml"),
-            ($root + "/compose.observability.yaml")
-          ],
+          path: $foundation_paths,
           project_directory: $root
         },
         {path: $consumer_file, project_directory: $consumer_root}
       ],
       services: {}
     }' >"${wrapper}"
-  compose=(docker compose -p "${project}" -f "${wrapper}")
+  compose=(docker compose "${compose_environment[@]}" -p "${project}" -f "${wrapper}")
 fi
 "${compose[@]}" "${profiles[@]}" config --format json >"${resolved_model}"
 if ((${#extra_services[@]})); then
@@ -225,6 +240,26 @@ ci_require_policy_allows policy/compose.rego compose "${resolved_model_relative}
 foundation_require_release_images_policy "${resolved_model}" \
   "runs/${project}/release-images-policy-input.json"
 cp "${run_dir}/release-images-policy-input.json" "${artifact_dir}/"
+if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
+  chmod 0444 "${resolved_model}"
+  compose=(docker compose "${compose_environment[@]}" -p "${project}" -f "${resolved_model}")
+  FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS+=(
+    --artifact "other_evidence:configuration/compose-resolved.json=${resolved_model}"
+  )
+fi
+if [[ "${ROBOTICS_RUNTIME_MODE}" == released && ${#extra_services[@]} -gt 0 ]]; then
+  extra_images="$(jq -er --args '
+    .services as $services |
+    def dependencies($name):
+      if $services | has($name) then
+        $name, (($services[$name].depends_on // {} | keys[]) | dependencies(.))
+      else error("unknown requested consumer service: " + $name) end;
+    [$ARGS.positional[] | dependencies(.) | $services[.].image] | unique[]
+  ' "${extra_services[@]}" <"${resolved_model}")"
+  while IFS= read -r image; do
+    foundation_prepare_released_image "${image}"
+  done <<<"${extra_images}"
+fi
 observer=""
 attached_compose=()
 publish_acceptance_results() {
@@ -321,8 +356,6 @@ sudo install -o 1000 -g 1000 -m 0644 \
   "${runtime_resources}" \
   "${run_dir}/configuration/runtime-resources.json"
 rm "${runtime_resources}"
-export ROBOTICS_HOST_TOPOLOGY_CONFIG=/run/robotics/configuration/host-topology.json
-export ROBOTICS_RUNTIME_RESOURCES_CONFIG=/run/robotics/configuration/runtime-resources.json
 "${compose[@]}" --profile acceptance run --rm runtime-manifest
 foundation_validate_document \
   "${foundation_bin}/python" \
@@ -350,15 +383,27 @@ if [[ "${observer_mode}" == edge-attach ]]; then
     .[0].NetworkSettings.Networks | keys |
     if length == 1 then .[0] else error("expected one simulation network") end
   ')"
-  attached_compose=(docker compose -p "${project}-attach"
-    -f "${root}/compose.yaml" -f "${root}/compose.edge-attach.yaml"
-    --profile edge-attach)
+  attached_compose=(docker compose "${compose_environment[@]}" -p "${project}-attach"
+    -f "${root}/compose.yaml" -f "${root}/compose.edge-attach.yaml")
+  if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
+    attached_compose+=(-f "${root}/compose.released.yaml")
+  fi
+  attached_compose+=(--profile edge-attach)
   attached_model="${artifact_dir}/edge-attach-compose.json"
   "${attached_compose[@]}" config --format json >"${attached_model}"
   ci_require_policy_allows policy/compose.rego compose \
     "$(realpath --relative-to="${root}" "${attached_model}")"
   foundation_require_release_images_policy "${attached_model}" \
     "$(realpath --relative-to="${root}" "${artifact_dir}")/edge-attach-release-policy-input.json"
+  if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
+    chmod 0444 "${attached_model}"
+    attached_compose=(docker compose "${compose_environment[@]}" -p "${project}-attach"
+      -f "${attached_model}" --profile edge-attach)
+    FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS+=(
+      --artifact "other_evidence:configuration/edge-attach-compose.json=${attached_model}"
+    )
+    foundation_prepare_released_image "$(jq -er '.services["edge-attach-data-plane"].image' "${attached_model}")"
+  fi
   "${attached_compose[@]}" up --detach --no-build edge-attach-data-plane
   observer_compose=("${attached_compose[@]}")
   observer_service=edge-attach-observer
@@ -460,7 +505,7 @@ for index in "${!mcap_summaries[@]}"; do
     --evidence "recording:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
-qualification_inputs+=("${FOUNDATION_ARTIFACT_ARGUMENTS[@]}")
+qualification_inputs+=("${FOUNDATION_ARTIFACT_ARGUMENTS[@]}" "${FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS[@]}")
 qualification_package="$(realpath -e "${artifact_dir}")/qualification"
 (
   # Reusable callers have sibling tooling, consumer and artifacts checkouts.

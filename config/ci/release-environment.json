@@ -6,6 +6,7 @@
   "inference-cpu": "INFERENCE_CPU_IMAGE",
   "inference-intel-cpu": "INFERENCE_INTEL_CPU_IMAGE",
   "permit-preflight": "PERMIT_PREFLIGHT_IMAGE",
+  "policy-tooling": "POLICY_TOOLING_IMAGE",
   "provider-conformance-cpu": "INFERENCE_CPU_CONFORMANCE_IMAGE",
   "sensor-inference-cpu": "SENSOR_INFERENCE_IMAGE",
   "sensor-inference-intel-cpu": "SENSOR_INFERENCE_INTEL_CPU_IMAGE",

@@ -10,7 +10,7 @@ setup() {
   PYTHON="${ROBOTICS_CONTRACTS_PYTHON:-${ROOT}/dependencies/robotics-runtime/.venv/bin/python}"
   INPUT="${BATS_TEST_TMPDIR}/input.json"
   OUTPUT="${BATS_TEST_TMPDIR}/policy.json"
-  unset ROBOTICS_RUNTIME_MODE
+  unset ROBOTICS_RUNTIME_MODE ROBOTICS_RELEASE_APPROVED_IMAGES
   # Called indirectly by the sourced production policy adapter.
   # shellcheck disable=SC2329
   ci_opa() { run_policy_engine "$@"; }
@@ -64,7 +64,8 @@ run_policy_engine() {
 
 @test "released pinned image and source local image remain usable" {
   jq -n --arg digest "$(printf '%064d' 1)" '{services:{simulation:{image:("ghcr.io/mmkolpakov/robotics-runtime-infra/simulation:0.9.0@sha256:" + $digest)}}}' >"$INPUT"
-  ROBOTICS_RUNTIME_MODE=released run foundation_require_release_images_policy "$INPUT" "$OUTPUT"
+  ROBOTICS_RELEASE_APPROVED_IMAGES="$(jq -c '[.services.simulation.image]' "$INPUT")" \
+    ROBOTICS_RUNTIME_MODE=released run foundation_require_release_images_policy "$INPUT" "$OUTPUT"
   [ "$status" -eq 0 ]
   printf '%s\n' '{"services":{"product":{"image":"local/consumer/product:dev"}}}' >"$INPUT"
   ROBOTICS_RUNTIME_MODE=source run foundation_require_release_images_policy "$INPUT" "$OUTPUT"
@@ -79,4 +80,30 @@ run_policy_engine() {
   ci_opa() { return 42; }
   ROBOTICS_RUNTIME_MODE=released run foundation_require_release_images_policy "$INPUT" "$OUTPUT"
   [ "$status" -eq 42 ]
+}
+
+@test "released policy uses the coordinator approved set instead of the consumer extension" {
+  approved="ghcr.io/mmkolpakov/robotics-runtime-infra/simulation@sha256:$(printf '%064d' 1)"
+  foreign="ghcr.io/foreign/product@sha256:$(printf '%064d' 1)"
+  jq -n --arg image "${foreign}" '{
+    "x-robotics-runtime": {mode: "source", approved_images: [$image]},
+    services: {product: {image: $image}}
+  }' >"$INPUT"
+  ROBOTICS_RUNTIME_MODE=released \
+    ROBOTICS_RELEASE_APPROVED_IMAGES="$(jq -cn --arg image "${approved}" '[$image]')" \
+    run foundation_require_release_images_policy "$INPUT" "$OUTPUT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'outside the approved release lock'* ]]
+  jq -e --arg image "${approved}" \
+    '."x-robotics-runtime" == {mode: "released", approved_images: [$image]}' "$OUTPUT"
+}
+
+@test "released policy refuses a pinned approved service with residual build" {
+  image="ghcr.io/mmkolpakov/robotics-runtime-infra/simulation@sha256:$(printf '%064d' 1)"
+  jq -n --arg image "${image}" '{services:{simulation:{image:$image,build:{context:"."}}}}' >"$INPUT"
+  ROBOTICS_RUNTIME_MODE=released \
+    ROBOTICS_RELEASE_APPROVED_IMAGES="$(jq -cn --arg image "${image}" '[$image]')" \
+    run foundation_require_release_images_policy "$INPUT" "$OUTPUT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'retains a build definition'* ]]
 }

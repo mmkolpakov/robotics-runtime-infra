@@ -25,7 +25,9 @@ foundation_require_release_images_policy() {
   esac
   # Compose include does not preserve every top-level extension. The caller's
   # execution mode is authoritative even if a consumer declares mode: source.
-  jq --arg mode "${mode}" '."x-robotics-runtime".mode = $mode' \
+  jq --arg mode "${mode}" \
+    --argjson approved "${ROBOTICS_RELEASE_APPROVED_IMAGES:-[]}" \
+    '."x-robotics-runtime" |= (.mode = $mode | .approved_images = $approved)' \
     "${model}" >"${output}" || return
   ci_require_policy_allows policy/release-images.rego release_images "${output}"
 }

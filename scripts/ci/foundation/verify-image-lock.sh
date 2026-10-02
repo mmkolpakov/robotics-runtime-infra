@@ -8,6 +8,16 @@ source "${script_dir}/lib.sh"
 root="$(foundation_repository_root)"
 cd "${root}"
 
+case "${ROBOTICS_RUNTIME_MODE:-source}" in
+  source) ;;
+  released)
+    [[ "${ROBOTICS_RELEASE_IMAGES_PREPARED:-}" == 1 ]] || {
+      printf 'released image verification requires completed provenance preparation\n' >&2
+      exit 65
+    }
+    ;;
+  *) printf 'unsupported runtime mode\n' >&2; exit 64 ;;
+esac
 foundation_require_env SIMULATION_IMAGE OBSERVER_IMAGE
 
 workspace_dir=dependencies/robotics-runtime
@@ -15,18 +25,18 @@ workspace_revision="$(git -C "${workspace_dir}" rev-parse HEAD)"
 python3 scripts/ci/foundation/sync-workspace-pins.py --check
 for image in "${SIMULATION_IMAGE}" "${OBSERVER_IMAGE}"; do
   test "$(
-    docker run --rm --entrypoint jq "${image}" \
+    docker run --rm --pull never --entrypoint jq "${image}" \
       -er '.repositories["robotics-runtime"].version' \
       /usr/share/robotics-runtime/foundation-lock.json
   )" = "${workspace_revision}"
 done
 contracts_version="$(
-  docker run --rm \
+  docker run --rm --pull never \
     --entrypoint /opt/venv/bin/python "${OBSERVER_IMAGE}" \
     -c 'from importlib.metadata import version; print(version("robotics-runtime-contracts"))'
 )"
 harness_version="$(
-  docker run --rm \
+  docker run --rm --pull never \
     --entrypoint /opt/venv/bin/python "${OBSERVER_IMAGE}" \
     -c 'from importlib.metadata import version; print(version("robotics-acceptance-harness"))'
 )"
@@ -35,7 +45,7 @@ test "${harness_version}" = "$(jq -er '.packages.harness.version' config/foundat
 
 # The contracts CLI has its own interpreter; it must not replace the runtime's
 # Python, whose ROS message bindings depend on the distribution's NumPy build.
-docker run --rm --network none --env PYTHONDONTWRITEBYTECODE=1 \
+docker run --rm --pull never --network none --env PYTHONDONTWRITEBYTECODE=1 \
   "${SIMULATION_IMAGE}" python3 -c \
   'import numpy; from rclpy.node import Node; from robotics_runtime_infra import simulation_control'
-docker run --rm --network none "${SIMULATION_IMAGE}" robotics-contracts --help
+docker run --rm --pull never --network none "${SIMULATION_IMAGE}" robotics-contracts --help
