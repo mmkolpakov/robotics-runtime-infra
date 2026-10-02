@@ -15,15 +15,17 @@ The legacy 0.8 source line used contracts 0.15.4 and harness 0.17.1 with
 `acceptance-scenario.v4`, emitted `runtime-manifest.v2`, `evidence-index.v3`, and
 `qualification-bundle.v2`. It remains a distinct generation.
 
-This integration branch builds both packages from the single workspace commit
-in [the generated foundation lock](foundation-compatibility.md). The migration
-targets contracts 0.18.1 and harness 0.19.0; the imported commit and package
-versions are recorded in that lock. A development source pin can be validated
-before publication. A release-bound pin proves that the harness tag matches
-the commit and the contracts source tree matches its tag; completed package
-publication is checked separately. Neither state establishes qualification.
-All producer and fixture changes must land in the same integration PR before
-that branch is accepted. The E2E-0 milestone remains pending.
+The current source foundation builds contracts 0.18.1 and harness 0.19.0 from
+the single workspace commit in
+[the generated foundation lock](foundation-compatibility.md). Both packages
+are published. The release-bound pin checks that the harness tag matches the
+commit and the contracts source tree matches its tag; publication and running
+foundation qualification are separate checks.
+
+The source foundation is qualified for its declared software profile. The
+published infra `v0.8.0-rc.1` still belongs to the legacy generation. A new OCI
+release, external digest-only consumer qualification, and named hardware
+targets remain unqualified by that source result.
 
 The new generation uses `subject_digest` in permits, recording summaries,
 qualification predicate `/qualification-bundle/v1`, and OTLP metrics with

@@ -46,15 +46,17 @@ The end-to-end handoff is machine-readable: a product repository supplies its
 workload and scenario, runtime infra emits observed runtime and evidence facts,
 and the harness emits an acceptance result plus JUnit. Each layer can evolve
 within the [pinned compatibility pair](docs/compatibility.md#foundation-generations).
-This branch prepares the coordinated workspace migration. The source pin and
-package versions are generated in [the foundation lock](docs/foundation-compatibility.md).
-Legacy producers and fixtures are migrated together before the integration PR
-can merge; E2E-0 is not yet qualified.
+The current source foundation uses published contracts 0.18.1 and harness 0.19.0
+from the single workspace revision in
+[the foundation lock](docs/foundation-compatibility.md). Foundation integration
+checks the running source composition, retained evidence, and qualification signature.
+A new OCI release and a complete external consumer using its digest-only lock
+remain separate gates; source qualification does not establish their completion.
 
 The shared document model lives in
-[`robotics-runtime-contracts`](https://github.com/mmkolpakov/robotics-runtime-contracts).
+[`robotics-runtime` contracts package](https://github.com/mmkolpakov/robotics-runtime/tree/main/packages/contracts).
 Execution verdicts are produced by
-[`robotics-acceptance-harness`](https://github.com/mmkolpakov/robotics-acceptance-harness),
+[`robotics-runtime` harness package](https://github.com/mmkolpakov/robotics-runtime/tree/main/packages/harness),
 which observes a running graph but never starts or controls it.
 
 ## Choose a Workflow
