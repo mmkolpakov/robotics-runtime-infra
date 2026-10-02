@@ -291,11 +291,14 @@ EOF
 }
 
 @test "acceptance observer failure survives result copy failure and cleanup failure" {
-  run_acceptance_publication FAKE_PUBLISH_FAIL=cp
+  local observer_status
+  for observer_status in 1 17 255; do
+    run_acceptance_publication "FAKE_OBSERVER_STATUS=${observer_status}" FAKE_PUBLISH_FAIL=cp
 
-  [ "${status}" -eq 17 ]
-  [[ "${output}" == *"fixture publication cp failed"* ]]
-  [[ "${output}" == *"Compose down failed (73)"* ]]
+    [ "${status}" -eq "${observer_status}" ]
+    [[ "${output}" == *"fixture publication cp failed"* ]]
+    [[ "${output}" == *"Compose down failed (73)"* ]]
+  done
 }
 
 @test "acceptance observer failure survives result ownership failure and cleanup failure" {
@@ -322,10 +325,15 @@ EOF
 }
 
 @test "an invalid observer status cannot replace a publication failure" {
-  run_acceptance_publication FAKE_OBSERVER_STATUS=invalid-status FAKE_PUBLISH_FAIL=cp
+  local observer_status
+  for observer_status in invalid-status 0009 256 999999999999999999999999999; do
+    run_acceptance_publication \
+      "FAKE_OBSERVER_STATUS=${observer_status}" FAKE_PUBLISH_FAIL=cp
 
-  [ "${status}" -eq 29 ]
-  [[ "${output}" == *"fixture publication cp failed"* ]]
+    [ "${status}" -eq 29 ]
+    [[ "${output}" == *"fixture publication cp failed"* ]]
+    [[ "${output}" == *"Compose down failed (73)"* ]]
+  done
 }
 
 @test "acceptance startup failure survives cleanup before observer status exists" {

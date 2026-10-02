@@ -244,7 +244,8 @@ cleanup() {
   local project_status=0
   trap - EXIT
   # A recorded observer failure precedes result publication failures.
-  if [[ "${observer_status:-}" =~ ^0*[1-9][0-9]*$ ]]; then
+  if [[ "${observer_status:-}" =~ ^[1-9][0-9]{0,2}$ ]] &&
+    ((observer_status <= 255)); then
     status="${observer_status}"
   fi
   foundation_compose_logs \
