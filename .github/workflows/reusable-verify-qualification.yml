@@ -73,7 +73,7 @@ jobs:
           bash tooling/scripts/ci/foundation/import-sources.sh
           uv sync \
             --project tooling/dependencies/robotics-runtime \
-            --locked --package robotics-runtime-contracts --no-default-groups --no-editable
+            --locked --package robotics-runtime-contracts --extra mcap --no-default-groups --no-editable
       - name: Verify the retained qualification package
         env:
           ARGUMENTS_FILE: ${{ inputs.arguments_file }}
