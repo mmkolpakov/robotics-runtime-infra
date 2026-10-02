@@ -1,6 +1,6 @@
 # Minimal Runtime Consumer
 
-This source example qualifies a stepped simulation and a declared UInt64 topic,
+This example qualifies a stepped simulation and a declared UInt64 topic,
 retaining original ROS recordings, telemetry, logs, JSON/JUnit results and a signed
 qualification statement. The caller's standalone Compose file contains only
 caller-owned services; foundation services remain in pinned tooling.
@@ -62,5 +62,24 @@ come last so the downloaded argument file cannot select them. The canonical
 main-branch keyless gate remains a separate trust boundary. Cleanup diagnostics
 are separate from signed log snapshots.
 
-Released image-lock execution is pending N03. This example currently builds and
-qualifies the exact source tooling revision.
+To qualify published images, retain the canonical release's unchanged
+`release.env` in the consumer repository and add these inputs to the same job:
+
+```yaml
+      execution_mode: released
+      release_tag: <vMAJOR.MINOR.PATCH>
+      release_lock: path/to/release.env
+```
+
+Pin `tooling_ref` to the tooling commit for that release. The independently
+selected tag identifies the canonical GitHub release; the job verifies both
+that release and the exact lock bytes before using image references. It then
+verifies each selected infra image's workflow, source commit and digest before
+pulling or executing it. Fixed upstream dependencies retain their published
+digest pins and are not treated as images built by the infra workflow.
+
+Released mode does not build images. Its native Compose override removes build
+definitions from trusted foundation services; consumer build definitions,
+foreign image pins and mutable image references are rejected. The verified lock
+overrides ambient image variables, and its unchanged bytes, verification reports
+and selected image identities enter the signed qualification package.

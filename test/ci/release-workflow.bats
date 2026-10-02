@@ -44,6 +44,11 @@ setup() {
     any(.include[];
       .id == "permit-preflight" and
       .environment_variable == "PERMIT_PREFLIGHT_IMAGE"
+    ) and
+    any(.include[];
+      .id == "policy-tooling" and
+      .environment_variable == "POLICY_TOOLING_IMAGE" and
+      .platforms == ["linux/amd64", "linux/arm64"]
     )
   ' <<<"${matrix}"
   [ "${status}" -eq 0 ]
@@ -177,6 +182,14 @@ EOF
 }
 
 @test "candidate promotion emits a complete immutable runtime lock" {
+  export RELEASE_REAL_DOCKER
+  RELEASE_REAL_DOCKER="$(command -v docker)"
+  # shellcheck source=scripts/ci/lib.sh
+  source scripts/ci/lib.sh
+  # shellcheck source=scripts/ci/release/upstream-images.sh
+  source scripts/ci/release/upstream-images.sh
+  expected_collector="$(ci_release_otel_collector_reference)"
+  expected_edge_data_plane="$(ci_release_edge_attach_data_plane_reference)"
   candidate_dir="${BATS_TEST_TMPDIR}/candidates"
   output_dir="${BATS_TEST_TMPDIR}/release"
   fake_bin="${BATS_TEST_TMPDIR}/bin"
@@ -206,6 +219,9 @@ EOF
   cat >"${fake_bin}/docker" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+if [[ "$1" == compose ]]; then
+  exec "${RELEASE_REAL_DOCKER}" "$@"
+fi
 test "$1" = buildx
 test "$2" = imagetools
 case "$3" in
@@ -258,6 +274,8 @@ EOF
   run env \
     "PATH=${fake_bin}:${PATH}" \
     FAKE_DOCKER_STATE="${state_dir}" \
+    OTEL_COLLECTOR_IMAGE=foreign/mutable:latest \
+    EDGE_ATTACH_DATA_PLANE_IMAGE=foreign/mutable:latest \
     GITHUB_REPOSITORY_OWNER=test-owner \
     GITHUB_REF=refs/tags/v0.8.0 \
     GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 \
@@ -269,12 +287,14 @@ EOF
 
   [ "${status}" -eq 0 ]
   expected_count="$(jq '.images | length' "${release_plan}")"
-  [ "$(grep -c '_IMAGE=' "${output_dir}/release.env")" -eq "${expected_count}" ]
+  [ "$(grep -c '_IMAGE=' "${output_dir}/release.env")" -eq "$((expected_count + 2))" ]
+  grep -Fx "OTEL_COLLECTOR_IMAGE=${expected_collector}" "${output_dir}/release.env"
+  grep -Fx "EDGE_ATTACH_DATA_PLANE_IMAGE=${expected_edge_data_plane}" "${output_dir}/release.env"
   [ "$(grep -c '^ROBOTICS_RUNTIME_MODE=released$' "${output_dir}/release.env")" -eq 1 ]
   [ "$(grep -c '^ROBOTICS_RELEASE_SOURCE_SHA=0123456789abcdef0123456789abcdef01234567$' "${output_dir}/release.env")" -eq 1 ]
   [ "$(grep -c '^ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v0.8.0$' "${output_dir}/release.env")" -eq 1 ]
   [ "$(find "${output_dir}/digests" -type f -name '*.txt' | wc -l)" -eq "${expected_count}" ]
-  run grep -Ev '^[A-Z][A-Z0-9_]+=ghcr\.io/.+:[^@]+@sha256:[a-f0-9]{64}$|^ROBOTICS_RUNTIME_MODE=released$|^ROBOTICS_RELEASE_SOURCE_SHA=[a-f0-9]{40}$|^ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
+  run grep -Ev '^[A-Z][A-Z0-9_]+=ghcr\.io/.+:[^@]+@sha256:[a-f0-9]{64}$|^ROBOTICS_RUNTIME_MODE=released$|^ROBOTICS_RELEASE_SOURCE_SHA=[a-f0-9]{40}$|^ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$|^OTEL_COLLECTOR_IMAGE=otel/opentelemetry-collector-contrib:[0-9]+\.[0-9]+\.[0-9]+@sha256:[a-f0-9]{64}$|^EDGE_ATTACH_DATA_PLANE_IMAGE=registry\.k8s\.io/pause:[0-9]+\.[0-9]+\.[0-9]+@sha256:[a-f0-9]{64}$' \
     "${output_dir}/release.env"
   [ "${status}" -eq 1 ]
 
@@ -308,6 +328,90 @@ EOF
   run jq -e '.services["otel-collector"].user == "1000:1000"' \
     <<<"${compose_json}"
   [ "${status}" -eq 0 ]
+  run jq -e --arg collector "${expected_collector}" \
+    '.services["otel-collector"].image == $collector' <<<"${compose_json}"
+  [ "${status}" -eq 0 ]
+
+  approved="$(sed -n 's/^[A-Z][A-Z0-9_]*_IMAGE=//p' "${output_dir}/release.env" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+  for layout in foundation edge; do
+    if [[ "${layout}" == foundation ]]; then
+      files=(-f compose.foundation.yaml -f compose.stepped.yaml -f compose.record.yaml
+        -f compose.evidence.yaml -f compose.observability.yaml)
+    else
+      files=(-f compose.edge-attach.yaml)
+    fi
+    run env ROBOTICS_DOMAIN_ID=0 ROBOTICS_RUN_ID=run-release-lock-test \
+      ROBOTICS_ATTACH_NETWORK=release-lock-network docker compose \
+      --env-file "${output_dir}/release.env" -f compose.yaml "${files[@]}" \
+      -f compose.released.yaml --profile '*' config --format json
+    [ "${status}" -eq 0 ]
+    locked_model="${output}"
+    frozen_model="${BATS_TEST_TMPDIR}/${layout}-resolved.json"
+    printf '%s\n' "${locked_model}" >"${frozen_model}"
+    run env ROBOTICS_DOMAIN_ID=0 ROBOTICS_RUN_ID=run-release-lock-test \
+      ROBOTICS_ATTACH_NETWORK=release-lock-network docker compose \
+      --env-file "${output_dir}/release.env" -f "${frozen_model}" \
+      --profile '*' config --format json
+    [ "${status}" -eq 0 ]
+    [ "$(jq -Sc . <<<"${locked_model}")" = "$(jq -Sc . <<<"${output}")" ]
+    run jq -e --argjson approved "${approved}" '
+      ."x-robotics-runtime".mode == "released" and
+      all(.services[];
+        (has("build") | not) and (.image as $image | $approved | index($image) != null)
+      )
+    ' <<<"${output}"
+    [ "${status}" -eq 0 ]
+  done
+}
+
+@test "released Compose reset removes trusted base builds and preserves executable configuration" {
+  export ROBOTICS_DOMAIN_ID=qualification-domain ROBOTICS_RUN_ID=run-release-reset
+  export ROBOTICS_ATTACH_NETWORK=release-reset-network
+  common=(docker compose -f compose.yaml)
+  for layout in foundation edge; do
+    if [[ "${layout}" == foundation ]]; then
+      files=(-f compose.foundation.yaml -f compose.stepped.yaml -f compose.record.yaml
+        -f compose.evidence.yaml -f compose.observability.yaml)
+    else
+      files=(-f compose.edge-attach.yaml)
+    fi
+    run "${common[@]}" "${files[@]}" --profile '*' config --format json
+    [ "${status}" -eq 0 ]
+    before="${output}"
+    run "${common[@]}" "${files[@]}" -f compose.released.yaml --profile '*' config --format json
+    [ "${status}" -eq 0 ]
+    after="${output}"
+    jq -e 'all(.services[]; has("build") | not)' <<<"${after}"
+    [ "$(jq -Sc 'del(.services[].build)' <<<"${before}")" = "$(jq -Sc . <<<"${after}")" ]
+  done
+
+  cat >"${BATS_TEST_TMPDIR}/consumer.yaml" <<YAML
+services:
+  product:
+    image: local/consumer/product:dev
+    build:
+      context: ${REPO_ROOT}
+YAML
+  run "${common[@]}" -f "${BATS_TEST_TMPDIR}/consumer.yaml" \
+    -f compose.released.yaml --profile '*' config --format json
+  [ "${status}" -eq 0 ]
+  jq -e '.services.product | has("build")' <<<"${output}"
+}
+
+@test "upstream lock extraction rejects an unpinned trusted default" {
+  fixture="${BATS_TEST_TMPDIR}/upstream"
+  mkdir "${fixture}"
+  printf 'services:\n  simulation:\n    image: local/simulation:dev\n' >"${fixture}/compose.yaml"
+  printf 'services:\n  otel-collector:\n    image: "${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:latest}"\n' \
+    >"${fixture}/compose.observability.yaml"
+  # shellcheck source=scripts/ci/release/upstream-images.sh
+  source scripts/ci/release/upstream-images.sh
+  CI_REPO_ROOT="${fixture}" run ci_release_otel_collector_reference
+  [ "${status}" -ne 0 ]
+  printf 'services:\n  edge-attach-data-plane:\n    image: "${EDGE_ATTACH_DATA_PLANE_IMAGE:-registry.k8s.io/pause:latest}"\n' \
+    >"${fixture}/compose.edge-attach.yaml"
+  CI_REPO_ROOT="${fixture}" run ci_release_edge_attach_data_plane_reference
+  [ "${status}" -ne 0 ]
 }
 
 @test "immutable promotion distinguishes missing tags from registry ambiguity" {
@@ -394,4 +498,41 @@ EOF
   run grep -F 'test "${DISPATCH_SHA}" = "${SOURCE_SHA}"' \
     .github/workflows/publish-conformance-image.yml
   [ "${status}" -eq 0 ]
+}
+
+@test "released extra images use the runner's transitive selected dependency closure" {
+  probe="${BATS_TEST_TMPDIR}/prepare-selected.sh"
+  model="${BATS_TEST_TMPDIR}/selected-model.json"
+  prepared="${BATS_TEST_TMPDIR}/prepared-images"
+  cat >"${probe}" <<'SH'
+set -Eeuo pipefail
+resolved_model="$1"
+shift
+extra_services=("$@")
+ROBOTICS_RUNTIME_MODE=released
+foundation_prepare_released_image() { printf '%s\n' "$1" >>"${PREPARED_IMAGES}"; }
+SH
+  sed -n '/^if .*released.*extra_services.*; then$/,/^observer=""$/p' \
+    scripts/ci/foundation/run-acceptance.sh | sed '$d' >>"${probe}"
+  grep -F 'extra_images=' "${probe}"
+  digest="$(printf '%064d' 1)"
+  jq -n --arg digest "${digest}" '{
+    services: {
+      selected: {image: ("repo/selected@sha256:" + $digest), depends_on: {left: {}, right: {}}},
+      left: {image: ("repo/left@sha256:" + $digest), depends_on: {leaf: {}}},
+      right: {image: ("repo/right@sha256:" + $digest), depends_on: {leaf: {}}},
+      leaf: {image: ("repo/leaf@sha256:" + $digest)},
+      unselected: {image: ("repo/unselected@sha256:" + $digest)}
+    }
+  }' >"${model}"
+  run env PREPARED_IMAGES="${prepared}" bash "${probe}" "${model}" selected selected
+  [ "${status}" -eq 0 ]
+  expected="$(printf 'repo/%s@sha256:%s\n' leaf "${digest}" left "${digest}" right "${digest}" selected "${digest}")"
+  [ "$(<"${prepared}")" = "${expected}" ]
+
+  : >"${prepared}"
+  run env PREPARED_IMAGES="${prepared}" bash "${probe}" "${model}" missing
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"unknown requested consumer service: missing"* ]]
+  [ ! -s "${prepared}" ]
 }

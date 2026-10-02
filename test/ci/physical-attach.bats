@@ -728,3 +728,43 @@ setup() {
     "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight-ci"
   [ "${status}" -eq 0 ]
 }
+
+@test "released verifier wrapper propagates native and malformed provenance failures in conditions" {
+  for failure in native empty multiple; do
+    run bash -c '
+      set -Eeuo pipefail
+      export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+      source "$1"
+      work_root="$2"
+      mkdir "${work_root}"
+      GH_TOKEN=fixture-token
+      ROBOTICS_RUNTIME_MODE=released
+      ROBOTICS_RELEASE_SOURCE_SHA="$(printf "%040d" 1)"
+      ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v0.8.0
+      PERMIT_PREFLIGHT_IMAGE="ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight:0.8.0@sha256:$(printf "%064d" 8)"
+      failure="$3"
+      gh() {
+        case "${failure}" in
+          native) return 42 ;;
+          empty) printf "[]\n" ;;
+          multiple) printf "[{}]\n[{}]\n" ;;
+        esac
+      }
+      docker() { touch "${work_root}/image-used"; }
+      if verify_verifier_image_digest; then
+        exit 99
+      else
+        status=$?
+      fi
+      test ! -e "${work_root}/image-used"
+      test ! -e "${work_root}/verifier-attestation.json"
+      test ! -e "${work_root}/verifier-attestation.json.tmp"
+      exit "${status}"
+    ' _ "${SCRIPT}" "${BATS_TEST_TMPDIR}/${failure}" "${failure}"
+    if [ "${failure}" = native ]; then
+      [ "${status}" -eq 42 ]
+    else
+      [ "${status}" -eq 65 ]
+    fi
+  done
+}

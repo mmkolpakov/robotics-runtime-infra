@@ -4,6 +4,8 @@ set -Eeuo pipefail
 # shellcheck source=scripts/ci/lib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 ci_enter_repo
+# shellcheck source=scripts/ci/release/upstream-images.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/upstream-images.sh"
 
 test "$#" -eq 4 || {
   printf 'usage: promote-candidates.sh MANIFEST CANDIDATE_DIR VERSION OUTPUT_DIR\n' >&2
@@ -33,6 +35,9 @@ test "${actual_ids}" = "${expected_ids}" || {
   diff -u <(printf '%s\n' "${expected_ids}") <(printf '%s\n' "${actual_ids}") >&2
   exit 65
 }
+
+collector_image="$(ci_release_otel_collector_reference)"
+edge_data_plane_image="$(ci_release_edge_attach_data_plane_reference)"
 
 mkdir -p "${output_dir}/digests" "${output_dir}/promotion"
 {
@@ -124,4 +129,14 @@ done <"${output_dir}/promotion/plan.jsonl"
   printf '\n'
   printf 'Each image includes BuildKit provenance and an SBOM and has a GitHub artifact attestation.\n'
   printf "The attached \`release.env\` is the canonical immutable Compose runtime lock.\n"
+} >>"${output_dir}/release-notes.md"
+
+{
+  printf 'OTEL_COLLECTOR_IMAGE=%s\n' "${collector_image}"
+  printf 'EDGE_ATTACH_DATA_PLANE_IMAGE=%s\n' "${edge_data_plane_image}"
+} >>"${output_dir}/release.env"
+{
+  printf '\n## Upstream dependencies\n\n'
+  printf -- "- \`%s\`\n" "${collector_image}" "${edge_data_plane_image}"
+  printf '\nThe collector and edge data plane retain the trusted Compose dependency pins; they are not internally promoted or attested candidates.\n'
 } >>"${output_dir}/release-notes.md"

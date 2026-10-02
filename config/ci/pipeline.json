@@ -117,6 +117,26 @@
       ]
     },
     {
+      "name": "foundation-released",
+      "files": [
+        "compose.yaml",
+        "compose.foundation.yaml",
+        "compose.stepped.yaml",
+        "compose.record.yaml",
+        "compose.evidence.yaml",
+        "compose.observability.yaml",
+        "compose.released.yaml"
+      ]
+    },
+    {
+      "name": "edge-attach-released",
+      "files": [
+        "compose.yaml",
+        "compose.edge-attach.yaml",
+        "compose.released.yaml"
+      ]
+    },
+    {
       "name": "sensor-inference-cpu",
       "files": [
         "compose.yaml",

@@ -123,6 +123,7 @@ group "release" {
     "benchmark-runtime",
     "evidence-sink",
     "permit-preflight",
+    "policy-tooling",
   ]
 }
 

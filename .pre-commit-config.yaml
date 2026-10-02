@@ -9,6 +9,11 @@ repos:
         exclude: ^test/qualification/fixtures/.*\.json$
       - id: check-json
       - id: check-yaml
+        exclude: ^compose\.released\.yaml$
+      - id: check-yaml
+        name: check Compose merge-tag syntax
+        files: ^compose\.released\.yaml$
+        args: [--unsafe]
       - id: check-xml
       - id: check-merge-conflict
       - id: mixed-line-ending
