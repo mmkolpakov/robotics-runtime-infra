@@ -127,14 +127,16 @@ assert_previous_output_preserved() {
     "${ROBOTICS_PROVIDER_BINDINGS_FILE}" >"${BATS_TEST_TMPDIR}/recording-source.json"
   export ROBOTICS_PROVIDER_BINDINGS_FILE="${BATS_TEST_TMPDIR}/recording-source.json"
   local -a playback_environment
-  mapfile -t playback_environment < <(python3 - "${REPOSITORY_ROOT}/compose.playback.yaml" <<'PY'
+  run "${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}" \
+    - "${REPOSITORY_ROOT}/compose.playback.yaml" <<'PY'
 import sys
 from robotics_runtime_contracts import load_mapping
 values = load_mapping(sys.argv[1])["services"]["runtime-manifest"]["environment"]
 for name, value in values.items():
     print(f"{name}={value}")
 PY
-  )
+  [ "${status}" -eq 0 ]
+  mapfile -t playback_environment <<<"${output}"
   run env "${playback_environment[@]}" bash "${EMITTER}" "${OUTPUT}"
   [ "${status}" -eq 0 ]
   run jq -e '.execution.time_mode == "playback_clocked" and
