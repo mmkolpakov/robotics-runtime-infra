@@ -3,7 +3,7 @@
 setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before these tests}"
-  FOUNDATION_PYTHON="$(dirname "${ROBOTICS_CONTRACTS_CLI}")/python"
+  FOUNDATION_PYTHON="${ROBOTICS_FOUNDATION_PYTHON:-$(dirname "${ROBOTICS_CONTRACTS_CLI}")/python}"
   # shellcheck source=scripts/ci/foundation/lib.sh
   source "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh"
   SCENARIO="${BATS_TEST_TMPDIR}/scenario.json"
@@ -65,9 +65,9 @@ prepare_orchestration_fixture() {
   FIXTURE="${BATS_TEST_TMPDIR}/orchestration"
   local scripts="${FIXTURE}/scripts/ci"
   local bin="${FIXTURE}/dependencies/robotics-runtime/.venv/bin"
-  mkdir -p "${scripts}/foundation" "${bin}"
-  cp "${REPOSITORY_ROOT}/scripts/ci/foundation/"{lib.sh,run-acceptance.sh,run-policy.sh} \
-    "${scripts}/foundation/"
+  mkdir -p "${scripts}" "${bin}"
+  # Keep production dependencies together; this fixture replaces only leaf I/O.
+  cp -a "${REPOSITORY_ROOT}/scripts/ci/." "${scripts}/"
   : >"${scripts}/image-identity.sh"
   # Keep the real orchestration and duration parser; stop at the first Compose
   # call. Image lookup, host inventory and run creation are unit fixtures.
