@@ -59,10 +59,11 @@ foundation_project_name() {
 
 foundation_compose_cleanup() {
   local log_path="$1"
-  shift
+  local project="$2"
+  shift 2
 
   foundation_compose_logs "${log_path}" "$@"
-  foundation_compose_down "$@"
+  foundation_cleanup_project "${project}" "$@"
 }
 
 foundation_compose_logs() {
@@ -73,7 +74,29 @@ foundation_compose_logs() {
 }
 
 foundation_compose_down() {
-  "$@" down --volumes --remove-orphans || true
+  local status=0
+
+  "$@" down --volumes --remove-orphans || status=$?
+  if ((status != 0)); then
+    printf 'foundation cleanup: Compose down failed (%s):' "${status}" >&2
+    printf ' %q' "$@" >&2
+    printf '\n' >&2
+  fi
+  return "${status}"
+}
+
+foundation_cleanup_project() {
+  local project="$1"
+  local status=0
+  local assertion_status=0
+  shift
+
+  foundation_compose_down "$@" || status=$?
+  foundation_assert_project_clean "${project}" || assertion_status=$?
+  if ((status != 0)); then
+    return "${status}"
+  fi
+  return "${assertion_status}"
 }
 
 foundation_wait_for_clock() {
@@ -86,15 +109,28 @@ foundation_wait_for_clock() {
 
 foundation_assert_project_clean() {
   local project="$1"
+  local kind resources
+  local status=0
+  local -a command
 
-  test -z "$(
-    docker ps --all --quiet \
-      --filter "label=com.docker.compose.project=${project}"
-  )"
-  test -z "$(
-    docker network ls --quiet \
-      --filter "label=com.docker.compose.project=${project}"
-  )"
+  for kind in container network volume; do
+    command=(docker "${kind}" ls --quiet)
+    if [[ "${kind}" == container ]]; then
+      command+=(--all)
+    fi
+    if ! resources="$("${command[@]}" \
+      --filter "label=com.docker.compose.project=${project}")"; then
+      printf 'foundation cleanup: %s inventory failed for project %s\n' \
+        "${kind}" "${project}" >&2
+      return 70
+    fi
+    if [[ -n "${resources}" ]]; then
+      printf 'foundation cleanup: %s resources remain for project %s: %s\n' \
+        "${kind}" "${project}" "${resources}" >&2
+      status=1
+    fi
+  done
+  return "${status}"
 }
 
 foundation_validate_document() {
