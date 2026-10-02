@@ -44,6 +44,105 @@ test_host_namespaces_are_denied if {
 	count(violations) == 3
 }
 
+test_host_user_cgroup_and_uts_namespaces_are_denied if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"userns_mode": "host",
+		"cgroup": "host",
+		"uts": "host",
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+	}}}
+	count(violations) == 3
+}
+
+test_private_cgroup_namespace_is_allowed if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"cgroup": "private",
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+	}}}
+	count(violations) == 0
+}
+
+test_unconfined_security_profiles_are_denied if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"cap_drop": ["ALL"],
+		"security_opt": [
+			"no-new-privileges:true",
+			"seccomp=unconfined",
+			"apparmor:unconfined",
+			"label=disable",
+			"systempaths=unconfined",
+		],
+	}}}
+	count(violations) == 4
+	"service \"runtime\" disables kernel confinement with seccomp=unconfined" in violations
+}
+
+test_custom_seccomp_profile_is_allowed if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true", "seccomp=/etc/robotics/seccomp.json"],
+	}}}
+	count(violations) == 0
+}
+
+test_device_cgroup_rule_is_denied if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+		"device_cgroup_rules": ["b *:* rwm"],
+	}}}
+	violations == {"service \"runtime\" adds a device cgroup rule"}
+}
+
+test_device_cgroup_rule_is_reported_once_in_real_observation_profile if {
+	violations := compose.deny with input as {"services": {"real-observation-observer": {
+		"profiles": ["real-observation"],
+		"command": ["robotics-acceptance", "verify"],
+		"environment": {
+			"ROS_SECURITY_ENABLE": "true",
+			"ROS_SECURITY_STRATEGY": "Enforce",
+			"ROS_SECURITY_ENCLAVE_OVERRIDE": "/robotics/observer",
+		},
+		"device_cgroup_rules": ["c 81:* rmw"],
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+	}}}
+	count(violations) == 1
+}
+
+test_host_system_paths_are_denied if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+		"volumes": [
+			{"type": "bind", "source": "/", "target": "/host", "read_only": true},
+			{"type": "bind", "source": "/proc", "target": "/host/proc", "read_only": true},
+			{"type": "bind", "source": "/sys/fs/cgroup", "target": "/sys/fs/cgroup"},
+			"/proc/sysrq-trigger:/trigger:rw",
+		],
+	}}}
+	count(violations) == 4
+}
+
+test_read_only_kernel_identity_file_is_allowed if {
+	violations := compose.deny with input as {"services": {"runtime": {
+		"cap_drop": ["ALL"],
+		"security_opt": ["no-new-privileges:true"],
+		"volumes": [
+			{
+				"type": "bind",
+				"source": "/proc/device-tree/compatible",
+				"target": "/run/host/device-tree-compatible",
+				"read_only": true,
+			},
+			"/sys/class/dmi/id/product_name:/run/host/product-name:ro",
+		],
+	}}}
+	count(violations) == 0
+}
+
 test_docker_socket_is_denied if {
 	violations := compose.deny with input as {"services": {"runtime": {
 		"cap_drop": ["ALL"],

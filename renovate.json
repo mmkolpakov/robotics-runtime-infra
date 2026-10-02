@@ -6,7 +6,13 @@
   ],
   "dependencyDashboard": true,
   "minimumReleaseAge": "3 days",
-  "automerge": false,
+  "timezone": "Etc/UTC",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "conflicted",
   "customManagers": [
     {
       "customType": "jsonata",
@@ -59,6 +65,30 @@
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.*)$",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker-bake\\.hcl$/"
+      ],
+      "matchStrings": [
+        "variable \"COSIGN_IMAGE\" \\{\\s+default = \"(?<depName>cgr\\.dev/chainguard/cosign):(?<currentValue>latest)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track digest-pinned tool images in workflow environments and local actions",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/^\\.github/actions/[^/]+/action\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?:[A-Z0-9_]+_IMAGE:|image[=:])\\s*(?:docker\\.io/)?(?<depName>[a-z0-9][a-z0-9._/-]*):(?<currentValue>[A-Za-z0-9][A-Za-z0-9._-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
     }
   ],
   "packageRules": [
@@ -123,6 +153,71 @@
         "mikefarah/yq"
       ],
       "allowedVersions": ">=4.53.4"
+    },
+    {
+      "description": "Batch digest refreshes into one weekly PR",
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "groupName": "digest refreshes"
+    },
+    {
+      "description": "Batch minor and patch releases into one weekly PR",
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "minor and patch releases"
+    },
+    {
+      "description": "Batch GitHub Actions updates of any kind except major releases",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest",
+        "minor",
+        "patch"
+      ],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Qualify every Chainguard Cosign rebuild",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "cgr.dev/chainguard/cosign"
+      ],
+      "groupName": "cosign",
+      "minimumReleaseAge": "0 days",
+      "automerge": false,
+      "labels": [
+        "supply-chain"
+      ]
+    },
+    {
+      "description": "ROS 2 Jazzy targets Ubuntu 24.04; a newer series needs a newer ROS distribution",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "ubuntu"
+      ],
+      "allowedVersions": "/^24\\.04$/"
+    },
+    {
+      "description": "RKNN Toolkit2 2.3.2 ships CPython 3.12 wheels for the Debian bookworm converter",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "allowedVersions": "/^3\\.12-slim-bookworm$/"
     }
-  ]
+  ],
+  "automerge": false
 }

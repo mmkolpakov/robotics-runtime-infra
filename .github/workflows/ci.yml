@@ -463,7 +463,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   portable-arm64:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -473,8 +473,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-buildx
-        with:
-          qemu: "true"
+      - name: Require the native ARM64 runner
+        run: test "$(uname -m)" = aarch64
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
       - name: Build and scan every portable target for ARM64
