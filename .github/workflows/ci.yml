@@ -57,6 +57,10 @@ jobs:
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
           -s test/ci -p test_simulation_provider.py -v
+      - name: Test simulation control state and clock boundaries
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_simulation_control.py -v
       - name: Test declared consumer topic configuration
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover

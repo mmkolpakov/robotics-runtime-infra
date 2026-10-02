@@ -207,8 +207,13 @@ if [[ -n "${provider_config_sha256}" ]]; then
     ' "${fixture}" >/dev/null
   runtime_identity="$(ci_image_identity "${runtime_image}" "${ROBOTICS_RUNTIME_MODE:-source}")"
   runtime_digest="$(jq -er '.digest' <<<"${runtime_identity}")"
-  bash "${root}/scripts/ci/foundation/collect-simulation-provider.sh" \
-    "${simulation_id}" "${report_dir}" "${report_dir}/provider" "${runtime_digest}"
+  simulation_identity="$(
+    ci_image_identity "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}" \
+      "${ROBOTICS_RUNTIME_MODE:-source}"
+  )"
+  ROBOTICS_SIMULATION_LOCAL_IMAGE_ID="$(jq -er '.local_image_id' <<<"${simulation_identity}")" \
+    bash "${root}/scripts/ci/foundation/collect-simulation-provider.sh" \
+      "${simulation_id}" "${report_dir}" "${report_dir}/provider" "${runtime_digest}"
   "${ROBOTICS_FOUNDATION_PYTHON}" "${root}/test/accelerators/write-model-manifest.py" \
     --report-directory "${report_dir}" --fixture "${fixture}" \
     --runtime-digest "${runtime_digest}"

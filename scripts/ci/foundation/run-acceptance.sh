@@ -95,11 +95,13 @@ ROBOTICS_METRICS_TOPIC="$(jq -er '.metrics_topic' <<<"${topic_configuration}")"
 ROBOTICS_RECORD_REGEX="$(jq -er '.record_regex' <<<"${topic_configuration}")"
 export ROBOTICS_SIMULATION_OCI_DIGEST
 export ROBOTICS_SIMULATION_OCI_REFERENCE
+export ROBOTICS_SIMULATION_LOCAL_IMAGE_ID
 simulation_identity="$(
   ci_image_identity "${SIMULATION_IMAGE}" "${ROBOTICS_RUNTIME_MODE:-source}"
 )"
 ROBOTICS_SIMULATION_OCI_DIGEST="$(jq -er '.digest' <<<"${simulation_identity}")"
 ROBOTICS_SIMULATION_OCI_REFERENCE="$(jq -er '.reference' <<<"${simulation_identity}")"
+ROBOTICS_SIMULATION_LOCAL_IMAGE_ID="$(jq -er '.local_image_id' <<<"${simulation_identity}")"
 
 profiles=(
   --profile stepped

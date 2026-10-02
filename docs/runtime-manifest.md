@@ -29,6 +29,12 @@ ament search path and overlays. ROS domain IDs are decimal, including values wit
 leading zeros, and must satisfy the contracts range. Simulator-specific identity and
 version belong in the provider binding, replacing the old fixed Gazebo fields.
 
+For `simulation_realtime` and `simulation_stepped`, the stock producer records
+`ros_time` with `sim_clock` and rejects conflicting clock overrides. The mandatory
+zero `offset_ms` and `drift_ppm` values describe this simulation-clock declaration.
+Physical synchronization requires measured, retained observations in its hardware
+profile. Recorded playback retains its separate `playback_clock` declaration.
+
 Output is a validated `runtime-manifest.v1` document. Its execution subject uses an
 OCI locator; middleware configuration is recorded under
 `data_plane.middleware_configuration_sha256`. Temporary inputs and output are removed

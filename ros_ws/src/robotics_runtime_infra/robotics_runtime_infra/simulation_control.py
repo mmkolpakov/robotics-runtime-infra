@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -105,6 +106,21 @@ class SimulationControl(Node):
         self._require_ok(response, "get_simulation_state")
         return response.state.state
 
+    def wait_for_state(self, requested_state: int) -> None:
+        deadline = time.monotonic() + self._timeout_sec
+        observed_state = self.state()
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ConformanceError(
+                    f"simulation state {requested_state} was not confirmed "
+                    f"before the timeout; last observed state {observed_state}"
+                )
+            if observed_state == requested_state:
+                return
+            rclpy.spin_once(self, timeout_sec=min(0.05, remaining))
+            observed_state = self.state()
+
     def step(self, steps: int) -> None:
         request = StepSimulation.Request()
         request.steps = steps
@@ -115,9 +131,12 @@ class SimulationControl(Node):
         deadline = time.monotonic() + self._timeout_sec
         while time.monotonic() < deadline:
             rclpy.spin_once(self, timeout_sec=0.1)
-            if self._clock_ns is not None and (
-                previous_ns is None or self._clock_ns > previous_ns
-            ):
+            if self._clock_ns is None:
+                continue
+            if previous_ns is None:
+                # A first sample establishes a cursor, not proof of advancement.
+                previous_ns = self._clock_ns
+            elif self._clock_ns > previous_ns:
                 return self._clock_ns
         raise ConformanceError("/clock did not advance before the timeout")
 
@@ -158,9 +177,12 @@ class SimulationControl(Node):
         if missing:
             raise ConformanceError(f"simulator features are missing: {missing}")
 
+        initial_clock_ns = self._clock_ns
         self.set_state(SimulationState.STATE_PLAYING)
-        playing_clock_ns = self.wait_for_clock_after(None)
+        self.wait_for_state(SimulationState.STATE_PLAYING)
+        playing_clock_ns = self.wait_for_clock_after(initial_clock_ns)
         self.set_state(SimulationState.STATE_PAUSED)
+        self.wait_for_state(SimulationState.STATE_PAUSED)
         paused_clock_ns = self.wait_for_quiescent_clock()
         expected_stepped_clock_ns = paused_clock_ns + steps * step_size_ns
         self.step(steps)
@@ -176,6 +198,7 @@ class SimulationControl(Node):
             raise ConformanceError("step_simulation did not return to paused state")
         self.set_state(SimulationState.STATE_PLAYING)
         resumed_clock_ns = self.wait_for_clock_after(stepped_clock_ns)
+        self.wait_for_state(SimulationState.STATE_PLAYING)
 
         return {
             "schema_version": "simulation-conformance.v1",
@@ -202,8 +225,8 @@ def _positive_int(value: str) -> int:
 
 def _positive_float(value: str) -> float:
     parsed = float(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("value must be positive")
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be finite and positive")
     return parsed
 
 
@@ -243,6 +266,7 @@ def main() -> int:
             return 0
 
         node.set_state(SimulationState.STATE_PAUSED)
+        node.wait_for_state(SimulationState.STATE_PAUSED)
         while rclpy.ok():
             node.step(args.steps)
             time.sleep(args.interval_sec)
