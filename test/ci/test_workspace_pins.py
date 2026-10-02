@@ -146,7 +146,7 @@ source = {{ editable = "packages/{directory}" }}
             with self.assertRaisesRegex(ValueError, "harness-vX.Y.Z"):
                 pins.workspace_pin(self.root)
 
-    def test_binds_a_release_pin_to_both_published_tags(self):
+    def test_binds_a_release_pin_to_both_source_tags(self):
         self.git("tag", "harness-v1.2.3")
         self.git("tag", "contracts-v1.2.3")
         self.set_pin(self.revision, "harness-v1.2.3")

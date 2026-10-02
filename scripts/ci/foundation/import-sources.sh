@@ -25,7 +25,8 @@ revision="$(python3 scripts/ci/foundation/sync-workspace-pins.py --revision)"
 # vcs export --exact identifies the remote through its tracking refs. Fetching
 # only a SHA updates FETCH_HEAD, leaving those refs stale on an existing clone.
 git -C "${workspace}" fetch --no-tags origin
-# Release pins are checked against the published harness and contracts tags.
+# Release pins bind source identity to harness and contracts tags.
+# Completed package publication is a separate release-adoption prerequisite.
 git -C "${workspace}" fetch --no-tags --force origin \
   '+refs/tags/harness-v*:refs/tags/harness-v*' \
   '+refs/tags/contracts-v*:refs/tags/contracts-v*'

@@ -55,7 +55,7 @@ def workspace_pin(root: Path) -> dict[str, str]:
 def release_pair(
     workspace: Path, revision: str, release: str, packages: dict[str, Any]
 ) -> tuple[str, str]:
-    """Bind the pinned commit to its harness tag and the released contracts."""
+    """Bind the pinned commit to its harness and contracts source tags."""
     tagged = git(workspace, "rev-parse", f"refs/tags/{release}^{{commit}}")
     if tagged.decode().strip() != revision:
         raise ValueError(f"{release} does not point to the pinned commit")
@@ -234,26 +234,22 @@ def outputs(
         "",
         *(
             [
-                f"The pin is the published release pair `{pair[0]}` and `{pair[1]}`.",
-                "The pinned commit is the harness tag, and its contracts source is",
-                "identical to the contracts tag.",
+                f"The pin is bound to the source tags `{pair[0]}` and `{pair[1]}`.",
+                "The pinned commit matches the harness tag, and its contracts source",
+                "tree is identical to the contracts tag.",
+                "This proves source identity, not completed package publication.",
+                "Verify publication separately before release adoption.",
             ]
             if pair
             else [
-                "The current pin is a development candidate, "
-                "not a published release pair.",
+                "The current pin is a development source candidate "
+                "without a release tag binding.",
             ]
         ),
         "Both packages are built from this source with locked build dependencies.",
         "CI checks the imported revision, workspace lock and installed image versions.",
-        *(
-            []
-            if pair
-            else [
-                "Stable release adoption remains gated on publication "
-                "and foundation qualification.",
-            ]
-        ),
+        "Stable release adoption remains gated on completed publication "
+        "and foundation qualification.",
         "",
     ]
     return {

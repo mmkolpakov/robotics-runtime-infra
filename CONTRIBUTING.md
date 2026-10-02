@@ -57,16 +57,21 @@ refresh that separate build lock and review the dependency changes:
 python3 scripts/ci/foundation/sync-workspace-pins.py --refresh-build-lock
 ```
 
-The development pin currently precedes stable workspace publication. Updates
-are manual until the first stable workspace release establishes a release tag
-baseline for Renovate. The obsolete managers for independent repositories and
-wheel URLs have been removed. This is a pending migration gate, not a claim
-that foundation release automation is already operational.
+Source integration can pin an immutable candidate commit before package
+publication. Add `release: harness-vX.Y.Z` only after the corresponding source
+tags exist and the contracts and harness package releases have completed.
+The importer checks tag commits and package source trees; it does not verify
+PyPI publication or completed GitHub release workflows. Verify those separately
+before release adoption. Renovate tracks a release-bound pin from published
+GitHub releases and requires regenerating its derived inputs in the update PR.
+The obsolete managers for independent repositories and wheel URLs have been
+removed.
 
 Keep the migration in one integration PR until producers, fixtures, CLI
 arguments, retained evidence and both domain paths pass foundation-integration.
 Do not merge only the new source pin into an otherwise legacy infra checkout.
-Wheels built for this draft are source inputs, not published release assets.
+Wheels built from the pinned workspace are source build inputs. Their source
+tag binding does not establish publication of package or OCI release assets.
 
 ## Change boundaries
 

@@ -16,9 +16,12 @@ The legacy 0.8 source line used contracts 0.15.4 and harness 0.17.1 with
 `qualification-bundle.v2`. It remains a distinct generation.
 
 This integration branch builds both packages from the single workspace commit
-in [the generated foundation lock](foundation-compatibility.md). The current
-source candidate is contracts 0.17.0rc1 with harness metadata 0.18.0; it is not
-a claim that contracts 0.17 / harness 0.19 have been published or qualified.
+in [the generated foundation lock](foundation-compatibility.md). The migration
+targets contracts 0.18.1 and harness 0.19.0; the imported commit and package
+versions are recorded in that lock. A development source pin can be validated
+before publication. A release-bound pin proves that the harness tag matches
+the commit and the contracts source tree matches its tag; completed package
+publication is checked separately. Neither state establishes qualification.
 All producer and fixture changes must land in the same integration PR before
 that branch is accepted. The E2E-0 milestone remains pending.
 
