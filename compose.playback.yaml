@@ -47,7 +47,7 @@ services:
         target: /datasets
         read_only: true
       - type: bind
-        source: ./config/playback
+        source: "${ROBOTICS_PLAYBACK_CONFIG_DIR:-./config/playback}"
         target: /etc/robotics/playback
         read_only: true
     healthcheck:
