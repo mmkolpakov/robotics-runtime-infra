@@ -243,6 +243,10 @@ cleanup() {
   local cleanup_status=0
   local project_status=0
   trap - EXIT
+  # A recorded observer failure precedes result publication failures.
+  if [[ "${observer_status:-}" =~ ^0*[1-9][0-9]*$ ]]; then
+    status="${observer_status}"
+  fi
   foundation_compose_logs \
     "${artifact_dir}/foundation-e2e.log" \
     "${compose[@]}" "${profiles[@]}"

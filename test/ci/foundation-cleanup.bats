@@ -3,6 +3,7 @@
 setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   LIBRARY="${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh"
+  ACCEPTANCE_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
   FIXTURE="${BATS_TEST_TMPDIR}/runtime"
   FAKE_BIN="${BATS_TEST_TMPDIR}/bin"
   FAKE_DOCKER_STATE="${BATS_TEST_TMPDIR}/docker-state"
@@ -77,6 +78,10 @@ elif [[ "$1" == container || "$1" == network || "$1" == volume ]]; then
       printf '%s\n' "${resource##*/}"
     fi
   done
+elif [[ "$1" == wait ]]; then
+  printf '%s\n' "${FAKE_OBSERVER_STATUS:-0}"
+elif [[ "$1" == logs ]]; then
+  printf 'fixture observer logs\n'
 elif [[ "$1" == cp ]]; then
   exit "${FAKE_CP_STATUS:-0}"
 elif [[ "$1" == rm ]]; then
@@ -98,6 +103,73 @@ run_runtime() {
     ROBOTICS_FOUNDATION_RUN_ID=cleanup GITHUB_RUN_ATTEMPT=1 \
     "ROBOTICS_FOUNDATION_ARTIFACT_DIR=${BATS_TEST_TMPDIR}/artifacts" \
     "$@" bash "${FIXTURE}/scripts/ci/foundation/run-runtime.sh"
+}
+
+run_acceptance_publication() {
+  local lifecycle="${BATS_TEST_TMPDIR}/acceptance-publication.sh"
+  mkdir -p "${FIXTURE}/run/results" "${FIXTURE}/artifacts"
+  printf '{}\n' >"${FIXTURE}/run/results/acceptance-result.json"
+  printf '{}\n' >"${FIXTURE}/run/scenario.yaml"
+  cat >"${FAKE_BIN}/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+operation="$1"
+shift
+if [[ "${FAKE_PUBLISH_FAIL:-}" == "${operation}" ]]; then
+  printf 'fixture publication %s failed\n' "${operation}" >&2
+  exit 29
+fi
+case "${operation}" in
+  cp) cp "$@" ;;
+  chown) exit 0 ;;
+  *) exit 64 ;;
+esac
+EOF
+  cat >"${FAKE_BIN}/jq" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "$1" == . && $# == 2 ]] || exit 64
+if [[ "${FAKE_PUBLISH_FAIL:-}" == jq ]]; then
+  printf 'fixture publication jq failed\n' >&2
+  exit 37
+fi
+cat "$2"
+EOF
+  chmod +x "${FAKE_BIN}/sudo" "${FAKE_BIN}/jq"
+  {
+    printf '#!/usr/bin/env bash\nset -Eeuo pipefail\nsource %q\n' "${LIBRARY}"
+    cat <<'EOF'
+project="${FAKE_ACCEPTANCE_PROJECT}"
+artifact_dir="${FAKE_ACCEPTANCE_ARTIFACT_DIR}"
+run_dir="${FAKE_ACCEPTANCE_RUN_DIR}"
+compose=(docker compose -p "${project}")
+profiles=()
+attached_compose=()
+observer=fixture-observer
+EOF
+    # Execute the real publication functions and EXIT trap, without ROS setup.
+    sed -n '/^publish_acceptance_results() {/,/^trap cleanup EXIT/p' \
+      "${ACCEPTANCE_SCRIPT}"
+    cat <<'EOF'
+if [[ "${FAKE_PRE_OBSERVER_STATUS:-0}" != 0 ]]; then
+  exit "${FAKE_PRE_OBSERVER_STATUS}"
+fi
+EOF
+    # Keep the real wait/publication/status sequence through its observer exit.
+    awk '
+      /^observer_status="\$\(docker wait / { emit = 1 }
+      emit && /^"\$\{compose\[@\]\}" --profile acceptance run --rm --no-deps/ { exit }
+      emit { print }
+    ' "${ACCEPTANCE_SCRIPT}"
+  } >"${lifecycle}"
+
+  run env "PATH=${FAKE_BIN}:${PATH}" \
+    "FAKE_DOCKER_STATE=${FAKE_DOCKER_STATE}" \
+    "FAKE_ACCEPTANCE_PROJECT=${PROJECT}" \
+    "FAKE_ACCEPTANCE_ARTIFACT_DIR=${FIXTURE}/artifacts" \
+    "FAKE_ACCEPTANCE_RUN_DIR=${FIXTURE}/run" \
+    FAKE_OBSERVER_STATUS=17 FAKE_DOWN_STATUS=73 \
+    "$@" bash "${lifecycle}"
 }
 
 @test "runtime cleanup removes its project resources and preserves foreign projects" {
@@ -216,4 +288,49 @@ EOF
   [[ "${output}" == *"parallel acceptance failed: a=13 b=17"* ]]
   [[ "${output}" == *"volume resources remain for project foundation-e2e-cleanup-acceptance-a-1: a-data"* ]]
   [[ "${output}" == *"volume resources remain for project foundation-e2e-cleanup-acceptance-b-1: b-data"* ]]
+}
+
+@test "acceptance observer failure survives result copy failure and cleanup failure" {
+  run_acceptance_publication FAKE_PUBLISH_FAIL=cp
+
+  [ "${status}" -eq 17 ]
+  [[ "${output}" == *"fixture publication cp failed"* ]]
+  [[ "${output}" == *"Compose down failed (73)"* ]]
+}
+
+@test "acceptance observer failure survives result ownership failure and cleanup failure" {
+  run_acceptance_publication FAKE_PUBLISH_FAIL=chown
+
+  [ "${status}" -eq 17 ]
+  [[ "${output}" == *"fixture publication chown failed"* ]]
+  [[ "${output}" == *"Compose down failed (73)"* ]]
+}
+
+@test "acceptance observer failure survives result jq failure and cleanup failure" {
+  run_acceptance_publication FAKE_PUBLISH_FAIL=jq
+
+  [ "${status}" -eq 17 ]
+  [[ "${output}" == *"fixture publication jq failed"* ]]
+  [[ "${output}" == *"Compose down failed (73)"* ]]
+}
+
+@test "a passed observer does not hide a publication failure" {
+  run_acceptance_publication FAKE_OBSERVER_STATUS=0 FAKE_PUBLISH_FAIL=cp
+
+  [ "${status}" -eq 29 ]
+  [[ "${output}" == *"fixture publication cp failed"* ]]
+}
+
+@test "an invalid observer status cannot replace a publication failure" {
+  run_acceptance_publication FAKE_OBSERVER_STATUS=invalid-status FAKE_PUBLISH_FAIL=cp
+
+  [ "${status}" -eq 29 ]
+  [[ "${output}" == *"fixture publication cp failed"* ]]
+}
+
+@test "acceptance startup failure survives cleanup before observer status exists" {
+  run_acceptance_publication FAKE_PRE_OBSERVER_STATUS=23
+
+  [ "${status}" -eq 23 ]
+  [[ "${output}" == *"Compose down failed (73)"* ]]
 }
