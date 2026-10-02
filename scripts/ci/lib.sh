@@ -14,7 +14,7 @@ ci_set_compose_fixture_env() {
   export ROBOTICS_CHRONY_IDENTITY="${ROBOTICS_CHRONY_IDENTITY:-100:101}"
   export ROBOTICS_DOMAIN_ID="${ROBOTICS_DOMAIN_ID:-0}"
   export PERMIT_PREFLIGHT_CI_IMAGE="${PERMIT_PREFLIGHT_CI_IMAGE:-local/robotics-runtime-infra/permit-preflight-ci:dev}"
-  export ROBOTICS_PTP_SAMPLE_FILE="${ROBOTICS_PTP_SAMPLE_FILE:-./test/time/pmc.fixture}"
+  export ROBOTICS_PTP_SAMPLE_DIR="${ROBOTICS_PTP_SAMPLE_DIR:-./test/time}"
   export ROBOTICS_RKNN_RENDER_GID="${ROBOTICS_RKNN_RENDER_GID:-65534}"
   export ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:-run-ci-compose}"
   export ROBOTICS_SERIAL_DEVICE="${ROBOTICS_SERIAL_DEVICE:-/dev/robotics/controller-alpha}"
@@ -142,7 +142,13 @@ ci_require_source_paths_within_root() {
 }
 
 ci_validate_contract_documents() {
-  uv run --isolated --with "${ROBOTICS_CONTRACTS_REQUIREMENT}" \
+  local foundation="${CI_REPO_ROOT}/dependencies/robotics-runtime"
+  if [[ ! -e "${foundation}/.git" ]]; then
+    bash "${CI_REPO_ROOT}/scripts/ci/foundation/import-sources.sh"
+  fi
+  python3 "${CI_REPO_ROOT}/scripts/ci/foundation/sync-workspace-pins.py" --check
+  uv run --project "${foundation}" --locked --no-default-groups \
+    --package robotics-runtime-contracts --no-editable \
     robotics-contracts validate --quiet "$@"
 }
 

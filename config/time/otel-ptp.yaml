@@ -4,8 +4,9 @@ receivers:
     include: [/input/pmc.log]
     start_at: beginning
     poll_interval: 100ms
-    multiline:
-      line_start_pattern: '^sending: GET TIME_STATUS_NP$'
+    operators:
+      - type: json_parser
+        parse_to: body
 
 processors:
   resource/clock:
@@ -16,40 +17,50 @@ processors:
       - key: robotics.clock.source
         action: upsert
         value: pmc
+  transform/source:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - >-
+            set(log.attributes["robotics.clock.sample_unix_ms"],
+            Double(log.body["source_unix_ms"]))
+  transform/age:
+    error_mode: propagate
+    metric_statements:
+      - context: datapoint
+        statements:
+          - >-
+            set(datapoint.value_double,
+            Double(UnixNano(datapoint.time)) / 1000000.0 -
+            datapoint.attributes["robotics.clock.sample_unix_ms"]) where
+            metric.name == "robotics.hardware.message.age"
 
 connectors:
-  signal_to_metrics/ptp:
+  signal_to_metrics/clock:
     error_mode: propagate
     logs:
       - name: robotics.hardware.clock.offset
         unit: ms
-        conditions: &ptp-synchronized
-          - >-
-            IsMatch(log.body, "(?m)^\\s*gmPresent\\s+true\\s*$")
+        attributes: &sample-attributes
+          - key: robotics.clock.sample_unix_ms
         gauge:
-          value: >-
-            Double(ExtractPatterns(log.body,
-            "(?m)^\\s*master_offset\\s+(?P<value>-?[0-9]+)\\s*$")["value"])
-            / 1000000.0
+          value: Double(log.body["offset_ms"])
       - name: robotics.hardware.clock.drift
         unit: ppm
-        conditions: *ptp-synchronized
+        attributes: *sample-attributes
         gauge:
-          value: >-
-            Double(ExtractPatterns(log.body,
-            "(?m)^\\s*cumulativeScaledRateOffset\\s+(?P<value>[+-]?[0-9]+(?:\\.[0-9]+)?)\\s*$")["value"])
-            * 1000000.0
+          value: Double(log.body["drift_ppm"])
       - name: robotics.hardware.message.age
         unit: ms
-        conditions: *ptp-synchronized
+        attributes: *sample-attributes
         gauge:
-          value: >-
-            Double(UnixNano(Now()) - UnixNano(log.observed_time)) / 1000000.0
+          value: "0.0"
       - name: robotics.hardware.clock.monotonic
         unit: "1"
-        conditions: *ptp-synchronized
+        attributes: *sample-attributes
         gauge:
-          value: "1"
+          value: Int(log.body["monotonic"])
 
 exporters:
   file/contract:
@@ -65,8 +76,9 @@ service:
   pipelines:
     logs:
       receivers: [file_log/ptp]
-      processors: [resource/clock]
-      exporters: [signal_to_metrics/ptp]
+      processors: [resource/clock, transform/source]
+      exporters: [signal_to_metrics/clock]
     metrics:
-      receivers: [signal_to_metrics/ptp]
+      receivers: [signal_to_metrics/clock]
+      processors: [transform/age]
       exporters: [file/contract]

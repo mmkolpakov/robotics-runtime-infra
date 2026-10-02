@@ -1,0 +1,18 @@
+[Unit]
+Description=Record one Chrony sample with its reference timestamp
+After=chrony.service
+ConditionPathExists=/run/robotics-time/chronyd.sock
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /usr/local/libexec/robotics-time/sample.sh chrony /run/robotics-time
+User=_chrony
+Group=_chrony
+ReadWritePaths=/run/robotics-time
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX
+UMask=0027

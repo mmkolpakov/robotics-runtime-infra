@@ -1,0 +1,8 @@
+{
+  "schema_version": "qualification-profile.v1",
+  "profile_id": "simulation-interfaces-baseline",
+  "provider_kind": "simulator",
+  "requirements": [
+    {"capability": "simulated_physics", "required": true}
+  ]
+}

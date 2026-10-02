@@ -10,54 +10,35 @@ command -v cosign >/dev/null 2>&1
 
 work="$(mktemp -d)"
 cleanup() {
-  rm -rf -- "${work}"
+  rm -f -- "$work/aggregate.json" "$work/statement.json" "$work/formatted.json" \
+    "$work/qualification.sigstore.json" "$work/qualification.pub" \
+    "$work/foreign.sigstore.json" "$work/foreign.pub" "$work/rejection.log"
+  rmdir -- "$work"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-fixtures="${root}/test/qualification/fixtures"
-cp "${fixtures}/acceptance-scenario.yaml" "${work}/scenario.yaml"
-cp "${fixtures}/acceptance-run.json" "${work}/run.json"
-cp "${fixtures}/runtime-manifest.json" "${work}/runtime.json"
-cp "${fixtures}/acceptance-result.json" "${work}/result.json"
-cp "${fixtures}/acceptance-aggregate.json" "${work}/aggregate.json"
-cp "${fixtures}/evidence-index.json" "${work}/evidence-index.json"
-cp "${fixtures}/mcap-summary.json" "${work}/mcap-summary.json"
-cp "${fixtures}/diagnostics.json" "${work}/diagnostics.json"
-
-profile="${root}/config/fastdds/udp-only.xml"
-profile_sha256="$(sha256sum "${profile}" | cut -d' ' -f1)"
-jq --arg digest "${profile_sha256}" \
-  '.data_plane.fastdds_profile_sha256 = $digest' \
-  "${work}/runtime.json" >"${work}/runtime.with-profile.json"
-mv "${work}/runtime.with-profile.json" "${work}/runtime.json"
-jq --arg digest "$(sha256sum "${work}/runtime.json" | cut -d' ' -f1)" \
-  '.runtime_manifest_sha256 = $digest' \
-  "${work}/result.json" >"${work}/result.with-runtime.json"
-mv "${work}/result.with-runtime.json" "${work}/result.json"
-jq --arg digest "$(sha256sum "${work}/result.json" | cut -d' ' -f1)" \
-  '.per_domain_results[0].result_sha256 = $digest' \
-  "${work}/aggregate.json" >"${work}/aggregate.with-result.json"
-mv "${work}/aggregate.with-result.json" "${work}/aggregate.json"
-
-artifact_arguments=(
-  --scenario "${work}/scenario.yaml"
-  --runtime-manifest "primary=${work}/runtime.json"
-  --acceptance-run "${work}/run.json"
-  --result "primary=${work}/result.json"
-  --aggregate "${work}/aggregate.json"
-  --evidence-index "primary=${work}/evidence-index.json"
-  --mcap-summary "control-0=${work}/mcap-summary.json"
-  --evidence "other_evidence:diagnostics.json=${work}/diagnostics.json"
-  --evidence "raw_mcap:recording-0.mcap=${root}/test/fixtures/playback/golden/golden_0.mcap"
-  --evidence "metrics:metrics.otlp.json=${fixtures}/metrics.otlp.json"
-  --evidence "traces:traces.otlp.jsonl=${fixtures}/traces.otlp.jsonl"
-  --evidence "other_evidence:fastdds-profile.xml=${profile}"
-)
+# Test the adapter and real cryptographic boundary against the infra v1
+# regression inventory. ROS/provider observations remain labelled fixtures.
+fixtures="$root/test/qualification/fixtures"
+cp "$fixtures/acceptance-aggregate-transport.json" "$work/aggregate.json"
+artifact_arguments=()
+while IFS=$'\t' read -r kind subject file; do
+  path="$fixtures/$file"
+  if [[ "$kind" == acceptance_aggregate ]]; then
+    path="$work/aggregate.json"
+  fi
+  artifact_arguments+=(--artifact "$kind:$subject=$path")
+done < <(jq -r '.artifacts[] | [.kind, .subject_name, .file] | @tsv' "$fixtures/transport-artifacts.json")
 scripts/qualification/create-statement \
   "${artifact_arguments[@]}" \
   --output "${work}/statement.json"
+# A valid signed statement need not retain the producer's whitespace/key order.
+jq . "${work}/statement.json" >"${work}/formatted.json"
 bash scripts/ci/foundation/sign-ephemeral-qualification.sh \
-  "${work}/statement.json" \
+  "${work}/formatted.json" \
   "${work}/qualification.sigstore.json" \
   "${work}/qualification.pub"
 scripts/qualification/verify-bundle \
@@ -72,18 +53,21 @@ bash scripts/ci/foundation/sign-ephemeral-qualification.sh \
 if scripts/qualification/verify-bundle \
   --bundle "${work}/qualification.sigstore.json" \
   --key "${work}/foreign.pub" \
-  "${artifact_arguments[@]}" >/dev/null 2>&1; then
+  "${artifact_arguments[@]}" >"$work/rejection.log" 2>&1; then
   printf 'qualification bundle accepted a foreign public key\n' >&2
   exit 1
 fi
+grep -F 'Sigstore verification failed for the supplied public key' "$work/rejection.log"
 
-jq '.generated_at = "2026-07-21T10:02:00Z"' \
-  "${work}/aggregate.json" >"${work}/aggregate.tampered.json"
-mv "${work}/aggregate.tampered.json" "${work}/aggregate.json"
+# Same JSON value, different original bytes: links remain valid, the signature's
+# aggregate digest must reject the changed file.
+printf '\n' >>"${work}/aggregate.json"
 if scripts/qualification/verify-bundle \
   --bundle "${work}/qualification.sigstore.json" \
   --key "${work}/qualification.pub" \
-  "${artifact_arguments[@]}" >/dev/null 2>&1; then
+  "${artifact_arguments[@]}" >"$work/rejection.log" 2>&1; then
   printf 'qualification bundle accepted a foreign aggregate digest\n' >&2
   exit 1
 fi
+grep -F 'Sigstore verification failed for the supplied public key' "$work/rejection.log"
+printf 'real Cosign v1 qualification checks passed\n'

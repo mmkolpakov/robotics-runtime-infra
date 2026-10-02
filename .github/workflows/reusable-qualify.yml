@@ -93,6 +93,11 @@ jobs:
           scripts/ci/set-build-metadata.sh
           bash scripts/ci/foundation/import-sources.sh
           bash scripts/ci/foundation/validate-foundation.sh
+      - name: Validate the caller scenario role before building
+        working-directory: tooling
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/robotics-contracts validate
+          --schema acceptance-scenario.v1 "${ROBOTICS_FOUNDATION_SCENARIO}"
       - name: Build and verify the foundation images
         working-directory: tooling
         run: |

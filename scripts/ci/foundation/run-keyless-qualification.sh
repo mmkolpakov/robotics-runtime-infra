@@ -8,7 +8,7 @@ source "${script_dir}/lib.sh"
 
 root="$(foundation_repository_root)"
 cd "${root}"
-readonly foundation_project="${root}/tooling/foundation"
+readonly foundation_project="${root}/dependencies/robotics-runtime"
 
 foundation_require_env \
   ACTIONS_ID_TOKEN_REQUEST_TOKEN \
@@ -32,7 +32,7 @@ expected_identity="$(
   ' "${policy}"
 )"
 actual_identity="https://github.com/${GITHUB_WORKFLOW_REF}"
-[[ "${GITHUB_REPOSITORY}" == mmkolpakov/robotics-runtime-infra ]] || {
+[[ "${GITHUB_REPOSITORY}" == "$(jq -er '.infra.repository' "${root}/config/trust/identities.json")" ]] || {
   printf 'keyless qualification is restricted to the canonical repository\n' >&2
   exit 65
 }
@@ -50,12 +50,12 @@ actual_identity="https://github.com/${GITHUB_WORKFLOW_REF}"
   exit 65
 }
 
-uv sync --project "${foundation_project}" --locked --no-default-groups --no-editable
+uv sync --project "${foundation_project}" --locked --all-packages --no-default-groups --no-editable
 uv pip check --python "${foundation_project}/.venv/bin/python"
 export ROBOTICS_CONTRACTS_CLI="${foundation_project}/.venv/bin/robotics-contracts"
 
 mapfile -t mcap_summaries < <(
-  find artifacts -maxdepth 1 -type f -name '*.mcap-summary.json' -print |
+  find artifacts -maxdepth 1 -type f -name '*.recording-summary.json' -print |
     LC_ALL=C sort
 )
 mapfile -t mcap_files < <(
@@ -72,16 +72,21 @@ qualification_inputs=(
   --result primary=artifacts/acceptance-results/acceptance-result.json
   --aggregate artifacts/acceptance-results/acceptance-aggregate.json
   --evidence-index primary=artifacts/evidence-index.json
-  --evidence metrics:metrics.otlp.json=artifacts/metrics.otlp.json
+  --evidence metrics:metrics.otlp.jsonl=artifacts/metrics.otlp.jsonl
   --evidence junit:junit.xml=artifacts/acceptance-results/junit.xml
   --evidence other_evidence:fastdds-profile.xml=artifacts/fastdds-profile.xml
   --evidence other_evidence:host-topology.json=artifacts/host-topology.json
   --evidence other_evidence:runtime-resources.json=artifacts/runtime-resources.json
+  --artifact qualification_profile:providers/profile.json=artifacts/provider/profile.json
+  --artifact provider_conformance:providers/conformance.json=artifacts/provider/conformance.json
+  --artifact other_evidence:providers/configuration.json=artifacts/provider/configuration.json
+  --artifact other_evidence:providers/observation.json=artifacts/provider/observation.json
+  --artifact other_evidence:providers/world.sdf=artifacts/provider/world.sdf
 )
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
-    --mcap-summary "primary-${index}=${mcap_summaries[$index]}"
-    --evidence "raw_mcap:primary-${index}.mcap=${mcap_files[$index]}"
+    --recording-summary "primary-${index}=${mcap_summaries[$index]}"
+    --evidence "recording:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
 
