@@ -136,3 +136,75 @@ setup() {
       wc -l
   )" -eq 5 ]
 }
+
+prepare_playback_transport() {
+  local bin="${BATS_TEST_TMPDIR}/bin"
+  mkdir "${bin}"
+  export PATH="${bin}:${PATH}"
+  export PLAYBACK_TRACE="${BATS_TEST_TMPDIR}/docker-trace"
+  export PLAYBACK_LARGE_DOMAIN=87 PLAYBACK_NEGATIVE_DATA=0 PLAYBACK_LOG_FAILURE_DOMAIN=none
+  cat >"${bin}/docker" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${PLAYBACK_TRACE}"
+case "$1" in
+  compose)
+    while (($#)); do
+      case "$1" in
+        ps) printf '%s-%s\n' "${ROS_DOMAIN_ID}" "${@: -1}"; exit 0 ;;
+        up | wait | down) exit 0 ;;
+      esac
+      shift
+    done
+    exit 64
+    ;;
+  inspect)
+    case "${@: -1}" in
+      86-playback-gate) printf '1\n' ;;
+      86-playback-probe) printf '124\n' ;;
+      *) printf '0\n' ;;
+    esac
+    ;;
+  logs)
+    if [[ "${ROS_DOMAIN_ID}" == 87 || "${PLAYBACK_NEGATIVE_DATA}" == 1 ]]; then
+      printf 'data: 42\n'
+    fi
+    if [[ "${ROS_DOMAIN_ID}" == "${PLAYBACK_LARGE_DOMAIN}" ]]; then
+      printf '%262144s\n' ''
+    fi
+    [[ "${ROS_DOMAIN_ID}" != "${PLAYBACK_LOG_FAILURE_DOMAIN}" ]] || exit 42
+    ;;
+  *) exit 64 ;;
+esac
+SH
+  chmod +x "${bin}/docker"
+}
+
+@test "MCAP playback accepts data before a log tail larger than the pipe buffer" {
+  prepare_playback_transport
+  run bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *'playback timeout fixture failed closed'* ]]
+  [ "$(grep -c '^logs ' "${PLAYBACK_TRACE}")" -eq 2 ]
+  [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
+}
+
+@test "MCAP playback timeout rejects data before a log tail larger than the pipe buffer" {
+  prepare_playback_transport
+  run env PLAYBACK_LARGE_DOMAIN=86 PLAYBACK_NEGATIVE_DATA=1 \
+    bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -eq 1 ]
+  [[ "${output}" != *'playback timeout fixture failed closed'* ]]
+  [ "$(grep -c '^logs 86-playback-probe$' "${PLAYBACK_TRACE}")" -eq 1 ]
+  [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
+}
+
+@test "MCAP playback preserves failed log retrieval even after matching data" {
+  prepare_playback_transport
+  run env PLAYBACK_LARGE_DOMAIN=86 PLAYBACK_NEGATIVE_DATA=1 PLAYBACK_LOG_FAILURE_DOMAIN=86 \
+    bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -eq 42 ]
+  [[ "${output}" != *'playback timeout fixture failed closed'* ]]
+  [ "$(grep -c '^logs 86-playback-probe$' "${PLAYBACK_TRACE}")" -eq 1 ]
+  [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
+}

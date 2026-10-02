@@ -28,6 +28,7 @@ run_case() (
   local probe_id
   local gate_status
   local probe_status
+  local probe_logs
   gate_id="$("${compose[@]}" ps --all --quiet playback-gate)"
   probe_id="$("${compose[@]}" ps --all --quiet playback-probe)"
   [[ -n "${gate_id}" && -n "${probe_id}" ]]
@@ -37,12 +38,14 @@ run_case() (
   if ((expect_failure)); then
     test "${gate_status}" -eq 1
     test "${probe_status}" -eq 124
-    docker logs "${probe_id}" 2>&1 | grep -Eq '^data:' && return 1
+    probe_logs="$(docker logs "${probe_id}" 2>&1)" || return "$?"
+    grep -Eq '^data:' <<<"${probe_logs}" && return 1
     printf 'playback timeout fixture failed closed\n'
   else
     test "${gate_status}" -eq 0
     test "${probe_status}" -eq 0
-    docker logs "${probe_id}" 2>&1 | grep -Eq '^data:'
+    probe_logs="$(docker logs "${probe_id}" 2>&1)" || return "$?"
+    grep -Eq '^data:' <<<"${probe_logs}"
   fi
 )
 
