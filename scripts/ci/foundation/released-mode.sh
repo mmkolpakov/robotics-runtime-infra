@@ -91,8 +91,18 @@ foundation_prepare_execution_mode() {
       --artifact "other_evidence:release/${source}.json=${evidence_dir}/${source}.json"
     )
   done
-  entries="$(jq -er 'to_entries[] | [.key, .value] | @tsv' \
-    "${root}/config/ci/release-environment.json")" || return
+  # Map keys identify Bake targets; the native plan supplies image repositories.
+  GITHUB_OUTPUT="${evidence_dir}/release-plan-output.txt" \
+    GITHUB_REF_NAME="${tag}" \
+    bash "${root}/scripts/ci/release/prepare-plan.sh" \
+      "${root}/config/ci/release-environment.json" \
+      "${evidence_dir}/release-plan.json" || return
+  chmod 0444 "${evidence_dir}/release-plan.json" || return
+  FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS+=(
+    --artifact "other_evidence:release/release-plan.json=${evidence_dir}/release-plan.json"
+  )
+  entries="$(jq -er '.images[] | [.id, .environment_variable] | @tsv' \
+    "${evidence_dir}/release-plan.json")" || return
   while IFS=$'\t' read -r id key; do
     expected["${key}"]="${registry}/${id}:${tag#v}"
   done <<<"${entries}"
