@@ -77,6 +77,58 @@ setup() {
 
 }
 
+@test "ARM64 release layers are built natively for the candidates" {
+  fake_bin="${BATS_TEST_TMPDIR}/bin"
+  mkdir -p "${fake_bin}"
+  cat >"${fake_bin}/docker" <<'EOF'
+#!/usr/bin/env bash
+test "$*" = "buildx bake --file docker-bake.hcl --print release"
+cat <<'JSON'
+{"target": {
+  "simulation": {"platforms": ["linux/amd64"]},
+  "edge-runtime": {"platforms": ["linux/amd64", "linux/arm64"]},
+  "evidence-sink": {"platforms": ["linux/amd64", "linux/arm64"]}
+}}
+JSON
+EOF
+  chmod +x "${fake_bin}/docker"
+  output_file="${BATS_TEST_TMPDIR}/github-output"
+
+  run env PATH="${fake_bin}:${PATH}" GITHUB_OUTPUT="${output_file}" \
+    GITHUB_REF_NAME=v0.9.0 scripts/ci/release/plan-arm64-layers.sh
+  [ "${status}" -eq 0 ]
+  grep -Fx "version=0.9.0" "${output_file}"
+  grep -Fx "edge-runtime.platform=linux/arm64" "${output_file}"
+  grep -Fx "evidence-sink.output=type=cacheonly" "${output_file}"
+  grep -Fx \
+    "edge-runtime.cache-to=type=gha,mode=max,scope=release-edge-runtime-arm64" \
+    "${output_file}"
+  run grep -F simulation "${output_file}"
+  [ "${status}" -eq 1 ]
+
+  run env PATH="${fake_bin}:${PATH}" GITHUB_OUTPUT="${output_file}" \
+    GITHUB_REF_NAME=main scripts/ci/release/plan-arm64-layers.sh
+  [ "${status}" -ne 0 ]
+
+  workflow=.github/workflows/release-image.yml
+  layers="$(sed -n '/^  arm64-layers:/,/^  prepare:/p' "${workflow}")"
+  grep -Fx '    runs-on: ubuntu-24.04-arm' <<<"${layers}"
+  grep -F 'test "$(uname -m)" = aarch64' <<<"${layers}"
+  candidate="$(sed -n '/^  candidate:/,/^  promote:/p' "${workflow}")"
+  grep -Fx '      - arm64-layers' <<<"${candidate}"
+  grep -F \
+    '.cache-from=type=gha,scope=release-${{ matrix.target }}-arm64' \
+    <<<"${candidate}"
+}
+
+@test "portable ARM64 CI images build on a native runner" {
+  job="$(sed -n '/^  portable-arm64:/,/^  reproducibility:/p' .github/workflows/ci.yml)"
+  grep -Fx '    runs-on: ubuntu-24.04-arm' <<<"${job}"
+  grep -F 'test "$(uname -m)" = aarch64' <<<"${job}"
+  run grep -F 'qemu:' <<<"${job}"
+  [ "${status}" -eq 1 ]
+}
+
 @test "release workflow delegates the permissions required by reusable gates" {
   foundation_gate="$(
     sed -n '/^  foundation-gate:/,/^  prepare:/p' \
