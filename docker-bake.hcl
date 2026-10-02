@@ -39,11 +39,11 @@ variable "ROSDISTRO_INDEX_REVISION" {
 }
 
 variable "ONNXRUNTIME_SOURCE" {
-  default = "https://github.com/microsoft/onnxruntime.git?tag=v1.27.0&checksum=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5"
+  default = "https://github.com/microsoft/onnxruntime.git?tag=v1.30.0&checksum=f2c39fe2f838cf35ce7da92824f5a5e3ee6e88a7"
 }
 
 variable "ONNXRUNTIME_SOURCE_DATE_EPOCH" {
-  default = "1781277122"
+  default = "1789020581"
 }
 
 variable "RKNN_SOURCE" {

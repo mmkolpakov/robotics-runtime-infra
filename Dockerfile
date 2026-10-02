@@ -55,7 +55,7 @@ COPY --from=onnxruntime-source VERSION_NUMBER /verification/VERSION_NUMBER
 # hadolint ignore=DL3022
 COPY --from=onnxruntime-source cmake/external/onnx/CMakeLists.txt /verification/onnx-CMakeLists.txt
 
-RUN test "$(cat /verification/VERSION_NUMBER)" = "1.27.0" \
+RUN test "$(cat /verification/VERSION_NUMBER)" = "1.30.0" \
     && test -s /verification/onnx-CMakeLists.txt
 
 FROM ${NVIDIA_INFERENCE_DEVEL_IMAGE} AS onnxruntime-jetson-build-dependencies
@@ -117,7 +117,7 @@ RUN dpkg --install /tmp/cuda-packages/*.deb \
 FROM onnxruntime-jetson-build-dependencies AS onnxruntime-jetson-wheel-build
 
 ARG ONNXRUNTIME_SOURCE
-ARG ONNXRUNTIME_SOURCE_DATE_EPOCH=1781277122
+ARG ONNXRUNTIME_SOURCE_DATE_EPOCH=1789020581
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -125,12 +125,12 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=onnxruntime-source / /src/onnxruntime
 WORKDIR /src/onnxruntime
 
-RUN --mount=type=cache,id=onnxruntime-1.27.0-cuda13.3-trt11-arm64-build,target=/src/onnxruntime/build/Linux,sharing=locked \
-    --mount=type=cache,id=onnxruntime-1.27.0-arm64-pip,target=/root/.cache/pip,sharing=locked \
+RUN --mount=type=cache,id=onnxruntime-1.30.0-cuda13.3-trt11-arm64-build,target=/src/onnxruntime/build/Linux,sharing=locked \
+    --mount=type=cache,id=onnxruntime-1.30.0-arm64-pip,target=/root/.cache/pip,sharing=locked \
     source_revision="${ONNXRUNTIME_SOURCE##*checksum=}" \
     && source_revision="${source_revision%%&*}" \
     && [[ "${source_revision}" =~ ^[0-9a-f]{40}$ ]] \
-    && test "$(cat /src/onnxruntime/VERSION_NUMBER)" = "1.27.0" \
+    && test "$(cat /src/onnxruntime/VERSION_NUMBER)" = "1.30.0" \
     && test -f /src/onnxruntime/cmake/external/onnx/CMakeLists.txt \
     && SOURCE_DATE_EPOCH="${ONNXRUNTIME_SOURCE_DATE_EPOCH}" \
       ./build.sh \
@@ -159,7 +159,7 @@ RUN --mount=type=cache,id=onnxruntime-1.27.0-cuda13.3-trt11-arm64-build,target=/
     && install -D -m 0444 "${wheels[0]}" "/out/$(basename "${wheels[0]}")" \
     && install -m 0444 LICENSE /out/LICENSE \
     && printf '%s\n' \
-      "onnxruntime=v1.27.0" \
+      "onnxruntime=v1.30.0" \
       "revision=${source_revision}" \
       "cuda_architectures=87-real;110-real" \
       > /out/source.txt \
