@@ -11,10 +11,11 @@ certificate verification remain delegated to Cosign.
 - jq 1.6 or newer
 - The exact contracts workspace revision in `foundation.repos` (Python 3.12+)
 
-This integration branch uses the v1 generation and the contracts statement writer
-and matcher. Install its pinned workspace; the earlier 0.15.4 / 0.17.1 foundation
-pair cannot read these artifacts. The full foundation migration and release gates
-remain part of the [coordinated migration](compatibility.md#foundation-generations).
+The current foundation uses the v1 generation and the contracts 0.18.1 statement
+writer and matcher with harness 0.19.0. Install the pinned workspace or exact
+published pair; the earlier 0.15.4 / 0.17.1 foundation cannot read these artifacts.
+Source qualification, an OCI release, and external consumer qualification are
+[separate gates](compatibility.md#foundation-generations).
 
 `ROBOTICS_CONTRACTS_CLI` may point to an executable from an isolated
 installation. Otherwise, the scripts resolve `robotics-contracts` from `PATH`

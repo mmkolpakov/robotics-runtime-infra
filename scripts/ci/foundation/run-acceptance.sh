@@ -240,6 +240,14 @@ publish_failure_evidence() {
 }
 cleanup() {
   local status=$?
+  local cleanup_status=0
+  local project_status=0
+  trap - EXIT
+  # A recorded observer failure precedes result publication failures.
+  if [[ "${observer_status:-}" =~ ^[1-9][0-9]{0,2}$ ]] &&
+    ((observer_status <= 255)); then
+    status="${observer_status}"
+  fi
   foundation_compose_logs \
     "${artifact_dir}/foundation-e2e.log" \
     "${compose[@]}" "${profiles[@]}"
@@ -254,10 +262,18 @@ cleanup() {
   if ((${#attached_compose[@]})); then
     foundation_compose_logs \
       "${artifact_dir}/edge-attach.log" "${attached_compose[@]}"
-    foundation_compose_down "${attached_compose[@]}"
+    foundation_cleanup_project "${project}-attach" \
+      "${attached_compose[@]}" || cleanup_status=$?
   fi
-  foundation_compose_down "${compose[@]}" "${profiles[@]}"
-  return "${status}"
+  foundation_cleanup_project "${project}" \
+    "${compose[@]}" "${profiles[@]}" || project_status=$?
+  if ((status != 0)); then
+    exit "${status}"
+  fi
+  if ((cleanup_status != 0)); then
+    exit "${cleanup_status}"
+  fi
+  exit "${project_status}"
 }
 trap cleanup EXIT
 

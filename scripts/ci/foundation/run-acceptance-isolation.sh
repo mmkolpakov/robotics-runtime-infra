@@ -36,11 +36,19 @@ status_a=0
 status_b=0
 wait "${pid_a}" || status_a=$?
 wait "${pid_b}" || status_b=$?
-foundation_assert_project_clean "${project_a}"
-foundation_assert_project_clean "${project_b}"
+cleanup_status=0
+project_b_status=0
+foundation_assert_project_clean "${project_a}" || cleanup_status=$?
+foundation_assert_project_clean "${project_b}" || project_b_status=$?
 if ((status_a != 0 || status_b != 0)); then
   printf 'parallel acceptance failed: a=%s b=%s\n' "${status_a}" "${status_b}" >&2
   exit 1
+fi
+if ((cleanup_status != 0)); then
+  exit "${cleanup_status}"
+fi
+if ((project_b_status != 0)); then
+  exit "${project_b_status}"
 fi
 
 mkdir -p "${root}/artifacts"

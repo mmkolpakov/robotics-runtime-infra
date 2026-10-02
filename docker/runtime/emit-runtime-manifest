@@ -222,7 +222,6 @@ jq -n \
   --argjson security_enclaves "$security_enclaves" \
   --argjson security_policy_digests "$security_policy_digests" \
   '{
-    schema_version: "runtime-manifest.v1",
     runtime_id: $runtime_id,
     generated_at: $generated_at,
     execution_subject: {kind: "oci_image", locator: ("oci://" + $image_reference), digest: $image_digest},

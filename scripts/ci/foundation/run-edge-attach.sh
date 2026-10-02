@@ -14,6 +14,14 @@ export ROS_DOMAIN_ID=53
 export GZ_PARTITION="${project}"
 status=0
 bash "${script_dir}/run-acceptance.sh" || status=$?
-foundation_assert_project_clean "${project}-attach"
-foundation_assert_project_clean "${project}"
-exit "${status}"
+cleanup_status=0
+project_status=0
+foundation_assert_project_clean "${project}-attach" || cleanup_status=$?
+foundation_assert_project_clean "${project}" || project_status=$?
+if ((status != 0)); then
+  exit "${status}"
+fi
+if ((cleanup_status != 0)); then
+  exit "${cleanup_status}"
+fi
+exit "${project_status}"
