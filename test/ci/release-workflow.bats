@@ -181,7 +181,7 @@ EOF
   [ "${status}" -eq 1 ]
 }
 
-@test "candidate promotion emits a complete immutable runtime lock" {
+@test "native candidates produce an immutable lock accepted by the released consumer" {
   export RELEASE_REAL_DOCKER
   RELEASE_REAL_DOCKER="$(command -v docker)"
   # shellcheck source=scripts/ci/lib.sh
@@ -210,7 +210,7 @@ EOF
     scripts/ci/release/record-candidate.sh \
       "${id}" \
       "${environment_variable}" \
-      "ghcr.io/test-owner/robotics-runtime-infra/${id}" \
+      "ghcr.io/mmkolpakov/robotics-runtime-infra/${id}" \
       "${digest}" \
       "${platforms}" \
       "${candidate_dir}/${id}.json"
@@ -276,7 +276,7 @@ EOF
     FAKE_DOCKER_STATE="${state_dir}" \
     OTEL_COLLECTOR_IMAGE=foreign/mutable:latest \
     EDGE_ATTACH_DATA_PLANE_IMAGE=foreign/mutable:latest \
-    GITHUB_REPOSITORY_OWNER=test-owner \
+    GITHUB_REPOSITORY_OWNER=mmkolpakov \
     GITHUB_REF=refs/tags/v0.8.0 \
     GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 \
     scripts/ci/release/promote-candidates.sh \
@@ -320,7 +320,7 @@ EOF
   run jq -e '
     .services["sensor-inference-probe"].image |
     startswith(
-      "ghcr.io/test-owner/robotics-runtime-infra/" +
+      "ghcr.io/mmkolpakov/robotics-runtime-infra/" +
       "sensor-inference-cpu:0.8.0@sha256:"
     )
   ' <<<"${compose_json}"
@@ -362,6 +362,80 @@ EOF
     ' <<<"${output}"
     [ "${status}" -eq 0 ]
   done
+
+  consumer_probe="${BATS_TEST_TMPDIR}/consume-lock.sh"
+  cat >"${consumer_probe}" <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+root="$1" consumer="$2" evidence="$3" producer_plan="$4"
+source "${root}/scripts/ci/lib.sh"
+source "${root}/scripts/ci/foundation/released-mode.sh"
+trace="${evidence}.calls"
+: >"${trace}"
+gh() {
+  printf 'gh %s\n' "$*" >>"${trace}"
+  [[ " $* " == *' --repo mmkolpakov/robotics-runtime-infra '* ]] || return 99
+  case "$1 $2" in
+    'release verify')
+      [[ "$3" == "${ROBOTICS_FOUNDATION_RELEASE_TAG}" ]] || return 99
+      printf '%s\n' '{"verified":true}'
+      ;;
+    'release verify-asset')
+      [[ "$3" == "${ROBOTICS_FOUNDATION_RELEASE_TAG}" ]] || return 99
+      cmp "${ROBOTICS_FOUNDATION_RELEASE_LOCK}" "$4" || return
+      printf '%s\n' '{"verified":true}'
+      ;;
+    'attestation verify')
+      [[ " $* " == *' --signer-workflow mmkolpakov/robotics-runtime-infra/.github/workflows/release-image.yml '* &&
+         " $* " == *" --source-digest ${ROBOTICS_RELEASE_SOURCE_SHA} "* &&
+         " $* " == *" --source-ref refs/tags/${ROBOTICS_FOUNDATION_RELEASE_TAG} "* ]] || return 99
+      printf '%s\n' '[{}]'
+      ;;
+    *) return 99 ;;
+  esac
+}
+docker() {
+  if [[ "$1" == compose ]]; then command docker "$@"; return; fi
+  printf 'docker %s\n' "$*" >>"${trace}"
+  case "$1 ${2:-}" in
+    'pull '*) ;;
+    'image inspect')
+      jq -nc --arg pin "$3" \
+        '[{Id: ("sha256:" + ("b" * 64)), RepoDigests: [$pin]}]'
+      ;;
+    'buildx imagetools')
+      jq -nc --arg digest "${*: -1}" \
+        '{digest:($digest | split("@")[-1]),mediaType:"application/vnd.oci.image.manifest.v1+json"}'
+      ;;
+    *) return 99 ;;
+  esac
+}
+export GH_TOKEN=fixture-token ROBOTICS_RUNTIME_MODE=released
+export ROBOTICS_FOUNDATION_RELEASE_TAG=v0.8.0
+export ROBOTICS_FOUNDATION_RELEASE_LOCK="${consumer}/release.env"
+export GITHUB_REF_NAME=consumer-branch GITHUB_OUTPUT="${evidence}.workflow-output"
+printf 'caller-sentinel\n' >"${GITHUB_OUTPUT}"
+foundation_prepare_execution_mode "${consumer}" "${evidence}"
+cmp "${consumer}/release.env" "${evidence}/release.env"
+cmp "${producer_plan}" "${evidence}/release-plan.json"
+[[ "${GITHUB_REF_NAME}" == consumer-branch && "$(<"${GITHUB_OUTPUT}")" == caller-sentinel ]]
+[[ "${BENCHMARK_IMAGE}" == ghcr.io/mmkolpakov/robotics-runtime-infra/benchmark:0.8.0@* &&
+   "${EDGE_IMAGE}" == ghcr.io/mmkolpakov/robotics-runtime-infra/edge:0.8.0@* &&
+   "${SENSOR_IMAGE}" == ghcr.io/mmkolpakov/robotics-runtime-infra/sensor:0.8.0@* ]]
+[[ "${ROBOTICS_RELEASE_IMAGES_PREPARED}" == 1 ]]
+expected="$(jq '.images | length + 2' "${producer_plan}")"
+jq -e --argjson count "${expected}" 'length == $count' <<<"${ROBOTICS_RELEASE_APPROVED_IMAGES}"
+[[ " ${FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS[*]} " == *" other_evidence:release/release-plan.json=${evidence}/release-plan.json "* ]]
+[[ "$(stat -c %a "${evidence}/release-plan.json")" == 444 ]]
+[[ "$(sed -n '3p' "${trace}")" == *'/policy-tooling:0.8.0@'* ]]
+[[ "$(grep -c '^docker pull ' "${trace}")" == 5 ]]
+SH
+  run bash "${consumer_probe}" "${REPO_ROOT}" "${output_dir}" \
+    "${BATS_TEST_TMPDIR}/consumer-evidence" "${release_plan}"
+  if [[ "${status}" -ne 0 ]]; then
+    printf 'consumer status=%s\n%s\n' "${status}" "${output}"
+  fi
+  [ "${status}" -eq 0 ]
 }
 
 @test "released Compose reset removes trusted base builds and preserves executable configuration" {

@@ -19,13 +19,18 @@ setup() {
   export GH_TOKEN=fixture-token ROBOTICS_RUNTIME_MODE=released
   export ROBOTICS_FOUNDATION_RELEASE_TAG=v0.8.0
   export ROBOTICS_FOUNDATION_RELEASE_LOCK="${consumer}/release.env"
+  fixture_plan="${BATS_TEST_TMPDIR}/fixture-plan.json"
+  GITHUB_OUTPUT="${BATS_TEST_TMPDIR}/fixture-plan-output" \
+    GITHUB_REF_NAME="${ROBOTICS_FOUNDATION_RELEASE_TAG}" \
+    bash "${REPOSITORY_ROOT}/scripts/ci/release/prepare-plan.sh" \
+      "${REPOSITORY_ROOT}/config/ci/release-environment.json" "${fixture_plan}"
   {
     printf '%s\n' 'ROBOTICS_RUNTIME_MODE=released'
     printf 'ROBOTICS_RELEASE_SOURCE_SHA=%040d\n' 1
     printf '%s\n' 'ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v0.8.0'
     jq -r --arg registry "${registry}" \
-      'to_entries[] | "\(.value)=\($registry)/\(.key):0.8.0@sha256:\("a" * 64)"' \
-      "${REPOSITORY_ROOT}/config/ci/release-environment.json"
+      '.images[] | "\(.environment_variable)=\($registry)/\(.id):0.8.0@sha256:\("a" * 64)"' \
+      "${fixture_plan}"
     printf 'OTEL_COLLECTOR_IMAGE=%s\n' "${collector}"
     printf 'EDGE_ATTACH_DATA_PLANE_IMAGE=%s\n' "${pause}"
   } >"${ROBOTICS_FOUNDATION_RELEASE_LOCK}"
@@ -151,14 +156,14 @@ prepare() {
 
 @test "authenticated raw lock exports full inventory but prepares only selected images" {
   POLICY_TOOLING_IMAGE=ambient-untrusted OTEL_COLLECTOR_IMAGE=ambient-untrusted
-  run prepare
+  run --separate-stderr prepare
   [ "${status}" -eq 0 ]
   jq -e --argjson count "$(jq 'length + 2' "${REPOSITORY_ROOT}/config/ci/release-environment.json")" \
     '.approved | length == $count' <<<"${output}"
   jq -e --arg snapshot "${evidence}/release.env" \
     '.snapshot == $snapshot and .ref == "refs/tags/v0.8.0" and
      (.policy | startswith("ghcr.io/mmkolpakov/robotics-runtime-infra/policy-tooling:0.8.0@")) and
-     .argument_count == 24' <<<"${output}"
+     .argument_count == 26' <<<"${output}"
   cmp "${consumer}/release.env" "${evidence}/release.env"
   [ "$(stat -c %a "${evidence}/release.env")" = 444 ]
   [ "$(grep -c '^docker pull ' "${trace}")" -eq 5 ]
@@ -217,6 +222,43 @@ failure_without_authority() {
   return "${failure}"
 }
 
+@test "native planner failure preserves status before exporting release authority" {
+  shims="${BATS_TEST_TMPDIR}/planner-bin"
+  mkdir "${shims}"
+  export PLAN_REAL_DOCKER
+  PLAN_REAL_DOCKER="$(type -P docker)"
+  cat >"${shims}/docker" <<'SH'
+#!/usr/bin/env bash
+if [[ "$*" == 'buildx bake --file docker-bake.hcl --print release' ]]; then
+  printf 'native planner failed\n' >&2
+  exit 44
+fi
+exec "${PLAN_REAL_DOCKER}" "$@"
+SH
+  chmod +x "${shims}/docker"
+  POLICY_TOOLING_IMAGE=ambient-untrusted
+  PATH="${shims}:${PATH}" run failure_without_authority
+  [ "${status}" -eq 44 ]
+  [[ "${output}" == *'native planner failed'* ]]
+  [ ! -e "${evidence}/release-plan.json" ]
+  [ ! -e "${evidence}/images" ]
+  run ! grep -E '^(docker |gh attestation )' "${trace}"
+}
+
+@test "target names cannot replace the native released image repository IDs" {
+  cp "${ROBOTICS_FOUNDATION_RELEASE_LOCK}" "${BATS_TEST_TMPDIR}/native.env"
+  for id in benchmark edge sensor; do
+    cp "${BATS_TEST_TMPDIR}/native.env" "${ROBOTICS_FOUNDATION_RELEASE_LOCK}"
+    sed -i "s@/${id}:@/${id}-runtime:@" "${ROBOTICS_FOUNDATION_RELEASE_LOCK}"
+    evidence="${BATS_TEST_TMPDIR}/target-${id}"
+    : >"${trace}"
+    run prepare
+    [ "${status}" -eq 65 ]
+    [[ "${output}" == *'unexpected or invalid value'* ]]
+    run ! grep -E '^(docker |gh attestation )' "${trace}"
+  done
+}
+
 @test "empty or multiple release verification documents cannot export authority" {
   POLICY_TOOLING_IMAGE=ambient-untrusted
   for invalid in '{}' $'{"verified":true}\n{"verified":true}'; do
@@ -268,9 +310,9 @@ prepare_aliases_and_extra() {
 }
 
 @test "selected approved extra and normalized aliases share immutable evidence" {
-  run prepare_aliases_and_extra
+  run --separate-stderr prepare_aliases_and_extra
   [ "${status}" -eq 0 ]
-  [ "${output}" = 28 ]
+  [ "${output}" = 30 ]
   [ "$(grep -c '^docker pull ' "${trace}")" -eq 6 ]
   [ "$(grep -c '^gh attestation ' "${trace}")" -eq 5 ]
   [ "$(find "${evidence}/images" -name '*.identity.json' | wc -l)" -eq 6 ]
@@ -308,18 +350,18 @@ prepare_with_lifecycle_status() {
 
 @test "core readiness is reset and marked only after every selected image succeeds" {
   ROBOTICS_RELEASE_IMAGES_PREPARED=1 GH_IMAGE_STATUS=42
-  run prepare_with_lifecycle_status
+  run --separate-stderr prepare_with_lifecycle_status
   [ "${status}" -eq 42 ]
   [[ "${output}" == *'prepared=' ]]
   unset GH_IMAGE_STATUS
   evidence="${BATS_TEST_TMPDIR}/failed-pull"
   DOCKER_PULL_STATUS=43
-  run prepare_with_lifecycle_status
+  run --separate-stderr prepare_with_lifecycle_status
   [ "${status}" -eq 43 ]
   [[ "${output}" == *'prepared=' ]]
   unset DOCKER_PULL_STATUS
   evidence="${BATS_TEST_TMPDIR}/complete"
-  run prepare_with_lifecycle_status
+  run --separate-stderr prepare_with_lifecycle_status
   [ "${status}" -eq 0 ]
   [ "${output}" = prepared=1 ]
 }
@@ -332,9 +374,9 @@ prepare_optional_upstream() {
 }
 
 @test "optional fixed upstream pause has local identity without internal build attestation" {
-  run prepare_optional_upstream
+  run --separate-stderr prepare_optional_upstream
   [ "${status}" -eq 0 ]
-  [ "${output}" = 26 ]
+  [ "${output}" = 28 ]
   [ "$(grep -c '^docker pull ' "${trace}")" -eq 6 ]
   [ "$(grep -c '^gh attestation ' "${trace}")" -eq 4 ]
   [ "$(find "${evidence}/images" -name '*.identity.json' | wc -l)" -eq 6 ]
