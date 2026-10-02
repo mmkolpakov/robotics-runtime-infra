@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 setup() {
+  bats_require_minimum_version 1.5.0
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   COLLECTOR="${REPOSITORY_ROOT}/scripts/ci/foundation/collect-simulation-provider.sh"
   : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before these tests}"
@@ -95,16 +96,15 @@ collect() {
     "${BATS_TEST_TMPDIR}/run/scenario.yaml"
   cp "${REPOSITORY_ROOT}/ros_ws/src/robotics_runtime_infra/worlds/camera.sdf" \
     "${PROVIDER_TEST_ROOT}/world.sdf"
-  run "$(dirname "${ROBOTICS_CONTRACTS_CLI}")/robotics-acceptance" create-run \
+  # The public writer rejects overwrites; create a fresh context for this scenario.
+  rm -- "${BATS_TEST_TMPDIR}/run/acceptance-run.json"
+  run -0 "$(dirname "${ROBOTICS_CONTRACTS_CLI}")/robotics-acceptance" create-run \
     --scenario "${BATS_TEST_TMPDIR}/run/scenario.yaml" \
     --output "${BATS_TEST_TMPDIR}/run/acceptance-run.json" \
     --domain qualification-domain=observer --time-authority sim_clock --time-source gazebo-clock
-  [ "${status}" -eq 0 ]
-  run collect
-  [ "${status}" -eq 0 ]
-  run jq -e --slurpfile context "${BATS_TEST_TMPDIR}/run/acceptance-run.json" \
+  run -0 collect
+  run -0 jq -e --slurpfile context "${BATS_TEST_TMPDIR}/run/acceptance-run.json" \
     '.run_id == $context[0].run_id and .status == "passed"' "${DESTINATION}/conformance.json"
-  [ "${status}" -eq 0 ]
 }
 
 @test "simulator collector rejects a missing immutable container image ID" {
