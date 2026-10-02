@@ -1,0 +1,2 @@
+--artifact
+other_evidence:consumer/readme.md=examples/minimal-consumer/README.md

@@ -160,3 +160,105 @@ if type(duration) not in (int, float) or not math.isfinite(duration) or duration
 print(math.floor(duration))
 PY
 }
+
+foundation_scenario_topics() {
+  local python="$1"
+  local scenario="$2"
+
+  "${python}" - "${scenario}" <<'PY'
+import json
+import re
+import sys
+
+from robotics_runtime_contracts.serialization import load_mapping
+
+scenario = load_mapping(sys.argv[1])
+topics = scenario["evidence_policy"]["topics"]
+if not topics or any(not isinstance(topic, str) or not topic for topic in topics):
+    sys.exit("foundation recording requires declared evidence topics")
+probes = [
+    topic["name"]
+    for topic in scenario.get("expected_ros_graph", {}).get("topics", [])
+    if topic.get("type") == "std_msgs/msg/UInt64"
+]
+if len(probes) > 1:
+    sys.exit("foundation supports one declared UInt64 probe topic")
+# Earlier caller scenarios may declare only /clock while using the stock probe.
+probe = probes[0] if probes else "/robotics/runtime_probe"
+if probes and probe not in topics:
+    sys.exit("the declared UInt64 probe must be an evidence topic")
+print(json.dumps({
+    "metrics_topic": probe,
+    "record_regex": "^(" + "|".join(re.escape(topic) for topic in topics) + ")$",
+}))
+PY
+}
+
+foundation_consumer_file() {
+  local consumer_root="$1"
+  local path="$2"
+  local resolved
+
+  if [[ "${consumer_root}${path}" == *[$'\r\n\t']* ]]; then
+    printf 'consumer artifact paths must not contain control characters\n' >&2
+    return 64
+  fi
+  IFS= read -r -d '' consumer_root < <(realpath --zero -e "${consumer_root}") ||
+    return 64
+  if [[ "${path}" != /* ]]; then
+    path="${consumer_root}/${path}"
+  fi
+  IFS= read -r -d '' resolved < <(realpath --zero -e "${path}") || return 64
+  if [[ "${consumer_root}" == *[$'\r\n\t']* ]]; then
+    printf 'consumer root must not contain control characters\n' >&2
+    return 64
+  fi
+  case "${resolved}" in
+    "${consumer_root}"/*) ;;
+    *)
+      printf 'consumer artifact file is outside its repository: %s\n' "${path}" >&2
+      return 64
+      ;;
+  esac
+  if [[ ! -f "${resolved}" || ! -r "${resolved}" ||
+        "${resolved}" == *[$'\r\n\t']* ]]; then
+    printf 'consumer artifact is not a readable regular file: %s\n' "${resolved}" >&2
+    return 64
+  fi
+  printf '%s\n' "${resolved}"
+}
+
+# Populate an argument vector; the public contracts CLI owns kind/schema validation.
+# shellcheck disable=SC2034
+foundation_load_artifact_arguments() {
+  local consumer_root="$1"
+  local arguments_file="$2"
+  local option specification header path
+  FOUNDATION_ARTIFACT_ARGUMENTS=()
+  [[ -n "${arguments_file}" ]] || return 0
+  arguments_file="$(foundation_consumer_file "${consumer_root}" "${arguments_file}")" ||
+    return 64
+  while IFS= read -r option || [[ -n "${option}" ]]; do
+    case "${option}" in
+      --artifact|--extension-schema) ;;
+      *)
+        printf 'unsupported consumer artifact argument: %s\n' "${option}" >&2
+        return 64
+        ;;
+    esac
+    specification=''
+    if ! IFS= read -r specification && [[ -z "${specification}" ]]; then
+      printf 'consumer artifact argument requires a value: %s\n' "${option}" >&2
+      return 64
+    fi
+    if [[ "${specification}" != *=* ]]; then
+      printf 'consumer artifact argument requires NAME=PATH: %s\n' "${option}" >&2
+      return 64
+    fi
+    header="${specification%%=*}"
+    path="${specification#*=}"
+    [[ -n "${header}" && -n "${path}" ]] || return 64
+    path="$(foundation_consumer_file "${consumer_root}" "${path}")" || return 64
+    FOUNDATION_ARTIFACT_ARGUMENTS+=("${option}" "${header}=${path}")
+  done <"${arguments_file}"
+}

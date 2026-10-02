@@ -29,7 +29,7 @@ run_policy_engine() {
 }
 
 @test "the consumer scenario snapshot passes through the production policy adapter" {
-  run foundation_require_scenario_policy "$PYTHON" test/acceptance/stepped-smoke.yaml "$OUTPUT"
+  run foundation_require_scenario_policy "$PYTHON" examples/minimal-consumer/scenario.yaml "$OUTPUT"
   [ "$status" -eq 0 ]
   jq -e '.execution.plant_backend == "simulated_physics"' "$OUTPUT"
 }

@@ -209,9 +209,9 @@ setup() {
       "\"\${run_dir}/configuration/${artifact}\" \"\${artifact_dir}/\"" \
       "${ACCEPTANCE_SCRIPT}"
     [ "${status}" -eq 0 ]
-    run grep -F -- \
-      "other_evidence:${artifact}=artifacts/${artifact}" \
-      "${KEYLESS_SCRIPT}"
-    [ "${status}" -eq 0 ]
   done
+  run grep -F 'mapfile -t qualification_inputs <qualification-arguments.txt' "${KEYLESS_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'path: artifacts/qualification/' "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
 }

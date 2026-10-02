@@ -54,53 +54,24 @@ uv sync --project "${foundation_project}" --locked --all-packages --no-default-g
 uv pip check --python "${foundation_project}/.venv/bin/python"
 export ROBOTICS_CONTRACTS_CLI="${foundation_project}/.venv/bin/robotics-contracts"
 
-mapfile -t mcap_summaries < <(
-  find artifacts -maxdepth 1 -type f -name '*.recording-summary.json' -print |
-    LC_ALL=C sort
-)
-mapfile -t mcap_files < <(
-  find artifacts/raw-mcap -maxdepth 1 -type f -name '*.mcap' -print |
-    LC_ALL=C sort
-)
-test "${#mcap_summaries[@]}" -ge 1
-test "${#mcap_files[@]}" -eq "${#mcap_summaries[@]}"
+qualification_package="${root}/artifacts/qualification"
+test -s "${qualification_package}/qualification-arguments.txt"
+test -s "${qualification_package}/qualification-statement.json"
+cd "${qualification_package}"
+mapfile -t qualification_inputs <qualification-arguments.txt
 
-qualification_inputs=(
-  --scenario artifacts/scenario.yaml
-  --runtime-manifest primary=artifacts/runtime-manifest.json
-  --acceptance-run artifacts/acceptance-run.json
-  --result primary=artifacts/acceptance-results/acceptance-result.json
-  --aggregate artifacts/acceptance-results/acceptance-aggregate.json
-  --evidence-index primary=artifacts/evidence-index.json
-  --evidence metrics:metrics.otlp.jsonl=artifacts/metrics.otlp.jsonl
-  --evidence junit:junit.xml=artifacts/acceptance-results/junit.xml
-  --evidence other_evidence:fastdds-profile.xml=artifacts/fastdds-profile.xml
-  --evidence other_evidence:host-topology.json=artifacts/host-topology.json
-  --evidence other_evidence:runtime-resources.json=artifacts/runtime-resources.json
-  --artifact qualification_profile:providers/profile.json=artifacts/provider/profile.json
-  --artifact provider_conformance:providers/conformance.json=artifacts/provider/conformance.json
-  --artifact other_evidence:providers/configuration.json=artifacts/provider/configuration.json
-  --artifact other_evidence:providers/observation.json=artifacts/provider/observation.json
-  --artifact other_evidence:providers/world.sdf=artifacts/provider/world.sdf
-)
-for index in "${!mcap_summaries[@]}"; do
-  qualification_inputs+=(
-    --recording-summary "primary-${index}=${mcap_summaries[$index]}"
-    --evidence "recording:primary-${index}.mcap=${mcap_files[$index]}"
-  )
-done
-
-bundle="artifacts/qualification.keyless.sigstore.json"
+bundle="qualification.keyless.sigstore.json"
 cosign attest-blob --yes \
   --use-signing-config=true \
   --trusted-root "${trusted_root}" \
-  --statement artifacts/qualification-statement.json \
+  --statement qualification-statement.json \
   --bundle "${bundle}"
-scripts/qualification/verify-bundle \
+"${root}/scripts/qualification/verify-bundle" \
+  "${qualification_inputs[@]}" \
   --bundle "${bundle}" \
   --trusted-root "${trusted_root}" \
-  --policy "${policy}" \
-  "${qualification_inputs[@]}"
+  --policy "${policy}"
 
-cp "${policy}" artifacts/qualification-policy.json
-cp "${trusted_root}" artifacts/qualification.trusted-root.json
+# These copies record the signing configuration; verifiers pin their own trust inputs.
+cp "${policy}" qualification-policy.json
+cp "${trusted_root}" qualification.trusted-root.json

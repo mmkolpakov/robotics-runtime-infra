@@ -35,6 +35,9 @@ jobs:
   foundation:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      ROBOTICS_FOUNDATION_COMPOSE_PROJECT: examples/minimal-consumer/compose.yaml
+      ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE: examples/minimal-consumer/artifact-arguments.txt
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -118,10 +121,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: foundation-keyless-qualification-${{ github.sha }}
-          path: |
-            artifacts/qualification-statement.json
-            artifacts/qualification.keyless.sigstore.json
-            artifacts/qualification-policy.json
-            artifacts/qualification.trusted-root.json
+          path: artifacts/qualification/
           if-no-files-found: error
           retention-days: 30

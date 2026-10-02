@@ -23,6 +23,14 @@ on:
         default: ""
         type: string
 
+      artifact_arguments_file:
+        description: >-
+          Optional caller file containing --artifact/--extension-schema arguments,
+          one per line.
+        required: false
+        default: ""
+        type: string
+
 permissions:
   contents: read
 
@@ -69,21 +77,27 @@ jobs:
           cosign-release: v3.1.3
       - name: Resolve caller inputs
         env:
+          ARTIFACT_ARGUMENTS_FILE: ${{ inputs.artifact_arguments_file }}
           COMPOSE_PROJECT: ${{ inputs.compose_project }}
           SCENARIO: ${{ inputs.scenario }}
           TOOLING_REF: ${{ inputs.tooling_ref }}
         run: |
           test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
+          source tooling/scripts/ci/foundation/lib.sh
           consumer_root="$(realpath consumer)"
-          scenario="$(realpath -e "${consumer_root}/${SCENARIO}")"
-          case "${scenario}" in "${consumer_root}"/*) ;; *) exit 64 ;; esac
+          scenario="$(foundation_consumer_file "${consumer_root}" "${SCENARIO}")"
           printf 'ROBOTICS_FOUNDATION_SCENARIO=%s\n' \
             "${scenario}" >>"${GITHUB_ENV}"
           printf 'ROBOTICS_FOUNDATION_CONSUMER_ROOT=%s\n' \
             "${consumer_root}" >>"${GITHUB_ENV}"
+          if test -n "${ARTIFACT_ARGUMENTS_FILE}"; then
+            arguments_file="$(foundation_consumer_file "${consumer_root}" "${ARTIFACT_ARGUMENTS_FILE}")"
+            foundation_load_artifact_arguments "${consumer_root}" "${arguments_file}"
+            printf 'ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE=%s\n' \
+              "${arguments_file}" >>"${GITHUB_ENV}"
+          fi
           if test -n "${COMPOSE_PROJECT}"; then
-            compose_project="$(realpath -e "${consumer_root}/${COMPOSE_PROJECT}")"
-            case "${compose_project}" in "${consumer_root}"/*) ;; *) exit 64 ;; esac
+            compose_project="$(foundation_consumer_file "${consumer_root}" "${COMPOSE_PROJECT}")"
             printf 'ROBOTICS_FOUNDATION_COMPOSE_PROJECT=%s\n' \
               "${compose_project}" >>"${GITHUB_ENV}"
           fi

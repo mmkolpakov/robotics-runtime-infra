@@ -44,7 +44,7 @@ class SimulationProviderTests(unittest.TestCase):
             subject_digest="sha256:" + "a" * 64,
         )
         self.scenario, scenario_raw = producer.read_mapping(
-            ROOT / "test/acceptance/stepped-smoke.yaml"
+            ROOT / "examples/minimal-consumer/scenario.yaml"
         )
         # This source is YAML even though the temporary filename ends in .json.
         self.args.scenario = self.root / "scenario.yaml"

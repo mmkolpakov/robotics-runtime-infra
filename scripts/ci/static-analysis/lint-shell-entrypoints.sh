@@ -5,7 +5,7 @@ mapfile -d '' ci_scripts < <(
   find scripts/ci -type f -name '*.sh' -print0
 )
 mapfile -d '' qualification_scripts < <(
-  find scripts/qualification -type f -print0
+  find scripts/qualification -type f \( -name '*.sh' -o ! -name '*.*' \) -print0
 )
 mapfile -d '' config_scripts < <(
   find scripts/config -type f -print0
