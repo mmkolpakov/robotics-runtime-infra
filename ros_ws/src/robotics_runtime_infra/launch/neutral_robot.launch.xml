@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="description_file" default="$(find-pkg-share robotics_runtime_infra)/description/neutral_robot.urdf" />
+  <arg name="start_simulator" default="true" />
+  <include file="$(find-pkg-share robotics_runtime_infra)/launch/headless.launch.py" if="$(var start_simulator)" />
+  <node pkg="robot_state_publisher" exec="robot_state_publisher" name="neutral_robot_state_publisher" output="screen">
+    <param name="robot_description" value="$(command 'cat &quot;$(var description_file)&quot;')" type="str" />
+    <param name="use_sim_time" value="true" />
+  </node>
+  <node pkg="joint_state_publisher" exec="joint_state_publisher" name="neutral_joint_state_publisher" args="$(var description_file)" output="screen">
+    <param name="use_sim_time" value="true" />
+    <param name="rate" value="10" />
+    <param name="delta" value="0.0" />
+    <param name="zeros.slider_joint" value="0.0" />
+  </node>
+  <node pkg="ros_gz_sim" exec="create" exec_name="neutral_robot_create" name="neutral_robot_create" args="-world empty -file $(var description_file) -name neutral_robot -allow_renaming false" launch-prefix="timeout --signal=TERM --kill-after=2s 45s" output="screen" />
+</launch>
