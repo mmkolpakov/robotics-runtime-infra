@@ -10,9 +10,9 @@ permissions:
 jobs:
   qualify:
     # yamllint disable-line rule:line-length
-    uses: mmkolpakov/robotics-runtime-infra/.github/workflows/reusable-qualify.yml@d6dc8a1c6b976faacab7b371821e9af54b9883c2
+    uses: mmkolpakov/robotics-runtime-infra/.github/workflows/reusable-qualify.yml@544470d73317faa6128d3bd7bf5443b2fee3e556
     with:
-      tooling_ref: d6dc8a1c6b976faacab7b371821e9af54b9883c2
+      tooling_ref: 544470d73317faa6128d3bd7bf5443b2fee3e556
       execution_mode: released
       release_tag: v0.10.0-rc.1
       release_lock: examples/minimal-consumer/release.env
@@ -32,13 +32,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: mmkolpakov/robotics-runtime-infra
-          ref: d6dc8a1c6b976faacab7b371821e9af54b9883c2
+          ref: 544470d73317faa6128d3bd7bf5443b2fee3e556
           path: tooling
           persist-credentials: false
       - name: Verify the immutable tooling checkout
         shell: bash
         env:
-          TOOLING_REF: d6dc8a1c6b976faacab7b371821e9af54b9883c2
+          TOOLING_REF: 544470d73317faa6128d3bd7bf5443b2fee3e556
         run: test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
