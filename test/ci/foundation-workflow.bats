@@ -217,7 +217,8 @@ setup() {
 }
 
 @test "foundation evidence uses a guarded upload ID and an attempt-scoped archive" {
-  run python3 -I - "${WORKFLOW}" <<'PY'
+  local python="${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}"
+  run "${python}" -I - "${WORKFLOW}" <<'PY'
 import os
 import subprocess
 import sys
@@ -259,5 +260,6 @@ for artifact_id in ("11279763969", "", "0", "-1", "1,2", "1.0", "1\n2", "1; exit
     if result.returncode:
         assert "must be one positive integer" in result.stderr
 PY
+  printf '%s\n' "${output}"
   [ "${status}" -eq 0 ]
 }
