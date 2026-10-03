@@ -46,7 +46,7 @@ The end-to-end handoff is machine-readable: a product repository supplies its
 workload and scenario, runtime infra emits observed runtime and evidence facts,
 and the harness emits an acceptance result plus JUnit. Each layer can evolve
 within the [pinned compatibility pair](docs/compatibility.md#foundation-generations).
-The current source foundation uses published contracts 0.18.1 and harness 0.19.0
+The current source foundation uses published contracts 0.18.2 and harness 0.19.1
 from the single workspace revision in
 [the foundation lock](docs/foundation-compatibility.md). Foundation integration
 checks the running source composition, retained evidence, and qualification signature.

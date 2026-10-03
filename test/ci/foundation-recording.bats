@@ -4,6 +4,7 @@ setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before these tests}"
   FOUNDATION_PYTHON="${ROBOTICS_FOUNDATION_PYTHON:-$(dirname "${ROBOTICS_CONTRACTS_CLI}")/python}"
+  export FOUNDATION_PYTHON
   # shellcheck source=scripts/ci/foundation/lib.sh
   source "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh"
   SCENARIO="${BATS_TEST_TMPDIR}/scenario.json"
@@ -61,6 +62,23 @@ setup() {
   [ "${status}" -ne 0 ]
 }
 
+write_orchestration_scenario() {
+  "${FOUNDATION_PYTHON}" - \
+    "${REPOSITORY_ROOT}/examples/minimal-consumer/scenario.yaml" "${SCENARIO}" "$1" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping, validate_role
+
+scenario = load_mapping(sys.argv[1])
+for section, values in json.loads(sys.argv[3]).items():
+    scenario[section].update(values)
+assert "robot_description_sha256" not in scenario.get("workload", {})
+validate_role(scenario, "acceptance_scenario")
+Path(sys.argv[2]).write_text(json.dumps(scenario), encoding="utf-8")
+PYTHON
+}
+
 prepare_orchestration_fixture() {
   FIXTURE="${BATS_TEST_TMPDIR}/orchestration"
   local scripts="${FIXTURE}/scripts/ci"
@@ -68,13 +86,17 @@ prepare_orchestration_fixture() {
   mkdir -p "${scripts}" "${bin}"
   # Keep production dependencies together; this fixture replaces only leaf I/O.
   cp -a "${REPOSITORY_ROOT}/scripts/ci/." "${scripts}/"
+  mkdir -p "${FIXTURE}/docker/runtime"
+  cp "${REPOSITORY_ROOT}/docker/runtime/admit-robot-description" \
+    "${FIXTURE}/docker/runtime/"
   mkdir -p "${FIXTURE}/config/recording" "${FIXTURE}/config/qualification"
   cp -a "${REPOSITORY_ROOT}/config/recording/." "${FIXTURE}/config/recording/"
   cp "${REPOSITORY_ROOT}/config/qualification/recorded-playback.json" \
     "${FIXTURE}/config/qualification/"
   : >"${scripts}/image-identity.sh"
   # Keep the real orchestration and duration parser; stop at the first Compose
-  # call. Image lookup, host inventory and run creation are unit fixtures.
+  # call. Image lookup and host inventory are leaf fixtures; role validation
+  # and run creation use the installed public contracts and harness.
   # The policy spy retains the actual parsed input and can reject the run.
   cat >"${scripts}/lib.sh" <<'SH'
 cosign() { :; }
@@ -94,16 +116,12 @@ docker() {
 SH
   cat >"${bin}/python" <<'SH'
 #!/usr/bin/env bash
-if [[ "$1" == -c ]]; then
-  printf '{}\n'
-else
-  exec "${FOUNDATION_REAL_PYTHON}" "$@"
-fi
+exec "${FOUNDATION_REAL_PYTHON}" "$@"
 SH
   cat >"${bin}/robotics-acceptance" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"${FOUNDATION_CREATE_RUN_ARGS}"
-printf 'run-fixture\n'
+exec "${FOUNDATION_REAL_PYTHON}" -m robotics_acceptance_harness.cli "$@"
 SH
   chmod +x "${bin}/python" "${bin}/robotics-acceptance"
   export FOUNDATION_REAL_PYTHON="${FOUNDATION_PYTHON}"
@@ -121,7 +139,7 @@ SH
 
 @test "acceptance exports the scenario duration before Compose resolves recorder and sink" {
   prepare_orchestration_fixture
-  printf '{"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock"]}}\n' >"${SCENARIO}"
+  write_orchestration_scenario '{"evidence_policy":{"max_segment_duration_sec":7}}'
   run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
   [ "${status}" -eq 88 ]
   jq -e '.evidence_policy.max_segment_duration_sec == 7' \
@@ -131,7 +149,7 @@ SH
 
 @test "acceptance configures the declared UInt64 and exact recording topics before Compose" {
   prepare_orchestration_fixture
-  printf '%s\n' '{"expected_ros_graph":{"topics":[{"name":"/custom/probe","type":"std_msgs/msg/UInt64"}]},"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock","/custom/probe","/sensor/a.b"]}}' >"${SCENARIO}"
+  write_orchestration_scenario '{"expected_ros_graph":{"topics":[{"name":"/custom/probe","type":"std_msgs/msg/UInt64","qos_profile":"system_default","min_publishers":1,"min_subscribers":0,"first_message_timeout_sec":10}]},"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock","/custom/probe","/sensor/a.b"]}}'
   run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
   [ "${status}" -eq 88 ]
   local configured
@@ -147,7 +165,7 @@ SH
 @test "acceptance stops before Compose when the scenario policy rejects the run" {
   prepare_orchestration_fixture
   export FOUNDATION_SCENARIO_POLICY_STATUS=23
-  printf '{"evidence_policy":{"max_segment_duration_sec":7,"topics":["/clock"]}}\n' >"${SCENARIO}"
+  write_orchestration_scenario '{"evidence_policy":{"max_segment_duration_sec":7}}'
   run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
   [ "${status}" -eq 23 ]
   jq -e '.evidence_policy.max_segment_duration_sec == 7' \
@@ -157,7 +175,7 @@ SH
 
 @test "acceptance stops before Compose if the scenario duration cannot be configured" {
   prepare_orchestration_fixture
-  printf '{"evidence_policy":{"max_segment_duration_sec":0.5}}\n' >"${SCENARIO}"
+  write_orchestration_scenario '{"evidence_policy":{"max_segment_duration_sec":0.5}}'
   run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
   [ "${status}" -ne 0 ]
   [ "${status}" -ne 88 ]
@@ -610,6 +628,9 @@ mkdir -p "${artifact_dir}"
 cd "${root}"
 source scripts/ci/lib.sh
 ci_set_compose_fixture_env
+robot_selected="$("${FOUNDATION_PYTHON}" docker/runtime/admit-robot-description \
+  --root "${root}" --scenario examples/minimal-consumer/scenario.yaml | jq -r '.selected')"
+[[ "${robot_selected}" == false ]]
 compose_environment=(--env-file /dev/null)
 if [[ "$5" == consumer ]]; then
   export ROBOTICS_FOUNDATION_COMPOSE_PROJECT="${root}/examples/minimal-consumer/compose.yaml"
@@ -709,6 +730,9 @@ mkdir -p "${run_dir}/configuration" "${artifact_dir}/provider"
 events="${run_dir}/events"
 compose=(docker compose)
 extra_services=()
+robot_selected="$("${FOUNDATION_PYTHON}" "${root}/docker/runtime/admit-robot-description" \
+  --root "${root}" --scenario "${root}/examples/minimal-consumer/scenario.yaml" | jq -r '.selected')"
+[[ "${robot_selected}" == false ]]
 publish() { printf '%s\n' "$1" >>"${events}"; }
 sudo() {
   if [[ "$1" == install ]]; then
@@ -769,4 +793,77 @@ SH
     printf '%s\n' "${output}"
     [ "${status}" -eq 0 ]
   done
+}
+
+
+@test "neutral startup preserves its shell input through the native parse check" {
+  local fixture="${BATS_TEST_TMPDIR}/neutral-lifecycle"
+  local context="${fixture}/context.sh" old_context="${fixture}/old-context.sh"
+  mkdir -p "${fixture}/examples/neutral-robot"
+  export FOUNDATION_LIFECYCLE_TRACE="${fixture}/events"
+  cat >"${fixture}/compose" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  run)
+    [[ "${@: -2:1}" == check_urdf && "${@: -1}" == /fixture/neutral.urdf ]]
+    printf 'check_urdf\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+    printf 'parse-check-executed\n'
+    # Model only Compose run's stdin forwarding, never URDF/ROS behavior.
+    [[ " $* " == *' --interactive=false '* ]] || cat >/dev/null
+    exit "${FOUNDATION_PARSE_STATUS:-0}"
+    ;;
+  up)
+    printf 'fresh-fixture-container\n' >"${FOUNDATION_LIFECYCLE_TRACE}.container"
+    printf 'up\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+    ;;
+  ps)
+    printf 'ps\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+    cat "${FOUNDATION_LIFECYCLE_TRACE}.container"
+    ;;
+  *) exit 64 ;;
+esac
+SH
+  cat >"${fixture}/examples/neutral-robot/wait-ready.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == "$(cat "${FOUNDATION_LIFECYCLE_TRACE}.container")" ]]
+printf 'wait-ready\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+SH
+  chmod +x "${fixture}/compose"
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+root="$1"; artifact_dir="$2"
+mkdir -p "${artifact_dir}"
+ROBOTICS_ROBOT_DESCRIPTION_PATH=/fixture/neutral.urdf
+compose=("${root}/compose")
+SH
+    # Execute the production deadline/heredoc; leaf scripts above expose only
+    # shell-input ownership and call order, not native ROS readiness.
+    awk '
+      /^  timeout --signal=TERM --kill-after=2s 90s bash -s --/ { emit = 1 }
+      emit { print }
+      emit && /^SH$/ { exit }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
+  } >"${context}"
+  run bash "${context}" "${fixture}" "${fixture}/current"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${FOUNDATION_LIFECYCLE_TRACE}")" = $'check_urdf\nup\nps\nwait-ready' ]
+  [ "$(cat "${fixture}/current/robot-description-check-urdf.log")" = parse-check-executed ]
+
+  : >"${FOUNDATION_LIFECYCLE_TRACE}"
+  rm -- "${FOUNDATION_LIFECYCLE_TRACE}.container"
+  run env FOUNDATION_PARSE_STATUS=17 bash "${context}" "${fixture}" "${fixture}/parse-failure"
+  [ "${status}" -eq 17 ]
+  [ "$(cat "${FOUNDATION_LIFECYCLE_TRACE}")" = check_urdf ]
+  [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
+
+  sed 's/ --interactive=false//' "${context}" >"${old_context}"
+  : >"${FOUNDATION_LIFECYCLE_TRACE}"
+  run bash "${old_context}" "${fixture}" "${fixture}/old"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${FOUNDATION_LIFECYCLE_TRACE}")" = check_urdf ]
+  [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
 }

@@ -574,7 +574,7 @@ root="$1"
 artifact_dir="$2"
 description="$3"
 shift 3
-"$@" run --rm --no-deps neutral-robot check_urdf "${description}" \
+"$@" run --rm --no-deps --interactive=false neutral-robot check_urdf "${description}" \
   >"${artifact_dir}/robot-description-check-urdf.log"
 "$@" up --detach --no-build --no-deps --force-recreate neutral-robot
 container="$("$@" ps --quiet neutral-robot)"

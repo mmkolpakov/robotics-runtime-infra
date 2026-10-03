@@ -15,17 +15,21 @@ The legacy 0.8 source line used contracts 0.15.4 and harness 0.17.1 with
 `acceptance-scenario.v4`, emitted `runtime-manifest.v2`, `evidence-index.v3`, and
 `qualification-bundle.v2`. It remains a distinct generation.
 
-The current source foundation builds contracts 0.18.1 and harness 0.19.0 from
+The current source foundation builds contracts 0.18.2 and harness 0.19.1 from
 the single workspace commit in
 [the generated foundation lock](foundation-compatibility.md). Both packages
 are published. The release-bound pin checks that the harness tag matches the
 commit and the contracts source tree matches its tag; publication and running
 foundation qualification are separate checks.
 
-The source foundation is qualified for its declared software profile. The
-published infra `v0.8.0-rc.1` still belongs to the legacy generation. A new OCI
-release, external digest-only consumer qualification, and named hardware
-targets remain unqualified by that source result.
+The released infra `v0.9.0-rc.1` uses contracts 0.18.1 and harness 0.19.0. Its
+stock UInt64 simulation profile passed released-mode qualification and independent
+consumer verification. The historical `v0.8.0-rc.1` belongs to the legacy generation.
+
+The [neutral robot fixture](../examples/neutral-robot/README.md) is available from
+current source; no OCI release containing this profile has been published. Source
+integration and independent qualification of a future release are separate gates.
+These software checks do not qualify named hardware targets.
 
 The new generation uses `subject_digest` in permits, recording summaries,
 qualification predicate `/qualification-bundle/v1`, and OTLP metrics with
