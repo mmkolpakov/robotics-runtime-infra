@@ -10,15 +10,15 @@ permissions:
 jobs:
   qualify:
     # yamllint disable-line rule:line-length
-    uses: mmkolpakov/robotics-runtime-infra/.github/workflows/reusable-qualify.yml@51d2bf0a408d67d72072a4f3b38e86d26f6d7c06
+    uses: mmkolpakov/robotics-runtime-infra/.github/workflows/reusable-qualify.yml@d6dc8a1c6b976faacab7b371821e9af54b9883c2
     with:
-      tooling_ref: 51d2bf0a408d67d72072a4f3b38e86d26f6d7c06
+      tooling_ref: d6dc8a1c6b976faacab7b371821e9af54b9883c2
       execution_mode: released
-      release_tag: v0.9.0-rc.1
+      release_tag: v0.10.0-rc.1
       release_lock: examples/minimal-consumer/release.env
-      scenario: examples/minimal-consumer/scenario.yaml
+      scenario: examples/neutral-robot/scenario.yaml
       compose_project: examples/minimal-consumer/compose.yaml
-      artifact_arguments_file: examples/minimal-consumer/artifact-arguments.txt
+      artifact_arguments_file: examples/neutral-robot/artifact-arguments.txt
 
   independent-consumer:
     needs: qualify
@@ -32,13 +32,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: mmkolpakov/robotics-runtime-infra
-          ref: 51d2bf0a408d67d72072a4f3b38e86d26f6d7c06
+          ref: d6dc8a1c6b976faacab7b371821e9af54b9883c2
           path: tooling
           persist-credentials: false
       - name: Verify the immutable tooling checkout
         shell: bash
         env:
-          TOOLING_REF: 51d2bf0a408d67d72072a4f3b38e86d26f6d7c06
+          TOOLING_REF: d6dc8a1c6b976faacab7b371821e9af54b9883c2
         run: test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
