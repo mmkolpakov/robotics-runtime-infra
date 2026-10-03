@@ -537,11 +537,12 @@ EOF
   # Public qualification accepts this genuine simulator fixture plus opaque
   # bytes. The caller must still demand playback after native trusted verify.
   source "$REPOSITORY_ROOT/scripts/ci/foundation/lib.sh"
+  local acceptance_cli="${ROBOTICS_ACCEPTANCE_CLI:-$REPOSITORY_ROOT/dependencies/robotics-runtime/.venv/bin/robotics-acceptance}"
   run foundation_explain_qualification "$package" "$TEST_ROOT/source-explain.json" simulator \
-    "${ROBOTICS_FOUNDATION_PYTHON}" -m robotics_acceptance_harness.cli
+    "${acceptance_cli}"
   [ "$status" -eq 0 ]
   run foundation_explain_qualification "$package" "$TEST_ROOT/playback-explain.json" recording_playback \
-    "${ROBOTICS_FOUNDATION_PYTHON}" -m robotics_acceptance_harness.cli
+    "${acceptance_cli}"
   [ "$status" -ne 0 ]
   jq -e '.execution.data_source == "simulator"' "$TEST_ROOT/playback-explain.json"
 }

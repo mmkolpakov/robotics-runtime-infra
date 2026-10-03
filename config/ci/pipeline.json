@@ -117,6 +117,18 @@
       ]
     },
     {
+      "name": "foundation-playback",
+      "files": [
+        "compose.yaml",
+        "compose.foundation.yaml",
+        "compose.record.yaml",
+        "compose.evidence.yaml",
+        "compose.observability.yaml",
+        "compose.playback.yaml",
+        "compose.foundation-playback.yaml"
+      ]
+    },
+    {
       "name": "foundation-released",
       "files": [
         "compose.yaml",

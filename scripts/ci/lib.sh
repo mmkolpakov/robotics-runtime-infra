@@ -11,6 +11,11 @@ ci_enter_repo() {
 
 ci_set_compose_fixture_env() {
   export ROBOTICS_RUNTIME_MODE="${ROBOTICS_RUNTIME_MODE:-source}"
+  export SIMULATION_IMAGE="${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:ci}"
+  export ROBOTICS_METRICS_TOPIC="${ROBOTICS_METRICS_TOPIC:-/example/sequence}"
+  export ROBOTICS_PLAYBACK_CLOCK_HZ="${ROBOTICS_PLAYBACK_CLOCK_HZ:-200}"
+  export ROBOTICS_PLAYBACK_RATE="${ROBOTICS_PLAYBACK_RATE:-1}"
+  export ROBOTICS_PLAYBACK_START_OFFSET="${ROBOTICS_PLAYBACK_START_OFFSET:-0}"
   export ROBOTICS_CHRONY_IDENTITY="${ROBOTICS_CHRONY_IDENTITY:-100:101}"
   export ROBOTICS_DOMAIN_ID="${ROBOTICS_DOMAIN_ID:-0}"
   export PERMIT_PREFLIGHT_CI_IMAGE="${PERMIT_PREFLIGHT_CI_IMAGE:-local/robotics-runtime-infra/permit-preflight-ci:dev}"
