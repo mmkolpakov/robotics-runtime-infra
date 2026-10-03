@@ -215,3 +215,49 @@ setup() {
   run grep -F "'artifacts/qualification/'" "${WORKFLOW}"
   [ "${status}" -eq 0 ]
 }
+
+@test "foundation evidence uses a guarded upload ID and an attempt-scoped archive" {
+  run python3 -I - "${WORKFLOW}" <<'PY'
+import os
+import subprocess
+import sys
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping
+
+jobs = load_mapping(Path(sys.argv[1]))["jobs"]
+foundation = jobs["foundation"]
+upload = next(step for step in foundation["steps"]
+              if step.get("id") == "upload-foundation-evidence")
+assert foundation["outputs"]["evidence-artifact-id"] == (
+    "${{ steps.upload-foundation-evidence.outputs.artifact-id }}")
+assert upload["with"]["name"] == (
+    "foundation-reports-${{ github.sha }}-${{ github.run_attempt }}")
+assert upload["if"] == "always()"
+assert upload["with"]["path"] == "artifacts/"
+assert upload["with"]["if-no-files-found"] == "error"
+assert not upload["with"].get("overwrite", False)
+consumer = jobs["trusted-keyless-qualification"]
+assert consumer["needs"] == "foundation"
+steps = consumer["steps"]
+index = next(i for i, step in enumerate(steps)
+             if step.get("uses", "").startswith("actions/download-artifact@"))
+guard, download = steps[index - 1], steps[index]
+assert guard["env"]["EVIDENCE_ARTIFACT_ID"] == (
+    "${{ needs.foundation.outputs.evidence-artifact-id }}")
+assert download["with"] == {
+    "artifact-ids": "${{ needs.foundation.outputs.evidence-artifact-id }}",
+    "path": "artifacts"}
+assert "${{" not in guard["run"]
+for artifact_id in ("11279763969", "", "0", "-1", "1,2", "1.0", "1\n2", "1; exit 0"):
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", guard["run"]],
+        env={**os.environ, "EVIDENCE_ARTIFACT_ID": artifact_id},
+        capture_output=True, text=True, check=False)
+    assert result.returncode == (0 if artifact_id == "11279763969" else 64), (
+        artifact_id, result.returncode, result.stdout, result.stderr)
+    assert result.stdout == ""
+    if result.returncode:
+        assert "must be one positive integer" in result.stderr
+PY
+  [ "${status}" -eq 0 ]
+}
