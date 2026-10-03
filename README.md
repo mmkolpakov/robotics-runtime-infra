@@ -167,9 +167,9 @@ validate host time, udev, systemd, and SocketCAN assets reproducibly.
 | OS | Ubuntu 24.04 packages from snapshot `20260930T000000Z` |
 | ROS | ROS 2 Jazzy packages from snapshot `2026-06-18` |
 | Simulator | Gazebo Harmonic from the pinned Jazzy simulation image |
-| CPU inference | ONNX Runtime 1.27.0 |
+| CPU inference | ONNX Runtime 1.30.0 |
 | Intel inference candidate | ONNX Runtime OpenVINO 1.24.1 with OpenVINO 2025.4.1 |
-| NVIDIA inference candidate | ONNX Runtime GPU 1.27.0, CUDA 13.3.0 and cuDNN 9 |
+| NVIDIA inference candidate | ONNX Runtime GPU 1.30.0, CUDA 13.3.0 and cuDNN 9 |
 | AMD inference candidate | ONNX Runtime MIGraphX 1.23.2 with ROCm 7.2.4 |
 | Jetson inference candidate | Source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11; compatibility with JetPack 7.2 is unqualified |
 | RK3588 inference candidate | RKNN Toolkit2 and RKNN Runtime 2.3.2 |
