@@ -593,7 +593,7 @@ grep -F 'Entity creation successful.' \
   "${artifact_dir}/robot-readiness/unreadable-create.log" >/dev/null
 negative_status=0
 "$@" exec -T simulation robotics-entrypoint python3 - \
-  --entity unreadable_neutral_robot --expect present --timeout-sec 5 \
+  --entity unreadable_neutral_robot --no-wait --expect present --timeout-sec 5 \
   <"${root}/examples/neutral-robot/check-entity.py" \
   >"${artifact_dir}/robot-readiness/unreadable-entity.json" || negative_status=$?
 [[ "${negative_status}" == 70 ]]

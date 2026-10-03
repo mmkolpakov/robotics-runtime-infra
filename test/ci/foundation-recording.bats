@@ -799,6 +799,7 @@ SH
 @test "neutral startup preserves its shell input through the native parse check" {
   local fixture="${BATS_TEST_TMPDIR}/neutral-lifecycle"
   local context="${fixture}/context.sh" old_context="${fixture}/old-context.sh"
+  local missing_flag_context="${fixture}/missing-flag-context.sh"
   mkdir -p "${fixture}/examples/neutral-robot"
   : >"${fixture}/examples/neutral-robot/check-entity.py"
   export FOUNDATION_LIFECYCLE_TRACE="${fixture}/events"
@@ -823,10 +824,11 @@ case "$1" in
       printf 'missing-file\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
       [[ " $* " == *' --interactive=false '* ]] || cat >/dev/null
     elif [[ " $* " == *' --entity unreadable_neutral_robot '* ]]; then
+      [[ " $* " == *' --no-wait '* ]]
       cat >/dev/null
       printf 'unreadable-entity\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
       if [[ "${FOUNDATION_ENTITY_SERVICE_ERROR:-0}" == 1 ]]; then
-        printf '{"status":"service_failed","result":null}\n'
+        printf '{"status":"service_failed","result":{"result":1},"exists":false}\n'
         exit 69
       fi
       printf '{"status":"entity_absent","result":{"result":1},"entity":"unreadable_neutral_robot","expected":"present","exists":false}\n'
@@ -889,6 +891,12 @@ SH
   [ "${status}" -ne 0 ]
   [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
   [ "$(jq -r '.status' "${fixture}/service-failure/robot-readiness/unreadable-entity.json")" = service_failed ]
+
+  sed 's/ --no-wait//' "${context}" >"${missing_flag_context}"
+  : >"${FOUNDATION_LIFECYCLE_TRACE}"
+  run bash "${missing_flag_context}" "${fixture}" "${fixture}/missing-flag"
+  [ "${status}" -ne 0 ]
+  [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
 
   sed 's/ --interactive=false//' "${context}" >"${old_context}"
   : >"${FOUNDATION_LIFECYCLE_TRACE}"

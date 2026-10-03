@@ -48,8 +48,10 @@ def query(args, report):
             if report["exists"] == (args.expect == "present"):
                 report["status"] = "passed"
                 return 0
-            if args.expect == "absent":
-                report["status"] = "entity_present"
+            if args.expect == "absent" or args.no_wait:
+                report["status"] = (
+                    "entity_present" if report["exists"] else "entity_absent"
+                )
                 return 70
             time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
     finally:
@@ -76,6 +78,11 @@ def main():
         parser.add_argument("--entity", default="neutral_robot")
         parser.add_argument(
             "--expect", choices=("present", "absent"), default="present"
+        )
+        parser.add_argument(
+            "--no-wait",
+            action="store_true",
+            help="Return after the first successful entity query.",
         )
         parser.add_argument("--timeout-sec", type=float, default=15.0)
         args = parser.parse_args()
