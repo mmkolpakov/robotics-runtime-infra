@@ -30,6 +30,8 @@ services:
       - step
       - --steps
       - "${ROBOTICS_STEPS_PER_TICK:-1}"
+      - --step-size-ns
+      - "${ROBOTICS_CONFORMANCE_STEP_SIZE_NS:-1000000}"
       - --interval-sec
       - "${ROBOTICS_STEP_INTERVAL_SEC:-0.2}"
     environment:

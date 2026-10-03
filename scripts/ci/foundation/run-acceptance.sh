@@ -327,6 +327,7 @@ publish_failure_evidence() {
     "${run_dir}/evidence/metrics.otlp.jsonl" \
     "${run_dir}/evidence/evidence-index.json" \
     "${run_dir}/evidence/summaries" \
+    "${run_dir}/bags" \
     "${run_dir}/scenario.yaml"; do
     if [[ -e "${source}" ]]; then
       sudo cp -a "${source}" "${destination}/"

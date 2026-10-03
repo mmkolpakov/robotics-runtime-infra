@@ -110,6 +110,10 @@ run_acceptance_publication() {
   mkdir -p "${FIXTURE}/run/results" "${FIXTURE}/artifacts"
   printf '{}\n' >"${FIXTURE}/run/results/acceptance-result.json"
   printf '{}\n' >"${FIXTURE}/run/scenario.yaml"
+  mkdir -p "${FIXTURE}/run/bags/recording"
+  cp "${REPOSITORY_ROOT}/test/fixtures/playback/golden/metadata.yaml" \
+    "${REPOSITORY_ROOT}/test/fixtures/playback/golden/golden_0.mcap" \
+    "${FIXTURE}/run/bags/recording/"
   cat >"${FAKE_BIN}/sudo" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -161,6 +165,10 @@ EOF
       emit && /^"\$\{compose\[@\]\}" --profile acceptance run --rm --no-deps/ { exit }
       emit { print }
     ' "${ACCEPTANCE_SCRIPT}"
+    # Detect continuation beyond the real failed-observer exit boundary.
+    cat <<'EOF'
+touch "${artifact_dir}/next-acceptance-stage"
+EOF
   } >"${lifecycle}"
 
   run env "PATH=${FAKE_BIN}:${PATH}" \
@@ -170,6 +178,15 @@ EOF
     "FAKE_ACCEPTANCE_RUN_DIR=${FIXTURE}/run" \
     FAKE_OBSERVER_STATUS=17 FAKE_DOWN_STATUS=73 \
     "$@" bash "${lifecycle}"
+}
+
+assert_retained_capture() {
+  local recording="${FIXTURE}/artifacts/acceptance-evidence/bags/recording"
+  cmp "${FIXTURE}/run/bags/recording/metadata.yaml" "${recording}/metadata.yaml"
+  cmp "${FIXTURE}/run/bags/recording/golden_0.mcap" "${recording}/golden_0.mcap"
+  [ ! -e "${FIXTURE}/artifacts/next-acceptance-stage" ]
+  [ ! -e "${FIXTURE}/artifacts/qualification" ]
+  [ ! -e "${FIXTURE}/artifacts/qualification.sigstore.json" ]
 }
 
 @test "runtime cleanup removes its project resources and preserves foreign projects" {
@@ -315,6 +332,7 @@ EOF
   [ "${status}" -eq 17 ]
   [[ "${output}" == *"fixture publication jq failed"* ]]
   [[ "${output}" == *"Compose down failed (73)"* ]]
+  assert_retained_capture
 }
 
 @test "a passed observer does not hide a publication failure" {
@@ -341,6 +359,7 @@ EOF
 
   [ "${status}" -eq 23 ]
   [[ "${output}" == *"Compose down failed (73)"* ]]
+  assert_retained_capture
 }
 
 run_playback_measurement_boundary() {

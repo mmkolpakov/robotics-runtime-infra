@@ -77,6 +77,10 @@ class Transport:
         self.failed_operation = None
         self.already = False
         self.steps = []
+        self.step_size_ns = 10
+        self.completion_spins = 0
+        self.pending_clock = None
+        self.pending_spins = 0
 
     def reply(self, suffix, request):
         result = SimpleNamespace(result=RESULT.RESULT_OK, error_message="")
@@ -105,11 +109,23 @@ class Transport:
                 state = self.delayed_paused.pop(0)
             return SimpleNamespace(result=result, state=SimpleNamespace(state=state))
         if suffix == "step_simulation" and result.result == RESULT.RESULT_OK:
-            self.steps.append(request.steps)
-            self.sample(self.node._clock_ns + request.steps * 10 + self.overshoot)
-            self.actual_state = self.final_state
-            self.phase = "stepped"
+            self.queue_step(request.steps)
         return SimpleNamespace(result=result)
+
+    def queue_step(self, steps):
+        if self.pending_clock is not None:
+            raise AssertionError("next step requested before the prior step completed")
+        self.steps.append(steps)
+        target = self.node._clock_ns + steps * self.step_size_ns + self.overshoot
+        self.phase = "stepped"
+        if self.completion_spins == 0:
+            self.sample(target)
+            self.actual_state = self.final_state
+        else:
+            # The native service acknowledges a queued command before execution.
+            self.pending_clock = target
+            self.pending_spins = self.completion_spins
+            self.actual_state = STATE.STATE_PLAYING
 
     def sample(self, value):
         self.node._on_clock(
@@ -118,6 +134,12 @@ class Transport:
 
     def spin(self, node, timeout_sec):
         self.elapsed += timeout_sec
+        if self.pending_clock is not None and self.pending_spins is not None:
+            self.pending_spins -= 1
+            if self.pending_spins == 0:
+                self.sample(self.pending_clock)
+                self.pending_clock = None
+                self.actual_state = self.final_state
         advancing = (
             self.phase == "playing"
             and self.advance_initial
@@ -273,6 +295,84 @@ class SimulationControlTests(unittest.TestCase):
             self.assertEqual(output.getvalue(), "")
             self.node.destroy_node.assert_called_once()
             shutdown.assert_called_once()
+
+    def run_stepper(self, transport, arguments=()):
+        node = transport.node
+        node.destroy_node = mock.Mock()
+        sleeps = []
+        with (
+            mock.patch.object(
+                sys, "argv", ["control", "step", "--steps", "3", *arguments]
+            ),
+            mock.patch.object(control, "SimulationControl", return_value=node),
+            mock.patch.object(ROS, "init", create=True),
+            mock.patch.object(ROS, "shutdown", create=True) as shutdown,
+            mock.patch.object(ROS, "ok", side_effect=[True, True, False], create=True),
+            mock.patch.object(
+                control.time,
+                "sleep",
+                side_effect=lambda interval: sleeps.append((interval, node._clock_ns)),
+            ),
+            contextlib.redirect_stderr(io.StringIO()) as errors,
+        ):
+            result = control.main()
+        node.destroy_node.assert_called_once()
+        shutdown.assert_called_once()
+        return result, errors.getvalue(), sleeps
+
+    def test_periodic_command_waits_for_acknowledged_step_completion(self):
+        self.transport.step_size_ns = 1_000_000
+        self.transport.completion_spins = 3
+        result, errors, sleeps = self.run_stepper(
+            self.transport, ["--interval-sec", "0.01"]
+        )
+        self.assertEqual((result, errors), (0, ""))
+        self.assertEqual(self.transport.steps, [3, 3])
+        self.assertEqual(sleeps, [(0.01, 3_000_100), (0.01, 6_000_100)])
+        self.assertIsNone(self.transport.pending_clock)
+
+    def test_periodic_command_refuses_missing_or_overshot_completion(self):
+        for completion_spins, overshoot, message in (
+            (None, 0, "did not reach"),
+            (3, 1, "expected"),
+        ):
+            with self.subTest(message=message), self.transport_boundary() as transport:
+                transport.step_size_ns = 1_000_000
+                transport.completion_spins = completion_spins
+                transport.overshoot = overshoot
+                result, errors, sleeps = self.run_stepper(transport)
+                self.assertEqual(result, 1)
+                self.assertIn(message, errors)
+                self.assertEqual(transport.steps, [3])
+                self.assertEqual(sleeps, [])
+
+    def test_periodic_command_requires_paused_completion_state(self):
+        self.transport.step_size_ns = 1_000_000
+        self.transport.completion_spins = 3
+        self.transport.final_state = STATE.STATE_PLAYING
+        result, errors, sleeps = self.run_stepper(self.transport)
+        self.assertEqual(result, 1)
+        self.assertIn("not confirmed", errors)
+        self.assertEqual(self.transport.steps, [3])
+        self.assertEqual(sleeps, [])
+
+    def test_periodic_command_honors_declared_step_size_and_default_interval(self):
+        self.transport.step_size_ns = 20
+        self.transport.completion_spins = 3
+        result, errors, sleeps = self.run_stepper(
+            self.transport, ["--step-size-ns", "20"]
+        )
+        self.assertEqual((result, errors), (0, ""))
+        self.assertEqual(self.transport.steps, [3, 3])
+        self.assertEqual(sleeps, [(0.2, 160), (0.2, 220)])
+
+    def test_periodic_command_refuses_missing_initial_clock_before_step(self):
+        self.node._clock_ns = None
+        result, errors, sleeps = self.run_stepper(self.transport)
+        self.assertEqual(result, 1)
+        self.assertIn("did not become quiescent", errors)
+        self.assertEqual(self.transport.steps, [])
+        self.assertEqual(sleeps, [])
 
     def test_periodic_command_refuses_unconfirmed_pause_before_any_step(self):
         self.transport.wrong_state["paused"] = STATE.STATE_PLAYING
