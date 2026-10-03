@@ -181,6 +181,7 @@ ROBOTICS_MAX_BAG_DURATION="$(
 )"
 export ROBOTICS_MAX_SEGMENT_SIZE_BYTES=2097152
 export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
+export OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED=true
 topic_configuration="$(
   foundation_scenario_topics "${foundation_bin}/python" "${run_dir}/scenario.yaml"
 )"

@@ -53,6 +53,7 @@ services:
     environment:
       <<: *observability-environment
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://otel-collector:4318/v1/metrics
+      OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED: "${OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED:-false}"
       ROBOTICS_METRICS_EXPORT_INTERVAL_MS: "${ROBOTICS_METRICS_EXPORT_INTERVAL_MS:-100}"
       ROBOTICS_METRICS_TOPIC: "${ROBOTICS_METRICS_TOPIC:-/robotics/runtime_probe}"
       ROBOTICS_TIME_TOPIC: "${ROBOTICS_TIME_TOPIC:-/clock}"
