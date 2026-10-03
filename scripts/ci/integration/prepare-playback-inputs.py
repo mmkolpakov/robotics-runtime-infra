@@ -366,6 +366,10 @@ def prepare(root: Path, output: Path, host: Path) -> None:
     )
     write_document(dataset_document(output, host), output / "dataset-manifest.json")
     replay = copy.deepcopy(retained_scenario)
+    # The native rosbag2-generated Clock offers BEST_EFFORT, unlike the source bridge.
+    for declared_topic in replay["expected_ros_graph"]["topics"]:
+        if declared_topic["name"] == "/clock":
+            declared_topic["qos_profile"] = "sensor_data"
     replay["scenario_id"] = "org.example.foundation.recorded-playback"
     replay["execution"].update(
         data_source="recording_playback",

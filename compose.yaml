@@ -63,6 +63,11 @@ services:
       LIBGL_ALWAYS_SOFTWARE: "1"
       QT_QPA_PLATFORM: "offscreen"
       ROS_DOMAIN_ID: "${ROS_TEST_DOMAIN_ID:-91}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds/udp-only.xml
+        target: /etc/robotics/fastdds/udp-only.xml
+        read_only: true
     healthcheck:
       disable: true
 

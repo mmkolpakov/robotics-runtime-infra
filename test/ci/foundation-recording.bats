@@ -312,6 +312,12 @@ assert dataset["governance"]["license"] == "NOASSERTION"
 assert dataset["time"]["qos_overrides_sha256"] == module.sha256(output / "source/capture/qos-overrides.yaml")
 assert scenario["dataset_manifest_sha256"] == module.sha256(output / "dataset-manifest.json")
 assert scenario["execution"]["data_source"] == "recording_playback"
+source_scenario = load_mapping(source / "scenario.yaml")
+source_clock = next(topic for topic in source_scenario["expected_ros_graph"]["topics"] if topic["name"] == "/clock")
+replay_clock = next(topic for topic in scenario["expected_ros_graph"]["topics"] if topic["name"] == "/clock")
+assert source_clock["qos_profile"] == "system_default"
+assert replay_clock["qos_profile"] == "sensor_data"
+assert module.sha256(source / "scenario.yaml") == module.sha256(output / "source/capture/scenario.yaml")
 assert scenario["time_policy"]["playback_rate"] == 1 / 30
 PY
   [ "${status}" -eq 0 ]
