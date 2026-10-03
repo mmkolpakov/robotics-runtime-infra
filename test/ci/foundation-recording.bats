@@ -506,3 +506,70 @@ assert run["scenario_sha256"] == hashlib.sha256(scenario.read_bytes()).hexdigest
 assert run["domains"][0]["domain_id"] == "primary"
 PY
 }
+
+@test "finalized runner composition keeps playback dependencies enabled for metrics and queries" {
+  local context="${BATS_TEST_TMPDIR}/compose-context.sh"
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+root="$1"
+data_source="$2"
+ROBOTICS_RUNTIME_MODE="$3"
+consumer_root="${root}"
+CI_REPO_ROOT="${root}"
+project=profile-regression
+run_dir="${4}"
+artifact_dir="${run_dir}/artifacts"
+mkdir -p "${artifact_dir}"
+cd "${root}"
+source scripts/ci/lib.sh
+ci_set_compose_fixture_env
+compose_environment=(--env-file /dev/null)
+if [[ "$5" == consumer ]]; then
+  export ROBOTICS_FOUNDATION_COMPOSE_PROJECT="${root}/examples/minimal-consumer/compose.yaml"
+fi
+# This regression validates composition, not admission/provenance or daemon I/O.
+# Native Compose and the actual production selection/normalization remain real.
+ci_yq_from_root() { printf '{"services":{}}\n'; }
+ci_require_policy_allows() { :; }
+ci_require_source_paths_within_root() { :; }
+ci_require_model_paths_within_root() { :; }
+foundation_require_release_images_policy() {
+  printf '{}\n' >"${run_dir}/release-images-policy-input.json"
+}
+SH
+    # Run the existing branch selection through its final source/include/released
+    # rebind. Do not rebuild a parallel profile/file table in this fixture.
+    awk '
+      /^profiles=\(/ { emit = 1 }
+      emit && /^observer=""$/ { exit }
+      emit { print }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
+    cat <<'SH'
+# Same global argv/profile/env as the failed metrics up; config needs no daemon.
+"${compose[@]}" --profile observability config --format json >"${run_dir}/metrics-model.json"
+"${compose[@]}" config --quiet
+if [[ "${data_source}" == recording_playback ]]; then
+  jq -e '
+    (.services | has("playback") and has("playback-gate") and has("playback-probe")) and
+    (.services["runtime-metrics"].depends_on | has("playback")) and
+    (.services | has("recorder") and has("runtime-manifest") and has("acceptance-observer") and has("evidence-sink"))
+  ' "${run_dir}/metrics-model.json"
+fi
+SH
+  } >"${context}"
+  local mode layout
+  run bash "${context}" "${REPOSITORY_ROOT}" simulator source \
+    "${BATS_TEST_TMPDIR}/stock" default
+  printf '%s\n' "${output}"
+  [ "${status}" -eq 0 ]
+  for mode in source released; do
+    for layout in default consumer; do
+      run bash "${context}" "${REPOSITORY_ROOT}" recording_playback "${mode}" \
+        "${BATS_TEST_TMPDIR}/${mode}-${layout}" "${layout}"
+      printf '%s\n' "${output}"
+      [ "${status}" -eq 0 ]
+    done
+  done
+}

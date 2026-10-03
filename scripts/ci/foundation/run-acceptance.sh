@@ -297,6 +297,8 @@ if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
     --artifact "other_evidence:configuration/compose-resolved.json=${resolved_model}"
   )
 fi
+# Keep every lifecycle command in the same profile set as the validated model.
+compose+=("${profiles[@]}")
 if [[ "${ROBOTICS_RUNTIME_MODE}" == released && ${#extra_services[@]} -gt 0 ]]; then
   extra_images="$(jq -er --args '
     .services as $services |
