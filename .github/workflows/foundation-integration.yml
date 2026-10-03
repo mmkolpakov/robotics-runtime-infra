@@ -79,6 +79,8 @@ jobs:
         run: bash scripts/ci/foundation/run-acceptance-isolation.sh
       - name: Run the default edge-attach verifier against live simulation
         run: bash scripts/ci/foundation/run-edge-attach.sh
+      - name: Reject a wrong manifest digest and qualify the native neutral robot
+        run: bash examples/neutral-robot/verify-foundation.sh
       - name: Capture foundation logs
         if: always()
         run: |
@@ -103,7 +105,7 @@ jobs:
     needs: foundation
     strategy:
       matrix:
-        phase: [source, playback]
+        phase: [source, playback, neutral-robot]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -129,7 +131,9 @@ jobs:
       - name: Sign and verify the trusted qualification bundle
         env:
           ROBOTICS_FOUNDATION_QUALIFICATION_PACKAGE: >-
-            ${{ matrix.phase == 'source' && 'artifacts/qualification' || 'artifacts/playback/qualification' }}
+            ${{ matrix.phase == 'source' && 'artifacts/qualification' ||
+            matrix.phase == 'playback' && 'artifacts/playback/qualification' ||
+            'artifacts/neutral-robot/qualification' }}
         run: bash scripts/ci/foundation/run-keyless-qualification.sh
       - name: Upload trusted qualification evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -137,9 +141,13 @@ jobs:
           name: >-
             ${{ matrix.phase == 'source' &&
             format('foundation-keyless-qualification-{0}', github.sha) ||
-            format('foundation-keyless-playback-qualification-{0}', github.sha) }}
+            matrix.phase == 'playback' &&
+            format('foundation-keyless-playback-qualification-{0}', github.sha) ||
+            format('foundation-keyless-neutral-robot-qualification-{0}', github.sha) }}
           path: >-
-            ${{ matrix.phase == 'source' && 'artifacts/qualification/' || 'artifacts/playback/qualification/' }}
+            ${{ matrix.phase == 'source' && 'artifacts/qualification/' ||
+            matrix.phase == 'playback' && 'artifacts/playback/qualification/' ||
+            'artifacts/neutral-robot/qualification/' }}
           if-no-files-found: error
           retention-days: 30
 
@@ -148,7 +156,7 @@ jobs:
     needs: trusted-keyless-qualification
     strategy:
       matrix:
-        phase: [source, playback]
+        phase: [source, playback, neutral-robot]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -170,7 +178,9 @@ jobs:
           name: >-
             ${{ matrix.phase == 'source' &&
             format('foundation-keyless-qualification-{0}', github.sha) ||
-            format('foundation-keyless-playback-qualification-{0}', github.sha) }}
+            matrix.phase == 'playback' &&
+            format('foundation-keyless-playback-qualification-{0}', github.sha) ||
+            format('foundation-keyless-neutral-robot-qualification-{0}', github.sha) }}
           path: ${{ runner.temp }}/qualification-consumer/package
       - name: Verify the published consumer
         uses: ./tooling/.github/actions/verify-published-consumer
@@ -178,7 +188,8 @@ jobs:
           tooling-directory: ${{ github.workspace }}/tooling
           package-directory: ${{ runner.temp }}/qualification-consumer/package
           authentication: keyless
-          expected_execution_type: ${{ matrix.phase == 'source' && 'simulator' || 'recording_playback' }}
+          expected_execution_type: >-
+            ${{ matrix.phase == 'playback' && 'recording_playback' || 'simulator' }}
       - name: Upload independent consumer observations
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -186,7 +197,9 @@ jobs:
           name: >-
             ${{ matrix.phase == 'source' &&
             format('foundation-independent-consumer-{0}', github.sha) ||
-            format('foundation-independent-playback-consumer-{0}', github.sha) }}
+            matrix.phase == 'playback' &&
+            format('foundation-independent-playback-consumer-{0}', github.sha) ||
+            format('foundation-independent-neutral-robot-consumer-{0}', github.sha) }}
           path: ${{ runner.temp }}/qualification-consumer/reports/
           if-no-files-found: error
           retention-days: 30

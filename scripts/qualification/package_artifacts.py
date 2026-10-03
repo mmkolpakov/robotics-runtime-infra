@@ -33,6 +33,13 @@ def digest(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def parser_mode(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".yaml", ".yml"}:
+        return "yaml"
+    return "json" if suffix == ".json" else "auto"
+
+
 def statement(cli: str, arguments: list[str], output: Path) -> None:
     result = subprocess.run(
         [
@@ -76,12 +83,23 @@ def package(
         sha256 = digest(source)
         schema = index < schema_count
         subject = sha256 if schema else label.split(":", 1)[1]
-        prefix = "extension-schemas" if schema else "subjects"
-        target = f"{prefix}/{subject}/{source.name}"
+        if schema:
+            target = f"extension-schemas/{subject}/{source.name}"
+        else:
+            target = f"subjects/{subject}"
+            # The public loader selects JSON, YAML, or content detection by suffix.
+            # Preserve that mode without changing the logical statement subject.
+            if parser_mode(source) != parser_mode(Path(subject)):
+                target += source.suffix or ".data"
         option = "--extension-schema" if schema else "--artifact"
         entries.append((option, label, source, target, sha256))
         original.extend([option, f"{label}={source}"])
         portable.extend([option, f"{label}={target}"])
+    artifact_targets = [
+        target for option, _, _, target, _ in entries if option == "--artifact"
+    ]
+    if len(artifact_targets) != len(set(artifact_targets)):
+        raise ValueError("artifact storage paths collide")
     targets = {target for _, _, _, target, _ in entries}
     if any(
         "/".join(Path(target).parts[:index]) in targets

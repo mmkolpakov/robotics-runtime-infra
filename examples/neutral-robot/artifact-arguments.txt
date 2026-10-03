@@ -1,0 +1,2 @@
+--artifact
+other_evidence:products/robot-description/examples/neutral-robot/sim/robot-description.json=examples/neutral-robot/sim/robot-description.json

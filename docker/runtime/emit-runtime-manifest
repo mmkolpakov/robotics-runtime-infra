@@ -131,6 +131,12 @@ case "${workload_kind}" in
     ;;
 esac
 
+if [[ -n "${ROBOTICS_ROBOT_DESCRIPTION_FILE:-}" ]]; then
+  "${contracts_cli}" validate --schema robot-description.v1 --quiet "${ROBOTICS_ROBOT_DESCRIPTION_FILE}"
+  robot_description_sha256="$(sha256sum "${ROBOTICS_ROBOT_DESCRIPTION_FILE}" | cut -d' ' -f1)"
+  workload="$(jq -c --arg sha256 "${robot_description_sha256}" '. + {robot_description: {sha256: $sha256}}' <<<"${workload}")"
+fi
+
 architecture="$(uname -m)"
 case "$architecture" in
   x86_64 | aarch64 | arm64) ;;

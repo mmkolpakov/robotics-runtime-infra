@@ -333,7 +333,7 @@ package_inventory() {
   (
     cd "$TEST_ROOT"
     "$REPOSITORY_ROOT/scripts/qualification/package-artifacts" \
-      --scenario "$TEST_ROOT/artifacts/acceptance-scenario.yaml" "${args[@]:2}" \
+      --scenario "${PACKAGE_SCENARIO:-$TEST_ROOT/artifacts/acceptance-scenario.yaml}" "${args[@]:2}" \
       --output "$TEST_ROOT/portable" "$@"
   )
 }
@@ -365,9 +365,9 @@ verify_portable() {
 
   [ "$status" -eq 0 ]
   cmp "$artifacts/acceptance-scenario.yaml" \
-    "$TEST_ROOT/portable/subjects/scenario.json/acceptance-scenario.yaml"
+    "$TEST_ROOT/portable/subjects/scenario.json.yaml"
   cmp "$artifacts/diagnostics.json" \
-    "$TEST_ROOT/portable/subjects/logs/copies/diagnostics.json/diagnostics.json"
+    "$TEST_ROOT/portable/subjects/logs/copies/diagnostics.json"
   cmp "$artifacts/extension.schema.yaml" \
     "$TEST_ROOT/portable/extension-schemas/$(sha256 "$artifacts/extension.schema.yaml")/extension.schema.yaml"
   run grep -F "$TEST_ROOT" "$TEST_ROOT/portable/qualification-arguments.txt"
@@ -392,17 +392,157 @@ verify_portable() {
   [ "$status" -eq 0 ]
 }
 
+@test "preserves native document parsing for YAML text and extensionless sources" {
+  create_statement_and_bundle
+  local artifacts="$TEST_ROOT/artifacts"
+  local suffix expected
+  for suffix in yaml yml txt ''; do
+    export PACKAGE_SCENARIO="$artifacts/scenario${suffix:+.$suffix}"
+    cp "$artifacts/acceptance-scenario.yaml" "$PACKAGE_SCENARIO"
+    run package_inventory
+    [ "$status" -eq 0 ]
+    expected="$TEST_ROOT/portable/subjects/scenario.json.${suffix:-data}"
+    cmp "$PACKAGE_SCENARIO" "$expected"
+    run verify_portable "$TEST_ROOT/portable"
+    [ "$status" -eq 0 ]
+    rm -r "$TEST_ROOT/portable"
+  done
+}
+
+@test "retains nested file dependencies and their qualified digests after relocation" {
+  local artifacts="$TEST_ROOT/artifacts"
+  local product="$artifacts/product"
+  local package="$product/ros/fixture_description"
+  mkdir -p "$product/sim" "$package/description" "$package/meshes"
+  printf '%s\n' '<package format="3"><name>fixture_description</name></package>' \
+    >"$package/package.xml"
+  printf '%s\n' '<robot name="fixture"><link name="base"><visual><geometry>' \
+    '<mesh filename="package://fixture_description/meshes/base.stl"/>' \
+    '</geometry></visual><collision><geometry>' \
+    '<mesh filename="package://fixture_description/meshes/tip.stl"/>' \
+    '</geometry></collision></link></robot>' >"$package/description/model.urdf"
+  printf '%s\n' 'solid base' 'endsolid base' >"$package/meshes/base.stl"
+  printf '%s\n' 'solid tip' 'endsolid tip' >"$package/meshes/tip.stl"
+  jq -n --arg description_sha "$(sha256 "$package/description/model.urdf")" \
+    --arg base_sha "$(sha256 "$package/meshes/base.stl")" \
+    --arg tip_sha "$(sha256 "$package/meshes/tip.stl")" '{
+      schema_version: "robot-description.v1", robot_id: "fixture",
+      source: {path: "ros/fixture_description/description/model.urdf", sha256: $description_sha},
+      package: {name: "fixture_description", path: "ros/fixture_description"},
+      description: {
+        format: "urdf", path: "ros/fixture_description/description/model.urdf",
+        sha256: $description_sha
+      },
+      meshes: [
+        {path: "ros/fixture_description/meshes/base.stl", sha256: $base_sha},
+        {path: "ros/fixture_description/meshes/tip.stl", sha256: $tip_sha}
+      ],
+      mass_kg: 1, center_of_mass_m: [0, 0, 0],
+      inertia_check: {status: "not_checked"}, spawn: {frame: "world", pose: [0, 0, 0, 0, 0, 0]}
+    }' >"$product/sim/robot-description.json"
+  local product_arguments=()
+  local relative
+  for relative in sim/robot-description.json ros/fixture_description/package.xml \
+    ros/fixture_description/description/model.urdf \
+    ros/fixture_description/meshes/base.stl ros/fixture_description/meshes/tip.stl; do
+    product_arguments+=(--artifact "other_evidence:products/fixture/$relative=$product/$relative")
+  done
+  "$ROBOTICS_CONTRACTS_CLI" validate "$product/sim/robot-description.json"
+  create_statement_and_bundle "${product_arguments[@]}"
+  local package_sha
+  package_sha="$(sha256 "$package/package.xml")"
+  run package_inventory "${product_arguments[@]}"
+  [ "$status" -eq 0 ]
+  run grep -F "$TEST_ROOT" "$TEST_ROOT/portable/qualification-arguments.txt"
+  [ "$status" -eq 1 ]
+  mkdir "$TEST_ROOT/independent-trust"
+  cp "$artifacts/"{bundle.json,trusted-root.json,policy.json,statement.json} \
+    "$TEST_ROOT/independent-trust/"
+  jq -e --arg sha "$package_sha" '.subject | any(
+    .name == "products/fixture/ros/fixture_description/package.xml" and .digest.sha256 == $sha
+  )' "$TEST_ROOT/independent-trust/statement.json"
+  export COSIGN_TEST_AGGREGATE_SHA256
+  COSIGN_TEST_AGGREGATE_SHA256="$(sha256 "$artifacts/acceptance-aggregate.json")"
+  mv "$TEST_ROOT/portable" "$TEST_ROOT/relocated"
+  rm -r "$artifacts"
+
+  run verify_portable "$TEST_ROOT/relocated" "$TEST_ROOT/independent-trust"
+  [ "$status" -eq 0 ]
+  (
+    cd "$TEST_ROOT/relocated"
+    mapfile -t portable_arguments <qualification-arguments.txt
+    "$REPOSITORY_ROOT/scripts/qualification/create-statement" "${portable_arguments[@]}" \
+      --output "$TEST_ROOT/independent-trust/relocated-statement.json"
+  )
+  cmp "$TEST_ROOT/independent-trust/statement.json" \
+    "$TEST_ROOT/independent-trust/relocated-statement.json"
+  "$ROBOTICS_CONTRACTS_CLI" validate \
+    "$TEST_ROOT/relocated/subjects/products/fixture/sim/robot-description.json"
+  python3 - "$TEST_ROOT/relocated/subjects/products/fixture" \
+    "$TEST_ROOT/independent-trust/statement.json" <<'PY'
+import hashlib
+import json
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+root = Path(sys.argv[1])
+manifest = json.loads((root / "sim/robot-description.json").read_bytes())
+subjects = {
+    item["name"]: item["digest"]["sha256"]
+    for item in json.loads(Path(sys.argv[2]).read_bytes())["subject"]
+}
+for artifact in (manifest["source"], manifest["description"], *manifest["meshes"]):
+    path = root / artifact["path"]
+    raw_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert raw_digest == artifact["sha256"]
+    assert raw_digest == subjects[f"products/fixture/{artifact['path']}"]
+package = manifest["package"]
+package_xml = root / package["path"] / "package.xml"
+assert ET.parse(package_xml).getroot().findtext("name") == package["name"]
+assert hashlib.sha256(package_xml.read_bytes()).hexdigest() == subjects[
+    f"products/fixture/{package['path']}/package.xml"
+]
+prefix = f"package://{package['name']}/"
+mesh_paths = set()
+for mesh in ET.parse(root / manifest["description"]["path"]).iter("mesh"):
+    uri = mesh.attrib["filename"]
+    assert uri.startswith(prefix)
+    mesh_paths.add(f"{package['path']}/{uri[len(prefix):]}")
+assert mesh_paths == {artifact["path"] for artifact in manifest["meshes"]}
+assert len(list(root.rglob("*.*"))) == 5
+PY
+}
+
+@test "rejects suffix mapped artifact collisions while preserving schema aliases" {
+  local artifacts="$TEST_ROOT/artifacts"
+  for subjects in 'logs:logs.json' 'logs.json:logs.json.data'; do
+    local first="${subjects%%:*}"
+    local second="${subjects#*:}"
+    local source="$artifacts/diagnostics.json"
+    if [[ "$first" == logs.json ]]; then
+      source="$TEST_ROOT/extensionless"
+      cp "$artifacts/diagnostics.json" "$source"
+    fi
+    run package_inventory --artifact "other_evidence:$first=$source" \
+      --artifact "other_evidence:$second=$source"
+    [ "$status" -eq 65 ]
+    [[ "$output" == *'artifact storage paths collide'* ]]
+    [ ! -e "$TEST_ROOT/portable" ]
+  done
+}
+
 @test "rejects a changed or missing portable subject through existing verification" {
   create_statement_and_bundle
   package_inventory
   printf '%s\n' '{"diagnostics":"tampered"}' \
-    >"$TEST_ROOT/portable/subjects/evidence/diagnostics.json/diagnostics.json"
+    >"$TEST_ROOT/portable/subjects/evidence/diagnostics.json"
 
   run verify_portable "$TEST_ROOT/portable"
 
   [ "$status" -eq 65 ]
   [[ "$output" == *'authenticated statement does not exactly match'* ]]
-  rm "$TEST_ROOT/portable/subjects/evidence/diagnostics.json/diagnostics.json"
+  rm "$TEST_ROOT/portable/subjects/evidence/diagnostics.json"
 
   run verify_portable "$TEST_ROOT/portable"
 

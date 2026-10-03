@@ -1,0 +1,37 @@
+---
+# Tooling-owned fixture: only the admitted snapshot is mounted into native ROS.
+services:
+  neutral-robot:
+    image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
+    profiles: [neutral-robot]
+    init: true
+    command:
+      - ros2
+      - launch
+      - robotics_runtime_infra
+      - neutral_robot.launch.xml
+      - start_simulator:=false
+      - "description_file:=${ROBOTICS_ROBOT_DESCRIPTION_PATH:-/run/robotics/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf}"
+    environment:
+      GZ_PARTITION: "${GZ_PARTITION:-robotics-runtime}"
+      RCUTILS_COLORIZED_OUTPUT: "0"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+      ROS_AUTOMATIC_DISCOVERY_RANGE: "${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
+      RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_RUN_DIR:-./runs/current}/product"
+        target: /run/robotics/product
+        read_only: true
+      - type: bind
+        source: ./config/fastdds/udp-only.xml
+        target: /etc/robotics/fastdds/udp-only.xml
+        read_only: true
+    healthcheck:
+      disable: true
