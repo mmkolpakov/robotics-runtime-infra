@@ -449,7 +449,7 @@ if [[ "${data_source}" == recording_playback ]]; then
     "${extra_services[@]}"
 else
   "${compose[@]}" --profile stepped --profile record --profile observability \
-    up --detach --no-build --wait --wait-timeout 120 simulation recorder otel-collector \
+    up --detach --no-build --wait --wait-timeout 120 simulation otel-collector \
     "${extra_services[@]}"
 fi
 collector_health_address="$("${compose[@]}" port otel-collector 13133)"
@@ -504,6 +504,10 @@ jq -e --arg digest "${fastdds_profile_sha256}" \
 if [[ "${data_source}" == simulator ]]; then
   "${compose[@]}" --profile acceptance --profile observability \
     up --detach --no-build --wait --wait-timeout 120 runtime-probe-publisher runtime-metrics
+  # Capture the live window after preparation, retaining the scenario's rotation
+  # limits instead of consuming them on conformance and manifest startup.
+  "${compose[@]}" --profile record \
+    up --detach --no-build --wait --wait-timeout 120 recorder
 fi
 
 observer_compose=("${compose[@]}" --profile acceptance)

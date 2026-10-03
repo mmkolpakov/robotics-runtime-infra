@@ -573,3 +573,80 @@ SH
     done
   done
 }
+
+@test "source recorder starts after provider manifest and publisher while playback keeps early capture" {
+  local boundary="${BATS_TEST_TMPDIR}/capture-boundary.sh"
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+root="$1"; data_source="$2"; run_dir="$3"
+script_dir="${root}/scripts/ci/foundation"
+foundation_bin="${root}/dependencies/robotics-runtime/.venv/bin"
+ROBOTICS_SIMULATION_OCI_DIGEST=fixture-digest
+artifact_dir="${run_dir}/artifacts"
+mkdir -p "${run_dir}/configuration" "${artifact_dir}/provider"
+events="${run_dir}/events"
+compose=(docker compose)
+extra_services=()
+publish() { printf '%s\n' "$1" >>"${events}"; }
+sudo() {
+  if [[ "$1" == install ]]; then
+    cp -- "${@: -2:1}" "${@: -1}"
+  fi
+}
+curl() { :; }
+foundation_validate_document() { :; }
+provider_fixture() {
+  publish provider
+  printf '{}\n' >"${artifact_dir}/provider/bindings.json"
+}
+collect_playback_provider() { provider_fixture; }
+bash() { provider_fixture; }
+docker() {
+  if [[ "$1" == inspect ]]; then
+    printf '[{"HostConfig":{}}]\n'
+  elif [[ " $* " == *' up '* ]]; then
+    [[ " $* " != *' recorder '* ]] || publish recorder
+    [[ " $* " != *' runtime-probe-publisher '* ]] || publish publisher
+  elif [[ " $* " == *' run '* ]]; then
+    publish manifest
+    jq -n --arg digest "$(sha256sum "${root}/config/fastdds/udp-only.xml" | cut -d' ' -f1)" \
+      '{schema_version:"runtime-manifest.v1",
+        data_plane:{middleware_configuration_sha256:$digest},
+        configuration_artifacts:[{kind:"host_topology"},{kind:"runtime_resources"}]}' \
+      >"${run_dir}/runtime-manifest.json"
+  elif [[ " $* " == *' port '* ]]; then
+    printf '127.0.0.1:13133\n'
+  elif [[ " $* " == *' ps '* ]]; then
+    printf 'fixture-container\n'
+  else
+    return 90
+  fi
+}
+SH
+    # Execute the contiguous production startup through publication. Only leaf
+    # transports above are fixtures; this does not claim native ROS observation.
+    awk '
+      /^sudo chown -R 1000:1000/ { emit = 1 }
+      emit && /^observer_compose=/ { exit }
+      emit { print }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
+  } >"${boundary}"
+  local source
+  for source in simulator recording_playback; do
+    run bash "${boundary}" "${REPOSITORY_ROOT}" "${source}" \
+      "${BATS_TEST_TMPDIR}/${source}"
+    printf '%s\n' "${output}"
+    [ "${status}" -eq 0 ]
+    local expected="${BATS_TEST_TMPDIR}/expected-${source}"
+    if [[ "${source}" == simulator ]]; then
+      printf 'provider\nmanifest\npublisher\nrecorder\n' >"${expected}"
+    else
+      printf 'recorder\nprovider\nmanifest\n' >"${expected}"
+    fi
+    run diff -u "${expected}" "${BATS_TEST_TMPDIR}/${source}/events"
+    printf '%s\n' "${output}"
+    [ "${status}" -eq 0 ]
+  done
+}
