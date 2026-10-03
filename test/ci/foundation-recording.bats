@@ -167,8 +167,9 @@ SH
 
 
 prepare_playback_capture_fixture() {
-  CAPTURE="${BATS_TEST_TMPDIR}/capture"
-  PREPARED="${BATS_TEST_TMPDIR}/prepared"
+  local execution_sec="${1:-10}" span_ns="${2:-1000000000}" suffix="${3:-}"
+  CAPTURE="${BATS_TEST_TMPDIR}/capture${suffix}"
+  PREPARED="${BATS_TEST_TMPDIR}/prepared${suffix}"
   mkdir -p "${CAPTURE}/results" "${CAPTURE}/bags/recording" \
     "${CAPTURE}/configuration/capture" "${CAPTURE}/evidence/summaries"
   local -a args=()
@@ -179,7 +180,7 @@ prepare_playback_capture_fixture() {
     "${REPOSITORY_ROOT}/test/qualification/fixtures/single-artifacts.json")
   "${REPOSITORY_ROOT}/scripts/qualification/create-statement" "${args[@]}" \
     --output "${CAPTURE}/results/qualification-statement.json"
-  "${FOUNDATION_PYTHON}" - "${CAPTURE}" "${REPOSITORY_ROOT}" <<'PY'
+  "${FOUNDATION_PYTHON}" - "${CAPTURE}" "${REPOSITORY_ROOT}" "${execution_sec}" "${span_ns}" <<'PY'
 import hashlib
 import json
 import shutil
@@ -191,9 +192,12 @@ from robotics_runtime_contracts import load_mapping
 from robotics_runtime_contracts.recordings import recording_summary_from_mcap
 from robotics_runtime_contracts.writers import write_document
 
-root, repository = map(Path, sys.argv[1:])
+root, repository = map(Path, sys.argv[1:3])
+execution_sec, span_ns = map(int, sys.argv[3:])
 fixtures = repository / "test/qualification/fixtures"
-shutil.copyfile(repository / "examples/minimal-consumer/scenario.yaml", root / "scenario.yaml")
+scenario = dict(load_mapping(repository / "examples/minimal-consumer/scenario.yaml"))
+scenario["timeouts"]["execution_sec"] = execution_sec
+write_document(scenario, root / "scenario.yaml", schema="acceptance-scenario.v1")
 shutil.copyfile(fixtures / "runtime-manifest.json", root / "runtime-manifest.json")
 for name in ("qos-overrides.yaml", "mcap-writer.yaml"):
     shutil.copyfile(repository / "config/recording" / name, root / "configuration/capture" / name)
@@ -206,10 +210,17 @@ with recording.open("wb") as stream:
     channel = writer.register_channel("/example/sequence", "cdr", schema)
     clock = writer.register_channel("/clock", "cdr", clock_schema)
     # Synthetic typed raw records; native CDR replay belongs to real ROS CI.
-    for index in range(3):
-        stamp = 1_000_000_000 + index * 500_000_000
+    # The short density fixture retains the actual stock's 1 ms / 2 ms groups.
+    stamps = (range(10**9, 10**9 + span_ns + 1, 1_000_000)
+              if span_ns < 10**9 else (10**9, 10**9 + span_ns // 2, 10**9 + span_ns))
+    clock_count = message_count = 0
+    for index, stamp in enumerate(stamps):
         writer.add_message(clock, stamp, struct.pack("<Iii", 1, stamp // 10**9, stamp % 10**9), stamp)
+        clock_count += 1
+        if span_ns < 10**9 and index == 76:
+            continue
         writer.add_message(channel, stamp, struct.pack("<IQ", 1, index), stamp)
+        message_count += 1
     writer.finish()
 summary = recording_summary_from_mcap(recording)
 summary_path = root / "evidence/summaries/selected.recording-summary.json"
@@ -219,14 +230,15 @@ info = metadata["rosbag2_bagfile_information"]
 topic = info["topics_with_message_count"][0]
 topic["topic_metadata"].update(
     name="/example/sequence", type="std_msgs/msg/UInt64", type_description_hash="RIHS01_" + "a" * 64)
-topic["message_count"] = 3
+topic["message_count"] = message_count
 clock_topic = json.loads(json.dumps(topic))
 clock_topic["topic_metadata"].update(name="/clock", type="rosgraph_msgs/msg/Clock")
+clock_topic["message_count"] = clock_count
 info.update(
-    relative_file_paths=["selected.mcap"], message_count=6,
+    relative_file_paths=["selected.mcap"], message_count=message_count + clock_count,
     topics_with_message_count=[topic, clock_topic],
     files=[{"path": "selected.mcap", "starting_time": {"nanoseconds_since_epoch": 10**9},
-            "duration": {"nanoseconds": 10**9}, "message_count": 6}],
+            "duration": {"nanoseconds": span_ns}, "message_count": message_count + clock_count}],
     custom_data={"captured_at": "2026-10-03T10:00:00Z", "dataset_license": "NOASSERTION",
                  "data_classification": "public", "retention_class": "pull-request-7d",
                  "capture_clock_policy": "ros-time-no-reset"})
@@ -300,9 +312,76 @@ assert dataset["governance"]["license"] == "NOASSERTION"
 assert dataset["time"]["qos_overrides_sha256"] == module.sha256(output / "source/capture/qos-overrides.yaml")
 assert scenario["dataset_manifest_sha256"] == module.sha256(output / "dataset-manifest.json")
 assert scenario["execution"]["data_source"] == "recording_playback"
-assert scenario["time_policy"]["playback_rate"] == 1 / 120
+assert scenario["time_policy"]["playback_rate"] == 1 / 30
 PY
   [ "${status}" -eq 0 ]
+}
+
+@test "playback desired duration follows the inherited window without overstretching stock timestamp groups" {
+  source "${REPOSITORY_ROOT}/scripts/ci/lib.sh"
+  ci_set_compose_fixture_env
+  # The canonical runner sets this interval before resolving the same model.
+  export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
+  local window span
+  for setting in "10 382000000" "4 382000000" "4 20000000000"; do
+    read -r window span <<<"${setting}"
+    prepare_playback_capture_fixture "${window}" "${span}" "-${window}-${span}"
+    run "${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" "${CAPTURE}" "${PREPARED}" <<'PY'
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+from mcap.reader import make_reader
+from robotics_runtime_contracts import load_mapping, validate_document
+
+repository, source, output = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/ci/integration/prepare-playback-inputs.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+recording = source / "bags/recording/selected.mcap"
+before = recording.read_bytes()
+with recording.open("rb") as stream:
+    rows = list(make_reader(stream).iter_messages())
+times = sorted({message.log_time for _, channel, message in rows if channel.topic == "/example/sequence"})
+clock_count = sum(channel.topic == "/clock" for _, channel, _ in rows)
+# Native MCAP records supply the timing fixture; only the ROS SDK boundary is replaced.
+module.scan_recording = lambda path, topic: {
+    "first_ns": times[0], "last_ns": times[-1],
+    "message_count": len(times), "clock_samples": clock_count}
+module.prepare(source, output, output)
+parameters = load_mapping(output / "playback-inputs.json")
+scenario = load_mapping(output / "scenario.json")
+dataset = load_mapping(output / "dataset-manifest.json")
+validate_document(scenario, schema="acceptance-scenario.v1")
+validate_document(dataset)
+window = load_mapping(source / "scenario.yaml")["timeouts"]["execution_sec"]
+assert parameters["rate"] == scenario["time_policy"]["playback_rate"]
+assert dataset["artifact"]["sha256"] == module.sha256(recording)
+assert dataset["provenance"]["scenario_sha256"] == module.sha256(source / "scenario.yaml")
+assert dataset["provenance"]["runtime_manifest_sha256"] == module.sha256(source / "runtime-manifest.json")
+assert recording.read_bytes() == before == (output / "source/bag/selected.mcap").read_bytes()
+if window == 4 and times[-1] - times[0] == 20 * 10**9:
+    assert parameters["rate"] == 1.0
+else:
+    model = json.loads(subprocess.check_output([
+        "docker", "compose", "--env-file", "/dev/null",
+        "-f", "compose.yaml", "-f", "compose.observability.yaml",
+        "--profile", "*", "config", "--format", "json"], cwd=repository))
+    interval_ms = int(model["services"]["runtime-metrics"]["environment"]["ROBOTICS_METRICS_EXPORT_INTERVAL_MS"])
+    gaps = [following - previous for previous, following in zip(times, times[1:])]
+    assert min(gaps) == 1_000_000 and max(gaps) == 2_000_000
+    old_rate = (times[-1] - times[0]) / 10**9 / 120
+    assert max(gaps) / old_rate / 10**6 > interval_ms
+    replay_gap_ms = max(gaps) / parameters["rate"] / 10**6
+    print(f"window={window}s recorded_max_gap={max(gaps)}ns rate={parameters['rate']} replay_max_gap={replay_gap_ms}ms export={interval_ms}ms")
+    assert replay_gap_ms < interval_ms, "selected native rate overstretches stock timestamp groups beyond the metric export interval"
+assert parameters["desired_playback_duration_sec"] == 3 * window
+assert "replay_budget_sec" not in parameters
+PY
+    printf '%s\n' "${output}"
+    [ "${status}" -eq 0 ]
+  done
 }
 
 @test "playback preparer refuses a different original runtime and a changed validated snapshot" {

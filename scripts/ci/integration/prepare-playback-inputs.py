@@ -15,7 +15,6 @@ from robotics_runtime_contracts import loads_mapping, validate_document
 from robotics_runtime_contracts.serialization import read_document_bytes
 from robotics_runtime_contracts.writers import write_document
 
-REPLAY_BUDGET_SEC = 120
 MESSAGE_TYPE = "std_msgs/msg/UInt64"
 
 
@@ -337,7 +336,12 @@ def prepare(root: Path, output: Path, host: Path) -> None:
     scan = scan_recording(output / "source/bag" / recording.name, topic)
     if sha256(output / "source/bag" / recording.name) != before:
         raise ValueError("selected recording changed during native decoding")
-    rate = min(1.0, (scan["last_ns"] - scan["first_ns"]) / 1e9 / REPLAY_BUDGET_SEC)
+    retained_scenario, _ = captured_document(output / "source/capture/scenario.yaml")
+    desired_playback_duration_sec = 3 * retained_scenario["timeouts"]["execution_sec"]
+    rate = min(
+        1.0,
+        (scan["last_ns"] - scan["first_ns"]) / 1e9 / desired_playback_duration_sec,
+    )
     replay_qos = output / "source/qos/qos-overrides.yaml"
     replay_qos.parent.mkdir()
     replay_qos.write_text(
@@ -361,7 +365,6 @@ def prepare(root: Path, output: Path, host: Path) -> None:
         + "\n"
     )
     write_document(dataset_document(output, host), output / "dataset-manifest.json")
-    retained_scenario, _ = captured_document(output / "source/capture/scenario.yaml")
     replay = copy.deepcopy(retained_scenario)
     replay["scenario_id"] = "org.example.foundation.recorded-playback"
     replay["execution"].update(
@@ -398,7 +401,7 @@ def prepare(root: Path, output: Path, host: Path) -> None:
                 "message_type": MESSAGE_TYPE,
                 "rate": rate,
                 "clock_hz": 200,
-                "replay_budget_sec": REPLAY_BUDGET_SEC,
+                "desired_playback_duration_sec": desired_playback_duration_sec,
                 "start_offset_sec": start_offset,
                 "selected_recording": recording.name,
                 "native_scan": scan,
