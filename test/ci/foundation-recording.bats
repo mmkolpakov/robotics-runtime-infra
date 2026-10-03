@@ -799,19 +799,45 @@ SH
 @test "neutral startup preserves its shell input through the native parse check" {
   local fixture="${BATS_TEST_TMPDIR}/neutral-lifecycle"
   local context="${fixture}/context.sh" old_context="${fixture}/old-context.sh"
+  local missing_flag_context="${fixture}/missing-flag-context.sh"
   mkdir -p "${fixture}/examples/neutral-robot"
+  : >"${fixture}/examples/neutral-robot/check-entity.py"
   export FOUNDATION_LIFECYCLE_TRACE="${fixture}/events"
   cat >"${fixture}/compose" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
   run)
-    [[ "${@: -2:1}" == check_urdf && "${@: -1}" == /fixture/neutral.urdf ]]
-    printf 'check_urdf\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
-    printf 'parse-check-executed\n'
-    # Model only Compose run's stdin forwarding, never URDF/ROS behavior.
-    [[ " $* " == *' --interactive=false '* ]] || cat >/dev/null
-    exit "${FOUNDATION_PARSE_STATUS:-0}"
+    if [[ "${@: -2:1}" == check_urdf && "${@: -1}" == /fixture/neutral.urdf ]]; then
+      printf 'check_urdf\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+      printf 'parse-check-executed\n'
+      # Model only Compose run's stdin forwarding, never URDF/ROS behavior.
+      [[ " $* " == *' --interactive=false '* ]] || cat >/dev/null
+      exit "${FOUNDATION_PARSE_STATUS:-0}"
+    fi
+    [[ " $* " == *' -name unreadable_neutral_robot '* ]]
+    printf 'unreadable-create\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+    printf 'Entity creation successful.\n'
+    ;;
+  exec)
+    if [[ "${@: -1}" == /run/robotics/product/.readiness-missing.urdf ]]; then
+      printf 'missing-file\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+      [[ " $* " == *' --interactive=false '* ]] || cat >/dev/null
+    elif [[ " $* " == *' --entity unreadable_neutral_robot '* ]]; then
+      [[ " $* " == *' --no-wait '* ]]
+      cat >/dev/null
+      printf 'unreadable-entity\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+      if [[ "${FOUNDATION_ENTITY_SERVICE_ERROR:-0}" == 1 ]]; then
+        printf '{"status":"service_failed","result":{"result":1},"exists":false}\n'
+        exit 69
+      fi
+      printf '{"status":"entity_absent","result":{"result":1},"entity":"unreadable_neutral_robot","expected":"present","exists":false}\n'
+      exit 70
+    else
+      cat >/dev/null
+      printf 'absent-entity\n' >>"${FOUNDATION_LIFECYCLE_TRACE}"
+      printf '{"status":"passed","result":{"result":1},"exists":false}\n'
+    fi
     ;;
   up)
     printf 'fresh-fixture-container\n' >"${FOUNDATION_LIFECYCLE_TRACE}.container"
@@ -850,7 +876,7 @@ SH
   } >"${context}"
   run bash "${context}" "${fixture}" "${fixture}/current"
   [ "${status}" -eq 0 ]
-  [ "$(cat "${FOUNDATION_LIFECYCLE_TRACE}")" = $'check_urdf\nup\nps\nwait-ready' ]
+  [ "$(cat "${FOUNDATION_LIFECYCLE_TRACE}")" = $'check_urdf\nabsent-entity\nmissing-file\nunreadable-create\nunreadable-entity\nup\nps\nwait-ready' ]
   [ "$(cat "${fixture}/current/robot-description-check-urdf.log")" = parse-check-executed ]
 
   : >"${FOUNDATION_LIFECYCLE_TRACE}"
@@ -858,6 +884,18 @@ SH
   run env FOUNDATION_PARSE_STATUS=17 bash "${context}" "${fixture}" "${fixture}/parse-failure"
   [ "${status}" -eq 17 ]
   [ "$(cat "${FOUNDATION_LIFECYCLE_TRACE}")" = check_urdf ]
+  [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
+
+  : >"${FOUNDATION_LIFECYCLE_TRACE}"
+  run env FOUNDATION_ENTITY_SERVICE_ERROR=1 bash "${context}" "${fixture}" "${fixture}/service-failure"
+  [ "${status}" -ne 0 ]
+  [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
+  [ "$(jq -r '.status' "${fixture}/service-failure/robot-readiness/unreadable-entity.json")" = service_failed ]
+
+  sed 's/ --no-wait//' "${context}" >"${missing_flag_context}"
+  : >"${FOUNDATION_LIFECYCLE_TRACE}"
+  run bash "${missing_flag_context}" "${fixture}" "${fixture}/missing-flag"
+  [ "${status}" -ne 0 ]
   [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
 
   sed 's/ --interactive=false//' "${context}" >"${old_context}"

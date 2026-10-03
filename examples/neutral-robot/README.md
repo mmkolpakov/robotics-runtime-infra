@@ -8,8 +8,9 @@ bash examples/neutral-robot/verify-foundation.sh
 
 The same job first rejects a wrong manifest digest before producers or the
 observer start. It then admits the ready URDF, launches the native ROS nodes,
-requires Gazebo creation acknowledgement and observes Clock, JointState and TF
-before starting the existing recorder and acceptance observer.
+checks that the model is absent, rejects an acknowledged request for a missing
+file, and requires the created model through native `GetEntities`. It then
+observes Clock, JointState and TF before the recorder and acceptance observer.
 
 The authored source and description are the same canonical file under
 `ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf`. The manifest
@@ -22,9 +23,24 @@ publication. Physical joint motion remains the separate controller test. This
 native fixture requires the world-origin pose and accepts no extension-schema
 inputs; generic file admission validates the public extension registry.
 
-Only admitted files are copied into the read-only launch snapshot. Qualification
+Only admitted files are copied into the read-only snapshot shared by the ROS
+client and Gazebo server. Qualification
 retains the manifest, package.xml and every declared source, description and mesh
 file at its original relative path. After the producer snapshot is removed, native verification and
 filesystem readmission use the portable subjects alone. The trusted CI consumer
 repeats this with the published contracts and harness versions in the foundation
 lock.
+
+The released workflow uses the same fixture with `v0.10.0-rc.1` images, pinned
+by the unchanged release lock. It verifies the release and selected image
+provenance before execution; it does not build images. Run it from this repository:
+
+```sh
+gh workflow run qualify-released.yml --repo mmkolpakov/robotics-runtime-infra --ref main
+```
+
+The workflow retains the qualification package and a separate consumer report.
+That consumer installs contracts 0.18.2 and harness 0.19.1 from PyPI, verifies
+the retained bytes under the included ephemeral key and readmits the robot
+without a producer snapshot. Image provenance and package integrity are
+separate checks; this fixture does not qualify physical joint motion or hardware.

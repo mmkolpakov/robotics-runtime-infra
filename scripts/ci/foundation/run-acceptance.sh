@@ -566,8 +566,8 @@ if [[ "${robot_selected}" == true ]]; then
   "${foundation_bin}/python" -I -m robotics_acceptance_harness.cli explain \
     --scenario "${run_dir}/scenario.yaml" --runtime "${run_dir}/runtime-manifest.json" \
     >"${artifact_dir}/robot-description-binding.json"
-  # One wall deadline covers native parsing, process startup, create acknowledgement
-  # and the software-state observations; cleanup stops producers on any failure.
+  # One wall deadline covers parsing, server entity checks and software state;
+  # cleanup stops producers on any failure.
   timeout --signal=TERM --kill-after=2s 90s bash -s -- \
     "${root}" "${artifact_dir}" "${ROBOTICS_ROBOT_DESCRIPTION_PATH}" "${compose[@]}" <<'SH'
 set -Eeuo pipefail
@@ -577,6 +577,30 @@ description="$3"
 shift 3
 "$@" run --rm --no-deps --interactive=false neutral-robot check_urdf "${description}" \
   >"${artifact_dir}/robot-description-check-urdf.log"
+mkdir -p -- "${artifact_dir}/robot-readiness"
+"$@" exec -T simulation robotics-entrypoint python3 - --expect absent \
+  <"${root}/examples/neutral-robot/check-entity.py" \
+  >"${artifact_dir}/robot-readiness/entity-before-create.json"
+# The native /create acknowledgement can precede server-side file parsing.
+# This missing filename must never qualify, even when create returns success.
+"$@" exec -T --interactive=false simulation test ! -e /run/robotics/product/.readiness-missing.urdf
+"$@" run --rm --no-deps --interactive=false neutral-robot timeout 45 \
+  ros2 run ros_gz_sim create -world empty \
+  -file /run/robotics/product/.readiness-missing.urdf \
+  -name unreadable_neutral_robot -allow_renaming false \
+  >"${artifact_dir}/robot-readiness/unreadable-create.log" 2>&1
+grep -F 'Entity creation successful.' \
+  "${artifact_dir}/robot-readiness/unreadable-create.log" >/dev/null
+negative_status=0
+"$@" exec -T simulation robotics-entrypoint python3 - \
+  --entity unreadable_neutral_robot --no-wait --expect present --timeout-sec 5 \
+  <"${root}/examples/neutral-robot/check-entity.py" \
+  >"${artifact_dir}/robot-readiness/unreadable-entity.json" || negative_status=$?
+[[ "${negative_status}" == 70 ]]
+jq -e '.status == "entity_absent" and .result != null and
+       .entity == "unreadable_neutral_robot" and .expected == "present" and
+       .exists == false' \
+  "${artifact_dir}/robot-readiness/unreadable-entity.json" >/dev/null
 "$@" up --detach --no-build --no-deps --force-recreate neutral-robot
 container="$("$@" ps --quiet neutral-robot)"
 test -n "${container}"

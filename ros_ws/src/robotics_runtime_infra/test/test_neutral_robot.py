@@ -18,6 +18,8 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import JointState
+from simulation_interfaces.msg import Result
+from simulation_interfaces.srv import GetEntities
 from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 
@@ -119,6 +121,23 @@ class TestNeutralRobot(unittest.TestCase):
             ),
         ]
         try:
+            entity_client = node.create_client(GetEntities, "/simulator/get_entities")
+            self.assertTrue(entity_client.wait_for_service(timeout_sec=remaining()))
+            while True:
+                future = entity_client.call_async(GetEntities.Request())
+                rclpy.spin_until_future_complete(node, future, timeout_sec=remaining())
+                self.assertTrue(future.done(), "GetEntities timed out")
+                response = future.result()
+                self.assertIsInstance(response, GetEntities.Response)
+                self.assertEqual(
+                    response.result.result,
+                    Result.RESULT_OK,
+                    response.result.error_message,
+                )
+                if "neutral_robot" in response.entities:
+                    print(f"Gazebo GetEntities: {response.entities}")
+                    break
+                time.sleep(min(0.1, remaining()))
             while not (
                 len(clocks) >= 2
                 and clocks[-1] > clocks[0]
