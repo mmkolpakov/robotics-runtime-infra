@@ -127,6 +127,18 @@ class SimulationControl(Node):
         response = self._call("step_simulation", request)
         self._require_ok(response, "step_simulation")
 
+    def step_and_wait(self, previous_ns: int, steps: int, step_size_ns: int) -> int:
+        expected_ns = previous_ns + steps * step_size_ns
+        self.step(steps)
+        stepped_ns = self.wait_for_clock_at_least(expected_ns)
+        self.wait_for_state(SimulationState.STATE_PAUSED)
+        if stepped_ns != expected_ns or self._clock_ns != expected_ns:
+            raise ConformanceError(
+                f"step_simulation reached /clock {self._clock_ns} ns; "
+                f"expected {expected_ns} ns"
+            )
+        return stepped_ns
+
     def wait_for_clock_after(self, previous_ns: int | None) -> int:
         deadline = time.monotonic() + self._timeout_sec
         while time.monotonic() < deadline:
@@ -247,6 +259,7 @@ def _parser() -> argparse.ArgumentParser:
         "step", help="Advance a paused simulator periodically."
     )
     step.add_argument("--steps", default=1, type=_positive_int)
+    step.add_argument("--step-size-ns", default=1_000_000, type=_positive_int)
     step.add_argument("--interval-sec", default=0.2, type=_positive_float)
     return parser
 
@@ -267,8 +280,9 @@ def main() -> int:
 
         node.set_state(SimulationState.STATE_PAUSED)
         node.wait_for_state(SimulationState.STATE_PAUSED)
+        clock_ns = node.wait_for_quiescent_clock()
         while rclpy.ok():
-            node.step(args.steps)
+            clock_ns = node.step_and_wait(clock_ns, args.steps, args.step_size_ns)
             time.sleep(args.interval_sec)
         return 0
     except (ConformanceError, OSError, ValueError) as error:

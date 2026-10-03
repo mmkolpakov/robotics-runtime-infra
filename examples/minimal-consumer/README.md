@@ -62,6 +62,11 @@ come last so the downloaded argument file cannot select them. The canonical
 main-branch keyless gate remains a separate trust boundary. Cleanup diagnostics
 are separate from signed log snapshots.
 
+The default reusable job qualifies the simulator. Canonical source foundation CI
+requests playback as a separate run. An independent playback consumer verifies
+the complete package and requires the verified scenario's data source to be
+`recording_playback`.
+
 To qualify published images, retain the canonical release's unchanged
 `release.env` in the consumer repository and add these inputs to the same job:
 

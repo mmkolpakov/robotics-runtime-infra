@@ -82,9 +82,7 @@ def checked_observation(root: Path, configuration: dict[str, Any]) -> None:
     raw = read_document_bytes(root / "logs/playback-probe.log")
     if hashlib.sha256(raw).hexdigest() != observation.get("probe_log_sha256"):
         raise ValueError("retained probe log differs from the observed bytes")
-    values = re.findall(rb"^data:\s*(-?[0-9]+)\s*$", raw, re.MULTILINE)
-    if not values or not -(2**31) <= int(values[0]) < 2**31:
-        raise ValueError("the playback probe did not receive an Int32 message")
+    checked_probe_message(raw, configuration.get("message_type", "std_msgs/msg/Int32"))
     version = (
         read_document_bytes(root / "configuration/rosbag2-version.txt").decode().strip()
     )
@@ -94,6 +92,18 @@ def checked_observation(root: Path, configuration: dict[str, Any]) -> None:
         raise ValueError(
             "provider configuration differs from the observed package version"
         )
+
+
+def checked_probe_message(raw: bytes, message_type: str) -> None:
+    if message_type == "std_msgs/msg/Int32":
+        minimum, maximum = -(2**31), 2**31
+    elif message_type == "std_msgs/msg/UInt64":
+        minimum, maximum = 0, 2**64
+    else:
+        raise ValueError("this playback probe supports only native Int32 or UInt64")
+    values = re.findall(rb"^data:\s*(-?[0-9]+)\s*$", raw, re.MULTILINE)
+    if not values or not minimum <= int(values[0]) < maximum:
+        raise ValueError(f"the playback probe did not receive a {message_type} message")
 
 
 def retained_sources(
@@ -129,12 +139,13 @@ def retained_sources(
         raise ValueError("retained MCAP files differ from the selected bag metadata")
     topics = metadata["topics_with_message_count"]
     if not any(
-        item["topic_metadata"]["name"] == "/playback_probe"
-        and item["topic_metadata"]["type"] == "std_msgs/msg/Int32"
+        item["topic_metadata"]["name"] == configuration.get("topic", "/playback_probe")
+        and item["topic_metadata"]["type"]
+        == configuration.get("message_type", "std_msgs/msg/Int32")
         for item in topics
     ):
         raise ValueError(
-            "the selected recording does not declare the stock Int32 probe"
+            "the selected recording does not declare the configured native probe"
         )
     return references
 
@@ -149,9 +160,7 @@ def create_result(
     if profile["provider_kind"] != "recording_source" or profile["requirements"] != [
         {"capability": CAPABILITY, "required": True}
     ]:
-        raise ValueError(
-            "this probe only qualifies recorded playback of one Int32 message"
-        )
+        raise ValueError("this probe only qualifies recorded playback of one message")
     configuration_raw = read_document_bytes(root / "configuration/provider.json")
     configuration = dict(
         loads_mapping(configuration_raw, source_name="configuration/provider.json")
@@ -184,7 +193,7 @@ def create_result(
                 "status": "passed",
                 "observed_value": 1,
                 "unit": "message",
-                "message": "The native readiness/resume gate and one-message Int32 probe passed.",
+                "message": "The native readiness/resume gate and configured one-message probe passed.",
             }
         ],
         "evidence": evidence,

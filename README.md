@@ -382,6 +382,17 @@ docker compose \
   down --volumes --remove-orphans
 ```
 
+The packaged Int32 bag checks readiness and receipt of one message. Canonical
+source foundation CI enables a separate UInt64 playback qualification with
+`ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK=1`. It replays the successful source phase's
+recording in the same job through the existing runner and live observer.
+
+The dataset binds the original capture scenario, runtime and recording bytes.
+The signed inventory retains their source metadata, summary and evidence index;
+playback has its own scenario, runtime, run context and observer evidence.
+Replay clock observations establish the declared time authority. Timing precision
+requires separate measurements.
+
 Use a free `ROS_DOMAIN_ID` for each concurrent run. Slow executors can override
 `ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC` and
 `ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC`.

@@ -9,10 +9,10 @@ repos:
         exclude: ^test/qualification/fixtures/.*\.json$
       - id: check-json
       - id: check-yaml
-        exclude: ^compose\.released\.yaml$
+        exclude: ^compose\.(released|foundation-playback)\.yaml$
       - id: check-yaml
         name: check Compose merge-tag syntax
-        files: ^compose\.released\.yaml$
+        files: ^compose\.(released|foundation-playback)\.yaml$
         args: [--unsafe]
       - id: check-xml
       - id: check-merge-conflict

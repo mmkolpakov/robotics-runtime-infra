@@ -123,6 +123,7 @@ assert_previous_output_preserved() {
 }
 
 prepare_recorded_playback() {
+  local topic="${1:-/playback_probe}" message_type="${2:-std_msgs/msg/Int32}" value="${3:-42}"
   PLAYBACK_RUN="${BATS_TEST_TMPDIR}/playback"
   mkdir -p "${PLAYBACK_RUN}/configuration" "${PLAYBACK_RUN}/logs" "${PLAYBACK_RUN}/source"
   cp -R "${REPOSITORY_ROOT}/test/fixtures/playback/golden" "${PLAYBACK_RUN}/source/bag"
@@ -130,7 +131,25 @@ prepare_recorded_playback() {
   cp "${REPOSITORY_ROOT}/config/qualification/recorded-playback.json" "${PLAYBACK_RUN}/profile.json"
   printf '0.26.9-fixture\n' >"${PLAYBACK_RUN}/configuration/rosbag2-version.txt"
   printf 'resume accepted\n' >"${PLAYBACK_RUN}/logs/playback-gate.log"
-  printf 'data: 42\n---\n' >"${PLAYBACK_RUN}/logs/playback-probe.log"
+  printf 'data: %s\n---\n' "${value}" >"${PLAYBACK_RUN}/logs/playback-probe.log"
+  if [[ "$#" -gt 0 ]]; then
+    # Transport observations are synthetic; the existing MCAP is an opaque
+    # retained subject here. Actual generated-message replay is a separate gate.
+    "${ROBOTICS_FOUNDATION_PYTHON}" - "${PLAYBACK_RUN}/source/bag/metadata.yaml" \
+      "${topic}" "${message_type}" <<'PYTHON'
+import sys
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping
+from robotics_runtime_contracts.serialization import dumps_yaml
+
+path = Path(sys.argv[1])
+metadata = load_mapping(path)
+topic = metadata["rosbag2_bagfile_information"]["topics_with_message_count"][0]["topic_metadata"]
+topic.update(name=sys.argv[2], type=sys.argv[3])
+topic.pop("type_description_hash", None)
+path.write_text(dumps_yaml(metadata), encoding="utf-8")
+PYTHON
+  fi
   local image_id path
   image_id="sha256:$(printf '%064d' 4)"
   jq -n --arg image "${image_id}" --arg log_sha256 \
@@ -148,6 +167,12 @@ prepare_recorded_playback() {
   jq -n --arg image "${image_id}" --slurpfile sources "${BATS_TEST_TMPDIR}/sources.jsonl" \
     '{version: "0.26.9-fixture", expected_playback_image_id: $image,
       expected_probe_image_id: $image, sources: $sources}' >"${PLAYBACK_RUN}/configuration/provider.json"
+  if [[ "$#" -gt 0 ]]; then
+    jq --arg topic "${topic}" --arg type "${message_type}" \
+      '. + {topic: $topic, message_type: $type}' "${PLAYBACK_RUN}/configuration/provider.json" \
+      >"${BATS_TEST_TMPDIR}/configured-provider.json"
+    mv "${BATS_TEST_TMPDIR}/configured-provider.json" "${PLAYBACK_RUN}/configuration/provider.json"
+  fi
   PLAYBACK_RESULT="${PLAYBACK_RUN}/conformance-result.json"
 }
 
@@ -159,10 +184,7 @@ run_playback_provider() {
     --output "${PLAYBACK_RESULT}"
 }
 
-@test "recorded playback retains its distinct clock and real recording source binding" {
-  prepare_recorded_playback
-  run_playback_provider
-  [ "${status}" -eq 0 ]
+emit_recorded_playback_runtime() {
   printf '%s\n' "${output}" >"${ROBOTICS_PROVIDER_BINDINGS_FILE}"
   local -a playback_environment
   run "${ROBOTICS_FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}/compose.playback.yaml" <<'PY'
@@ -175,6 +197,13 @@ PY
   mapfile -t playback_environment <<<"${output}"
   run env "${playback_environment[@]}" bash "${EMITTER}" "${OUTPUT}"
   [ "${status}" -eq 0 ]
+}
+
+@test "recorded playback retains its distinct clock and real recording source binding" {
+  prepare_recorded_playback
+  run_playback_provider
+  [ "${status}" -eq 0 ]
+  emit_recorded_playback_runtime
   run jq -e --arg result_sha "$(sha256sum "${PLAYBACK_RESULT}" | cut -d' ' -f1)" '
     .execution.time_mode == "playback_clocked" and .clock.sync_protocol == "playback_clock" and
     .provider_bindings[0].provider.kind == "recording_source" and
@@ -187,6 +216,71 @@ PY
   run jq -e '.checks[0].observed_value == 1 and
     any(.evidence[]; .uri | endswith("/source/bag/golden_0.mcap"))' "${PLAYBACK_RESULT}"
   [ "${status}" -eq 0 ]
+}
+
+@test "synthetic UInt64 playback observations retain their configured topic and byte binding" {
+  prepare_recorded_playback /example/sequence std_msgs/msg/UInt64 18446744073709551615
+  run_playback_provider
+  if [[ "${status}" -ne 0 ]]; then
+    printf '%s\n' "${output}" >&2
+    return 1
+  fi
+  emit_recorded_playback_runtime
+  run jq -e --arg result_sha "$(sha256sum "${PLAYBACK_RESULT}" | cut -d' ' -f1)" '
+    .provider_bindings[0].conformance_result_sha256 == $result_sha' "${OUTPUT}"
+  [ "${status}" -eq 0 ]
+  run "${ROBOTICS_CONTRACTS_CLI}" validate --quiet "${PLAYBACK_RESULT}"
+  [ "${status}" -eq 0 ]
+  run jq -e --arg config "$(sha256sum "${PLAYBACK_RUN}/configuration/provider.json" | cut -d' ' -f1)" \
+    --arg source "$(sha256sum "${PLAYBACK_RUN}/source/bag/golden_0.mcap" | cut -d' ' -f1)" \
+    --arg probe "$(sha256sum "${PLAYBACK_RUN}/logs/playback-probe.log" | cut -d' ' -f1)" '
+    .provider.configuration_sha256 == $config and
+    any(.evidence[]; .sha256 == $source) and
+    any(.evidence[]; .sha256 == $probe)' "${PLAYBACK_RESULT}"
+  [ "${status}" -eq 0 ]
+}
+
+assert_playback_refusal() {
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"$1"* ]]
+  [ "$(cat "${PLAYBACK_RESULT}")" = previous ]
+  [[ "${output}" != '[{'* ]]
+}
+
+@test "playback provider refuses values outside the configured native integer range" {
+  local message_type value
+  while read -r message_type value; do
+    prepare_recorded_playback /playback_probe "${message_type}" "${value}"
+    printf 'previous\n' >"${PLAYBACK_RESULT}"
+    run_playback_provider
+    assert_playback_refusal "did not receive a ${message_type} message"
+    rm -rf "${PLAYBACK_RUN}"
+  done <<'CASES'
+std_msgs/msg/UInt64 -1
+std_msgs/msg/UInt64 18446744073709551616
+std_msgs/msg/Int32 -2147483649
+std_msgs/msg/Int32 2147483648
+CASES
+}
+
+@test "playback provider refuses configured topic or type that differs from retained metadata" {
+  local change
+  for change in '.topic = "/different/sequence"' '.message_type = "std_msgs/msg/Int32"'; do
+    prepare_recorded_playback /example/sequence std_msgs/msg/UInt64 42
+    jq "${change}" "${PLAYBACK_RUN}/configuration/provider.json" >"${BATS_TEST_TMPDIR}/changed.json"
+    mv "${BATS_TEST_TMPDIR}/changed.json" "${PLAYBACK_RUN}/configuration/provider.json"
+    printf 'previous\n' >"${PLAYBACK_RESULT}"
+    run_playback_provider
+    assert_playback_refusal "does not declare the configured native probe"
+    rm -rf "${PLAYBACK_RUN}"
+  done
+}
+
+@test "playback provider refuses unsupported native message types" {
+  prepare_recorded_playback /playback_probe std_msgs/msg/Float64 42
+  printf 'previous\n' >"${PLAYBACK_RESULT}"
+  run_playback_provider
+  assert_playback_refusal "supports only native Int32 or UInt64"
 }
 
 @test "playback provider refuses failed observations without replacing previous output" {
@@ -218,7 +312,7 @@ PY
   mv "${BATS_TEST_TMPDIR}/changed.json" "${PLAYBACK_RUN}/observation.json"
   run_playback_provider
   [ "${status}" -ne 0 ]
-  [[ "${output}" == *'did not receive an Int32'* ]]
+  [[ "${output}" == *'did not receive a std_msgs/msg/Int32 message'* ]]
   [ ! -e "${PLAYBACK_RESULT}" ]
 }
 

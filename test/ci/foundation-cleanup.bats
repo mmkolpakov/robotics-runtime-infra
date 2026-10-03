@@ -110,6 +110,10 @@ run_acceptance_publication() {
   mkdir -p "${FIXTURE}/run/results" "${FIXTURE}/artifacts"
   printf '{}\n' >"${FIXTURE}/run/results/acceptance-result.json"
   printf '{}\n' >"${FIXTURE}/run/scenario.yaml"
+  mkdir -p "${FIXTURE}/run/bags/recording"
+  cp "${REPOSITORY_ROOT}/test/fixtures/playback/golden/metadata.yaml" \
+    "${REPOSITORY_ROOT}/test/fixtures/playback/golden/golden_0.mcap" \
+    "${FIXTURE}/run/bags/recording/"
   cat >"${FAKE_BIN}/sudo" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -161,6 +165,10 @@ EOF
       emit && /^"\$\{compose\[@\]\}" --profile acceptance run --rm --no-deps/ { exit }
       emit { print }
     ' "${ACCEPTANCE_SCRIPT}"
+    # Detect continuation beyond the real failed-observer exit boundary.
+    cat <<'EOF'
+touch "${artifact_dir}/next-acceptance-stage"
+EOF
   } >"${lifecycle}"
 
   run env "PATH=${FAKE_BIN}:${PATH}" \
@@ -170,6 +178,15 @@ EOF
     "FAKE_ACCEPTANCE_RUN_DIR=${FIXTURE}/run" \
     FAKE_OBSERVER_STATUS=17 FAKE_DOWN_STATUS=73 \
     "$@" bash "${lifecycle}"
+}
+
+assert_retained_capture() {
+  local recording="${FIXTURE}/artifacts/acceptance-evidence/bags/recording"
+  cmp "${FIXTURE}/run/bags/recording/metadata.yaml" "${recording}/metadata.yaml"
+  cmp "${FIXTURE}/run/bags/recording/golden_0.mcap" "${recording}/golden_0.mcap"
+  [ ! -e "${FIXTURE}/artifacts/next-acceptance-stage" ]
+  [ ! -e "${FIXTURE}/artifacts/qualification" ]
+  [ ! -e "${FIXTURE}/artifacts/qualification.sigstore.json" ]
 }
 
 @test "runtime cleanup removes its project resources and preserves foreign projects" {
@@ -315,6 +332,7 @@ EOF
   [ "${status}" -eq 17 ]
   [[ "${output}" == *"fixture publication jq failed"* ]]
   [[ "${output}" == *"Compose down failed (73)"* ]]
+  assert_retained_capture
 }
 
 @test "a passed observer does not hide a publication failure" {
@@ -341,4 +359,60 @@ EOF
 
   [ "${status}" -eq 23 ]
   [[ "${output}" == *"Compose down failed (73)"* ]]
+  assert_retained_capture
+}
+
+run_playback_measurement_boundary() {
+  local lifecycle="${BATS_TEST_TMPDIR}/playback-window.sh"
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "$1" == inspect && "$2" == --format && "$4" == fixture-playback ]]; then
+  printf '%s\n' "${FAKE_PLAYBACK_RUNNING}"
+elif [[ "$1" == compose ]]; then
+  printf '%s\n' "$*" >>"${FAKE_WINDOW_CALLS}"
+else
+  exit 64
+fi
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+  {
+    printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+    printf 'data_source=recording_playback\nsimulation_container=fixture-playback\n'
+    printf 'measurement_complete=%q\n' "${BATS_TEST_TMPDIR}/measurement-complete"
+    printf 'compose=(docker compose)\n'
+    # Run the real window boundary after a passing provider probe. A single
+    # received message never substitutes for a completed live observer window.
+    awk '
+      /^while \[\[ ! -f "\$\{measurement_complete\}" \]\]; do/ { emit = 1 }
+      emit && /^sleep 2$/ { exit }
+      emit { print }
+    ' "${ACCEPTANCE_SCRIPT}"
+  } >"${lifecycle}"
+  run env "PATH=${FAKE_BIN}:${PATH}" \
+    "FAKE_WINDOW_CALLS=${BATS_TEST_TMPDIR}/window-calls" \
+    "$@" bash "${lifecycle}"
+}
+
+@test "playback EOF after a successful probe cannot pass an incomplete measurement window" {
+  run_playback_measurement_boundary FAKE_PLAYBACK_RUNNING=false
+  [ "${status}" -eq 70 ]
+  [[ "${output}" == *'ended before the live measurement completed'* ]]
+  [ ! -e "${BATS_TEST_TMPDIR}/window-calls" ]
+}
+
+@test "playback EOF at a recorded completion marker still refuses the completion proof" {
+  touch "${BATS_TEST_TMPDIR}/measurement-complete"
+  run_playback_measurement_boundary FAKE_PLAYBACK_RUNNING=false
+  [ "${status}" -eq 70 ]
+  [[ "${output}" == *'ended before the live completion proof'* ]]
+  [ ! -e "${BATS_TEST_TMPDIR}/window-calls" ]
+}
+
+@test "a completed observer window with a running player reaches normal recording finalization" {
+  touch "${BATS_TEST_TMPDIR}/measurement-complete"
+  run_playback_measurement_boundary FAKE_PLAYBACK_RUNNING=true
+  [ "${status}" -eq 0 ]
+  grep -qx 'compose --profile observability stop runtime-metrics' "${BATS_TEST_TMPDIR}/window-calls"
+  grep -qx 'compose --profile playback stop playback' "${BATS_TEST_TMPDIR}/window-calls"
 }

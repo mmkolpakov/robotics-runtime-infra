@@ -1,0 +1,106 @@
+---
+# Trusted stock playback specialization; the Int32 integration smoke is unchanged.
+services:
+  recorder:
+    depends_on: !override
+      playback:
+        condition: service_healthy
+
+  runtime-metrics:
+    depends_on: !override
+      playback:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      ROBOTICS_TIME_SOURCE_ID: rosbag2-player-clock
+
+  acceptance-observer:
+    command:
+      - robotics-acceptance
+      - verify
+      - --scenario
+      - /run/robotics/scenario.yaml
+      - --runtime
+      - /run/robotics/runtime-manifest.json
+      - --dataset
+      - /run/robotics/dataset-manifest.json
+      - --run-id
+      - "${ROBOTICS_RUN_ID:-}"
+      - --domain-id
+      - "${ROBOTICS_DOMAIN_ID:-}"
+      - --run-context
+      - /run/robotics/acceptance-run.json
+      - --evidence-index
+      - /evidence/evidence-index.json
+      - --receipt-inventory
+      - /evidence/receipt-inventory.json
+      - --otel-metrics
+      - /evidence/metrics.otlp.jsonl
+      - --measurement-complete
+      - /run/robotics/measurement-complete
+      - --output
+      - /run/robotics/results
+
+  playback:
+    command:
+      - ros2
+      - bag
+      - play
+      - --input
+      - /datasets/bag
+      - mcap
+      - --topics
+      - "${ROBOTICS_METRICS_TOPIC:?ROBOTICS_METRICS_TOPIC is required}"
+      - --clock
+      - "${ROBOTICS_PLAYBACK_CLOCK_HZ:?ROBOTICS_PLAYBACK_CLOCK_HZ is required}"
+      - --rate
+      - "${ROBOTICS_PLAYBACK_RATE:?ROBOTICS_PLAYBACK_RATE is required}"
+      - --start-offset
+      - "${ROBOTICS_PLAYBACK_START_OFFSET:?ROBOTICS_PLAYBACK_START_OFFSET is required}"
+      - --read-ahead-queue-size
+      - "8"
+      - --start-paused
+      - --qos-profile-overrides-path
+      - /etc/robotics/playback/qos-overrides.yaml
+      - --wait-for-all-acked
+      - "5000"
+      - --disable-keyboard-controls
+    environment:
+      FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
+      RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+    volumes:
+      - type: bind
+        source: ./config/fastdds/udp-only.xml
+        target: /etc/robotics/fastdds/udp-only.xml
+        read_only: true
+
+  playback-gate:
+    environment:
+      FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
+      RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+    volumes:
+      - type: bind
+        source: ./config/fastdds/udp-only.xml
+        target: /etc/robotics/fastdds/udp-only.xml
+        read_only: true
+
+  playback-probe:
+    image: "${SIMULATION_IMAGE:?SIMULATION_IMAGE is required}"
+    command:
+      - timeout
+      - "75"
+      - ros2
+      - topic
+      - echo
+      - "${ROBOTICS_METRICS_TOPIC:?ROBOTICS_METRICS_TOPIC is required}"
+      - std_msgs/msg/UInt64
+      - --once
+    environment:
+      FASTRTPS_DEFAULT_PROFILES_FILE: /etc/robotics/fastdds/udp-only.xml
+      RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+    volumes:
+      - type: bind
+        source: ./config/fastdds/udp-only.xml
+        target: /etc/robotics/fastdds/udp-only.xml
+        read_only: true

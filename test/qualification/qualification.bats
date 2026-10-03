@@ -514,3 +514,35 @@ EOF
     [ ! -e "$TEST_ROOT/portable" ]
   done
 }
+
+@test "trusted native verification and explain refuse renamed stock as expected playback" {
+  printf '{"scope":"opaque playback attachment"}\n' >"$TEST_ROOT/artifacts/playback-attachment.json"
+  create_statement_and_bundle \
+    --artifact "other_evidence:playback/attachment.json=$TEST_ROOT/artifacts/playback-attachment.json"
+  mapfile -t args < <(artifact_arguments)
+  local package="$TEST_ROOT/renamed-playback"
+  (
+    cd "$TEST_ROOT"
+    "$REPOSITORY_ROOT/scripts/qualification/package-artifacts" \
+      --output "$package" "${args[@]}" \
+      --artifact "other_evidence:playback/attachment.json=$TEST_ROOT/artifacts/playback-attachment.json"
+  )
+  cp "$TEST_ROOT/artifacts/"{bundle.json,policy.json,trusted-root.json} "$package/"
+  (
+    cd "$package"
+    mapfile -t portable <qualification-arguments.txt
+    "$REPOSITORY_ROOT/scripts/qualification/verify-bundle" "${portable[@]}" \
+      --bundle bundle.json --trusted-root trusted-root.json --policy policy.json
+  )
+  # Public qualification accepts this genuine simulator fixture plus opaque
+  # bytes. The caller must still demand playback after native trusted verify.
+  source "$REPOSITORY_ROOT/scripts/ci/foundation/lib.sh"
+  local acceptance_cli="${ROBOTICS_ACCEPTANCE_CLI:-$REPOSITORY_ROOT/dependencies/robotics-runtime/.venv/bin/robotics-acceptance}"
+  run foundation_explain_qualification "$package" "$TEST_ROOT/source-explain.json" simulator \
+    "${acceptance_cli}"
+  [ "$status" -eq 0 ]
+  run foundation_explain_qualification "$package" "$TEST_ROOT/playback-explain.json" recording_playback \
+    "${acceptance_cli}"
+  [ "$status" -ne 0 ]
+  jq -e '.execution.data_source == "simulator"' "$TEST_ROOT/playback-explain.json"
+}

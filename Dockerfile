@@ -57,7 +57,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY docker/python/permit-preflight.lock /tmp/permit-preflight.lock
 RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro \
-    uv venv --no-cache --python /usr/bin/python3 /opt/contracts \
+    uv venv --no-cache --python /usr/bin/python3 --system-site-packages /opt/contracts \
     && uv pip install --python /opt/contracts/bin/python --require-hashes --no-deps \
       --requirement /tmp/permit-preflight.lock \
     && UV_NO_INSTALLER_METADATA=1 uv --directory /tmp/foundation-wheels pip install \
@@ -1272,6 +1272,15 @@ RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
       --merge-install \
       --event-handlers console_direct+ \
       --cmake-args -DBUILD_TESTING=ON \
+    && /opt/contracts/bin/python -c \
+      "from rosbag2_py import SequentialReader; \
+      from rosgraph_msgs.msg import Clock; \
+      from std_msgs.msg import UInt64; \
+      from rclpy.serialization import deserialize_message, serialize_message; \
+      from robotics_runtime_contracts.writers import write_document; \
+      assert deserialize_message(serialize_message(Clock()), Clock) == Clock(); \
+      sample = UInt64(data=2**64-1); \
+      assert deserialize_message(serialize_message(sample), UInt64) == sample" \
     && chown -R ubuntu:ubuntu build install log
 
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
