@@ -559,11 +559,46 @@ if [[ "${data_source}" == recording_playback ]]; then
 fi
 SH
   } >"${context}"
-  local mode layout
+  local mode layout cadence
+  unset ROBOTICS_STEP_INTERVAL_SEC ROBOTICS_STEPS_PER_TICK
   run bash "${context}" "${REPOSITORY_ROOT}" simulator source \
     "${BATS_TEST_TMPDIR}/stock" default
   printf '%s\n' "${output}"
   [ "${status}" -eq 0 ]
+  jq -e '.services["simulation-stepper"].command[-1] == "0.2"' \
+    "${BATS_TEST_TMPDIR}/stock/metrics-model.json"
+  cadence="$("${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" <<'PY'
+import sys
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping
+workflow = load_mapping(Path(sys.argv[1]) / ".github/workflows/foundation-integration.yml")
+job = workflow["jobs"]["foundation"]
+capture = next(step for step in job["steps"]
+               if step.get("run") == "bash scripts/ci/foundation/run-acceptance-isolation.sh")
+assert "ROBOTICS_STEP_INTERVAL_SEC" not in job["env"]
+assert all("ROBOTICS_STEP_INTERVAL_SEC" not in step.get("env", {})
+           for step in job["steps"] if step is not capture)
+print(capture.get("env", {}).get("ROBOTICS_STEP_INTERVAL_SEC", "0.2"))
+PY
+  )"
+  run env ROBOTICS_STEP_INTERVAL_SEC="${cadence}" \
+    bash "${context}" "${REPOSITORY_ROOT}" simulator source \
+    "${BATS_TEST_TMPDIR}/stock-capture" consumer
+  printf '%s\n' "${output}"
+  [ "${status}" -eq 0 ]
+  jq -c '.services["simulation-stepper"].command' \
+    "${BATS_TEST_TMPDIR}/stock-capture/metrics-model.json"
+  jq -e '.services["simulation-stepper"].command as $command |
+    $command[-1] == "0.01" and $command[($command | index("--steps")) + 1] == "1"' \
+    "${BATS_TEST_TMPDIR}/stock-capture/metrics-model.json"
+  run env ROBOTICS_STEP_INTERVAL_SEC=0.05 ROBOTICS_STEPS_PER_TICK=3 \
+    bash "${context}" "${REPOSITORY_ROOT}" simulator source \
+    "${BATS_TEST_TMPDIR}/custom-cadence" consumer
+  printf '%s\n' "${output}"
+  [ "${status}" -eq 0 ]
+  jq -e '.services["simulation-stepper"].command as $command |
+    $command[-1] == "0.05" and $command[($command | index("--steps")) + 1] == "3"' \
+    "${BATS_TEST_TMPDIR}/custom-cadence/metrics-model.json"
   for mode in source released; do
     for layout in default consumer; do
       run bash "${context}" "${REPOSITORY_ROOT}" recording_playback "${mode}" \
