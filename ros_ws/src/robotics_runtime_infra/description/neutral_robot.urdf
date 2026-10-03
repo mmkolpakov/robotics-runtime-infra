@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<!--
+  robot: neutral_robot | consumers: robot_state_publisher, Gazebo, CAD Viewer
+  units: meters, kilograms, seconds, radians | frames: +X forward, +Y left, +Z up
+  assumptions: purpose-built neutral fixture; dimensions, masses and limits are chosen.
+  base_link: root, solid 0.2 m cube, mass 1 kg; frame at its center.
+  slider_link: solid 0.1 m cube, mass 0.25 kg; frame at its center.
+  visual, collision and COM origins: zero in each link; no meshes.
+  inertials: uniform solid-box formula m*(side_a^2+side_b^2)/12 about COM.
+  slider_joint: base_link to slider_link, origin (0.2,0,0), zero RPY, axis +X;
+  positive motion translates slider_link along +X, limits [0,0.25] m.
+  zero pose: mass 1.25 kg, COM (0.04,0,0), bounds 0.35 x 0.2 x 0.2 m.
+  JointState defaults describe software state; they are not a physics measurement.
+-->
+<robot name="neutral_robot">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="1" />
+      <inertia ixx="0.006666666666666667" ixy="0" ixz="0" iyy="0.006666666666666667" iyz="0" izz="0.006666666666666667" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.2 0.2 0.2" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.2 0.2 0.2" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="slider_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.25" />
+      <inertia ixx="0.0004166666666666667" ixy="0" ixz="0" iyy="0.0004166666666666667" iyz="0" izz="0.0004166666666666667" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.1 0.1" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.1 0.1" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="slider_joint" type="prismatic">
+    <parent link="base_link" />
+    <child link="slider_link" />
+    <origin xyz="0.2 0 0" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="0" upper="0.25" effort="20" velocity="1" />
+  </joint>
+</robot>

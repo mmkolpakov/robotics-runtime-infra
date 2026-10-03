@@ -18,6 +18,12 @@ The caller supplies `ROBOTICS_RUNTIME_ID`, `ROBOTICS_OCI_REFERENCE`,
 - `ROBOTICS_EVALUATOR_BINDINGS_FILE`: an optional array for product evaluators.
   Without this file, the manifest has no product evaluator bindings.
 
+Optional `ROBOTICS_ROBOT_DESCRIPTION_FILE` supplies an admitted `robot-description.v1`
+manifest. The producer validates its role and records the SHA-256 of its unmodified
+bytes in `workload.robot_description.sha256`. Filesystem and XML admission remain
+the caller's responsibility; the [source neutral robot fixture](../examples/neutral-robot/README.md)
+documents its supported dependencies and launch limits.
+
 Compose defaults the first two paths to `/run/robotics/configuration/host-platform.json`
 and `/run/robotics/provider-bindings.json`, inside the mounted run directory. Qualification
 must retain and validate the profile/result bytes named by the bindings; successful

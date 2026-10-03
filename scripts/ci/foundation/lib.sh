@@ -235,9 +235,11 @@ foundation_load_artifact_arguments() {
   local arguments_file="$2"
   local option specification header path
   FOUNDATION_ARTIFACT_ARGUMENTS=()
+  FOUNDATION_ARTIFACT_SOURCE_ARGUMENTS=()
   [[ -n "${arguments_file}" ]] || return 0
   arguments_file="$(foundation_consumer_file "${consumer_root}" "${arguments_file}")" ||
     return 64
+  consumer_root="$(realpath -e -- "${consumer_root}")" || return 64
   while IFS= read -r option || [[ -n "${option}" ]]; do
     case "${option}" in
       --artifact|--extension-schema) ;;
@@ -258,6 +260,11 @@ foundation_load_artifact_arguments() {
     header="${specification%%=*}"
     path="${specification#*=}"
     [[ -n "${header}" && -n "${path}" ]] || return 64
+    if [[ "${path}" == /* ]]; then
+      FOUNDATION_ARTIFACT_SOURCE_ARGUMENTS+=("${option}" "${header}=${path}")
+    else
+      FOUNDATION_ARTIFACT_SOURCE_ARGUMENTS+=("${option}" "${header}=${consumer_root}/${path}")
+    fi
     path="$(foundation_consumer_file "${consumer_root}" "${path}")" || return 64
     FOUNDATION_ARTIFACT_ARGUMENTS+=("${option}" "${header}=${path}")
   done <"${arguments_file}"
@@ -268,8 +275,10 @@ foundation_load_artifact_arguments() {
 foundation_explain_qualification() (
   local package="$1" output="$2" desired="$3"
   shift 3
-  local value index
-  local -a inputs scenarios=() runtimes=() datasets=() extensions=() arguments
+  [[ "${output}" == /* ]] || output="${PWD}/${output}"
+  local value index tooling admission_python
+  tooling="$(foundation_repository_root)"
+  local -a inputs scenarios=() runtimes=() datasets=() extensions=() products=() arguments
   cd "${package}" || return "$?"
   mapfile -t inputs <qualification-arguments.txt
   ((${#inputs[@]} % 2 == 0)) || return 65
@@ -282,12 +291,20 @@ foundation_explain_qualification() (
           scenario:scenario.json) scenarios+=("${value#*=}") ;;
           runtime_manifest:runtime-manifests/primary.json) runtimes+=("${value#*=}") ;;
           dataset_manifest:*) datasets+=("${value#*=}") ;;
+          other_evidence:products/robot-description/*)
+            products+=(--artifact "${value%%=*}=${PWD}/${value#*=}") ;;
         esac
         ;;
       *) return 65 ;;
     esac
   done
   ((${#scenarios[@]} == 1 && ${#runtimes[@]} == 1 && ${#datasets[@]} <= 1)) || return 65
+  admission_python="$(command -v "${1}")" || return "$?"
+  admission_python="$(dirname -- "${admission_python}")/python"
+  "${admission_python}" "${tooling}/docker/runtime/admit-robot-description" \
+    --root "${PWD}/subjects/products/robot-description" \
+    --scenario "${scenarios[0]}" "${products[@]}" "${extensions[@]}" \
+    >"${output%.json}.robot-description.json" || return "$?"
   arguments=(explain --scenario "${scenarios[0]}" --runtime "${runtimes[0]}" "${extensions[@]}")
   if ((${#datasets[@]})); then
     arguments+=(--dataset "${datasets[0]}")

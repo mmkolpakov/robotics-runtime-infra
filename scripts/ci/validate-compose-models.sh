@@ -39,3 +39,6 @@ done < <(jq -c '.compose_models[]' "${manifest}")
 printf 'Validating Compose include consumer\n'
 docker compose -f examples/minimal-consumer/compose.yaml \
   --profile '*' config --quiet
+
+printf 'Validating admitted native robot fixture\n'
+docker compose -f compose.yaml -f compose.foundation.yaml   -f compose.stepped.yaml -f compose.record.yaml -f compose.evidence.yaml   -f compose.observability.yaml -f examples/neutral-robot/compose.yaml   --profile '*' config --quiet

@@ -1,0 +1,92 @@
+---
+schema_version: acceptance-scenario.v1
+scenario_id: org.example.neutral-robot.native-state
+execution:
+  target_environment: simulation
+  hardware_scope: []
+  physical_effect: none
+  test_intent: interface_smoke
+  data_source: simulator
+  plant_backend: simulated_physics
+  time_mode: simulation_stepped
+  data_plane_profile: standard_isolated
+  security_profile: none
+authorization:
+  mode: none
+forbidden_ros_graph:
+  topics: []
+  services: []
+  actions: []
+seed: 42
+timeouts:
+  startup_sec: 60
+  graph_ready_sec: 30
+  stable_for_sec: 1
+  execution_sec: 10
+  shutdown_sec: 60
+expected_ros_graph:
+  topics:
+    - name: /clock
+      type: rosgraph_msgs/msg/Clock
+      qos_profile: system_default
+      min_publishers: 1
+      min_subscribers: 0
+      first_message_timeout_sec: 10
+    - name: /example/sequence
+      type: std_msgs/msg/UInt64
+      qos_profile: system_default
+      min_publishers: 1
+      min_subscribers: 1
+      first_message_timeout_sec: 10
+    - name: /joint_states
+      type: sensor_msgs/msg/JointState
+      qos_profile: system_default
+      min_publishers: 1
+      min_subscribers: 0
+      first_message_timeout_sec: 30
+    - name: /tf
+      type: tf2_msgs/msg/TFMessage
+      qos_profile: system_default
+      min_publishers: 1
+      min_subscribers: 0
+      first_message_timeout_sec: 30
+  services: []
+  actions: []
+  lifecycle_nodes: []
+assertions: []
+metric_definitions: []
+evaluator_requirements: []
+provider_requirements:
+  capabilities:
+    - simulated_physics
+time_policy:
+  step_size_sec: 0.001
+  max_skipped_steps: 0
+  time_authority_min_samples: 30
+  max_time_authority_delivery_latency_p50_ms: 2
+  max_time_authority_delivery_latency_p95_ms: 5
+  max_time_authority_delivery_latency_ms: 250
+data_plane_policy:
+  max_message_age_ms: 100
+  max_loss_ratio: 0
+  shm_transport: false
+  data_sharing: false
+  private_ipc: false
+evidence_policy:
+  topics:
+    - /clock
+    - /example/sequence
+    - /joint_states
+    - /tf
+  recording_mode: bounded
+  compression: zstd
+  max_segment_size_bytes: 2097152
+  max_segment_duration_sec: 30
+  max_spool_size_bytes: 10485760
+  spool_high_watermark_ratio: 0.8
+  max_upload_lag_sec: 0
+  upload_mode: local_only
+  retention_class: pull-request-7d
+  remote_sink_allowed: false
+workload:
+  robot_description_sha256: cc9f6ad8c0768ea4752f6e0800f94a2550c5f6d307474abda47cfc6b9a6d4772

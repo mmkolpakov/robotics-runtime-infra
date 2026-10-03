@@ -40,7 +40,7 @@ variable "ROSDISTRO_INDEX_REVISION" {
 
 # FOUNDATION_GENERATED_START
 variable "FOUNDATION_SOURCE" {
-  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=7ed80b9da1b26b84fe8ee40b7f79c525ed6bce74&checksum=7ed80b9da1b26b84fe8ee40b7f79c525ed6bce74"
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=dc02c62897372514537cf241f06dc71b9f960c44&checksum=dc02c62897372514537cf241f06dc71b9f960c44"
 }
 # FOUNDATION_GENERATED_END
 

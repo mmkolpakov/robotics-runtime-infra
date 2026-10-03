@@ -129,12 +129,34 @@ setup() {
 @test "launch tests use distinct ROS domains" {
   cmake=ros_ws/src/robotics_runtime_infra/CMakeLists.txt
 
-  [ "$(grep -Ec 'ENV "ROS_DOMAIN_ID=[0-9]+"' "${cmake}")" -eq 5 ]
-  [ "$(
-    grep -Eo 'ROS_DOMAIN_ID=[0-9]+' "${cmake}" |
-      sort -u |
-      wc -l
-  )" -eq 5 ]
+  run python3 - "${cmake}" <<'PYTHON'
+import ast
+import re
+import shlex
+import sys
+from pathlib import Path
+
+cmake = Path(sys.argv[1])
+blocks = re.findall(r"\badd_launch_test\s*\(([^)]*)\)", cmake.read_text())
+assert blocks, "no launch tests registered"
+registered, domains = [], []
+for block in blocks:
+    name = shlex.split(block)[0]
+    registered.append(name)
+    values = re.findall(r'\bENV\s+"ROS_DOMAIN_ID=([0-9]+)"', block)
+    assert len(values) == 1, f"{name} requires exactly one explicit ROS domain"
+    domains.append(int(values[0]))
+launch_files = {
+    path.relative_to(cmake.parent).as_posix()
+    for path in (cmake.parent / "test").glob("test_*.py")
+    if any(isinstance(node, ast.FunctionDef) and node.name == "generate_test_description"
+           for node in ast.parse(path.read_text()).body)
+}
+assert set(registered) == launch_files, "launch test inventory differs from CMake registrations"
+assert len(registered) == len(set(registered)), "duplicate launch test registration"
+assert len(domains) == len(set(domains)), "launch tests share a ROS domain"
+PYTHON
+  [ "${status}" -eq 0 ]
 }
 
 prepare_playback_transport() {

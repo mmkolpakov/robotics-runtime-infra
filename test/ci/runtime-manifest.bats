@@ -346,3 +346,27 @@ CASES
   [[ "${output}" == *'MCAP files differ from the selected bag metadata'* ]]
   [ ! -e "${PLAYBACK_RESULT}" ]
 }
+
+@test "runtime producer binds exact robot manifest bytes without changing workload kind" {
+  export ROBOTICS_ROBOT_DESCRIPTION_FILE="${BATS_TEST_TMPDIR}/robot-description.json"
+  cp "${REPOSITORY_ROOT}/examples/neutral-robot/sim/robot-description.json" "${ROBOTICS_ROBOT_DESCRIPTION_FILE}"
+  run bash "${EMITTER}" "${OUTPUT}"
+  [ "${status}" -eq 0 ]
+  local original
+  original="$(jq -er '.workload.robot_description.sha256' "${OUTPUT}")"
+  [ "$(jq -r '.workload.kind' "${OUTPUT}")" = none ]
+  [ "${original}" = "$(sha256sum "${ROBOTICS_ROBOT_DESCRIPTION_FILE}" | cut -d' ' -f1)" ]
+  printf ' ' >>"${ROBOTICS_ROBOT_DESCRIPTION_FILE}"
+  run bash "${EMITTER}" "${OUTPUT}"
+  [ "${status}" -eq 0 ]
+  [ "$(jq -er '.workload.robot_description.sha256' "${OUTPUT}")" != "${original}" ]
+  [ "$(jq -er '.workload.robot_description.sha256' "${OUTPUT}")" = "$(sha256sum "${ROBOTICS_ROBOT_DESCRIPTION_FILE}" | cut -d' ' -f1)" ]
+}
+
+@test "runtime producer rejects invalid robot roles without replacing prior output" {
+  export ROBOTICS_ROBOT_DESCRIPTION_FILE="${BATS_TEST_TMPDIR}/robot-description.json"
+  printf '{}\n' >"${ROBOTICS_ROBOT_DESCRIPTION_FILE}"
+  printf 'previous\n' >"${OUTPUT}"
+  run bash "${EMITTER}" "${OUTPUT}"
+  assert_previous_output_preserved
+}

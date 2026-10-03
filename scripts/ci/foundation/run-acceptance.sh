@@ -62,6 +62,53 @@ foundation_load_artifact_arguments "${consumer_root}" \
 foundation_require_scenario_policy "${foundation_bin}/python" \
   "${run_dir}/scenario.yaml" "runs/${project}/scenario-policy-input.json"
 cp "${run_dir}/scenario-policy-input.json" "${artifact_dir}/"
+# Admit the public role and its raw dependencies before starting any producer.
+robot_plan="${artifact_dir}/robot-description-admission.json"
+"${foundation_bin}/python" "${root}/docker/runtime/admit-robot-description" \
+  --root "${consumer_root}" --scenario "${run_dir}/scenario.yaml" \
+  "${FOUNDATION_ARTIFACT_SOURCE_ARGUMENTS[@]}" >"${robot_plan}"
+robot_selected="$(jq -r '.selected' "${robot_plan}")"
+export ROBOTICS_ROBOT_DESCRIPTION_FILE='' ROBOTICS_ROBOT_DESCRIPTION_PATH=''
+if [[ "${robot_selected}" == true ]]; then
+  # These constraints belong to this tooling-owned native fixture.
+  for ((index=0; index<${#FOUNDATION_ARTIFACT_ARGUMENTS[@]}; index+=2)); do
+    if [[ "${FOUNDATION_ARTIFACT_ARGUMENTS[index]}" == --extension-schema ]]; then
+      printf 'neutral robot launch profile does not support extension schemas\n' >&2
+      exit 65
+    fi
+  done
+  "${foundation_bin}/python" - "${consumer_root}/$(jq -er '.manifest_path' "${robot_plan}")" <<'PY'
+import sys
+from robotics_runtime_contracts import load_mapping
+if load_mapping(sys.argv[1])["spawn"] != {"frame": "world", "pose": [0, 0, 0, 0, 0, 0]}:
+    print("neutral robot launch profile requires the world-origin spawn pose", file=sys.stderr)
+    sys.exit(65)
+PY
+  consumer_root="$(realpath -e "${consumer_root}")"
+  declare -A robot_sources=()
+  while IFS= read -r relative; do
+    robot_sources["${consumer_root}/${relative}"]=1
+    install -D -m 0444 "${consumer_root}/${relative}" "${run_dir}/product/${relative}"
+  done < <(jq -r '.files[].path' "${robot_plan}")
+  "${foundation_bin}/python" "${root}/docker/runtime/admit-robot-description" \
+    --root "${run_dir}/product" --scenario "${run_dir}/scenario.yaml" \
+    --manifest "$(jq -er '.manifest_path' "${robot_plan}")" \
+    >"${run_dir}/robot-description-admission.json"
+  cmp -- "${robot_plan}" "${run_dir}/robot-description-admission.json"
+  # Replace producer paths with the one admitted copy of every physical file.
+  robot_remaining_arguments=()
+  for ((index=0; index<${#FOUNDATION_ARTIFACT_ARGUMENTS[@]}; index+=2)); do
+    value="${FOUNDATION_ARTIFACT_ARGUMENTS[index+1]}"
+    if [[ "${FOUNDATION_ARTIFACT_ARGUMENTS[index]}" == --artifact &&
+      "${value%%:*}" == other_evidence && -n "${robot_sources[${value#*=}]:-}" ]]; then
+      continue
+    fi
+    robot_remaining_arguments+=("${FOUNDATION_ARTIFACT_ARGUMENTS[index]}" "${value}")
+  done
+  FOUNDATION_ARTIFACT_ARGUMENTS=("${robot_remaining_arguments[@]}")
+  ROBOTICS_ROBOT_DESCRIPTION_FILE="/run/robotics/product/$(jq -er '.manifest_path' "${robot_plan}")"
+  ROBOTICS_ROBOT_DESCRIPTION_PATH="/run/robotics/product/$(jq -er '.description_path' "${robot_plan}")"
+fi
 # Use the public parser for YAML; this also rejects duplicate scenario keys.
 data_source="$("${foundation_bin}/python" - "${run_dir}/scenario.yaml" <<'PY'
 import sys
@@ -88,6 +135,10 @@ case "${data_source}" in
     ;;
   *) printf 'unsupported foundation data source: %s\n' "${data_source}" >&2; exit 64 ;;
 esac
+if [[ "${robot_selected}" == true && "${data_source}" != simulator ]]; then
+  printf 'native robot fixture requires simulator data source\n' >&2
+  exit 65
+fi
 lscpu --json >"${run_dir}/configuration/host-topology.json"
 "${foundation_bin}/python" -c '
 import json
@@ -130,6 +181,7 @@ ROBOTICS_MAX_BAG_DURATION="$(
 )"
 export ROBOTICS_MAX_SEGMENT_SIZE_BYTES=2097152
 export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
+export OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED=true
 topic_configuration="$(
   foundation_scenario_topics "${foundation_bin}/python" "${run_dir}/scenario.yaml"
 )"
@@ -189,6 +241,10 @@ if [[ "${data_source}" == recording_playback ]]; then
     compose.foundation-playback.yaml)
   profiles=(--profile playback --profile test --profile record --profile acceptance
     --profile evidence --profile observability)
+fi
+if [[ "${robot_selected}" == true ]]; then
+  foundation_files+=(examples/neutral-robot/compose.yaml)
+  profiles+=(--profile neutral-robot)
 fi
 if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
   foundation_files+=(compose.released.yaml)
@@ -442,16 +498,20 @@ collect_playback_provider() {
   cp -- "${run_dir}/conformance-result.json" "${artifact_dir}/provider/conformance.json"
 }
 
+startup_extra_services=("${extra_services[@]}")
+if [[ "${robot_selected}" == true ]]; then
+  startup_extra_services=()
+fi
 sudo chown -R 1000:1000 "${run_dir}"
 sudo chown -R 10001:10001 "${run_dir}/evidence"
 if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile playback --profile record --profile observability \
     up --detach --no-build --wait --wait-timeout 120 playback recorder otel-collector \
-    "${extra_services[@]}"
+    "${startup_extra_services[@]}"
 else
   "${compose[@]}" --profile stepped --profile record --profile observability \
     up --detach --no-build --wait --wait-timeout 120 simulation otel-collector \
-    "${extra_services[@]}"
+    "${startup_extra_services[@]}"
 fi
 collector_health_address="$("${compose[@]}" port otel-collector 13133)"
 curl --fail --silent --show-error \
@@ -502,6 +562,31 @@ jq -e --arg digest "${fastdds_profile_sha256}" \
    ([.configuration_artifacts[].kind] | sort) ==
      ["host_topology", "runtime_resources"]' \
   "${run_dir}/runtime-manifest.json" >/dev/null
+if [[ "${robot_selected}" == true ]]; then
+  "${foundation_bin}/python" -I -m robotics_acceptance_harness.cli explain \
+    --scenario "${run_dir}/scenario.yaml" --runtime "${run_dir}/runtime-manifest.json" \
+    >"${artifact_dir}/robot-description-binding.json"
+  # One wall deadline covers native parsing, process startup, create acknowledgement
+  # and the software-state observations; cleanup stops producers on any failure.
+  timeout --signal=TERM --kill-after=2s 90s bash -s -- \
+    "${root}" "${artifact_dir}" "${ROBOTICS_ROBOT_DESCRIPTION_PATH}" "${compose[@]}" <<'SH'
+set -Eeuo pipefail
+root="$1"
+artifact_dir="$2"
+description="$3"
+shift 3
+"$@" run --rm --no-deps --interactive=false neutral-robot check_urdf "${description}" \
+  >"${artifact_dir}/robot-description-check-urdf.log"
+"$@" up --detach --no-build --no-deps --force-recreate neutral-robot
+container="$("$@" ps --quiet neutral-robot)"
+test -n "${container}"
+bash "${root}/examples/neutral-robot/wait-ready.sh" "${container}" \
+  "${artifact_dir}/robot-readiness"
+SH
+  if ((${#extra_services[@]} > 0)); then
+    "${compose[@]}" up --detach --no-build "${extra_services[@]}"
+  fi
+fi
 if [[ "${data_source}" == simulator ]]; then
   "${compose[@]}" --profile acceptance --profile observability \
     up --detach --no-build --wait --wait-timeout 120 runtime-probe-publisher runtime-metrics
@@ -705,6 +790,15 @@ for index in "${!mcap_summaries[@]}"; do
     --evidence "recording:primary-${index}.mcap=${mcap_files[$index]}"
   )
 done
+if [[ "${robot_selected}" == true ]]; then
+  while IFS= read -r relative; do
+    qualification_inputs+=(--artifact "other_evidence:products/robot-description/${relative}=${run_dir}/product/${relative}")
+  done < <(jq -r '.files[].path' "${robot_plan}")
+  qualification_inputs+=(--artifact "other_evidence:configuration/robot-description-admission.json=${robot_plan}")
+  while IFS= read -r -d '' path; do
+    qualification_inputs+=(--artifact "other_evidence:robot-readiness/${path##*/}=${path}")
+  done < <(find "${artifact_dir}/robot-readiness" -maxdepth 1 -type f -print0 | sort -z)
+fi
 qualification_inputs+=("${FOUNDATION_ARTIFACT_ARGUMENTS[@]}" "${FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS[@]}")
 qualification_package="$(realpath -e "${artifact_dir}")/qualification"
 (
@@ -731,10 +825,16 @@ cp -- "${run_dir}/results/qualification-statement.json" \
     --bundle qualification.sigstore.json --key qualification.pub
 )
 
-if [[ "${data_source}" == recording_playback ]]; then
-  foundation_explain_qualification "${qualification_package}" \
-    "${artifact_dir}/playback-explain.json" recording_playback \
-    "${foundation_bin}/robotics-acceptance"
+if [[ "${robot_selected}" == true ]]; then
+  # The portable consumer must not resolve any file from the producer snapshot.
+  "${compose[@]}" stop neutral-robot
+  rm -rf -- "${run_dir}/product"
+fi
+if [[ "${data_source}" == recording_playback || "${robot_selected}" == true ]]; then
+  explain_path="${artifact_dir}/playback-explain.json"
+  [[ "${robot_selected}" != true ]] || explain_path="${artifact_dir}/robot-description-explain.json"
+  foundation_explain_qualification "${qualification_package}" "${explain_path}" "${data_source}" \
+    "${foundation_bin}/python" -I -m robotics_acceptance_harness.cli
 fi
 
 jq -e '.status == "passed" and .evaluation_mode == "live"' \
