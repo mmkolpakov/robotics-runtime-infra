@@ -1,0 +1,118 @@
+---
+name: Verify the published consumer
+description: Independently verify a retained qualification package with the published PyPI pair.
+
+inputs:
+  tooling-directory:
+    description: Checkout containing the pinned versions, native verifier and trust policy.
+    required: true
+  package-directory:
+    description: Exact downloaded qualification package directory.
+    required: true
+  authentication:
+    description: Select keyless producer identity or ephemeral package integrity.
+    required: true
+  expected_execution_type:
+    description: Required data source in the verified scenario.
+    required: true
+
+outputs:
+  reports-directory:
+    description: Directory containing installed origins, verification and explanation reports.
+    value: ${{ steps.install.outputs.reports-directory }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install the published pair outside the checkout
+      id: install
+      shell: bash
+      env:
+        AUTHENTICATION: ${{ inputs.authentication }}
+        PACKAGE_DIRECTORY: ${{ inputs.package-directory }}
+        TOOLING_DIRECTORY: ${{ inputs.tooling-directory }}
+      run: |
+        case "${AUTHENTICATION}" in
+          keyless|ephemeral) ;;
+          *) printf 'unsupported qualification authentication: %s\n' "${AUTHENTICATION}" >&2; exit 64 ;;
+        esac
+        tooling="$(realpath -e "${TOOLING_DIRECTORY}")"
+        package="$(realpath -e "${PACKAGE_DIRECTORY}")"
+        consumer="${RUNNER_TEMP}/qualification-consumer"
+        mkdir -p "${consumer}"
+        mkdir "${consumer}/reports"
+        printf 'reports-directory=%s\n' "${consumer}/reports" >>"${GITHUB_OUTPUT}"
+        versions="${tooling}/config/foundation-lock.json"
+        contracts_version="$(jq -er '.packages.contracts.version' "${versions}")"
+        harness_version="$(jq -er '.packages.harness.version' "${versions}")"
+        env -i PATH="${PATH}" HOME="${HOME}" uv --no-config \
+          venv --python 3.12 "${consumer}/venv"
+        published_python="${consumer}/venv/bin/python"
+        env -i PATH="${PATH}" HOME="${HOME}" uv --no-config pip install \
+          --python "${published_python}" --no-sources \
+          --default-index https://pypi.org/simple \
+          "robotics-runtime-contracts[mcap]==${contracts_version}" \
+          "robotics-acceptance-harness==${harness_version}"
+        env -i PATH="${PATH}" HOME="${HOME}" uv --no-config pip check \
+          --python "${published_python}"
+        "${published_python}" -I - "${contracts_version}" "${harness_version}" \
+          >"${consumer}/reports/installed-origins.json" <<'PY'
+        import json
+        import sys
+        from importlib.metadata import version
+        from pathlib import Path
+        import robotics_runtime_contracts as contracts
+        import robotics_acceptance_harness as harness
+
+        observed = {}
+        for distribution, module, expected in (
+            ("robotics-runtime-contracts", contracts, sys.argv[1]),
+            ("robotics-acceptance-harness", harness, sys.argv[2]),
+        ):
+            origin = Path(module.__file__).resolve()
+            assert origin.is_relative_to(Path(sys.prefix).resolve())
+            assert version(distribution) == expected
+            observed[distribution] = {"version": expected, "origin": str(origin)}
+        print(json.dumps(observed, sort_keys=True))
+        PY
+        chmod -R a-w "${package}"
+    - name: Verify the downloaded signed package and explain its configuration
+      shell: bash
+      env:
+        AUTHENTICATION: ${{ inputs.authentication }}
+        EXPECTED_EXECUTION_TYPE: ${{ inputs.expected_execution_type }}
+        PACKAGE_DIRECTORY: ${{ inputs.package-directory }}
+        TOOLING_DIRECTORY: ${{ inputs.tooling-directory }}
+      run: |
+        consumer="${RUNNER_TEMP}/qualification-consumer"
+        export ROBOTICS_CONTRACTS_CLI="${consumer}/venv/bin/robotics-contracts"
+        unset PYTHONPATH PYTHONHOME
+        tooling="$(realpath -e "${TOOLING_DIRECTORY}")"
+        package="$(realpath -e "${PACKAGE_DIRECTORY}")"
+        cd "${package}"
+        mapfile -t qualification_inputs <qualification-arguments.txt
+        case "${AUTHENTICATION}" in
+          keyless)
+            verification_arguments=(
+              --bundle "${package}/qualification.keyless.sigstore.json"
+              --trusted-root "${tooling}/trust/qualification.trusted-root.json"
+              --policy "${tooling}/trust/qualification-policy.json"
+            )
+            ;;
+          ephemeral)
+            verification_arguments=(
+              --bundle "${package}/qualification.sigstore.json"
+              --key "${package}/qualification.pub"
+            )
+            ;;
+          *) printf 'unsupported qualification authentication: %s\n' "${AUTHENTICATION}" >&2; exit 64 ;;
+        esac
+        "${tooling}/scripts/qualification/verify-bundle" \
+          "${qualification_inputs[@]}" \
+          "${verification_arguments[@]}" \
+          >"${consumer}/reports/verification.txt"
+        source "${tooling}/scripts/ci/foundation/lib.sh"
+        foundation_explain_qualification \
+          "${package}" "${consumer}/reports/explain.json" \
+          "${EXPECTED_EXECUTION_TYPE}" \
+          "${consumer}/venv/bin/python" -I -m robotics_acceptance_harness.cli

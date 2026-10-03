@@ -33,10 +33,10 @@ The level is reassessed per release against the current
 | OPA | BuildKit resolves the official multi-platform static image by immutable registry digest. |
 | yq | Docker rebuilds a verified upstream commit because the latest release still pins `golang.org/x/text` below the security-fixed version. The build checks the exact dependency version. |
 
-`policy-tooling` is a CI-only build target. It is not a product runtime image
-and is not published by the release inventory. Product images, including
-`permit-preflight`, pass the ordinary SBOM, provenance, and vulnerability
-gates.
+`policy-tooling` is one of the 13 internal image targets in the native release
+inventory. It and the product images, including `permit-preflight`, pass the
+ordinary SBOM, provenance, and vulnerability gates. Released qualification uses
+its verified immutable image to evaluate runtime policy without building locally.
 
 Released physical runs accept `permit-preflight` only from the canonical
 repository at an OCI digest. Before local use, `gh attestation verify` binds

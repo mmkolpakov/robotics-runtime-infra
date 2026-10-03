@@ -172,63 +172,13 @@ jobs:
             format('foundation-keyless-qualification-{0}', github.sha) ||
             format('foundation-keyless-playback-qualification-{0}', github.sha) }}
           path: ${{ runner.temp }}/qualification-consumer/package
-      - name: Install the published pair outside the checkout
-        run: |
-          consumer="${RUNNER_TEMP}/qualification-consumer"
-          mkdir "${consumer}/reports"
-          versions="${GITHUB_WORKSPACE}/tooling/config/foundation-lock.json"
-          contracts_version="$(jq -er '.packages.contracts.version' "${versions}")"
-          harness_version="$(jq -er '.packages.harness.version' "${versions}")"
-          env -i PATH="${PATH}" HOME="${HOME}" uv --no-config \
-            venv --python 3.12 "${consumer}/venv"
-          published_python="${consumer}/venv/bin/python"
-          env -i PATH="${PATH}" HOME="${HOME}" uv --no-config pip install \
-            --python "${published_python}" --no-sources \
-            --default-index https://pypi.org/simple \
-            "robotics-runtime-contracts[mcap]==${contracts_version}" \
-            "robotics-acceptance-harness==${harness_version}"
-          env -i PATH="${PATH}" HOME="${HOME}" uv --no-config pip check \
-            --python "${published_python}"
-          "${published_python}" -I - "${contracts_version}" "${harness_version}" \
-            >"${consumer}/reports/installed-origins.json" <<'PY'
-          import json
-          import sys
-          from importlib.metadata import version
-          from pathlib import Path
-          import robotics_runtime_contracts as contracts
-          import robotics_acceptance_harness as harness
-
-          observed = {}
-          for distribution, module, expected in (
-              ("robotics-runtime-contracts", contracts, sys.argv[1]),
-              ("robotics-acceptance-harness", harness, sys.argv[2]),
-          ):
-              origin = Path(module.__file__).resolve()
-              assert origin.is_relative_to(Path(sys.prefix).resolve())
-              assert version(distribution) == expected
-              observed[distribution] = {"version": expected, "origin": str(origin)}
-          print(json.dumps(observed, sort_keys=True))
-          PY
-          chmod -R a-w "${consumer}/package"
-      - name: Verify the downloaded signed package and explain its configuration
-        run: |
-          consumer="${RUNNER_TEMP}/qualification-consumer"
-          export ROBOTICS_CONTRACTS_CLI="${consumer}/venv/bin/robotics-contracts"
-          unset PYTHONPATH PYTHONHOME
-          cd "${consumer}/package"
-          mapfile -t qualification_inputs <qualification-arguments.txt
-          tooling="${GITHUB_WORKSPACE}/tooling"
-          "${tooling}/scripts/qualification/verify-bundle" \
-            "${qualification_inputs[@]}" \
-            --bundle "${consumer}/package/qualification.keyless.sigstore.json" \
-            --trusted-root "${tooling}/trust/qualification.trusted-root.json" \
-            --policy "${tooling}/trust/qualification-policy.json" \
-            >"${consumer}/reports/verification.txt"
-          source "${tooling}/scripts/ci/foundation/lib.sh"
-          foundation_explain_qualification \
-            "${consumer}/package" "${consumer}/reports/explain.json" \
-            "${{ matrix.phase == 'source' && 'simulator' || 'recording_playback' }}" \
-            "${consumer}/venv/bin/python" -I -m robotics_acceptance_harness.cli
+      - name: Verify the published consumer
+        uses: ./tooling/.github/actions/verify-published-consumer
+        with:
+          tooling-directory: ${{ github.workspace }}/tooling
+          package-directory: ${{ runner.temp }}/qualification-consumer/package
+          authentication: keyless
+          expected_execution_type: ${{ matrix.phase == 'source' && 'simulator' || 'recording_playback' }}
       - name: Upload independent consumer observations
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
