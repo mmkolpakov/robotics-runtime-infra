@@ -97,3 +97,74 @@ setup() {
   [ "${status}" -eq 64 ]
   [ "$(cat "${CONSUMER}/inputs/schema.json")" = '{"type":"object"}' ]
 }
+
+@test "portable explanation writes relative reports in the caller directory" {
+  local python="${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}"
+  local caller="${BATS_TEST_TMPDIR}/caller with spaces"
+  mkdir -p "${caller}/reports relative"
+  "${python}" -I - "${ROOT}" "${caller}/retained package" <<'PY'
+import hashlib
+import json
+import shutil
+import sys
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping, validate_role
+
+root, package = map(Path, sys.argv[1:])
+subjects = package / "subjects"
+product = subjects / "products/robot-description"
+manifest_path = "examples/neutral-robot/sim/robot-description.json"
+manifest = load_mapping(root / manifest_path)
+for relative in (
+    manifest_path,
+    manifest["description"]["path"],
+    f"{manifest['package']['path']}/package.xml",
+):
+    target = product / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(root / relative, target)
+scenario = load_mapping(root / "examples/neutral-robot/scenario.yaml")
+runtime = load_mapping(root / "test/qualification/fixtures/runtime-manifest.json")
+runtime["workload"]["robot_description"] = {
+    "sha256": hashlib.sha256((product / manifest_path).read_bytes()).hexdigest()
+}
+validate_role(scenario, "acceptance_scenario")
+validate_role(runtime, "runtime_manifest")
+for relative, document in (
+    ("scenario.json", scenario),
+    ("runtime-manifests/primary.json", runtime),
+):
+    target = subjects / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document), encoding="utf-8")
+(package / "qualification-arguments.txt").write_text(
+    "--artifact\nscenario:scenario.json=subjects/scenario.json\n"
+    "--artifact\nruntime_manifest:runtime-manifests/primary.json=subjects/runtime-manifests/primary.json\n"
+    f"--artifact\nother_evidence:products/robot-description/{manifest_path}=subjects/products/robot-description/{manifest_path}\n",
+    encoding="utf-8",
+)
+PY
+  cd "${caller}"
+  local before
+  before="$(find 'retained package' -type f -exec sha256sum {} + | sort)"
+  run foundation_explain_qualification 'retained package' \
+    'reports relative/explain.json' simulator "${python}" -I -m robotics_acceptance_harness.cli
+  [ "${status}" -eq 0 ]
+  [ "${PWD}" = "${caller}" ]
+  jq -e '.selected == true and
+    .description_path == "ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf"' \
+    'reports relative/explain.robot-description.json' >/dev/null
+  jq -e '.execution.data_source == "simulator"' 'reports relative/explain.json' >/dev/null
+  run foundation_explain_qualification 'retained package' \
+    "${caller}/absolute.json" simulator "${python}" -I -m robotics_acceptance_harness.cli
+  [ "${status}" -eq 0 ]
+  cmp 'reports relative/explain.json' absolute.json
+  cmp 'reports relative/explain.robot-description.json' absolute.robot-description.json
+  [ "$(find 'retained package' -type f -exec sha256sum {} + | sort)" = "${before}" ]
+
+  printf '\n' >>'retained package/subjects/products/robot-description/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf'
+  run foundation_explain_qualification 'retained package' \
+    'reports relative/rejected.json' simulator "${python}" -I -m robotics_acceptance_harness.cli
+  [ "${status}" -ne 0 ]
+  [ ! -e 'reports relative/rejected.json' ]
+}

@@ -275,6 +275,7 @@ foundation_load_artifact_arguments() {
 foundation_explain_qualification() (
   local package="$1" output="$2" desired="$3"
   shift 3
+  [[ "${output}" == /* ]] || output="${PWD}/${output}"
   local value index tooling admission_python
   tooling="$(foundation_repository_root)"
   local -a inputs scenarios=() runtimes=() datasets=() extensions=() products=() arguments
