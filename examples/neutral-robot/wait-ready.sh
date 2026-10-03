@@ -24,6 +24,9 @@ while :; do
   fi
   sleep 0.2
 done
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+docker exec --interactive "${container}" robotics-entrypoint python3 - \
+  --expect present <"${script_dir}/check-entity.py" >"${output}/entity.json"
 docker exec "${container}" robotics-entrypoint timeout 85 ros2 topic echo \
   /clock rosgraph_msgs/msg/Clock --once --no-daemon \
   --qos-reliability reliable --qos-depth 1000 \

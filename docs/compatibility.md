@@ -27,11 +27,13 @@ stock UInt64 simulation profile passed released-mode qualification and independe
 consumer verification. The historical `v0.8.0-rc.1` belongs to the legacy generation.
 
 The released infra `v0.10.0-rc.1` contains the
-[neutral robot fixture](../examples/neutral-robot/README.md) and uses contracts
-0.18.2 and harness 0.19.1 from source commit
-`d6dc8a1c6b976faacab7b371821e9af54b9883c2`. Published image provenance, source
-integration and independent qualification of a released consumer are separate
-gates. These software checks do not qualify named hardware targets.
+[neutral robot fixture](../examples/neutral-robot/README.md) from infra commit
+`d6dc8a1c6b976faacab7b371821e9af54b9883c2`. Its contracts 0.18.2 and harness
+0.19.1 come from runtime workspace commit
+`dc02c62897372514537cf241f06dc71b9f960c44`, recorded in the foundation lock.
+Published image provenance, source integration and independent qualification of
+a released consumer are separate gates. These software checks do not qualify
+named hardware targets.
 
 The new generation uses `subject_digest` in permits, recording summaries,
 qualification predicate `/qualification-bundle/v1`, and OTLP metrics with
