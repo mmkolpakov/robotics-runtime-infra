@@ -1,0 +1,61 @@
+services:
+  isaac-native:
+    image: nvcr.io/nvidia/isaac-sim:6.1.0@sha256:0c16dd67d09a70ea474f2c809a13c4d09bd23c738184cf1bf28af487ecd39080
+    init: true
+    user: "1234:1234"
+    group_add: ["1000"]
+    runtime: nvidia
+    gpus:
+      - driver: nvidia
+        count: all
+        capabilities: [gpu]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      ACCEPT_EULA: "Y"
+      PRIVACY_CONSENT: "N"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,video
+    entrypoint: [/isaac-sim/python.sh, /run/robotics/input/isaac/native-observe.py]
+    command:
+      - --scene
+      - /run/robotics/input/isaac/fixture.usda
+      - --expected-scene-sha256
+      - 0a19bca17a24a7d61bdef19dc410a220ef1ffe464f4e992a5c1cae7c52cbca29
+      - --steps
+      - ${ROBOTICS_ISAAC_STEPS:?}
+      - --dt
+      - ${ROBOTICS_ISAAC_DT:?}
+      - --render-frames
+      - ${ROBOTICS_ISAAC_RENDER_FRAMES:?}
+      - --width
+      - ${ROBOTICS_ISAAC_WIDTH:?}
+      - --height
+      - ${ROBOTICS_ISAAC_HEIGHT:?}
+      - --phase-directory
+      - /run/robotics/output/isaac/${ROBOTICS_ISAAC_SCOPE:?}
+      - --phase-timeout-seconds
+      - ${ROBOTICS_ISAAC_PHASE_TIMEOUT:?}
+      - --owner-id
+      - ${ROBOTICS_RUN_ID:?}
+      - --phase-token
+      - ${ROBOTICS_ISAAC_PHASE_TOKEN:?}
+    volumes:
+      - input:/run/robotics/input:ro
+      - results:/run/robotics
+      - cache:/isaac-sim/.cache
+    labels:
+      org.robotics.runtime.run-id: ${ROBOTICS_RUN_ID:?}
+      org.robotics.runtime.provider: isaac-native
+      org.robotics.runtime.qualification: source-candidate
+    networks: [private]
+volumes:
+  input: {external: true, name: "${ROBOTICS_ISAAC_INPUT_VOLUME:?}"}
+  results: {external: true, name: "${ROBOTICS_ISAAC_RESULT_VOLUME:?}"}
+  cache:
+    labels:
+      org.robotics.runtime.run-id: ${ROBOTICS_RUN_ID:?}
+networks:
+  private:
+    internal: true
+    labels:
+      org.robotics.runtime.run-id: ${ROBOTICS_RUN_ID:?}
