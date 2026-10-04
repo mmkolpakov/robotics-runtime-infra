@@ -1,0 +1,46 @@
+{
+  "scope": "source candidate; no release, hardware, Spiral, mission or rendering qualification",
+  "px4": {
+    "tag": "v1.17.0",
+    "commit": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+    "url": "https://github.com/PX4/PX4-Autopilot/tree/d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+    "target": "px4_sitl_default",
+    "profile": "gz_x500 / default / SYS_AUTOSTART=4001",
+    "stock_source_patches": false
+  },
+  "models": {
+    "commit": "b6127f4ec20de867e215fb5f78ae88b80f371909",
+    "url": "https://github.com/PX4/PX4-gazebo-models/tree/b6127f4ec20de867e215fb5f78ae88b80f371909",
+    "stock_world": "worlds/default.sdf",
+    "stock_model": "models/x500/model.sdf"
+  },
+  "gazebo": {
+    "distro": "jetty",
+    "sim": "10.5.0-2~noble",
+    "transport": "15.1.0-3~noble",
+    "msgs": "12.0.2-2~noble",
+    "sdformat": "16.1.0-2~noble",
+    "tagged_cmake_sha256": "eda9410ac3643edd784ac6b8532bc8f9a20eeaa0454ccfcd58a8a7a59c84fd6a",
+    "primary_api": "native Gz Node.request/subscribe, WorldControl/Scene/Pose_V/WorldStatistics"
+  },
+  "mavsdk": {
+    "server_version": "4.0.3",
+    "server_sha256": "7cd0a2995460983e82fe2cf0ef187aba852bb849168ce972a139680f3611c0d8",
+    "proto_commit": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670",
+    "api": "installed public core Mavsdk generated clients; no flight SDK wrapper"
+  },
+  "ubuntu_snapshot": "20260930T000000Z",
+  "osrf_key_sha256": "15d0300460e0c9c0efb21fa9770c0bf228988a07d71c4fac985c2161954a25a4",
+  "dependency_image_source_id": "sha256:b4bcf2e7635dad083143092325cd6ac179eebd492709134d731a7e876774d454",
+  "init": {
+    "project_runtime": "stock Ubuntu catatonit",
+    "sha256": "43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba"
+  },
+  "host_core_source": "bb8582f8bd42cff0ebceb61423e5c05c740b9a49",
+  "host_core_tgz_sha256": "e13ae0b5fe2828d311ac3cb0d02e53274e7fd54ec7d6e2b71e3011c65a406179",
+  "opaque_byte_export": {
+    "source": "host/workers/legacy-finalization/export_retained.py",
+    "source_sha256": "11f9f7e4a821ad5f8721a3d1c18db594fd13a21cf811731054e0845eba5ad00f",
+    "body_modified": false
+  }
+}

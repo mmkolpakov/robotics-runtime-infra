@@ -28,6 +28,10 @@
     "./plugins/legacy-finalization-inputs": {
       "types": "./dist/src/plugins/legacy-finalization/inputs.d.ts",
       "import": "./dist/src/plugins/legacy-finalization/inputs.js"
+    },
+    "./plugins/px4": {
+      "types": "./dist/src/plugins/px4-provider/index.d.ts",
+      "import": "./dist/src/plugins/px4-provider/index.js"
     }
   },
   "files": [
