@@ -16,11 +16,18 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=60)
     parser.add_argument("--dt", type=float, default=1 / 60)
     parser.add_argument("--render-frames", type=int, default=0)
+    parser.add_argument("--capture-directory", type=Path)
+    parser.add_argument("--width", type=int, default=640)
+    parser.add_argument("--height", type=int, default=480)
     args = parser.parse_args()
     if not 1 <= args.steps <= 10000 or not 0 <= args.render_frames <= 10000:
         parser.error("step and render counts must be bounded")
     if not math.isfinite(args.dt) or not 0 < args.dt <= 1:
         parser.error("dt must be finite and within (0, 1]")
+    if not 1 <= args.width <= 4096 or not 1 <= args.height <= 4096:
+        parser.error("capture dimensions must be bounded")
+    if args.capture_directory and args.render_frames < 1:
+        parser.error("capture requires rendered frames")
     args.scene = args.scene.resolve(strict=True)
     if not args.scene.is_file():
         parser.error("scene must be a regular file")
@@ -38,6 +45,9 @@ def main() -> int:
     from isaacsim.simulation_app import SimulationApp
 
     app = SimulationApp({"headless": True})
+    stage = None
+    render_product = None
+    annotator = None
     try:
         from isaacsim.core.experimental.utils import stage as stage_utils
         from isaacsim.core.rendering_manager import RenderingManager
@@ -58,8 +68,45 @@ def main() -> int:
         end = float(SimulationManager.get_simulation_time())
         if not math.isfinite(begin) or not math.isfinite(end) or end <= begin:
             raise RuntimeError("native physics time did not advance")
+        capture = None
+        if args.capture_directory:
+            import omni.replicator.core as rep
+
+            if not stage.GetPrimAtPath("/World/Camera").IsValid():
+                raise RuntimeError("native fixture camera is absent")
+            render_product = rep.create.render_product(
+                "/World/Camera", (args.width, args.height)
+            )
+            annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+            annotator.attach([render_product.path])
         for _ in range(args.render_frames):
             RenderingManager.render()
+        if annotator is not None:
+            rgba = annotator.get_data()
+            if rgba.shape != (args.height, args.width, 4):
+                raise RuntimeError(f"native RGBA dimensions differ: {rgba.shape}")
+            output = args.capture_directory.resolve()
+            output.mkdir(parents=True, exist_ok=False)
+            pixels = output / "camera.rgba"
+            pixels.write_bytes(rgba.tobytes())
+            # Use the SDK's installed image library; the host carries no frame bytes.
+            from PIL import Image
+
+            image = output / "camera.png"
+            Image.fromarray(rgba).save(image)
+            capture = {
+                "camera": "/World/Camera",
+                "width": args.width,
+                "height": args.height,
+                "format": "RGBA",
+                "rgba_sha256": hashlib.sha256(pixels.read_bytes()).hexdigest(),
+                "png_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+                "size_bytes": pixels.stat().st_size,
+                "native_capture_api": "Replicator rgb annotator",
+                "controller_observed_physics_seconds": float(
+                    SimulationManager.get_simulation_time()
+                ),
+            }
         facts = {
             "runtime": "Isaac Sim",
             "runtime_version": observed_version,
@@ -73,6 +120,7 @@ def main() -> int:
             "physics_advance_seconds": end - begin,
             "native_time_representation": "float seconds; no exact ns claim",
             "requested_render_frames": args.render_frames,
+            "native_capture": capture,
             "frame_capture_qualified": False,
             "rtsp_qualified": False,
         }
@@ -80,6 +128,11 @@ def main() -> int:
         print(json.dumps(facts, allow_nan=False), flush=True)
         return 0
     finally:
+        # A native capture is retained before releasing its renderer resources.
+        if annotator is not None and render_product is not None:
+            annotator.detach([render_product.path])
+            render_product.destroy()
+        stage = None
         # Caller retains stdout; a closure failure remains a nonzero process outcome.
         app.close()
 
