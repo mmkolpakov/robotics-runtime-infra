@@ -54,6 +54,7 @@ def main() -> int:
     annotator = None
     exit_code = 1
     try:
+        from isaacsim.core.experimental.prims import RigidPrim
         from isaacsim.core.experimental.utils import stage as stage_utils
         from isaacsim.core.rendering_manager import RenderingManager
         from isaacsim.core.simulation_manager import SimulationManager
@@ -68,9 +69,12 @@ def main() -> int:
             raise RuntimeError("native USD stage loading failed")
         SimulationManager.setup_simulation(dt=args.dt, device="cuda:0")
         SimulationManager.initialize_physics()
+        body = RigidPrim(paths="/World/Body")
+        body_begin = body.get_world_poses()[0].numpy()[0].tolist()
         begin = float(SimulationManager.get_simulation_time())
         SimulationManager.step(steps=args.steps, update_fabric=True)
         end = float(SimulationManager.get_simulation_time())
+        body_end = body.get_world_poses()[0].numpy()[0].tolist()
         if not math.isfinite(begin) or not math.isfinite(end) or end <= begin:
             raise RuntimeError("native physics time did not advance")
         capture = None
@@ -120,6 +124,14 @@ def main() -> int:
                     SimulationManager.get_simulation_time()
                 ),
             }
+        import omni.timeline
+
+        timeline = omni.timeline.get_timeline_interface()
+        timeline.pause()
+        app.update()
+        paused_time = float(SimulationManager.get_simulation_time())
+        if timeline.is_playing() or not math.isclose(paused_time, end, abs_tol=1e-9):
+            raise RuntimeError("native timeline did not remain quiescent after capture")
         facts = {
             "runtime": "Isaac Sim",
             "runtime_version": observed_version,
@@ -131,6 +143,15 @@ def main() -> int:
             "physics_begin_seconds": begin,
             "physics_end_seconds": end,
             "physics_advance_seconds": end - begin,
+            "body": {
+                "prim": "/World/Body",
+                "world_frame": "Z up; metres",
+                "begin_position": body_begin,
+                "end_position": body_end,
+                "native_api": "experimental RigidPrim.get_world_poses",
+            },
+            "paused_time_seconds": paused_time,
+            "timeline_playing_after_pause": timeline.is_playing(),
             "native_time_representation": "float seconds; no exact ns claim",
             "requested_render_frames": args.render_frames,
             "native_capture": capture,
@@ -151,12 +172,20 @@ def main() -> int:
         return 1
     finally:
         # A native capture is retained before releasing its renderer resources.
-        if annotator is not None and render_product is not None:
-            annotator.detach([render_product.path])
-            render_product.destroy()
-        stage = None
-        # Caller retains stdout; a closure failure remains a nonzero process outcome.
-        app.close(exit_code=exit_code)
+        try:
+            try:
+                if annotator is not None and render_product is not None:
+                    annotator.detach([render_product.path])
+            finally:
+                if render_product is not None:
+                    render_product.destroy()
+        except Exception:
+            exit_code = 1
+            LOGGER.exception("Native renderer resource cleanup failed")
+        finally:
+            stage = None
+            # SDK fast shutdown must not hide a workload or cleanup exception.
+            app.close(exit_code=exit_code)
 
 
 if __name__ == "__main__":
