@@ -13,6 +13,7 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs:
       - /tmp:rw,mode=1777,size=512m
+    working_dir: /retained
     entrypoint: []
     volumes:
       - retained-data:/retained
