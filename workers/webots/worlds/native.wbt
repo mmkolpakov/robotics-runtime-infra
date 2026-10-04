@@ -1,0 +1,39 @@
+#VRML_SIM R2025a utf8
+EXTERNPROTO "../protos/NativeProbe.proto"
+
+DEF RR_WORLD_INFO WorldInfo {
+  title "robotics-runtime Webots native fixture v1"
+  basicTimeStep 16
+  randomSeed 1
+  optimalThreadCount 1
+  coordinateSystem "ENU"
+}
+Viewpoint {
+  orientation 0.15 0.9 0.4 1.6
+  position -2 -2 1.5
+}
+Background { skyColor [ 0.02 0.03 0.04 ] }
+DirectionalLight { direction 0.2 0.2 -1 intensity 1 ambientIntensity 0.5 }
+DEF RR_GROUND Solid {
+  translation 0 0 -0.05
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.25 0.3 0.35 roughness 1 metalness 0 }
+      geometry Box { size 4 4 0.1 }
+    }
+  ]
+  boundingObject Box { size 4 4 0.1 }
+}
+DEF RR_FALLING_BODY Solid {
+  translation 0 0 1
+  name "rr-falling-body"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.9 0.05 0.03 roughness 1 metalness 0 }
+      geometry Box { size 0.2 0.2 0.2 }
+    }
+  ]
+  boundingObject Box { size 0.2 0.2 0.2 }
+  physics Physics { density -1 mass 1 }
+}
+DEF RR_PROBE NativeProbe { }

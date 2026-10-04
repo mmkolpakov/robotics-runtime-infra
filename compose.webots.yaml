@@ -1,0 +1,54 @@
+---
+services:
+  webots-native:
+    image: "${ROBOTICS_WEBOTS_IMAGE:?immutable Webots worker image required}"
+    pull_policy: never
+    user: "10001:1000"
+    network_mode: none
+    read_only: true
+    mem_limit: 2g
+    pids_limit: 128
+    shm_size: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,mode=1777,size=512m
+    command:
+      - run
+      - --output
+      - "/run/robotics/output/webots/${ROBOTICS_WEBOTS_SCOPE:?owned output scope required}"
+      - --owner-id
+      - "${ROBOTICS_RUN_ID:?run owner required}"
+      - --mode
+      - "${ROBOTICS_WEBOTS_MODE:-physics-only}"
+      - --deadline-seconds
+      - "90"
+    volumes:
+      - run-data:/run/robotics
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+      org.robotics.runtime.provider: webots-native
+  webots-signal:
+    image: "${ROBOTICS_WEBOTS_IMAGE:?immutable Webots worker image required}"
+    pull_policy: never
+    user: "10001:1000"
+    network_mode: none
+    read_only: true
+    mem_limit: 128m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      - measure
+      - --output
+      - "/run/robotics/output/webots/${ROBOTICS_WEBOTS_SCOPE:?owned output scope required}"
+      - --owner-id
+      - "${ROBOTICS_RUN_ID:?run owner required}"
+    volumes:
+      - run-data:/run/robotics
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+      org.robotics.runtime.provider: webots-native
+volumes:
+  run-data:
+    external: true
+    name: "${ROBOTICS_RUN_VOLUME:?host-owned shared volume required}"
