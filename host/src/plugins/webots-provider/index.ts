@@ -1,5 +1,5 @@
 import {Service} from "@robotics-runtime/host";
-import type {Context} from "@robotics-runtime/host";
+import type {ArtifactRef, Context} from "@robotics-runtime/host";
 import {createHash, randomUUID} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {readFile, stat, writeFile} from 'node:fs/promises';
@@ -11,8 +11,6 @@ import type {ComposeOptions} from '../../compose-execution.js';
 import {EngineMetadata} from '../../engine-metadata.js';
 import type {MetadataObservation} from '../../engine-metadata.js';
 
-interface ArtifactRef {uri: string; sha256: string; size_bytes: number}
-interface Cleanup {released: boolean; evidenceRefs: ArtifactRef[]; diagnostic?: string}
 export interface WebotsConfig {
   composeExecutable: string; socketPath: string; composeFiles: readonly string[]; cwd: string;
   workerImage: string; runVolume: string; outputRoot: string;
@@ -37,7 +35,6 @@ export class WebotsNative extends Service {
   private readonly deadline: number;
   private started: Promise<{ready: boolean; evidenceRefs: ArtifactRef[]}> | undefined;
   private engine: EngineMetadata | undefined;
-  private containerId: string | undefined;
   constructor(ctx: Context, readonly config: WebotsConfig) {
     super(ctx, "webots");
     if (![config.composeExecutable, config.socketPath, ...config.composeFiles, config.cwd, config.outputRoot].every(isAbsolute)) throw new Error('native provider paths must be absolute');
@@ -107,16 +104,14 @@ export class WebotsNative extends Service {
     const ps = await this.compose.run(['ps', '--all', '--quiet', 'webots-native'], signal);
     const id = ps.stdout.trim();
     if (!ps.ok || !/^[a-f0-9]{64}$/.test(id)) throw new Error('exact native worker container ID is unavailable');
-    this.containerId = id;
     const observed: MetadataObservation = await this.engine.inspect(id, {
       runId: this.ownerId, projectName: this.project, imageDigest: this.config.workerImage,
       mounts: [{destination: '/run/robotics', readOnly: false, volumeName: this.config.runVolume}],
       hostConfig: {ReadonlyRootfs: true, NetworkMode: 'none', Memory: 2147483648}, user: '10001:1000',
     });
-    await this.waitFile('ready.json', signal);
+    const ready = await this.waitFile('ready.json', signal);
     await writeFile(join(this.output, 'engine-readiness.json'), JSON.stringify(observed));
     if (observed.status !== 'complete' || record(record(observed.container).State).Running !== true) throw new Error('native worker Engine facts are incomplete or mismatched');
-    const ready = await this.waitFile('ready.json', signal);
     if (ready.ready !== true || record(ready.robot).name !== 'rr-native-probe') throw new Error('native world/robot readiness is absent');
     return {ready: true, evidenceRefs: [await reference(join(this.output, 'ready.json')),
       await reference(join(this.output, 'worker-identity.json'))]};

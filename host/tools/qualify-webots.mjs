@@ -24,7 +24,7 @@ assert.ok(native.last_native_state.body_position_m[2]<native.initial_state.body_
 assert.equal(native.camera.format,'BGRA');assert.equal(native.camera.width,96);assert.equal(native.camera.height,64);
 const refs=await provider.exportEvidence(signal);
 const path='/run/robotics/output/c14-provider-qualification.json';
-await writeFile(path,JSON.stringify({scope:'source native CPU/provider/Compose; no published C21 or C17 hardware claim',
+await writeFile(path,JSON.stringify({scope:'source native CPU/provider/Compose; no published consumer or hardware claim',
  runId,project:provider.project,output:provider.output,ready,native,result,exportedRefs:refs}));
 await fiber.dispose();
 const cleanup=await ctx.runResources.verify(30000);

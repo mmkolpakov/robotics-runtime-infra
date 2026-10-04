@@ -215,7 +215,7 @@ def main() -> None:
     (args.output / "source-qualification.json").write_text(
         json.dumps(
             {
-                "scope": "native Linux amd64 CPU/Mesa fixture; no C17 hardware/desktop or published C21 qualification",
+                "scope": "native Linux amd64 CPU/Mesa fixture; no hardware/desktop or published consumer qualification",
                 "image": args.image,
                 "cases": observations,
             },

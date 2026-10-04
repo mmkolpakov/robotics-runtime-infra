@@ -27,7 +27,7 @@ The capture timestamp is the controller's `getTime` observation after the step; 
 Camera timestamp API is asserted. See [native camera semantics](https://cyberbotics.com/doc/reference/camera).
 `--no-rendering` disables the main view; it does not disable camera computation. OpenGL is provided
 by the declared container Xvfb/Mesa environment. Software rendering warnings and renderer identity
-are retained. Native desktop/display and hardware GPU qualification remain C17 work.
+are retained. Native desktop/display and hardware GPU qualification require separate qualification.
 
 Measurement state and camera payloads are fsynced/exported before native reset/quit and process
 cleanup. Reset records request, native step result and observed clock regression in a new epoch.
@@ -60,4 +60,4 @@ never delete the host-owned external volume.
 Run `host/tools/qualify-webots.mjs` in the pinned Node environment with an installed native host
 asset and shared volume. It checks real worker/Compose/Engine behavior, exports evidence, then
 disposes the provider and verifies acquired resource cleanup. This is a source CPU/Mesa fixture
-qualification, separate from released C21 or hardware/rendering acceptance.
+qualification, separate from released consumer or hardware/rendering acceptance.
