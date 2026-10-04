@@ -43,8 +43,10 @@ advancement or correct time ownership.
 
 Observer evaluation, live acceptance JUnit, signed qualification production,
 portable readmission and the independent published consumer did not complete;
-the independent consumer job was skipped. The native trigger for the clock
-overshoot and its causal relationship to JointState readiness remain open.
+the independent consumer job was skipped. The historical grouped log alone does not establish exact wall ordering.
+A subsequent [bounded native diagnostic](b3-startup-cause.md) reproduces the
+initialization/clock-owner race and passes the ordered counterpart; full B3
+acceptance and the published consumer remain open.
 The earlier apparently green run 37152524765 lacks the required entity proof
 and is not a substitute for B3 acceptance.
 
