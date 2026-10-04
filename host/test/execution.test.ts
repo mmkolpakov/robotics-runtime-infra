@@ -50,3 +50,20 @@ test('native networks require inspected identity, and released digest is indepen
   assert.equal(validateObservation(facts, c, image, [{Id: 'network-id'}], required).status, 'complete');
   assert.ok(validateObservation(facts, c, {Id: 'sha256:image', RepoDigests: ['other']}, [{Id: 'network-id'}], required).mismatches.includes('image.released-digest'));
 });
+
+test('a declared namespace cannot replace differing projected metadata', () => {
+  const c = native();
+  (c.HostConfig as Record<string,unknown>).UsernsMode = 'private';
+  const observed=validateObservation(facts,c,image,[],{...required,hostConfig:{...required.hostConfig,UsernsMode:'keep-id:uid=1000,gid=1000'}});
+  assert.equal(observed.status,'incomplete');
+  assert.ok(observed.mismatches.includes('container.HostConfig.UsernsMode'));
+});
+
+test('the immutable profile also participates in teardown', async () => {
+  const requests: FiniteJobRequest[]=[];
+  const compose=new ComposeExecution({run:async r=>{requests.push(r);return result}},{executable:'/usr/local/bin/docker-compose',socketPath:'/run/engine.sock',projectName:'owned-1',files:['/immutable/compose.yaml'],profiles:['host-preflight'],cwd:'/immutable'});
+  await compose.run(['up','--detach','host-image']);
+  await compose.run(['down','--volumes']);
+  assert.ok(requests.every(r=>r.args.join(' ').includes('--profile host-preflight')));
+  await assert.rejects(compose.run(['down','--profile','other']));
+});

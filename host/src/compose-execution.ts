@@ -29,19 +29,21 @@ export interface ComposeOptions {
   socketPath: string;
   projectName: string;
   files: readonly string[];
+  profiles?: readonly string[];
   cwd: string;
   env?: Readonly<Record<string, string>>;
   timeoutMs?: number;
   maxBufferBytes?: number;
 }
-const commands = new Set(['version', 'config', 'up', 'run', 'logs', 'ps', 'stop', 'down', 'pull']);
-const forbidden = /^(?:(?:--project-name|--project-directory|--file|--context|--host)(?:=|$)|-[pf])/;
+const commands = new Set(['version', 'config', 'up', 'run', 'logs', 'ps', 'stop', 'down', 'pull', 'wait']);
+const forbidden = /^(?:(?:--project-name|--project-directory|--file|--context|--host|--profile)(?:=|$)|-[pf])/;
 
 export class ComposeExecution {
   constructor(private readonly jobs: FiniteJobs, private readonly options: ComposeOptions) {
     if (!/^[a-z0-9][a-z0-9_-]{1,62}$/.test(options.projectName)) throw new Error('invalid owned Compose project');
     if (![options.executable, options.socketPath, options.cwd, ...options.files].every(isAbsolute)) throw new Error('Compose paths must be absolute');
-    this.options = {...options, files: [...options.files], env: {...options.env}};
+    this.options = {...options, files: [...options.files], profiles: [...options.profiles ?? []], env: {...options.env}};
+    if ((options.profiles ?? []).some(p => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(p))) throw new Error('invalid owned Compose profile');
     if (!options.files.length) throw new Error('an immutable Compose file is required');
     if (Object.keys(options.env ?? {}).some(k => ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH'].includes(k))) throw new Error('endpoint environment is host-owned');
   }
@@ -49,7 +51,7 @@ export class ComposeExecution {
     if (!commands.has(args[0] ?? '') || args.some(a => forbidden.test(a))) throw new Error('command cannot replace the owned Compose project or endpoint');
     return this.jobs.run({
       executable: this.options.executable,
-      args: ['--project-name', this.options.projectName, ...this.options.files.flatMap(p => ['--file', p]), ...args],
+      args: ['--project-name', this.options.projectName, ...this.options.files.flatMap(p => ['--file', p]), ...(this.options.profiles ?? []).flatMap(p => ['--profile', p]), ...args],
       cwd: this.options.cwd,
       timeoutMs: this.options.timeoutMs ?? 120_000,
       maxBufferBytes: this.options.maxBufferBytes ?? 1_048_576,

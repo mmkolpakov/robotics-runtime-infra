@@ -33,14 +33,27 @@ export function selectApi(versionResponse: unknown, endpoint: EngineEndpoint): E
   return {endpoint: `unix://${endpoint.socketPath}`, serverApi: version!.ApiVersion as string, serverMinApi: version!.MinAPIVersion as string, clientApi: `1.${selected}`, versionResponse};
 }
 export class EngineMetadata {
-  private constructor(private readonly docker: Docker, readonly facts: EngineFacts) {}
+  private constructor(private readonly docker: Docker, private readonly socketPath: string, readonly facts: EngineFacts) {}
   static async connect(endpoint: EngineEndpoint): Promise<EngineMetadata> {
     if (!isAbsolute(endpoint.socketPath)) throw new Error('Engine requires an absolute Unix socket');
     // /version is unversioned discovery. Dockerode does not negotiate client APIs.
     const bootstrap = new Docker({socketPath: endpoint.socketPath});
     const facts = selectApi(await bootstrap.version(), endpoint);
     const docker = new Docker({socketPath: endpoint.socketPath, version: `v${facts.clientApi}`});
-    return new EngineMetadata(docker, facts);
+    return new EngineMetadata(docker, endpoint.socketPath, facts);
+  }
+  async rootlessParentMaps(): Promise<{nativeApi: string; uidMap: unknown[]; gidMap: unknown[]; raw: unknown}> {
+    const version = object(this.facts.versionResponse);
+    const components = Array.isArray(version?.Components) ? version.Components : [];
+    const component = components.map(object).find(c => c?.Name === 'Podman Engine');
+    const nativeApi = object(component?.Details)?.APIVersion;
+    if (nativeApi !== '4.9.3') throw new Error('unqualified native parent namespace API');
+    const native = new Docker({socketPath: this.socketPath, version: `v${nativeApi}`});
+    const raw = await new Promise<unknown>((resolve, reject) => native.modem.dial({path: '/libpod/info', method: 'GET', statusCodes: {200: true}}, (error: unknown, value: unknown) => error ? reject(error) : resolve(value)));
+    const maps = object(object(object(raw)?.host)?.idMappings);
+    const valid = (v: unknown): v is unknown[] => Array.isArray(v) && v.length > 0 && v.every(row => ['container_id','host_id','size'].every(k => Number.isInteger(object(row)?.[k]) && Number(object(row)?.[k]) >= (k === 'size' ? 1 : 0)));
+    if (!valid(maps?.uidmap) || !valid(maps?.gidmap)) throw new Error('incomplete native parent UID/GID maps');
+    return {nativeApi, uidMap: maps.uidmap, gidMap: maps.gidmap, raw};
   }
   async remainingOwned(runId: string): Promise<{containers: unknown[]; volumes: unknown; networks: unknown[]}> {
     const filters = {label: [`org.robotics.runtime.run-id=${runId}`]};

@@ -26,13 +26,31 @@ read-only `EROFS`, an integer larger than JavaScript's exact Number range, raw
 bytes/hash, native metadata and cleanup inventories are checked. Payload bytes
 and logs are exported before the volumes are removed.
 
-HOME runs rootless Podman 4.9.3 under host UID 1001. The separate
-`compose.host-storage.podman.yaml` applies `keep-id:uid=1000,gid=1000` consistently to
-the storage fixture. This observed mapping does not assert that all worker
-images use UID 10001: the retained simulation/observer use Ubuntu's UID 1000,
-permit-preflight uses 10002, and evidence-sink uses 10001. Their own entrypoints,
-cache needs, native identity and writable outputs must be qualified separately.
-No system socket permissions or host network configuration are changed.
+HOME runs rootless Podman 4.9.3 under UID/GID 1001. Its Docker-compatible
+HostConfig projects `UsernsMode: private`, an expanded CapDrop list and
+normalized SecurityOpt. That projection does not express the keep-id mapping.
+The preflight reads the child's native `/proc/self/uid_map` and `gid_map`,
+which are relative to its parent namespace, then reads the actual rootless
+parent ID maps through the same socket's versioned native Podman info API.
+The observed chain maps container 1000 to parent 0 to HOME 1001. The host image
+also proves access to the original mode-0600 project socket through Compose.
+No supplemental group or socket permission change is required. The owned
+profile list persists for `down`; actual inventory exposed a profiled service
+left behind by a teardown that omitted that list, and that diagnostic is
+retained. Cleanup now requires empty native owner inventories.
+
+A failed diagnostic incorrectly compared a child's parent-relative ID to the
+HOME ID directly. Its failure is retained; it does not prove that Compose
+ignored keep-id. [Linux user namespace semantics](https://man7.org/linux/man-pages/man7/user_namespaces.7.html)
+explain why both mapping levels are required. Compose declarations never fill
+that native evidence. Required missing maps and mismatched fields fail closed.
+Both containers' native capability sets must be empty.
+
+The mapping does not assert that all worker images use UID 10001: the retained
+simulation/observer use Ubuntu's UID 1000, permit-preflight uses 10002, and
+evidence-sink uses 10001. Their own entrypoints, cache needs, native identity
+and writable outputs must be qualified separately. Shared/system sockets and
+host network configuration are unchanged.
 
 Build and run the source checks with the pinned Node 24.21.0 / npm 11.19.0:
 
@@ -50,13 +68,14 @@ requires the compiled core host's public `Context/Jobs` exports:
 node host/tools/qualify-storage.mjs \
   /absolute/infra /absolute/core-host/dist/src/index.js \
   /absolute/project-engine.sock /absolute/retained-output \
-  compose.host-storage.podman.yaml
+  compose.host-storage.podman.yaml <optional-source-host-image-id>
 ```
 
 For Docker CI, omit the final Podman overlay argument. The same Compose/Jobs
 route and metadata checks apply. Docker CI has not yet run for this candidate.
-The checked HOME source results cover Engine metadata and the Node OCI storage
-fixture; they do not qualify installed Python worker entrypoints, full B3,
+The checked HOME source results cover Engine metadata, the Node OCI storage
+fixture and a compiled source host image accessing its mode-0600 socket through
+Compose; they do not qualify installed Python worker entrypoints, full B3,
 released host assets or the complete C08 acceptance surface.
 
 `docker/host.Dockerfile` consumes a compiled npm-pack asset as the separate
