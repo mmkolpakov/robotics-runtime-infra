@@ -10,9 +10,11 @@ export interface ContainerRequirement {
   runId: string;
   projectName: string;
   imageDigest?: string;
+  imageId?: string;
   mounts: readonly {destination: string; readOnly: boolean; volumeName: string}[];
   hostConfig: Readonly<Record<string, unknown>>;
   user: string;
+  networkNamespaceContainerId?: string;
 }
 export interface MetadataObservation {
   status: 'complete' | 'incomplete';
@@ -22,6 +24,7 @@ export interface MetadataObservation {
   container: unknown;
   image: unknown;
   networks: unknown[];
+  networkNamespaceContainer?: unknown;
 }
 export function selectApi(versionResponse: unknown, endpoint: EngineEndpoint): EngineFacts {
   const version = object(versionResponse);
@@ -69,12 +72,16 @@ export class EngineMetadata {
     const image = typeof imageId === 'string' ? await this.docker.getImage(imageId).inspect() : undefined;
     const networks = object(object(object(container)?.NetworkSettings)?.Networks);
     const networkMode = object(object(container)?.HostConfig)?.NetworkMode;
-    const ids = networkMode === 'none' ? [] : Object.values(networks ?? {}).map(n => object(n)?.NetworkID).filter((v): v is string => typeof v === 'string' && v.length > 0);
-    const networkObjects = await Promise.all(ids.map(id => this.docker.getNetwork(id).inspect()));
-    return validateObservation(this.facts, container, image, networkObjects, required);
+    const parentId = typeof networkMode === 'string' && /^container:[a-f0-9]{64}$/.test(networkMode) ? networkMode.slice(10) : undefined;
+    const networkNamespaceContainer = parentId ? await this.docker.getContainer(parentId).inspect() : undefined;
+    const namespaceMode = networkNamespaceContainer ? object(object(networkNamespaceContainer)?.HostConfig)?.NetworkMode : networkMode;
+    const namespaceNetworks = networkNamespaceContainer ? object(object(networkNamespaceContainer)?.NetworkSettings)?.Networks : networks;
+    const ids = namespaceMode === 'none' ? [] : Object.values(object(namespaceNetworks) ?? {}).map(n => object(n)?.NetworkID).filter((v): v is string => typeof v === 'string' && v.length > 0);
+    const networkObjects = await Promise.all(ids.map(id => this.docker.getNetwork(id).inspect().catch((error:unknown)=>({requestedNetworkId:id,inspectionError:String(error)}))));
+    return validateObservation(this.facts, container, image, networkObjects, required, networkNamespaceContainer);
   }
 }
-export function validateObservation(engine: EngineFacts, rawContainer: unknown, rawImage: unknown, networks: unknown[], required: ContainerRequirement): MetadataObservation {
+export function validateObservation(engine: EngineFacts, rawContainer: unknown, rawImage: unknown, networks: unknown[], required: ContainerRequirement, rawNamespaceContainer?: unknown): MetadataObservation {
   const missing: string[] = [], mismatches: string[] = [];
   const c = object(rawContainer), i = object(rawImage);
   const requireField = (parent: RecordValue | undefined, field: string, path: string, check: (v: unknown) => boolean): unknown => {
@@ -87,6 +94,7 @@ export function validateObservation(engine: EngineFacts, rawContainer: unknown, 
   requireField(c, 'Id', 'container.Id', string);
   const imageId = requireField(c, 'Image', 'container.Image', string);
   equal(requireField(i, 'Id', 'image.Id', string), imageId, 'image.Id');
+  if(required.imageId!==undefined) equal(imageId,required.imageId,'container.Image');
   const config = object(c?.Config), state = object(c?.State), hc = object(c?.HostConfig), ns = object(c?.NetworkSettings);
   const labels = object(requireField(config, 'Labels', 'container.Config.Labels', v => object(v) !== undefined));
   equal(requireField(labels, 'org.robotics.runtime.run-id', 'owner.run-id', string), required.runId, 'owner.run-id');
@@ -109,11 +117,29 @@ export function validateObservation(engine: EngineFacts, rawContainer: unknown, 
   }
   for (const [field, expected] of Object.entries(required.hostConfig)) equal(requireField(hc, field, `container.HostConfig.${field}`, v => v !== undefined && v !== null), expected, `container.HostConfig.${field}`);
   const mode = requireField(hc, 'NetworkMode', 'container.HostConfig.NetworkMode', string);
-  const usedNetworks = object(requireField(ns, 'Networks', 'container.NetworkSettings.Networks', v => object(v) !== undefined));
-  if (mode !== 'none' && !Object.keys(usedNetworks ?? {}).length) missing.push('network.identity');
-  for (const [name, value] of Object.entries(mode === 'none' ? {} : usedNetworks ?? {})) {
-    const networkId = requireField(object(value), 'NetworkID', `network.${name}.NetworkID`, string);
-    if (!networks.some(n => object(n)?.Id === networkId)) missing.push(`network.${name}.inspect`);
+  // service:<name> is an acquired container namespace. Prove its actual parent,
+  // ownership and network mode before interpreting a native pseudo-network.
+  let namespaceMode=mode;
+  let namespaceSettings=ns;
+  if(typeof mode==='string' && mode.startsWith('container:')) {
+    const parent=object(rawNamespaceContainer), parentConfig=object(parent?.Config);
+    const parentId=requireField(parent,'Id','network.namespace-container.Id',string);
+    equal(mode,`container:${parentId}`,'network.namespace-container.binding');
+    if(required.networkNamespaceContainerId===undefined) missing.push('network.namespace-container.expected-id');
+    else equal(parentId,required.networkNamespaceContainerId,'network.namespace-container.expected-id');
+    const parentLabels=object(requireField(parentConfig,'Labels','network.namespace-container.Labels',v=>object(v)!==undefined));
+    equal(requireField(parentLabels,'org.robotics.runtime.run-id','network.namespace-container.owner',string),required.runId,'network.namespace-container.owner');
+    equal(requireField(parentLabels,'com.docker.compose.project','network.namespace-container.project',string),required.projectName,'network.namespace-container.project');
+    namespaceMode=requireField(object(parent?.HostConfig),'NetworkMode','network.namespace-container.NetworkMode',string);
+    namespaceSettings=object(parent?.NetworkSettings);
+    if(typeof namespaceMode==='string' && namespaceMode.startsWith('container:')) missing.push('network.namespace-container.direct-mode');
+  } else if(required.networkNamespaceContainerId!==undefined) mismatches.push('network.namespace-container.expected-id');
+  requireField(ns,'Networks','container.NetworkSettings.Networks',v=>object(v)!==undefined);
+  const usedNetworks=object(requireField(namespaceSettings,'Networks','network.namespace.Networks',v=>object(v)!==undefined));
+  if(namespaceMode!=='none' && !Object.keys(usedNetworks??{}).length) missing.push('network.identity');
+  for(const [name,value] of Object.entries(namespaceMode==='none'?{}:usedNetworks??{})) {
+    const networkId=requireField(object(value),'NetworkID',`network.${name}.NetworkID`,string);
+    if(!networks.some(n=>object(n)?.Id===networkId)) missing.push(`network.${name}.inspect`);
   }
-  return {status: missing.length || mismatches.length ? 'incomplete' : 'complete', missing, mismatches, engine, container: rawContainer, image: rawImage, networks};
+  return {status: missing.length || mismatches.length ? 'incomplete' : 'complete', missing, mismatches, engine, container: rawContainer, image: rawImage, networks, networkNamespaceContainer:rawNamespaceContainer};
 }

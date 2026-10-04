@@ -1,0 +1,112 @@
+{
+  "runId": "rr-c09-1791127143804",
+  "status": "passed",
+  "cleanup": true,
+  "phases": [
+    {
+      "phase": "preloading",
+      "status": "passed"
+    },
+    {
+      "phase": "ready",
+      "status": "passed"
+    },
+    {
+      "phase": "measuring",
+      "status": "passed"
+    },
+    {
+      "phase": "closing-measurement",
+      "status": "passed"
+    },
+    {
+      "phase": "capturing-last-state",
+      "status": "passed"
+    },
+    {
+      "phase": "draining-recorders",
+      "status": "passed"
+    },
+    {
+      "phase": "exporting-evidence",
+      "status": "passed"
+    },
+    {
+      "phase": "disposing",
+      "status": "passed"
+    },
+    {
+      "phase": "verifying-cleanup",
+      "status": "passed"
+    },
+    {
+      "phase": "completed",
+      "status": "passed"
+    }
+  ],
+  "artifactReferencesVerified": 104,
+  "clockCursorNs": "18989000000",
+  "nativeReadiness": {
+    "status": "passed",
+    "after_ns": "18989000000",
+    "observed": {
+      "clock": {
+        "ns": "19100000000"
+      },
+      "joint_state": {
+        "name": [
+          "slider_joint"
+        ],
+        "position": [
+          0.0
+        ],
+        "stamp_ns": "19100000000"
+      },
+      "tf": {
+        "parent": "base_link",
+        "child": "slider_link",
+        "translation": [
+          0.2,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "stamp_ns": "19100000000"
+      }
+    }
+  },
+  "lastNativeState": {
+    "phase": "native-last-state-before-destructive-reset",
+    "clock_ns": "19151000000",
+    "state": 2,
+    "entities": [
+      "neutral_robot"
+    ],
+    "result": 1,
+    "result_ok": true,
+    "result_ok_code": 1,
+    "error": "",
+    "reset_performed": false,
+    "precision": "native ROS Clock integer ns"
+  },
+  "coreSource": "55f135916ad508a01502812af62295fd09bbf227",
+  "simulationImageId": "sha256:59e092393a655e736b56c928acd51b921411fa4810cb030591e00138b2fc5ed4",
+  "coordinatorImageId": "sha256:1c227795630eb5d3a5069774031321f7aa48a47179af8345432bf1a0be6c7c60",
+  "scope": "C09 native Admission/RunOwner source startup and final-state proof; application measurement/recording/evaluation/full B3 released gates remain open",
+  "evidenceRoot": "artifacts/c09/startup-source-9",
+  "publicWorkerPackages": {
+    "contracts": "0.18.2",
+    "harness": "0.19.1"
+  },
+  "openGates": [
+    "application observation/OTel/recording",
+    "post-cleanup public evaluation/package/sign/independent verification",
+    "source/released equivalence",
+    "full immutable R10/released B3"
+  ]
+}

@@ -59,3 +59,4 @@
 !docker/media.Dockerfile
 !docker/host/
 !docker/host/init.Dockerfile
+!docker/foundation-coordinator.Dockerfile

@@ -67,3 +67,30 @@ test('the immutable profile also participates in teardown', async () => {
   assert.ok(requests.every(r=>r.args.join(' ').includes('--profile host-preflight')));
   await assert.rejects(compose.run(['down','--profile','other']));
 });
+
+test('native worker argv after the service cannot become Compose project flags', async () => {
+  let request:FiniteJobRequest|undefined;
+  const compose=new ComposeExecution({run:async r=>{request=r;return result}},{executable:'/usr/local/bin/docker-compose',socketPath:'/run/engine.sock',projectName:'owned-1',files:['/immutable/compose.yaml'],cwd:'/immutable'});
+  await compose.run(['run','--rm','--no-deps','neutral-robot','ros2','run','ros_gz_sim','create','-file','/run/robotics/input/robot.urdf']);
+  assert.ok(request?.args.includes('-file'));
+  await assert.rejects(compose.run(['run','--project-name','foreign','neutral-robot']));
+});
+
+test('shared container namespace requires exact acquired parent metadata and ownership', () => {
+  const child=native(), parent=native();
+  parent.Id='d'.repeat(64);
+  child.HostConfig.NetworkMode='container:'+parent.Id;
+  (child.NetworkSettings.Networks as Record<string,unknown>).none={NetworkID:'none'};
+  const bound={...required,networkNamespaceContainerId:parent.Id};
+  assert.equal(validateObservation(facts,child,image,[],bound).status,'incomplete');
+  assert.equal(validateObservation(facts,child,image,[],bound,parent).status,'complete');
+  const foreign=structuredClone(parent);foreign.Config.Labels['org.robotics.runtime.run-id']='foreign';
+  assert.ok(validateObservation(facts,child,image,[],bound,foreign).mismatches.includes('network.namespace-container.owner'));
+  assert.ok(validateObservation(facts,child,image,[],{...bound,networkNamespaceContainerId:'e'.repeat(64)},parent).mismatches.includes('network.namespace-container.expected-id'));
+  assert.ok(validateObservation(facts,child,image,[],required,parent).missing.includes('network.namespace-container.expected-id'));
+});
+
+test('an exact source image ID is observed independently of its requested Compose name', () => {
+  assert.equal(validateObservation(facts,native(),image,[],{...required,imageId:'sha256:image'}).status,'complete');
+  assert.ok(validateObservation(facts,native(),image,[],{...required,imageId:'sha256:foreign'}).mismatches.includes('container.Image'));
+});

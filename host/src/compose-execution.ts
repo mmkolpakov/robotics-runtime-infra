@@ -20,6 +20,17 @@ export interface ComposeOptions {
 const commands = new Set(['version', 'config', 'up', 'run', 'logs', 'ps', 'stop', 'down', 'pull', 'wait', 'exec']);
 const forbidden = /^(?:(?:--project-name|--project-directory|--file|--context|--host|--profile)(?:=|$)|-[pf])/;
 
+const argumentOptions = new Set(['--name','--entrypoint','--user','--workdir','--index','--env','--volume','--label','--publish','-u','-w','-e','-v','-l']);
+function composeArguments(args:readonly string[]):readonly string[] {
+  if(args[0]!=='run' && args[0]!=='exec') return args;
+  for(let index=1;index<args.length;index++) {
+    const token=args[index]!;
+    if(token==='--') return args.slice(0,index);
+    if(!token.startsWith('-')) return args.slice(0,index+1);
+    if(argumentOptions.has(token)) index++;
+  }
+  return args;
+}
 export class ComposeExecution {
   constructor(private readonly jobs: FiniteJobs, private readonly options: ComposeOptions) {
     if (!/^[a-z0-9][a-z0-9_-]{1,62}$/.test(options.projectName)) throw new Error('invalid owned Compose project');
@@ -30,7 +41,7 @@ export class ComposeExecution {
     if (Object.keys(options.env ?? {}).some(k => ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH'].includes(k))) throw new Error('endpoint environment is host-owned');
   }
   async run(args: readonly string[], cancelSignal?: AbortSignal): Promise<FiniteJobResult> {
-    if (!commands.has(args[0] ?? '') || args.some(a => forbidden.test(a))) throw new Error('command cannot replace the owned Compose project or endpoint');
+    if (!commands.has(args[0] ?? '') || composeArguments(args).some(a => forbidden.test(a))) throw new Error('command cannot replace the owned Compose project or endpoint');
     return this.jobs.run({
       executable: this.options.executable,
       args: ['--project-name', this.options.projectName, ...this.options.files.flatMap(p => ['--file', p]), ...(this.options.profiles ?? []).flatMap(p => ['--profile', p]), ...args],
