@@ -1,3 +1,4 @@
+---
 x-owned: &owned
   image: "${SOURCE_METADATA_IMAGE:?exact image required}"
   user: "1000:1000"

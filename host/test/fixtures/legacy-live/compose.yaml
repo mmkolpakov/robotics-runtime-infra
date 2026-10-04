@@ -30,7 +30,16 @@ services:
     userns_mode: keep-id:uid=1000,gid=1000
     network_mode: none
     entrypoint: [/opt/contracts/bin/python]
-    command: [/source/host/workers/legacy-live/prepare-live.py, --source, /source, --input, /run/robotics/input, --data, /run/robotics, --run-id, "${ROBOTICS_RUN_ID:?owner required}"]
+    command:
+      - /source/host/workers/legacy-live/prepare-live.py
+      - '--source'
+      - /source
+      - '--input'
+      - /run/robotics/input
+      - '--data'
+      - /run/robotics
+      - '--run-id'
+      - ${ROBOTICS_RUN_ID:?owner required}
     volumes:
       - run-data:/run/robotics
       - run-input:/run/robotics/input
@@ -46,7 +55,15 @@ services:
     ipc: shareable
     command: [ros2, launch, robotics_runtime_infra, headless.launch.py]
     healthcheck:
-      test: [CMD, /usr/local/bin/robotics-entrypoint, timeout, "5", ros2, service, type, /simulator/get_simulator_features]
+      test:
+        - CMD
+        - /usr/local/bin/robotics-entrypoint
+        - timeout
+        - '5'
+        - ros2
+        - service
+        - type
+        - /simulator/get_simulator_features
       interval: 2s
       timeout: 6s
       start_period: 15s
@@ -55,17 +72,54 @@ services:
     <<: *ros
     network_mode: service:simulation
     ipc: service:simulation
-    command: [ros2, launch, robotics_runtime_infra, neutral_robot.launch.xml, 'start_simulator:=false', 'description_file:=/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf']
+    command:
+      - ros2
+      - launch
+      - robotics_runtime_infra
+      - neutral_robot.launch.xml
+      - start_simulator:=false
+      - >-
+        description_file:=/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf
   simulation-stepper:
     <<: *ros
     network_mode: service:simulation
     ipc: service:simulation
-    command: [python3, -m, robotics_runtime_infra.simulation_control, --namespace, /simulator, step, --steps, "1", --step-size-ns, "1000000", --interval-sec, "0.01"]
+    command:
+      - python3
+      - '-m'
+      - robotics_runtime_infra.simulation_control
+      - '--namespace'
+      - /simulator
+      - step
+      - '--steps'
+      - '1'
+      - '--step-size-ns'
+      - '1000000'
+      - '--interval-sec'
+      - '0.01'
   runtime-probe-publisher:
     <<: *ros
     network_mode: service:simulation
     ipc: service:simulation
-    command: [ros2, topic, pub, --rate, "20", --print, "0", --wait-matching-subscriptions, "1", --max-wait-time-secs, "30", --qos-reliability, reliable, --qos-depth, "100", /example/sequence, std_msgs/msg/UInt64, '{data: 1}']
+    command:
+      - ros2
+      - topic
+      - pub
+      - '--rate'
+      - '20'
+      - '--print'
+      - '0'
+      - '--wait-matching-subscriptions'
+      - '1'
+      - '--max-wait-time-secs'
+      - '30'
+      - '--qos-reliability'
+      - reliable
+      - '--qos-depth'
+      - '100'
+      - /example/sequence
+      - std_msgs/msg/UInt64
+      - '{data: 1}'
   runtime-metrics:
     <<: *ros
     network_mode: service:simulation
@@ -85,7 +139,28 @@ services:
     ipc: service:simulation
     stop_signal: SIGINT
     stop_grace_period: 30s
-    command: [ros2, bag, record, --storage, mcap, --output, /run/robotics/evidence/bags/recording, --regex, '^(/clock|/example/sequence|/joint_states|/tf)$', --qos-profile-overrides-path, /run/robotics/input/config/recording/qos-overrides.yaml, --storage-config-file, /run/robotics/input/config/recording/mcap-writer.yaml, --max-bag-size, "1048576", --max-bag-duration, "30", --max-cache-size, "67108864", --use-sim-time, --disable-keyboard-controls]
+    command:
+      - ros2
+      - bag
+      - record
+      - '--storage'
+      - mcap
+      - '--output'
+      - /run/robotics/evidence/bags/recording
+      - '--regex'
+      - ^(/clock|/example/sequence|/joint_states|/tf)$
+      - '--qos-profile-overrides-path'
+      - /run/robotics/input/config/recording/qos-overrides.yaml
+      - '--storage-config-file'
+      - /run/robotics/input/config/recording/mcap-writer.yaml
+      - '--max-bag-size'
+      - '1048576'
+      - '--max-bag-duration'
+      - '30'
+      - '--max-cache-size'
+      - '67108864'
+      - '--use-sim-time'
+      - '--disable-keyboard-controls'
     healthcheck:
       test: [CMD, /usr/local/bin/robotics-entrypoint, timeout, "5", ros2, service, type, /rosbag2_recorder/stop]
       interval: 2s
@@ -93,6 +168,7 @@ services:
       start_period: 10s
       retries: 10
   otel-collector:
+    # yamllint disable-line rule:line-length
     image: "docker.io/otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa"
     pull_policy: never
     user: "1000:1000"
@@ -113,7 +189,29 @@ services:
     <<: *ros
     network_mode: service:simulation
     ipc: service:simulation
-    command: [/opt/contracts/bin/robotics-acceptance, verify, --scenario, /run/robotics/scenario.yaml, --runtime, /run/robotics/runtime-manifest.json, --run-id, "${ROBOTICS_RUN_ID:?owner required}", --domain-id, primary, --run-context, /run/robotics/acceptance-run.json, --evidence-index, /run/robotics/evidence/evidence-index.json, --receipt-inventory, /run/robotics/evidence/receipt-inventory.json, --otel-metrics, /run/robotics/evidence/metrics.otlp.jsonl, --measurement-complete, /run/robotics/measurement-complete, --output, /run/robotics/results]
+    command:
+      - /opt/contracts/bin/robotics-acceptance
+      - verify
+      - '--scenario'
+      - /run/robotics/scenario.yaml
+      - '--runtime'
+      - /run/robotics/runtime-manifest.json
+      - '--run-id'
+      - ${ROBOTICS_RUN_ID:?owner required}
+      - '--domain-id'
+      - primary
+      - '--run-context'
+      - /run/robotics/acceptance-run.json
+      - '--evidence-index'
+      - /run/robotics/evidence/evidence-index.json
+      - '--receipt-inventory'
+      - /run/robotics/evidence/receipt-inventory.json
+      - '--otel-metrics'
+      - /run/robotics/evidence/metrics.otlp.jsonl
+      - '--measurement-complete'
+      - /run/robotics/measurement-complete
+      - '--output'
+      - /run/robotics/results
   legacy-coordinator:
     image: "${LEGACY_COORDINATOR_IMAGE:?immutable coordinator required}"
     pull_policy: never
