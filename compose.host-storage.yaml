@@ -32,6 +32,7 @@ services:
     labels:
       org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
   storage-host:
+    init: true
     image: node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697
     pull_policy: never
     user: "1000:1000"
@@ -51,6 +52,7 @@ services:
     labels:
       org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
   host-image:
+    init: true
     image: "${HOST_IMAGE:-local/robotics-runtime-infra/host:dev}"
     profiles: [host-preflight]
     pull_policy: never
@@ -66,6 +68,7 @@ services:
       storage-host:
         condition: service_completed_successfully
     environment:
+      ROBOTICS_EXPECTED_INIT_SHA256: "${ROBOTICS_EXPECTED_INIT_SHA256:-}"
       ROBOTICS_ENGINE_ROOTLESS_UID: "${ROBOTICS_ENGINE_ROOTLESS_UID:-}"
       ROBOTICS_ENGINE_ROOTLESS_GID: "${ROBOTICS_ENGINE_ROOTLESS_GID:-}"
     volumes:

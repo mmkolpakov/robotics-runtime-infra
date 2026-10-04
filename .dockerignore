@@ -56,3 +56,6 @@
 !host/dist/
 !host/dist/src/
 !host/dist/src/**
+!docker/media.Dockerfile
+!docker/host/
+!docker/host/init.Dockerfile

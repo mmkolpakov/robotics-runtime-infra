@@ -9,15 +9,14 @@ LABEL org.opencontainers.image.title="Robotics Cordis host" \
       org.opencontainers.image.created="${IMAGE_CREATED}"
 WORKDIR /opt/robotics/infra
 COPY host/package.json host/package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
-COPY host/dist/src ./dist/src
-# This context contains the compiled npm-pack asset. No Python/ROS or source build.
-COPY --from=host-asset /host.tgz /opt/robotics/host.tgz
+# The exact native host asset is the same fixed file dependency used by TypeScript.
+COPY --from=host-asset /host.tgz ./.tools/core.tgz
 RUN test -n "${HOST_ASSET_SHA256}" \
-    && printf '%s  %s\n' "${HOST_ASSET_SHA256}" /opt/robotics/host.tgz | sha256sum --check \
-    && npm install --ignore-scripts --no-audit --no-fund /opt/robotics/host.tgz \
+    && printf '%s  %s\n' "${HOST_ASSET_SHA256}" /opt/robotics/infra/.tools/core.tgz | sha256sum --check \
+    && npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     && test "$(node --version)" = v24.21.0 \
     && test "$(npm --version)" = 11.19.0
+COPY host/dist/src ./dist/src
 ADD --chmod=0555 https://github.com/docker/compose/releases/download/v5.3.1/docker-compose-linux-x86_64 /usr/local/bin/docker-compose
 RUN printf '%s  %s\n' f9ebc6ebdb19d769b793c245a736caaeb198c62587f13b25c660c13b4987f959 /usr/local/bin/docker-compose | sha256sum --check \
     && test "$(docker-compose version --short)" = 5.3.1

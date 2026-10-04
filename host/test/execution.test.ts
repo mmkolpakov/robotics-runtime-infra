@@ -17,12 +17,12 @@ test('Compose delegates finite argv and fixes the same Unix endpoint without inh
 });
 
 test('metadata API selection is explicit and rejects missing or disjoint ranges', () => {
-  const endpoint = {socketPath: '/run/engine.sock', clientMinApi: '1.24', clientMaxApi: '1.53'};
+  const endpoint = {socketPath: '/run/engine.sock', operationMinApi: '1.24', operationMaxApi: '1.53'};
   assert.equal(selectApi({ApiVersion: '1.41', MinAPIVersion: '1.24'}, endpoint).clientApi, '1.41');
   assert.throws(() => selectApi({ApiVersion: '1.41'}, endpoint), /incomplete/);
   assert.throws(() => selectApi({ApiVersion: '1.23', MinAPIVersion: '1.20'}, endpoint), /do not overlap/);
 });
-const facts = selectApi({ApiVersion: '1.41', MinAPIVersion: '1.24'}, {socketPath: '/run/engine.sock', clientMinApi: '1.24', clientMaxApi: '1.53'});
+const facts = selectApi({ApiVersion: '1.41', MinAPIVersion: '1.24'}, {socketPath: '/run/engine.sock', operationMinApi: '1.24', operationMaxApi: '1.53'});
 const required: ContainerRequirement = {runId: 'run1', projectName: 'owned-1', user: '10001:1000', imageDigest: 'repo@sha256:abc', mounts: [{destination: '/run/robotics/input', readOnly: true, volumeName: 'owned-input'}], hostConfig: {Memory: 268435456, ReadonlyRootfs: true}};
 function native() {
   return {Id: 'c'.repeat(64), Image: 'sha256:image', Config: {User: '10001:1000', Labels: {'org.robotics.runtime.run-id': 'run1', 'com.docker.compose.project': 'owned-1'}}, State: {Status: 'exited', Running: false, ExitCode: 0}, Mounts: [{Type: 'volume', Name: 'owned-input', Destination: '/run/robotics/input', RW: false}], HostConfig: {Memory: 268435456, ReadonlyRootfs: true, NetworkMode: 'none'}, NetworkSettings: {Networks: {}}};

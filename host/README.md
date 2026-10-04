@@ -7,8 +7,9 @@ results. It fixes the project/files/Unix endpoint and rejects arguments that
 replace them. Simulator SDKs and Python rules do not enter this package.
 
 Dockerode 5.0.1 first reads the same socket's unversioned `/version`. The adapter
-selects the explicit intersection of the configured client API range and the
-observed server range, then creates a versioned client. This is not automatic
+selects the explicit intersection of the configured metadata-operation API policy bounds and the
+observed server range, then creates a versioned client. These are our operation policy bounds, not a Dockerode SDK support guarantee.
+Required fields are checked on the actual endpoint. This is not automatic
 Dockerode negotiation. Compose 5.3.1 performs its own native negotiation.
 `EngineMetadata.inspect` retains raw container, image and network answers and
 checks owner labels, native IDs/digest, user, state/exit, named mounts and every
@@ -52,7 +53,13 @@ evidence-sink uses 10001. Their own entrypoints, cache needs, native identity
 and writable outputs must be qualified separately. Shared/system sockets and
 host network configuration are unchanged.
 
-Build and run the source checks with the pinned Node 24.21.0 / npm 11.19.0:
+Prepare the exact compiled native host npm-pack asset at the ignored fixed path
+`host/.tools/core.tgz`; the package lock records that file dependency integrity.
+TypeScript imports its public Jobs/request/result types instead of maintaining
+parallel interfaces. The image build supplies the same asset as `/host.tgz`
+through `host-asset`; C20/C21 supply the released H asset at that boundary.
+
+Build and run source checks with pinned Node 24.21.0 / npm 11.19.0:
 
 ```sh
 cd host
@@ -61,7 +68,14 @@ npm test
 ```
 
 A project-scoped Unix Podman API service and verified Compose executable can
-be prepared under `.tools` without changing the machine. The finite preflight
+be prepared under `.tools` without changing the machine. If HOME lacks its
+standard OCI init binary, `docker/host/init.Dockerfile` obtains stock catatonit
+from the pinned Ubuntu snapshot. Extract `/out/catatonit` to the owned
+`host/.tools/oci-init` and add only that directory to the project API service
+unit's PATH. No system package or containers configuration is changed.
+Production/fixture hosts use `init: true`; the preflight verifies HostConfig.Init
+and hashes the actual `/proc/1/exe` against the extracted stock init, without
+assuming the engine's init mount path or process name. The finite preflight
 requires the compiled core host's public `Context/Jobs` exports:
 
 ```sh

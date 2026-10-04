@@ -1,29 +1,11 @@
 import {isAbsolute} from 'node:path';
 
-/** The host Jobs service owns Execa, cancellation and process limits. */
-export interface FiniteJobRequest {
-  executable: string;
-  args: readonly string[];
-  cwd?: string;
-  timeoutMs?: number;
-  maxBufferBytes?: number;
-  cancelSignal?: AbortSignal;
-  env?: Readonly<Record<string, string>>;
-  extendEnv?: boolean;
-}
-export interface FiniteJobResult {
-  ok: boolean;
-  exitCode: number | undefined;
-  signal: string | undefined;
-  timedOut: boolean;
-  canceled: boolean;
-  stdout: string;
-  stderr: string;
-  diagnostic: string | undefined;
-  code: string | undefined;
-  durationMs: number;
-}
-export interface FiniteJobs {run(request: FiniteJobRequest): Promise<FiniteJobResult>}
+import type {JobRequest,JobResult,Jobs} from '@robotics-runtime/host';
+
+export type FiniteJobRequest = JobRequest;
+export type FiniteJobResult = JobResult;
+export type FiniteJobs = Pick<Jobs,'run'>;
+
 export interface ComposeOptions {
   executable: string;
   socketPath: string;
@@ -35,7 +17,7 @@ export interface ComposeOptions {
   timeoutMs?: number;
   maxBufferBytes?: number;
 }
-const commands = new Set(['version', 'config', 'up', 'run', 'logs', 'ps', 'stop', 'down', 'pull', 'wait']);
+const commands = new Set(['version', 'config', 'up', 'run', 'logs', 'ps', 'stop', 'down', 'pull', 'wait', 'exec']);
 const forbidden = /^(?:(?:--project-name|--project-directory|--file|--context|--host|--profile)(?:=|$)|-[pf])/;
 
 export class ComposeExecution {

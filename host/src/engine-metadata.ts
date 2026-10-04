@@ -4,7 +4,7 @@ import {isAbsolute} from 'node:path';
 type RecordValue = Record<string, unknown>;
 const object = (v: unknown): RecordValue | undefined => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as RecordValue : undefined;
 const api = (v: unknown): number | undefined => typeof v === 'string' && /^1\.\d+$/.test(v) ? Number(v.slice(2)) : undefined;
-export interface EngineEndpoint {socketPath: string; clientMinApi: string; clientMaxApi: string}
+export interface EngineEndpoint {socketPath: string; operationMinApi: string; operationMaxApi: string}
 export interface EngineFacts {endpoint: string; serverApi: string; serverMinApi: string; clientApi: string; versionResponse: unknown}
 export interface ContainerRequirement {
   runId: string;
@@ -26,10 +26,10 @@ export interface MetadataObservation {
 export function selectApi(versionResponse: unknown, endpoint: EngineEndpoint): EngineFacts {
   const version = object(versionResponse);
   const high = api(version?.ApiVersion), low = api(version?.MinAPIVersion);
-  const max = api(endpoint.clientMaxApi), min = api(endpoint.clientMinApi);
-  if (![high, low, max, min].every(v => v !== undefined)) throw new Error('incomplete Engine API range');
+  const max = api(endpoint.operationMaxApi), min = api(endpoint.operationMinApi);
+  if (![high, low, max, min].every(v => v !== undefined)) throw new Error('incomplete Engine API range or metadata operation policy');
   const selected = Math.min(high!, max!);
-  if (selected < Math.max(low!, min!)) throw new Error('Engine and metadata client API ranges do not overlap');
+  if (selected < Math.max(low!, min!)) throw new Error('Engine API range and metadata operation policy do not overlap');
   return {endpoint: `unix://${endpoint.socketPath}`, serverApi: version!.ApiVersion as string, serverMinApi: version!.MinAPIVersion as string, clientApi: `1.${selected}`, versionResponse};
 }
 export class EngineMetadata {
@@ -50,7 +50,9 @@ export class EngineMetadata {
     if (nativeApi !== '4.9.3') throw new Error('unqualified native parent namespace API');
     const native = new Docker({socketPath: this.socketPath, version: `v${nativeApi}`});
     const raw = await new Promise<unknown>((resolve, reject) => native.modem.dial({path: '/libpod/info', method: 'GET', statusCodes: {200: true}}, (error: unknown, value: unknown) => error ? reject(error) : resolve(value)));
-    const maps = object(object(object(raw)?.host)?.idMappings);
+    const host = object(object(raw)?.host);
+    if (object(host?.security)?.rootless !== true) throw new Error('native Engine is not observed rootless');
+    const maps = object(host?.idMappings);
     const valid = (v: unknown): v is unknown[] => Array.isArray(v) && v.length > 0 && v.every(row => ['container_id','host_id','size'].every(k => Number.isInteger(object(row)?.[k]) && Number(object(row)?.[k]) >= (k === 'size' ? 1 : 0)));
     if (!valid(maps?.uidmap) || !valid(maps?.gidmap)) throw new Error('incomplete native parent UID/GID maps');
     return {nativeApi, uidMap: maps.uidmap, gidMap: maps.gidmap, raw};
