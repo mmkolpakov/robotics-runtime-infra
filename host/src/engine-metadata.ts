@@ -67,8 +67,9 @@ export class EngineMetadata {
     return {containers, volumes, networks};
   }
   /** Read evidence only: no Engine exec or lifecycle writes are exposed here. */
-  async readLogs(containerId:string,owner:{runId:string;projectName:string},
-    limits:{tailLines:number;maxBytes:number;deadlineMs:number},cancel?:AbortSignal):Promise<{containerId:string;clientApi:string;tty:boolean;bytes:Buffer}> {
+  async readLogs(containerId:string,requestedOwner:{runId:string;projectName:string},
+    requestedLimits:{tailLines:number;maxBytes:number;deadlineMs:number},cancel?:AbortSignal):Promise<{containerId:string;clientApi:string;tty:boolean;bytes:Buffer}> {
+    const owner={...requestedOwner},limits={...requestedLimits};
     if(!/^[a-f0-9]{64}$/.test(containerId)) throw new Error('exact previously observed container ID required');
     if(!owner.runId||!owner.projectName) throw new Error('native log ownership is required');
     if(!Number.isSafeInteger(limits.tailLines)||limits.tailLines<1||limits.tailLines>10000 ||
