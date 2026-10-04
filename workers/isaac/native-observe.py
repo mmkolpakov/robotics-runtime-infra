@@ -5,8 +5,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import math
+import sys
 from pathlib import Path
+
+LOGGER = logging.getLogger(__name__)
 
 
 def arguments() -> argparse.Namespace:
@@ -48,6 +52,7 @@ def main() -> int:
     stage = None
     render_product = None
     annotator = None
+    exit_code = 1
     try:
         from isaacsim.core.experimental.utils import stage as stage_utils
         from isaacsim.core.rendering_manager import RenderingManager
@@ -126,7 +131,16 @@ def main() -> int:
         }
         # Raw native diagnostics, not a contract or a signed qualification verdict.
         print(json.dumps(facts, allow_nan=False), flush=True)
+        exit_code = 0
         return 0
+    except Exception as error:
+        print(
+            json.dumps({"status": "error", "diagnostic": str(error)}),
+            file=sys.stderr,
+            flush=True,
+        )
+        LOGGER.exception("Native Isaac workload failed")
+        return 1
     finally:
         # A native capture is retained before releasing its renderer resources.
         if annotator is not None and render_product is not None:
@@ -134,7 +148,7 @@ def main() -> int:
             render_product.destroy()
         stage = None
         # Caller retains stdout; a closure failure remains a nonzero process outcome.
-        app.close()
+        app.close(exit_code=exit_code)
 
 
 if __name__ == "__main__":
