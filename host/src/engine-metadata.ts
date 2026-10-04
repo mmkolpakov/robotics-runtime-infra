@@ -179,7 +179,16 @@ export function validateObservation(engine: EngineFacts, rawContainer: unknown, 
   if(namespaceMode!=='none' && !Object.keys(usedNetworks??{}).length) missing.push('network.identity');
   for(const [name,value] of Object.entries(namespaceMode==='none'?{}:usedNetworks??{})) {
     const networkId=requireField(object(value),'NetworkID',`network.${name}.NetworkID`,string);
-    if(!networks.some(n=>object(n)?.Id===networkId)) missing.push(`network.${name}.inspect`);
+    const components=object(engine.versionResponse)?.Components;
+    const qualifiedPodmanName=Array.isArray(components)&&components.map(object).some(component=>component?.Name==='Podman Engine'&&component.Version==='4.9.3'&&object(component.Details)?.APIVersion==='4.9.3');
+    const matched=networks.some(raw=>{
+      const actual=object(raw);
+      if(actual?.Id===networkId) return true;
+      // Podman 4.9.3's Docker projection may put the actual native name in NetworkID.
+      // Accept only the inspected name/key/reference chain with a native immutable ID.
+      return qualifiedPodmanName&&actual?.Name===name&&actual.Name===networkId&&typeof actual.Id==='string'&&/^[a-f0-9]{64}$/.test(actual.Id);
+    });
+    if(!matched) missing.push(`network.${name}.inspect`);
   }
   return {status: missing.length || mismatches.length ? 'incomplete' : 'complete', missing, mismatches, engine, container: rawContainer, image: rawImage, networks, networkNamespaceContainer:rawNamespaceContainer};
 }

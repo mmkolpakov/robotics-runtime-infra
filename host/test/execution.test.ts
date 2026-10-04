@@ -94,3 +94,17 @@ test('an exact source image ID is observed independently of its requested Compos
   assert.equal(validateObservation(facts,native(),image,[],{...required,imageId:'sha256:image'}).status,'complete');
   assert.ok(validateObservation(facts,native(),image,[],{...required,imageId:'sha256:foreign'}).mismatches.includes('container.Image'));
 });
+
+test('qualified native network name projection requires actual inspected name and immutable ID', () => {
+  const child=native();child.HostConfig.NetworkMode='owned-1_default';
+  (child.NetworkSettings.Networks as Record<string,unknown>)['owned-1_default']={NetworkID:'owned-1_default'};
+  const actual={Name:'owned-1_default',Id:'a'.repeat(64)};
+  const qualified={...facts,versionResponse:{ApiVersion:'1.41',MinAPIVersion:'1.24',Components:[{Name:'Podman Engine',Version:'4.9.3',Details:{APIVersion:'4.9.3'}}]}};
+  assert.equal(validateObservation(facts,child,image,[actual],required).status,'incomplete');
+  assert.equal(validateObservation(qualified,child,image,[actual],required).status,'complete');
+  assert.equal(validateObservation(qualified,child,image,[{...actual,Name:'foreign'}],required).status,'incomplete');
+  assert.equal(validateObservation(qualified,child,image,[{Name:actual.Name}],required).status,'incomplete');
+  assert.equal(validateObservation(qualified,child,image,[{...actual,Id:'not-native-id'}],required).status,'incomplete');
+  const other={...qualified,versionResponse:{Components:[{Name:'Podman Engine',Version:'4.9.4',Details:{APIVersion:'4.9.4'}}]}};
+  assert.equal(validateObservation(other,child,image,[actual],required).status,'incomplete');
+});
