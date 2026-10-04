@@ -5,7 +5,7 @@ setup() {
   EMITTER="${REPOSITORY_ROOT}/docker/runtime/emit-runtime-manifest"
   : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before these tests}"
   export ROBOTICS_CONTRACTS_CLI
-  export ROBOTICS_FOUNDATION_LOCK="${REPOSITORY_ROOT}/foundation.repos"
+  export ROBOTICS_FOUNDATION_LOCK="${REPOSITORY_ROOT}/config/foundation-lock.json"
   export ROBOTICS_RUNTIME_ID=fixture.runtime
   export ROBOTICS_OCI_DIGEST="sha256:$(printf '%064d' 1)"
   export ROBOTICS_OCI_REFERENCE="ghcr.io/example/runtime@${ROBOTICS_OCI_DIGEST}"
@@ -369,4 +369,29 @@ CASES
   printf 'previous\n' >"${OUTPUT}"
   run bash "${EMITTER}" "${OUTPUT}"
   assert_previous_output_preserved
+}
+
+@test "runtime producer rejects a foundation lock from the legacy layout" {
+  printf 'previous\n' >"$OUTPUT"
+  export ROBOTICS_FOUNDATION_LOCK="${BATS_TEST_TMPDIR}/legacy-lock.json"
+  printf '{"repositories":{"robotics-runtime":{"version":"dc02c62897372514537cf241f06dc71b9f960c44"}}}\n' >"$ROBOTICS_FOUNDATION_LOCK"
+  run bash "$EMITTER" "$OUTPUT"
+  assert_previous_output_preserved
+}
+
+@test "runtime producer records declared lock separately and rejects installed SDK mismatch" {
+  export ROBOTICS_FOUNDATION_LOCK="${BATS_TEST_TMPDIR}/mismatch-lock.json"
+  jq '.packages.contracts.version = "0.0.0"' "${REPOSITORY_ROOT}/config/foundation-lock.json" >"$ROBOTICS_FOUNDATION_LOCK"
+  printf 'previous\n' >"$OUTPUT"
+  run bash "$EMITTER" "$OUTPUT"
+  assert_previous_output_preserved
+  [[ "$output" == *"installed contracts version"* ]]
+  export ROBOTICS_FOUNDATION_LOCK="${REPOSITORY_ROOT}/config/foundation-lock.json"
+  export ROBOTICS_SDK_IDENTITY_OUTPUT="${BATS_TEST_TMPDIR}/sdk-identity.json"
+  run bash "$EMITTER" "$OUTPUT"
+  [ "$status" -eq 0 ]
+  run jq -e '.declared_workspace.revision == "dc02c62897372514537cf241f06dc71b9f960c44" and
+    .observed_installed_versions == {contracts:"0.18.2",harness:"0.19.1"} and
+    (.source_commit_claim | contains("versions alone do not prove"))' "$ROBOTICS_SDK_IDENTITY_OUTPUT"
+  [ "$status" -eq 0 ]
 }
