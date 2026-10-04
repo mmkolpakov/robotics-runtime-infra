@@ -1,5 +1,18 @@
 # Compatibility Policy
 
+## Selected architecture and qualification boundary
+
+Architecture C is the selected target: the public Python contracts/harness,
+an upstream Cordis host, and separate simulator providers. Its implementation
+and combined execution qualification are pending. The retained ROS v1 profile
+keeps the supported basis below. Native providers require separate environment
+and capability evidence; the common host does not require ROS or Gazebo.
+
+[The qualification baseline](qualification-baseline.md) separates current
+source, accepted R9, published R10 and the failed B3 released caller. B3 remains
+open: native entity checks passed, but strict stepped Clock failed and
+JointState readiness timed out. No later architecture claim closes those gates.
+
 ## Supported Basis
 
 The runtime basis is Ubuntu 24.04, ROS 2 Jazzy, and Gazebo Harmonic. Exact APT
@@ -26,14 +39,17 @@ The released infra `v0.9.0-rc.1` uses contracts 0.18.1 and harness 0.19.0. Its
 stock UInt64 simulation profile passed released-mode qualification and independent
 consumer verification. The historical `v0.8.0-rc.1` belongs to the legacy generation.
 
-The released infra `v0.10.0-rc.1` contains the
+The published infra `v0.10.0-rc.1` contains the
 [neutral robot fixture](../examples/neutral-robot/README.md) from infra commit
 `d6dc8a1c6b976faacab7b371821e9af54b9883c2`. Its contracts 0.18.2 and harness
 0.19.1 come from runtime workspace commit
 `dc02c62897372514537cf241f06dc71b9f960c44`, recorded in the foundation lock.
 Published image provenance, source integration and independent qualification of
 a released consumer are separate gates. These software checks do not qualify
-named hardware targets.
+named hardware targets. The neutral robot released B3 attempt
+`37157837270` failed and its independent consumer was skipped; R10 publication
+is not accepted B3 qualification. Caller and tooling SHAs are recorded in
+[the baseline](qualification-baseline.md).
 
 The new generation uses `subject_digest` in permits, recording summaries,
 qualification predicate `/qualification-bundle/v1`, and OTLP metrics with

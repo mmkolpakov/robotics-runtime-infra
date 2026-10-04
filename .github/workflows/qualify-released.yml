@@ -1,5 +1,7 @@
 ---
 name: qualify-released-runtime
+# B3 remains open: retained run 37157837270 failed strict Clock/JointState gates.
+# See docs/qualification-baseline.md; keep caller/tooling/image identities distinct.
 
 on:
   workflow_dispatch:

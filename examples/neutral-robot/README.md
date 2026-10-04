@@ -1,5 +1,12 @@
 # Neutral robot foundation fixture
 
+The selected target is architecture C. This fixture is the retained ROS v1
+qualification profile; [the baseline](../../docs/qualification-baseline.md)
+records its separate source, caller, tooling and published-image identities.
+The released B3 run `37157837270` failed: native entity checks passed, Clock
+overshot by 107 ms, and qualifying JointState readiness reached its 90-second
+deadline. TF and the independent consumer did not run. These gates remain open.
+
 Run the existing foundation source import, validation and image build, then:
 
 ```sh
@@ -39,7 +46,10 @@ provenance before execution; it does not build images. Run it from this reposito
 gh workflow run qualify-released.yml --repo mmkolpakov/robotics-runtime-infra --ref main
 ```
 
-The workflow retains the qualification package and a separate consumer report.
+A successful workflow retains the qualification package and a separate consumer
+report. Failed readiness retains diagnostics and raw observations; it does not
+produce a signed success. The workflow below is a strict candidate entrypoint,
+not a claim that R10 or the current caller passed B3.
 That consumer installs contracts 0.18.2 and harness 0.19.1 from PyPI, verifies
 the retained bytes under the included ephemeral key and readmits the robot
 without a producer snapshot. Image provenance and package integrity are
