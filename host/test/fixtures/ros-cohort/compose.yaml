@@ -1,3 +1,4 @@
+---
 services:
   facts:
     image: "${ROS_COHORT_IMAGE:?exact image required}"
@@ -12,4 +13,9 @@ services:
     tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
     labels:
       org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run required}"
-    command: [/opt/contracts/bin/python, -c, "import importlib.metadata as m,xml.etree.ElementTree as E,json,hashlib;print(json.dumps({'contracts':m.version('robotics-runtime-contracts'),'harness':m.version('robotics-acceptance-harness'),'ros_gz_sim':E.parse('/opt/ros/jazzy/share/ros_gz_sim/package.xml').getroot().findtext('version'),'simulation_interfaces':E.parse('/opt/ros/jazzy/share/simulation_interfaces/package.xml').getroot().findtext('version'),'createSha256':hashlib.sha256(open('/opt/ros/jazzy/lib/ros_gz_sim/create','rb').read()).hexdigest()}))"]
+    command:
+      - /opt/contracts/bin/python
+      - '-c'
+      - >-
+        import importlib.metadata as m,xml.etree.ElementTree as
+        E,json,hashlib;print(json.dumps({'contracts':m.version('robotics-runtime-contracts'),'harness':m.version('robotics-acceptance-harness'),'ros_gz_sim':E.parse('/opt/ros/jazzy/share/ros_gz_sim/package.xml').getroot().findtext('version'),'simulation_interfaces':E.parse('/opt/ros/jazzy/share/simulation_interfaces/package.xml').getroot().findtext('version'),'createSha256':hashlib.sha256(open('/opt/ros/jazzy/lib/ros_gz_sim/create','rb').read()).hexdigest()}))

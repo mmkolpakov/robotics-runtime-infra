@@ -1,15 +1,37 @@
-# Stock ROS source cohort readiness
+# Stock ROS source cohort
 
-This source-only cohort installs the signed stock `ros_gz_sim` 1.0.24 and `simulation_interfaces` 1.5.1 Debian packages on ROS Jazzy / Ubuntu Noble with Gazebo Harmonic. It extends the exact existing SDK 0.18.2 / Harness 0.19.1 source coordinator image `sha256:1c227795630eb5d3a5069774031321f7aa48a47179af8345432bf1a0be6c7c60`; it does not change the retained 1.0.22 joint images or immutable R10. ROS upstream source is read for API evidence and is never built or overlaid in this cohort.
+The source cohort installs signed Debian ros_gz_sim 1.0.24 and
+simulation_interfaces 1.5.1 on Jazzy / Ubuntu Noble / Gazebo Harmonic.
+It extends the installed contracts 0.18.2 / harness 0.19.1 source coordinator.
+R10 and the retained 1.0.22 images remain unchanged; no upstream source overlay is used.
 
-The stock [ros_gz 1.0.24 tag](https://github.com/gazebosim/ros_gz/tree/5912bfe7976a79d2cc9f373b2d40a8a3a3e33da2) resolves to `5912bfe7976a79d2cc9f373b2d40a8a3a3e33da2`. The [interfaces 1.5.1 tag](https://github.com/ros-simulation/simulation_interfaces/tree/a3c60ff2715dbe5e9d5cddce410d9a7ffe771960) resolves to `a3c60ff2715dbe5e9d5cddce410d9a7ffe771960`. The tagged plugin registers native GetEntities, GetSimulatorFeatures, GetSimulationState, SetSimulationState, and StepSimulation; the interfaces define successful Result separately from unsupported Result. Runtime code continues comparing the imported native constant. Source file hashes are retained in `docs/proofs/ros-cohort-stock-source.json`.
+## Identity and build
 
-The dated ROS snapshot is `2026-09-11`, and Ubuntu remains `20260930T000000Z`. Native gpgv verified the ROS InRelease signature with the existing SHA-256 locked snapshot key `2917845bafcabbf651ed70e967beb61ee467ae29292288c7ccd5d7d76e5f2a2f`, RSA fingerprint `4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA`. The signed package index matches SHA-256 `32f0264889a3a40abe9fd5e589bebcc3d81e5d60acd99c8a67511f55b0cc3dc8` and 1,157,628 compressed bytes. The snapshot HTTPS endpoint failed hostname verification; the existing signed HTTP APT route is used, and signature checking remains enabled.
+The fixed ROS snapshot is 2026-09-11; Ubuntu is 20260930T000000Z.
+The existing locked key verifies the InRelease signature and package index.
+All six ros_gz packages, interfaces and the exact 85-package installation delta
+are pinned in the source lock and APT lists. The runtime checks the complete
+1622-package inventory, stock binary ownership, prefix and installed SDK versions.
 
-The exact amd64 simulation package is `1.0.24-1noble.20260905.085151` (Debian SHA-256 `6fd95340cc7c75181127e14b731bec52ffdb4e40a6c0d258ce93ac90e44c9f41`); the interfaces package is `1.5.1-1noble.20260902.041638` (`f69ea252cf6872dce7783f04575e3e33c1fe1fd4c14f0da4d1587677e1032040`). The lock lists the full six-package ros_gz family and interfaces. The native signed APT resolver succeeded on the fixed base, producing an exact 85-package install/upgrade delta in `docker/apt/ros-cohort-source-closure.packages`. Availability image: `sha256:6bce5212b6df49d751418ac2273e0844f7d1548f963788a3c542f18127c58df9`.
+[The lock](../config/ros-cohort-source.lock.json) contains versions, archive hashes,
+snapshot key and source tags. The tagged plugin registers native entity, features,
+state and stepping services; runtime results use imported interface constants.
+[Source evidence](proofs/ros-cohort-stock-source.json) retains the signed index
+and tagged API file hashes.
 
-The runtime stage installs that exact delta and checks each installed version, the complete dpkg inventory, stock package ownership and `/opt/ros/jazzy` prefix, actual SDK package versions, native interface imports, and Gazebo versions. Runtime installation and the native package probe have now passed. The strict native source B3 gate remains pending. The inherited rosdep list already contains fixed Git URLs; the new image updates those URLs to one new fixed revision before invoking the unchanged snapshot helper. The first two availability build failures and their diagnostics are retained, as are the successful third resolver run, under `artifacts/ros-cohort`. No system packages or shared helpers were changed.
+Build the project-only runtime stage of docker/ros-cohort-source.Dockerfile
+with the fixed source revision and the native Podman Docker image format.
+System packages, registry settings and the shared snapshot helper are unchanged.
 
-Build the runtime with project Podman using `--format=docker --pull=never --target=runtime -f docker/ros-cohort-source.Dockerfile` and the exact source revision argument. Subsequent source checks must retain the same admitted asset/canonical-before-owner ordering, missing-file native absence, positive native entity/canonical proof, exact stepping, one Clock publisher, fresh exact JointState/TF, lifecycle cleanup ownership, public evaluator/signing, and independent retained-only verification. These checks do not establish released R10 equivalence until separately completed.
+## Native observation scope
 
-Actual runtime image: `sha256:440bad2fc6b911ea0e8664c04653cf1b540248d82688fcd2af3a1258677fab21`, repository reference `localhost/rr-ros124-source@sha256:679efb941fec0361ee014dd4a16e952dbed23b76df1d10709f78d90a1d9b8b5f`, built from the readiness recipe commit `1ce02aae413fe0de6adb798b8701c1778d467e41`. Native Jobs → Compose → same Engine API 1.41 verified actual SDK 0.18.2 / Harness 0.19.1, ros_gz_sim 1.0.24, interfaces 1.5.1, Gazebo 8.11.0, all 85 exact delta versions, stock binary ownership/prefix, and successful dpkg file verification. Complete native inventory and hash-bound raw facts are indexed by `docs/proofs/ros-cohort-runtime.json`. The observed package probe container exited cleanly; guarded project cleanup then showed no acquired resources. This proves installed package and file identity, while strict B3 is a separate subsequent run.
+Native Jobs/Compose/Engine API 1.41 observed ros_gz_sim 1.0.24, interfaces 1.5.1,
+Gazebo 8.11.0 and public SDK 0.18.2 / harness 0.19.1.
+Package versions, ownership and dpkg file checks passed; the probe exited zero
+and guarded project cleanup was empty.
+[Runtime evidence](proofs/ros-cohort-runtime.json) binds the image and raw facts.
+
+Stock B3 must separately prove canonical initialization before the sole Clock
+owner, entity presence, exact stepping, fresh JointState/TF, original LIVE
+evaluation, recording drain, durable export, guarded cleanup and portable verification.
+Installed-package proof does not qualify a released caller.
