@@ -85,7 +85,15 @@ def main() -> int:
             annotator = rep.AnnotatorRegistry.get_annotator("rgb")
             annotator.attach([render_product.path])
         for _ in range(args.render_frames):
-            RenderingManager.render()
+            if annotator is not None:
+                rep.orchestrator.step(
+                    rt_subframes=4,
+                    delta_time=0.0,
+                    pause_timeline=False,
+                    wait_for_render=True,
+                )
+            else:
+                RenderingManager.render()
         if annotator is not None:
             rgba = annotator.get_data()
             if rgba.shape != (args.height, args.width, 4):
