@@ -1,0 +1,42 @@
+---
+services:
+  isaac:
+    image: nvcr.io/nvidia/isaac-sim:6.1.0@sha256:0c16dd67d09a70ea474f2c809a13c4d09bd23c738184cf1bf28af487ecd39080
+    profiles: [isaac-native]
+    init: true
+    user: "1234:1234"
+    group_add: ["1000"]
+    gpus: all
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      ACCEPT_EULA: "Y"
+      PRIVACY_CONSENT: "N"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,video
+    entrypoint: [/isaac-sim/python.sh, /run/robotics/input/isaac/native-observe.py]
+    command:
+      - --scene
+      - /run/robotics/input/isaac/fixture.usda
+      - --expected-scene-sha256
+      - ${ISAAC_SCENE_SHA256:?admitted scene digest is required}
+      - --steps
+      - "60"
+    volumes:
+      - input:/run/robotics/input:ro
+      - result:/run/robotics
+      - cache:/isaac-sim/.cache
+    networks: [isaac-private]
+    labels:
+      org.robotics.runtime.provider: isaac-native
+      org.robotics.runtime.qualification: source-candidate
+volumes:
+  input:
+    external: true
+    name: ${ROBOTICS_INPUT_VOLUME:?owned input volume is required}
+  result:
+    external: true
+    name: ${ROBOTICS_RESULT_VOLUME:?owned result volume is required}
+  cache:
+networks:
+  isaac-private:
+    internal: true
