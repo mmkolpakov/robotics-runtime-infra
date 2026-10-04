@@ -45,7 +45,9 @@ After independently observed source cleanup, separate retained-only workers call
 the existing public aggregate CLI and unchanged package, statement, signing and
 portable verification helpers. They preserve the original live result. They do
 not evaluate a finalized playback. Worker cleanup uses a fresh bounded signal on
-success, failure or cancellation, and keeps retained payloads.
+success, failure or cancellation. The shared read-only project ownership API
+checks all native project resources before orphan teardown; foreign ownership
+refuses cleanup and retains diagnostics. Retained payloads survive worker cleanup.
 
 This is a source qualification fixture. The old neutral runner remains the
 equivalence baseline, and released readiness remains a separate gate.

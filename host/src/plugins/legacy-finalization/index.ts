@@ -63,8 +63,8 @@ export class LegacyFinalization extends Service {
     if(!id) id=(await this.require(service+'-id',['ps','--all','--quiet',service],signal)).stdout.trim();
     const requirement=this.plan.requirements[service];
     if(!requirement) throw new Error('no admitted native requirement for '+service);
-    this.engine??=await EngineMetadata.connect({socketPath:this.plan.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'});
-    const observed=await this.engine.inspect(id,requirement);
+    this.engine??=await EngineMetadata.connect({socketPath:this.plan.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal,deadlineMs:Math.min(this.plan.timeoutMs,120000)});
+    const observed=await this.engine.inspect(id,requirement,{cancelSignal:signal,deadlineMs:Math.min(this.plan.timeoutMs,120000)});
     await this.retain(service+'-native-state',observed);
     if(observed.status!=='complete') throw new Error(service+' native metadata incomplete');
     return object(object(observed.container).State);
@@ -76,7 +76,7 @@ export class LegacyFinalization extends Service {
   }
   async beginMeasurement(signal:AbortSignal):Promise<readonly ArtifactRef[]>{
     if(this.observerId) throw new Error('measurement observer already acquired');
-    await this.compose.requireVersion();
+    await this.compose.requireVersion(signal);
     await this.retain('startup-readiness-inputs',this.plan.startupRefs);
     const source=await this.facts(this.plan.simulationService,signal,this.plan.sourceContainerId);
     if(source.Running!==true) throw new Error('native measurement source is not running');
@@ -193,10 +193,19 @@ export class LegacyFinalization extends Service {
     return this.retain('aggregate-complete',result);
   }
   private async cleanupPostprocess(signal:AbortSignal):Promise<void>{
+    const engine=await EngineMetadata.connect({socketPath:this.plan.postprocessCompose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
+    const owner={runId:this.plan.runId,projectName:this.plan.postprocessCompose.projectName};
+    const before=await engine.projectOwnership(owner,{cancelSignal:signal});
+    await this.retain('postprocess-ownership-preflight',before);
+    if(before.status!=='complete') throw new Error('qualification worker project ownership incomplete');
     const clean=await this.postprocess.run(['down','--remove-orphans'],signal);
     await this.retain('postprocess-cleanup',clean);
     if(!clean.ok) throw new Error('finite qualification worker project cleanup failed');
-    const remaining=await (await EngineMetadata.connect({socketPath:this.plan.postprocessCompose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'})).remainingOwned(this.plan.runId);
+    const remaining=await engine.remainingOwned(this.plan.runId,{cancelSignal:signal});
+    const after=await engine.projectOwnership(owner,{cancelSignal:signal});
+    await this.retain('postprocess-project-inventory',after);
+    const projectVolumes=object(after.inventory.volumes).Volumes;
+    if(after.status!=='complete'||after.inventory.containers.length||after.inventory.networks.length||projectVolumes!==null&&(!Array.isArray(projectVolumes)||projectVolumes.length)) throw new Error('qualification worker project resources remain');
     const owned=remaining.containers.filter(v=>object(object(v).Labels)['com.docker.compose.project']===this.plan.postprocessCompose.projectName);
     const networks=remaining.networks.filter(v=>object(object(v).Labels)['com.docker.compose.project']===this.plan.postprocessCompose.projectName);
     if(owned.length||networks.length) throw new Error('qualification worker resources remain');
