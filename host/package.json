@@ -32,6 +32,10 @@
     "./plugins/px4": {
       "types": "./dist/src/plugins/px4-provider/index.d.ts",
       "import": "./dist/src/plugins/px4-provider/index.js"
+    },
+    "./plugins/webots": {
+      "types": "./dist/src/plugins/webots-provider/index.d.ts",
+      "import": "./dist/src/plugins/webots-provider/index.js"
     }
   },
   "files": [
@@ -42,12 +46,15 @@
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {
-    "dockerode": "5.0.1",
-    "@robotics-runtime/host": "file:.tools/core.tgz"
+    "dockerode": "5.0.1"
   },
   "devDependencies": {
     "@types/dockerode": "4.0.1",
     "@types/node": "24.19.1",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "@robotics-runtime/host": "file:.tools/core.tgz"
+  },
+  "peerDependencies": {
+    "@robotics-runtime/host": "0.1.0-rc.0"
   }
 }
