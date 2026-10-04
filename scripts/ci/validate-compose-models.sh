@@ -13,7 +13,7 @@ jq -e '
     (.name | type == "string" and length > 0) and
     (.files | type == "array" and length > 0) and
     (.files[0] as $base |
-      ["compose.yaml", "compose.host.yaml", "compose.host-storage.yaml"] |
+      ["compose.yaml", "compose.host.yaml", "compose.host-storage.yaml", "compose.media.yaml"] |
       index($base) != null) and
     all(.files[]; type == "string" and endswith(".yaml"))
   ) and

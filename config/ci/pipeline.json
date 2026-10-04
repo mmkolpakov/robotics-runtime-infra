@@ -1,5 +1,6 @@
 {
   "compose_models": [
+    {"name": "media", "files": ["compose.media.yaml"]},
     {"name": "host", "files": ["compose.host.yaml"]},
     {"name": "host-podman", "files": ["compose.host.yaml", "compose.host.podman.yaml"]},
     {"name": "host-storage", "files": ["compose.host-storage.yaml"]},

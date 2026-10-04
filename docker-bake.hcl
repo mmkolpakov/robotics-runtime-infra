@@ -565,3 +565,15 @@ target "cordis-host" {
   platforms = ["linux/amd64"]
   tags = ["${REGISTRY}/robotics-runtime-infra/host:${VERSION}"]
 }
+
+# Independent finite GI worker. Source candidate until C21 image inventory gates.
+group "media" {
+  targets = ["media-worker"]
+}
+target "media-worker" {
+  context = "."
+  dockerfile = "docker/media.Dockerfile"
+  args = { UBUNTU_SNAPSHOT = UBUNTU_SNAPSHOT }
+  platforms = ["linux/amd64"]
+  tags = ["${REGISTRY}/robotics-runtime-infra/media:${VERSION}"]
+}
