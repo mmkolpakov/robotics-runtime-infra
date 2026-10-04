@@ -8,7 +8,8 @@ replace them. Simulator SDKs and Python rules do not enter this package.
 
 Dockerode 5.0.1 first reads the same socket's unversioned `/version`. The adapter
 selects the explicit intersection of the configured metadata-operation API policy bounds and the
-observed server range, then creates a versioned client. These are our operation policy bounds, not a Dockerode SDK support guarantee.
+observed server range, then creates a versioned client. These are our operation policy bounds, not a
+Dockerode SDK support guarantee.
 Required fields are checked on the actual endpoint. This is not automatic
 Dockerode negotiation. Compose 5.3.1 performs its own native negotiation.
 `EngineMetadata.inspect` retains raw container, image and network answers and
@@ -42,7 +43,8 @@ retained. Cleanup now requires empty native owner inventories.
 
 A failed diagnostic incorrectly compared a child's parent-relative ID to the
 HOME ID directly. Its failure is retained; it does not prove that Compose
-ignored keep-id. [Linux user namespace semantics](https://man7.org/linux/man-pages/man7/user_namespaces.7.html)
+ignored keep-id. [Linux user namespace
+semantics](https://man7.org/linux/man-pages/man7/user_namespaces.7.html)
 explain why both mapping levels are required. Compose declarations never fill
 that native evidence. Required missing maps and mismatched fields fail closed.
 Both containers' native capability sets must be empty.

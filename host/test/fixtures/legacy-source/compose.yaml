@@ -41,7 +41,15 @@ services:
     ipc: shareable
     command: [ros2, launch, robotics_runtime_infra, headless.launch.py]
     healthcheck:
-      test: [CMD, /usr/local/bin/robotics-entrypoint, timeout, "5", ros2, service, type, /simulator/get_simulator_features]
+      test:
+        - CMD
+        - /usr/local/bin/robotics-entrypoint
+        - timeout
+        - "5"
+        - ros2
+        - service
+        - type
+        - /simulator/get_simulator_features
       interval: 2s
       timeout: 6s
       start_period: 15s
@@ -50,7 +58,13 @@ services:
     <<: *native
     network_mode: service:simulation
     ipc: service:simulation
-    command: [ros2, launch, robotics_runtime_infra, neutral_robot.launch.xml, 'start_simulator:=false', 'description_file:=/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf']
+    command:
+      - ros2
+      - launch
+      - robotics_runtime_infra
+      - neutral_robot.launch.xml
+      - 'start_simulator:=false'
+      - 'description_file:=/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf'
     depends_on:
       simulation:
         condition: service_healthy
@@ -58,7 +72,19 @@ services:
     <<: *native
     network_mode: service:simulation
     ipc: service:simulation
-    command: [python3, -m, robotics_runtime_infra.simulation_control, --namespace, /simulator, step, --steps, "1", --step-size-ns, "1000000", --interval-sec, "0.01"]
+    command:
+      - python3
+      - -m
+      - robotics_runtime_infra.simulation_control
+      - --namespace
+      - /simulator
+      - step
+      - --steps
+      - "1"
+      - --step-size-ns
+      - "1000000"
+      - --interval-sec
+      - "0.01"
     depends_on:
       simulation:
         condition: service_healthy

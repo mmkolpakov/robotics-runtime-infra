@@ -12,7 +12,7 @@ services:
     mem_limit: 512m
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,mode=1777,size=512m]
+    tmpfs: ["/tmp:rw,mode=1777,size=512m"]
     entrypoint: []
     volumes:
       - run-data:/run/robotics:ro

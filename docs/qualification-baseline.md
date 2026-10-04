@@ -20,7 +20,8 @@ R10, `v0.10.0-rc.1`, was published from image-source commit
 `21a0e760cdbb3d0ede362b96ad5a79b58ea44bbe201aeb1d47a3fe66204b129f`.
 Successful publication and provenance checks do not qualify a later caller.
 
-The retained B3 released attempt is [run 37157837270](https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/37157837270),
+The retained B3 released attempt is [run
+37157837270](https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/37157837270),
 attempt 1, on caller commit `63c33dd4a3cb1091876fbe38b0310c7bd942a5c9`.
 Its reusable workflow and tooling checkout both use
 `9944f0cc6ffd7fe16e14192f85887a06be59435a`. Its images retain the R10
@@ -43,7 +44,8 @@ advancement or correct time ownership.
 
 Observer evaluation, live acceptance JUnit, signed qualification production,
 portable readmission and the independent published consumer did not complete;
-the independent consumer job was skipped. The historical grouped log alone does not establish exact wall ordering.
+the independent consumer job was skipped. The historical grouped log alone does not establish exact
+wall ordering.
 A subsequent [bounded native diagnostic](b3-startup-cause.md) reproduces the
 initialization/clock-owner race and passes the ordered counterpart; full B3
 acceptance and the published consumer remain open.

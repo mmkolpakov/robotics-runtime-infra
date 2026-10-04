@@ -8,14 +8,14 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 
 WORKERS = Path("/opt/robotics/finalizer/workers")
-import sys
 
 sys.path.insert(0, str(WORKERS))
-import collect_inventory
-import export_retained
+import collect_inventory  # noqa: E402 - the installed worker directory is selected above
+import export_retained  # noqa: E402 - the installed worker directory is selected above
 
 HELPERS = Path("/opt/robotics/finalizer")
 FIXTURES = Path("/source/test/qualification/fixtures")

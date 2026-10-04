@@ -1,3 +1,4 @@
+---
 services:
   versions:
     image: "${SOURCE_EVIDENCE_IMAGE:?exact source image required}"

@@ -126,6 +126,18 @@ qualification-gated until the named host produces retained evidence.
 
 ### Finite retained log evidence
 
-The Engine metadata provider also exposes a narrow read-only `readLogs` operation for a previously observed exact container ID. It uses the same Unix socket and selected API version, verifies native run/project labels and the framing flag, and sets follow=false. Tail lines, bytes and deadline are finite validated bounds. Ownership and bounds are copied before asynchronous work, so caller mutation cannot expand the request. Raw bytes and framing are retained; any view uses the native Dockerode modem demultiplexer. No Engine exec/start/stop/copy operation is exposed.
+The Engine metadata provider also exposes a narrow read-only `readLogs` operation for a previously
+observed exact container ID. It uses the same Unix socket and selected API version, verifies native
+run/project labels and the framing flag, and sets follow=false. Tail lines, bytes and deadline are
+finite validated bounds. Ownership and bounds are copied before asynchronous work, so caller
+mutation cannot expand the request. Raw bytes and framing are retained; any view uses the native
+Dockerode modem demultiplexer. No Engine exec/start/stop/copy operation is exposed.
 
-Unavailable or removed containers, wrong ownership, missing framing, empty retained logs, exceeded limits, deadline and cancellation reject the read with diagnostics. The caller must report incomplete evidence; an empty successful stdout is not substituted. Native HOME proof in `/home/dev/src/rr-c-finalization-20261004/artifacts/finalization/log-api-immutable` checked a real six-test worker with contracts0.18.2/harness0.19.1, raw framed bytes, foreign run/project refusal, byte cap1, deadline0 and actual1ms, missing exactID, cancellation, and immediate caller mutation of owner/byte limits. Actual cleanup inventory was empty. This evidence-read boundary does not qualify a live collector or broaden the Dockerode library compatibility claim.
+Unavailable or removed containers, wrong ownership, missing framing, empty retained logs, exceeded
+limits, deadline and cancellation reject the read with diagnostics. The caller must report
+incomplete evidence; an empty successful stdout is not substituted. Native HOME proof in
+`/home/dev/src/rr-c-finalization-20261004/artifacts/finalization/log-api-immutable` checked a real
+six-test worker with contracts0.18.2/harness0.19.1, raw framed bytes, foreign run/project refusal,
+byte cap1, deadline0 and actual1ms, missing exactID, cancellation, and immediate caller mutation of
+owner/byte limits. Actual cleanup inventory was empty. This evidence-read boundary does not qualify
+a live collector or broaden the Dockerode library compatibility claim.
