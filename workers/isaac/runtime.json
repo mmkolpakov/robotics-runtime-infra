@@ -1,0 +1,36 @@
+{
+  "runtime": "Isaac Sim",
+  "version": "6.1.0",
+  "kit": "110.3.0",
+  "source_commit": "7c206f75bdadd9e05fc457f19863ca4c3f0cb693",
+  "image": "nvcr.io/nvidia/isaac-sim:6.1.0@sha256:0c16dd67d09a70ea474f2c809a13c4d09bd23c738184cf1bf28af487ecd39080",
+  "platform": "linux/amd64",
+  "environment": "native Ubuntu 24.04 / NVIDIA / Docker",
+  "bootstrap": "native-observe.py",
+  "scene": "fixture.usda",
+  "source_checked_apis": [
+    "SimulationApp",
+    "stage.open_stage",
+    "SimulationManager.setup_simulation",
+    "SimulationManager.initialize_physics",
+    "SimulationManager.step",
+    "SimulationManager.get_simulation_time",
+    "RenderingManager.render",
+    "isaacsim.core.version.get_version"
+  ],
+  "raw_observation_scope": "native world loading and physics time; render requests do not qualify captured frames",
+  "runtime_qualified": false,
+  "rtsp_api": "isaacsim.streaming.rtsp.RTSPStreamWriter",
+  "rtsp_qualified": false,
+  "redistribution": "own bootstrap/fixture only; official runtime and NVIDIA assets retain separate licensing",
+  "scene_sha256": "0a19bca17a24a7d61bdef19dc410a220ef1ffe464f4e992a5c1cae7c52cbca29",
+  "windows_standalone": {
+    "platform": "windows/amd64",
+    "environment": "Windows 11 / NVIDIA",
+    "download": "https://downloads.isaacsim.nvidia.com/isaac-sim-standalone-6.1.0-windows-x86_64.zip",
+    "vendor_md5": "a07968e980072c9ca27b2166443e2d89",
+    "observed_artifact_sha256": "dc7cfc966cd0aea105e97bb1b9b30a8e91306a3254f231bca9caa5c97ae74ae9",
+    "compatibility_checker": "isaac-sim.compatibility_check.bat",
+    "runtime_qualified": false
+  }
+}
