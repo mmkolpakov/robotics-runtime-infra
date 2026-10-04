@@ -108,9 +108,11 @@ tags are not stable APIs.
   requiring fields, narrowing accepted values, or changing artifact meaning
   requires a new schema major and migration notes. The historical 0.15 / 0.16
   name reuse above is a migration hazard, not evidence of compatibility.
-- The Jazzy/Harmonic basis remains fixed for this major line. A ROS
-  distribution or simulator family change starts a new major compatibility
-  line and repeats qualification.
+- The retained ROS v1 Jazzy/Harmonic basis remains fixed for this major line.
+  Changing that profile's ROS distribution or simulator family starts a new
+  major compatibility line and repeats qualification. A separate optional
+  native provider preserves the existing profile and requires its own
+  declared environment, capabilities and execution qualification.
 
 ## Consumers
 

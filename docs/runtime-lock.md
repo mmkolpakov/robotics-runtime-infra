@@ -1,7 +1,13 @@
 # Runtime Image Lock
 
 This repository has two explicit execution modes. They serve different
-purposes and must not be mixed within one run.
+purposes and must not be mixed within one run. Architecture C is the selected
+target; its separate host asset lock and worker qualifications are introduced
+by implementation commits and are not supplied by the historical OCI lock.
+
+[The qualification baseline](qualification-baseline.md) distinguishes accepted
+R9, published R10 and the failed neutral-robot B3 attempt. Source validation,
+release authenticity and live consumer acceptance are separate gates.
 
 ## Source Mode
 
@@ -19,10 +25,12 @@ qualification claim.
 
 ## Released Mode
 
-Released mode pulls immutable images listed in `release.env`:
+Released mode pulls immutable images listed in the selected release's unchanged
+`release.env`. This R10 example illustrates image selection; it does not claim
+that the neutral-robot consumer passed:
 
 ```bash
-gh release download v0.8.0-rc.1 \
+gh release download v0.10.0-rc.1 \
   --repo mmkolpakov/robotics-runtime-infra \
   --pattern release.env
 docker compose --env-file release.env pull simulation
@@ -62,6 +70,25 @@ An unpublished target is absent from `release.env`. Its absence must not be
 filled with a guessed digest, a mutable tag, or a digest copied from another
 target. The target enters the lock only after its own OCI manifest has been
 published and its registry digest is known.
+
+## Caller, tooling and image source
+
+The workflow caller selects its own scenario and artifacts. The reusable
+workflow ref and `tooling_ref` must select the same reviewed full infra SHA.
+This tooling identity may differ from the source SHA attested for the images.
+The canonical release tag and exact lock select the images independently.
+
+The retained B3 attempt used caller `63c33dd4a3cb1091876fbe38b0310c7bd942a5c9`,
+tooling `9944f0cc6ffd7fe16e14192f85887a06be59435a` and R10 image source
+`d6dc8a1c6b976faacab7b371821e9af54b9883c2`. Its Python workspace source was
+`dc02c62897372514537cf241f06dc71b9f960c44`. The image attestations bind the
+image source, not the caller or successful business outcome.
+
+A downloaded qualification package verified with its included ephemeral key
+establishes integrity under that key. Trusted producer verification requires
+an independently selected key or qualification policy and trusted root. A
+failed readiness run retains diagnostic subjects; it is not a successful
+qualification package.
 
 ## Updates
 
