@@ -192,7 +192,19 @@ export class LegacyFinalization extends Service {
     const result=await this.finite('aggregate',['/opt/contracts/bin/robotics-acceptance','aggregate','--scenario',this.plan.scenarioPath,'--run-context',this.plan.runContextPath,'--result',this.plan.resultPath,'--output',this.plan.aggregatePath],signal,this.postprocess);
     return this.retain('aggregate-complete',result);
   }
+  private async cleanupPostprocess(signal:AbortSignal):Promise<void>{
+    const clean=await this.postprocess.run(['down','--remove-orphans'],signal);
+    await this.retain('postprocess-cleanup',clean);
+    if(!clean.ok) throw new Error('finite qualification worker project cleanup failed');
+    const remaining=await (await EngineMetadata.connect({socketPath:this.plan.postprocessCompose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'})).remainingOwned(this.plan.runId);
+    const owned=remaining.containers.filter(v=>object(object(v).Labels)['com.docker.compose.project']===this.plan.postprocessCompose.projectName);
+    const networks=remaining.networks.filter(v=>object(object(v).Labels)['com.docker.compose.project']===this.plan.postprocessCompose.projectName);
+    if(owned.length||networks.length) throw new Error('qualification worker resources remain');
+    await this.retain('postprocess-native-inventory',remaining);
+  }
   async qualifyAfterCleanup(completion:RunCompletion,signal:AbortSignal):Promise<readonly ArtifactRef[]>{
+    let original:unknown;
+    try {
     await this.aggregateAfterCleanup(completion,signal);
     const values:unknown=JSON.parse(await readFile(this.plan.qualificationInputsHostPath,'utf8'));
     if(!Array.isArray(values)||values.some(v=>typeof v!=='string')||values.length>8192) throw new Error('invalid retained qualification argument inventory');
@@ -206,15 +218,15 @@ export class LegacyFinalization extends Service {
     for(const name of ['qualification-statement.json','qualification.sigstore.json','qualification.pub']) await copyFile(join(this.plan.retainedDirectory,name),join(this.plan.retainedDirectory,'qualification',name));
     const portable=(await readFile(join(this.plan.retainedDirectory,'qualification','qualification-arguments.txt'),'utf8')).trimEnd().split('\n');
     await this.require('portable-verify',['run','--rm','--no-deps','--workdir',root+'/qualification',this.plan.coordinatorService,'timeout','--signal=TERM','--kill-after=5s',String(Math.ceil(this.plan.timeoutMs/1000)),helper+'/scripts/qualification/verify-bundle',...portable,'--bundle','qualification.sigstore.json','--key','qualification.pub'],signal,this.postprocess);
-    const clean=await this.postprocess.run(['down','--remove-orphans'],signal);
-    await this.retain('postprocess-cleanup',clean);
-    if(!clean.ok) throw new Error('finite qualification worker project cleanup failed');
-    const remaining=await (await EngineMetadata.connect({socketPath:this.plan.postprocessCompose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'})).remainingOwned(this.plan.runId);
-    const owned=remaining.containers.filter(v=>object(object(v).Labels)['com.docker.compose.project']===this.plan.postprocessCompose.projectName);
-    const networks=remaining.networks.filter(v=>object(object(v).Labels)['com.docker.compose.project']===this.plan.postprocessCompose.projectName);
-    if(owned.length||networks.length) throw new Error('qualification worker resources remain');
-    await this.retain('postprocess-native-inventory',remaining);
     return Promise.all(['qualification-statement.json','qualification.sigstore.json','qualification.pub','acceptance-aggregate.json'].map(name=>referenceFile(join(this.plan.retainedDirectory,name))));
+    } catch(error) {
+      original=error;
+      await this.retain('postprocess-error',{error:String(error),retainedDirectory:this.plan.retainedDirectory});
+      throw error;
+    } finally {
+      try {await this.cleanupPostprocess(AbortSignal.timeout(Math.min(this.plan.timeoutMs,120000)))}
+      catch(error){if(original!==undefined)throw new AggregateError([original,error],'postprocessing and acquired worker cleanup failed');throw error}
+    }
   }
 }
 export default LegacyFinalization;
