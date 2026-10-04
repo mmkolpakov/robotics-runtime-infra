@@ -1,0 +1,9 @@
+---
+# HOME UID is mapped to container UID/GID 1000; no socket permissions change.
+services:
+  storage-init:
+    userns_mode: keep-id:uid=1000,gid=1000
+  storage-worker:
+    userns_mode: keep-id:uid=1000,gid=1000
+  storage-host:
+    userns_mode: keep-id:uid=1000,gid=1000

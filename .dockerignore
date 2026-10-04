@@ -48,3 +48,11 @@
 
 **/__pycache__/
 **/*.py[cod]
+
+!docker/host.Dockerfile
+!host/
+!host/package.json
+!host/package-lock.json
+!host/dist/
+!host/dist/src/
+!host/dist/src/**

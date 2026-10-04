@@ -541,3 +541,27 @@ target "permit-preflight-ci" {
     COSIGN_VERSION = COSIGN_VERSION
   }
 }
+
+# The compiled host asset is supplied independently from the Python foundation pin.
+# C20/C21 provide its released H identity; this target is not in the release group.
+variable "HOST_ASSET_CONTEXT" {
+  default = "host/.tools/host-asset"
+}
+variable "HOST_ASSET_SHA256" {
+  default = ""
+}
+group "host" {
+  targets = ["cordis-host"]
+}
+target "cordis-host" {
+  context = "."
+  dockerfile = "docker/host.Dockerfile"
+  contexts = { "host-asset" = HOST_ASSET_CONTEXT }
+  args = {
+    HOST_ASSET_SHA256 = HOST_ASSET_SHA256
+    IMAGE_CREATED = IMAGE_CREATED
+    VCS_REF = VCS_REF
+  }
+  platforms = ["linux/amd64"]
+  tags = ["${REGISTRY}/robotics-runtime-infra/host:${VERSION}"]
+}

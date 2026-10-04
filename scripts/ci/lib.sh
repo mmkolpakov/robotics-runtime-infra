@@ -11,6 +11,10 @@ ci_enter_repo() {
 
 ci_set_compose_fixture_env() {
   export ROBOTICS_RUNTIME_MODE="${ROBOTICS_RUNTIME_MODE:-source}"
+  # Source tags and socket path below are Compose syntax fixtures, not observations.
+  export HOST_IMAGE="${HOST_IMAGE:-local/robotics-runtime-infra/host:dev}"
+  export ROBOTICS_HOST_ID="${ROBOTICS_HOST_ID:-host-ci-compose}"
+  export ROBOTICS_ENGINE_HOST_SOCKET="${ROBOTICS_ENGINE_HOST_SOCKET:-/run/robotics-ci/engine.sock}"
   export SIMULATION_IMAGE="${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:ci}"
   export ROBOTICS_METRICS_TOPIC="${ROBOTICS_METRICS_TOPIC:-/example/sequence}"
   export ROBOTICS_PLAYBACK_CLOCK_HZ="${ROBOTICS_PLAYBACK_CLOCK_HZ:-200}"

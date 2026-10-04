@@ -1,0 +1,5 @@
+---
+# Same project-owned Unix socket; HOME UID maps to the image's UID/GID 1000.
+services:
+  host:
+    userns_mode: keep-id:uid=1000,gid=1000
