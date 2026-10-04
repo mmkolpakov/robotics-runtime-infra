@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile,readdir,copyFile,chmod,stat,access} from 'node:fs/promises';
 import {join} from 'node:path';
-import {constants} from 'node:fs';
+import {constants,createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {pathToFileURL} from 'node:url';
+import {pathToFileURL,fileURLToPath} from 'node:url';
 import Docker from 'dockerode';
 import {Context,Jobs,Admission,RunOwner,referenceFile} from '@robotics-runtime/host';
 import {ComposeExecution,EngineMetadata,isNativeFiberDisposed} from '../dist/src/index.js';
@@ -93,6 +93,10 @@ try{
  await finalizer.beginMeasurement(AbortSignal.timeout(240000));
  completion=await run.finish(finalizer.hooks);await save('completion',completion);
  assert.equal(completion.status,'passed',JSON.stringify(completion.errors));assert.ok(isNativeFiberDisposed(run.fiber));
+ const retainedRefs=new Map(completion.evidenceRefs.map(ref=>[ref.uri,ref]));
+ for(const outcome of completion.resourceOutcomes)for(const ref of outcome.evidenceRefs??[])retainedRefs.set(ref.uri,ref);
+ for(const ref of retainedRefs.values()){const path=fileURLToPath(ref.uri);assert.ok(path.startsWith('/retained/'),'completion ref outside retained lifetime: '+path);const digest=createHash('sha256');for await(const chunk of createReadStream(path))digest.update(chunk);assert.equal(digest.digest('hex'),ref.sha256);assert.equal((await stat(path)).size,ref.size_bytes)}
+ await save('completion-retention-audit',{uniqueRefs:retainedRefs.size,allRefsInsideRetained:true,allHashesAndSizesVerified:true});
  const qualified=await finalizer.qualifyAfterCleanup(completion,AbortSignal.timeout(240000));await save('qualified-references',qualified);
  const result=JSON.parse(await readFile(retained+'/payloads/results/acceptance-result.json','utf8'));assert.equal(result.status,'passed');assert.equal(result.evaluation_mode,'live');
  const aggregate=JSON.parse(await readFile(retained+'/acceptance-aggregate.json','utf8'));assert.equal(aggregate.per_domain_aggregate,'passed');assert.equal(aggregate.cross_domain_e2e.status,'unevaluated');

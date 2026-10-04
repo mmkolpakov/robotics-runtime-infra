@@ -139,11 +139,13 @@ export class LegacyFinalization extends Service {
       const foundation=await this.require('final-logs',['logs','--no-color'],signal);
       await mkdir(dirname(this.plan.foundationLogPath),{recursive:true});
       await writeFile(this.plan.foundationLogPath,foundation.stdout,{flag:'wx'});
-      this.refs.push(await referenceFile(this.plan.foundationLogPath));
+      const retainedFoundation=join(this.plan.artifactDirectory,'foundation.log');
+      await copyFile(this.plan.foundationLogPath,retainedFoundation);
+      this.refs.push(await referenceFile(retainedFoundation));
       if(!this.engine) throw new Error('native observer evidence endpoint absent');
       const logs=await this.engine.readLogs(this.observerId,{runId:this.plan.runId,projectName:this.plan.compose.projectName},{tailLines:10000,maxBytes:1048576,deadlineMs:Math.min(this.plan.timeoutMs,120000)},signal);
       await mkdir(dirname(this.plan.observerLogPath),{recursive:true});
-      const rawPath=this.plan.observerLogPath+'.docker-raw';
+      const rawPath=join(this.plan.artifactDirectory,'observer.docker-raw');
       await writeFile(rawPath,logs.bytes,{flag:'wx'});
       this.refs.push(await referenceFile(rawPath));
       const chunks:Buffer[]=[];
@@ -153,7 +155,9 @@ export class LegacyFinalization extends Service {
       else new Docker({socketPath:this.plan.compose.socketPath,version:'v'+this.engine.facts.clientApi}).modem.demuxStream(source,capture(),capture());
       await finished(source);
       await writeFile(this.plan.observerLogPath,Buffer.concat(chunks),{flag:'wx'});
-      this.refs.push(await referenceFile(this.plan.observerLogPath));
+      const retainedObserver=join(this.plan.artifactDirectory,'observer.log');
+      await copyFile(this.plan.observerLogPath,retainedObserver);
+      this.refs.push(await referenceFile(retainedObserver));
       return [...this.refs];
     }),
     exportEvidence:signal=>this.performExport(this.plan,signal),
