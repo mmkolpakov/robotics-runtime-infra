@@ -1,4 +1,5 @@
 import Docker from 'dockerode';
+import type {Readable} from 'node:stream';
 import {isAbsolute} from 'node:path';
 
 type RecordValue = Record<string, unknown>;
@@ -64,6 +65,44 @@ export class EngineMetadata {
     const filters = {label: [`org.robotics.runtime.run-id=${runId}`]};
     const [containers, volumes, networks] = await Promise.all([this.docker.listContainers({all: true, filters}), this.docker.listVolumes({filters}), this.docker.listNetworks({filters})]);
     return {containers, volumes, networks};
+  }
+  /** Read evidence only: no Engine exec or lifecycle writes are exposed here. */
+  async readLogs(containerId:string,owner:{runId:string;projectName:string},
+    limits:{tailLines:number;maxBytes:number;deadlineMs:number},cancel?:AbortSignal):Promise<{containerId:string;clientApi:string;tty:boolean;bytes:Buffer}> {
+    if(!/^[a-f0-9]{64}$/.test(containerId)) throw new Error('exact previously observed container ID required');
+    if(!owner.runId||!owner.projectName) throw new Error('native log ownership is required');
+    if(!Number.isSafeInteger(limits.tailLines)||limits.tailLines<1||limits.tailLines>10000 ||
+       !Number.isSafeInteger(limits.maxBytes)||limits.maxBytes<1||limits.maxBytes>16777216 ||
+       !Number.isSafeInteger(limits.deadlineMs)||limits.deadlineMs<1||limits.deadlineMs>120000) throw new Error('invalid finite native log bounds');
+    const signal=cancel?AbortSignal.any([cancel,AbortSignal.timeout(limits.deadlineMs)]):AbortSignal.timeout(limits.deadlineMs);
+    signal.throwIfAborted();
+    const request=(path:string,isStream=false)=>new Promise<unknown>((resolve,reject)=>this.docker.modem.dial({
+      path,method:'GET',abortSignal:signal,isStream,
+      statusCodes:{200:true,404:'owned container is unavailable',500:'Engine evidence read failed'},
+    },(error:unknown,value:unknown)=>error?reject(error):resolve(value)));
+    const actual=object(await request('/containers/'+containerId+'/json'));
+    const config=object(actual?.Config),labels=object(config?.Labels);
+    if(actual?.Id!==containerId||labels?.['org.robotics.runtime.run-id']!==owner.runId||labels?.['com.docker.compose.project']!==owner.projectName) throw new Error('native log read refused foreign container ownership');
+    if(typeof config?.Tty!=='boolean') throw new Error('native log transport framing is unavailable');
+    const stream=await request('/containers/'+containerId+'/logs?stdout=1&stderr=1&follow=0&tail='+limits.tailLines,true) as Readable;
+    const abort=()=>stream.destroy(signal.reason instanceof Error?signal.reason:new Error('native log read canceled'));
+    signal.addEventListener('abort',abort,{once:true});
+    try {
+      signal.throwIfAborted();
+      const chunks:Buffer[]=[];let length=0;
+      for await(const raw of stream){
+        signal.throwIfAborted();
+        const chunk=Buffer.isBuffer(raw)?raw:Buffer.from(raw);
+        length+=chunk.length;
+        if(length>limits.maxBytes) throw new Error('native log evidence exceeds byte bound');
+        chunks.push(chunk);
+      }
+      if(!length) throw new Error('owned container returned no retained log bytes');
+      return {containerId,clientApi:this.facts.clientApi,tty:config.Tty,bytes:Buffer.concat(chunks,length)};
+    } finally {
+      signal.removeEventListener('abort',abort);
+      stream.destroy();
+    }
   }
   async inspect(containerId: string, required: ContainerRequirement): Promise<MetadataObservation> {
     if (!/^[a-f0-9]{64}$/.test(containerId)) throw new Error('exact acquired container ID required');
