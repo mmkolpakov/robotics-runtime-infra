@@ -13,5 +13,6 @@ RUN /usr/local/bin/uv pip install --python /opt/contracts/bin/python --require-h
     && /usr/local/bin/uv pip check --python /opt/contracts/bin/python \
     && /opt/contracts/bin/python -c 'import importlib.metadata as m;assert m.version("robotics-runtime-contracts")=="0.18.2";assert m.version("robotics-acceptance-harness")=="0.19.1";print(m.version("robotics-runtime-contracts"),m.version("robotics-acceptance-harness"))' \
     && /usr/local/bin/uv pip freeze --python /opt/contracts/bin/python > /usr/share/robotics-runtime/coordinator-python-packages.txt
+ENV ROBOTICS_REQUIRE_HARNESS=true
 USER 1000:1000
 ENTRYPOINT ["/usr/local/bin/robotics-entrypoint"]

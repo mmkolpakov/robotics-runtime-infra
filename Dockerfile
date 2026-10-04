@@ -1124,7 +1124,9 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       > /usr/share/robotics-runtime/python-packages.txt \
     && rm -rf /home/ubuntu/.cache/uv /tmp/python
 
-ENV PATH="/opt/venv/bin:${PATH}"
+ENV PATH="/opt/venv/bin:${PATH}" \
+    ROBOTICS_FOUNDATION_PYTHON=/opt/venv/bin/python \
+    ROBOTICS_REQUIRE_HARNESS=true
 
 LABEL org.opencontainers.image.title="Robotics acceptance observer" \
       org.opencontainers.image.description="Attach-only ROS 2 acceptance observation and machine-readable results."
