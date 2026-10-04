@@ -1,0 +1,19 @@
+x-owned: &owned
+  image: "${SOURCE_METADATA_IMAGE:?exact image required}"
+  user: "1000:1000"
+  userns_mode: keep-id:uid=1000,gid=1000
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  entrypoint: [/bin/sh]
+  command: [-c, "sleep 180"]
+  labels:
+    org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?root issued run required}"
+services:
+  parent:
+    <<: *owned
+    network_mode: none
+  child:
+    <<: *owned
+    network_mode: service:parent

@@ -60,7 +60,13 @@ try {
 } finally {
  // Admission may have created only the owned input volume before a profile error.
  // All diagnostic bytes have been retained before this bounded fallback teardown.
- if(diagnosticsRetained)await finite('fallback-cleanup',['down','--volumes']);
+ if(diagnosticsRetained){
+   const preflightEngine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'});
+   const observedId=await finite('fallback-simulation-id',['ps','--all','--quiet','simulation']);const parentId=observedId.value.stdout.trim();
+   const ownership=await preflightEngine.projectOwnership({runId,projectName,...(parentId?{networkNamespaceContainerId:parentId}:{})});await save('fallback-cleanup-ownership',ownership);
+   if(ownership.status!=='complete')throw new Error('fallback cleanup refused foreign project resource');
+   await finite('fallback-cleanup',['down','--volumes','--remove-orphans']);
+ }
  const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'});const remaining=await engine.remainingOwned(runId);await save('remaining',remaining);
  const cleanup=remaining.containers.length===0&&remaining.networks.length===0&&(remaining.volumes.Volumes===null||remaining.volumes.Volumes?.length===0);
  await save('result',{status:status==='passed'&&cleanup?'passed':'failed',cleanup,runId,failure,retainedForRecovery:!diagnosticsRetained,scope:'C09 native Admission/RunOwner source startup and final-state proof; application measurement/recording/evaluation/full B3 released gates remain open'});

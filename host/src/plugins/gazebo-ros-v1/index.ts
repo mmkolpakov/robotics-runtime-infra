@@ -20,18 +20,27 @@ export class GazeboRosV1 extends Service {
   private readonly nativeMetadataRefs:ArtifactRef[]=[];
   private readyWork:Promise<BackendReadiness>|undefined;
   private startupReady=false;
+  private readonly cleanupRefs:ArtifactRef[]=[];
   constructor(ctx:Context) {
     super(ctx,'gazeboRosV1');
     this.input=ctx.legacyInputs.get(ctx.runResources.ownerId);
     this.compose=new ComposeExecution(ctx.jobs,this.input.compose);
     ctx.runResources.track({id:this.input.compose.projectName,ownerId:ctx.runResources.ownerId,
-      cleanup:async()=>{if(this.acquired) await this.require('cleanup',['down','--volumes'])},
+      cleanup:async()=>{if(this.acquired) {
+        const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'});
+        const owned=await engine.projectOwnership({runId:this.input.runId,projectName:this.input.compose.projectName,...(this.simulationContainerId?{networkNamespaceContainerId:this.simulationContainerId}:{})});
+        this.cleanupRefs.push(await this.retain('pre-cleanup-project-ownership',owned));
+        if(owned.status!=='complete')throw new Error('owned project cleanup refused foreign or unbound native resource');
+        await this.require('cleanup',['down','--volumes','--remove-orphans']);
+      }},
       verifyCleanup:async(signal)=>{
         const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
         const actual=await engine.remainingOwned(this.input.runId,{cancelSignal:signal});
         const ref=await this.retain('cleanup-native-inventory',actual);
+        const project=await engine.projectOwnership({runId:this.input.runId,projectName:this.input.compose.projectName,...(this.simulationContainerId?{networkNamespaceContainerId:this.simulationContainerId}:{})},{cancelSignal:signal});
+        const projectRef=await this.retain('post-cleanup-project-ownership',project);
         const volumes=actual.volumes as {Volumes?:unknown[]|null};
-        return {released:actual.containers.length===0 && actual.networks.length===0 && Object.hasOwn(volumes,'Volumes') && (volumes.Volumes===null || volumes.Volumes?.length===0),evidenceRefs:[ref]};
+        return {released:project.status==='complete' && project.inventory.containers.length===0 && project.inventory.networks.length===0 && actual.containers.length===0 && actual.networks.length===0 && Object.hasOwn(volumes,'Volumes') && (volumes.Volumes===null || volumes.Volumes?.length===0),evidenceRefs:[...this.cleanupRefs,ref,projectRef]};
       }});
   }
   snapshot() {

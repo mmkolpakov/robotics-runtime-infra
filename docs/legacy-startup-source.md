@@ -76,3 +76,16 @@ only after completed native readiness.
 Focused transport checks cover held Unix HTTP responses, request closure,
 caller mutation and foreign ownership. Raw native facts are retained under
 artifacts/c09/metadata-bounds-native; this read-only check is not full B3.
+
+## Owned orphan cleanup
+
+Completed one-off observers keep their simulation network namespace until removed.
+Teardown uses the standard down --volumes --remove-orphans on the unique admitted
+project. Before teardown, projectOwnership reads all same-project containers,
+volumes and networks, verifies each run/project binding and each actual shared
+namespace parent. Missing or foreign bindings refuse destructive cleanup.
+Native project and run inventories must then be empty.
+
+The native fixture covers an exited child and namespace parent, a foreign run
+label inside the same project, a wrong parent ID and a separate running project.
+Raw facts are retained under artifacts/c09/cleanup-ownership-native-2.

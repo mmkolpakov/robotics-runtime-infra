@@ -40,6 +40,12 @@ export interface MetadataObservation {
   networks: unknown[];
   networkNamespaceContainer?: unknown;
 }
+/** Physical cleanup ownership only; does not replace backend metadata or readiness checks. */
+export interface ProjectOwnershipObservation {
+  status:'complete'|'incomplete';missing:string[];mismatches:string[];engine:EngineFacts;
+  inventory:{containers:unknown[];volumes:unknown;networks:unknown[]};
+  containerDetails:unknown[];namespaceParents:unknown[];
+}
 export function selectApi(versionResponse: unknown, endpoint: EngineEndpoint): EngineFacts {
   const version = object(versionResponse);
   const high = api(version?.ApiVersion), low = api(version?.MinAPIVersion);
@@ -88,6 +94,57 @@ export class EngineMetadata {
       readJson<unknown[]>(this.docker,'/networks?',signal,{filters}),
     ]);
     signal.throwIfAborted();return {containers,volumes,networks};
+  }
+  /** Discover every resource carrying the project label, including completed one-off containers. */
+  async projectOwnership(requestedOwner:{runId:string;projectName:string;networkNamespaceContainerId?:string},options:MetadataReadOptions={}):Promise<ProjectOwnershipObservation> {
+    const owner={...requestedOwner},signal=metadataSignal(options);
+    if(!owner.runId||!owner.projectName) throw new Error('native project ownership is required');
+    const filters={label:[`com.docker.compose.project=${owner.projectName}`]};
+    const [rawContainers,volumes,rawNetworks]=await Promise.all([
+      readJson(this.docker,'/containers/json?',signal,{all:true,filters}),
+      readJson(this.docker,'/volumes?',signal,{filters}),readJson(this.docker,'/networks?',signal,{filters}),
+    ]);
+    const missing:string[]=[],mismatches:string[]=[],containerDetails:unknown[]=[],namespaceParents:unknown[]=[];
+    const containers=Array.isArray(rawContainers)?rawContainers:[],networks=Array.isArray(rawNetworks)?rawNetworks:[];
+    if(!Array.isArray(rawContainers))missing.push('project.containers');
+    if(!Array.isArray(rawNetworks))missing.push('project.networks');
+    const rawVolumes=object(volumes)?.Volumes;
+    if(rawVolumes!==null&&!Array.isArray(rawVolumes))missing.push('project.volumes');
+    const matches=(labels:unknown,path:string):boolean=>{
+      const actual=object(labels);let valid=true;
+      for(const [key,expected] of [['org.robotics.runtime.run-id',owner.runId],['com.docker.compose.project',owner.projectName]]) {
+        if(typeof actual?.[key]!=='string'||!actual[key]){missing.push(path+'.'+key);valid=false}
+        else if(actual[key]!==expected){mismatches.push(path+'.'+key);valid=false}
+      }
+      return valid;
+    };
+    for(const [index,raw] of [...networks,...(Array.isArray(rawVolumes)?rawVolumes:[])].entries())matches(object(raw)?.Labels,'project.resource.'+index);
+    for(const [index,raw] of containers.entries()) {
+      const row=object(raw),id=row?.Id;
+      if(typeof id!=='string'||!/^([a-f0-9]{64})$/.test(id)){missing.push('project.container.'+index+'.Id');continue}
+      if(!matches(row?.Labels,'project.container.'+id+'.list-owner'))continue;
+      const actual=await readJson(this.docker,'/containers/'+id+'/json',signal);containerDetails.push(actual);
+      const container=object(actual);if(container?.Id!==id)mismatches.push('project.container.'+id+'.Id');
+      if(!matches(object(container?.Config)?.Labels,'project.container.'+id+'.owner'))continue;
+      const mode=object(container?.HostConfig)?.NetworkMode;
+      if(typeof mode!=='string'||!mode)missing.push('project.container.'+id+'.NetworkMode');
+      else if(mode.startsWith('container:')) {
+        const parentId=mode.slice(10);
+        if(!owner.networkNamespaceContainerId)missing.push('project.container.'+id+'.namespace.expected-id');
+        else if(parentId!==owner.networkNamespaceContainerId)mismatches.push('project.container.'+id+'.namespace.expected-id');
+        else if(!/^[a-f0-9]{64}$/.test(parentId))missing.push('project.container.'+id+'.namespace.exact-id');
+        else {
+          const parent=await readJson(this.docker,'/containers/'+parentId+'/json',signal);namespaceParents.push(parent);
+          const native=object(parent);if(native?.Id!==parentId)mismatches.push('project.container.'+id+'.namespace.parent-id');
+          matches(object(native?.Config)?.Labels,'project.container.'+id+'.namespace.parent-owner');
+          const parentMode=object(native?.HostConfig)?.NetworkMode;
+          if(typeof parentMode!=='string'||!parentMode||parentMode.startsWith('container:'))missing.push('project.container.'+id+'.namespace.direct-parent');
+        }
+      }
+    }
+    signal.throwIfAborted();
+    return {status:missing.length||mismatches.length?'incomplete':'complete',missing,mismatches,engine:this.facts,
+      inventory:{containers,volumes,networks},containerDetails,namespaceParents};
   }
   /** Read evidence only: no Engine exec or lifecycle writes are exposed here. */
   async readLogs(containerId:string,requestedOwner:{runId:string;projectName:string},
