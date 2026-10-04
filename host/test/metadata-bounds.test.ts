@@ -99,3 +99,28 @@ test('discovery endpoint and metadata requirements cannot change during an await
     assert.equal((await read).status,'complete');
   } finally {await api.close()}
 });
+
+test('deployment info uses the selected SDK Unix endpoint and cancels its actual held request',async()=>{
+  let held=false,closed=false;const requests:string[]=[];
+  const raw={OperatingSystem:'Ubuntu 24.04.3 LTS',KernelVersion:'6.8.0-generic',Architecture:'x86_64',Runtimes:{nvidia:{path:'nvidia-container-runtime'}}};
+  const api=await server((request,response)=>{
+    requests.push(request.url!);
+    if(request.url==='/version')json(response,version);
+    else if(request.url==='/v1.41/info'){
+      if(held)request.once('close',()=>{closed=true});
+      else json(response,raw);
+    }else json(response,{unexpected:true});
+  });
+  try{
+    const engine=await EngineMetadata.connect(api.endpoint);
+    const observed=await engine.deploymentInfo();
+    assert.deepEqual(observed.info,raw);assert.equal(observed.engine.endpoint,'unix://'+api.endpoint.socketPath);
+    assert.equal(observed.engine.clientApi,'1.41');
+    held=true;
+    const abort=new AbortController();
+    const pending=engine.deploymentInfo({deadlineMs:1000,cancelSignal:abort.signal});
+    await new Promise(resolve=>setTimeout(resolve,20));abort.abort(new Error('deployment read cancelled'));
+    await assert.rejects(pending);await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(closed,true);assert.deepEqual(requests,['/version','/v1.41/info','/v1.41/info']);
+  }finally{await api.close()}
+});
