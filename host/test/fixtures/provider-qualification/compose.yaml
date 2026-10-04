@@ -1,0 +1,37 @@
+services:
+  qualifier:
+    image: "${NATIVE_QUALIFIER_IMAGE:?exact SDK image required}"
+    user: "1000:1000"
+    userns_mode: keep-id:uid=1000,gid=1000
+    init: true
+    network_mode: none
+    read_only: true
+    mem_limit: 512m
+    cap_drop: [ALL]
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=64m"]
+    volumes:
+      - "${NATIVE_QUALIFIER_ROOT:?root required}/host/producers:/producer:ro"
+      - "${NATIVE_QUALIFIER_ROOT:?root required}/host/test/fixtures/provider-qualification:/fixtures:ro"
+      - "${NATIVE_QUALIFIER_ROOT:?root required}/config/qualification:/schemas:ro"
+    command: [/opt/contracts/bin/python, /fixtures/test_native_documents.py]
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run required}"
+
+  producer:
+    image: "${NATIVE_QUALIFIER_IMAGE:?exact SDK image required}"
+    user: "1000:1000"
+    userns_mode: keep-id:uid=1000,gid=1000
+    init: true
+    network_mode: none
+    read_only: true
+    mem_limit: 512m
+    cap_drop: [ALL]
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=64m"]
+    volumes:
+      - "${NATIVE_QUALIFIER_ROOT:?root required}/host/producers:/producer:ro"
+      - "${NATIVE_QUALIFIER_ROOT:?root required}/host/test/fixtures/provider-qualification:/fixtures:ro"
+      - "${NATIVE_QUALIFIER_ROOT:?root required}/config/qualification:/schemas:ro"
+      - "${NATIVE_QUALIFIER_ROOT:?root required}/artifacts/qualification/produced:/produced:rw"
+    entrypoint: [/opt/contracts/bin/python, /producer/provider_qualification.py]
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run required}"

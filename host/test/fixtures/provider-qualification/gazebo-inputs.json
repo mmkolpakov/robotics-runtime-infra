@@ -1,0 +1,17 @@
+{
+  "backend": "gazebo",
+  "acceptedSourceRevision": "0be49facb06f24a798b77b49db0daed5277a1960",
+  "nativeProofScope": "Linux amd64 CPU source",
+  "version": "8.11.0 + ros_gz_sim 1.0.24",
+  "executionSubjectDigest": "sha256:679efb941fec0361ee014dd4a16e952dbed23b76df1d10709f78d90a1d9b8b5f",
+  "files": {
+    "independent-retained-review.json": {
+      "sha256": "f9ffa5cc38a68667de4a89f48a7e470795c9d13e38f72d97fc07073a4829e514",
+      "size_bytes": 242499
+    },
+    "native-reset-probe.json": {
+      "sha256": "816051c3c03ddc25a4a7343bba02f9736ee0c1dba1f3041d066ed7b7c85d6e11",
+      "size_bytes": 23805
+    }
+  }
+}
