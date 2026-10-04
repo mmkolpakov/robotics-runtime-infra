@@ -163,13 +163,13 @@ export class LegacyFinalization extends Service {
     const attempt=this.ctx.legacyFinalizationInputs.getExportAttempt(this.plan.runId,token);
     return this.performExport({...this.plan,...attempt},signal);
   }
-  private finite(name:string,command:readonly string[],signal:AbortSignal,executor:ComposeExecution=this.compose):Promise<JobResult>{
-    return this.require(name,['run','--rm','--no-deps',this.plan.coordinatorService,'timeout','--signal=TERM','--kill-after=5s',String(Math.ceil(this.plan.timeoutMs/1000)),...command],signal,executor);
+  private finite(name:string,command:readonly string[],signal:AbortSignal,executor:ComposeExecution=this.compose,service=this.plan.coordinatorService):Promise<JobResult>{
+    return this.require(name,['run','--rm','--no-deps',service,'timeout','--signal=TERM','--kill-after=5s',String(Math.ceil(this.plan.timeoutMs/1000)),...command],signal,executor);
   }
   private async performExport(plan:Readonly<LegacyFinalizationPlan>,signal:AbortSignal):Promise<readonly ArtifactRef[]>{
       // RunOwner retains acquisition on failure; there is no destructive finally here.
-      await this.finite('inventory',[plan.contractPythonPath,plan.inventoryWorkerPath,'--plan',plan.inventoryPlanPath,'--output',plan.exportPlanPath,'--arguments',plan.qualificationInputsWorkerPath],signal);
-      await this.finite('export',[plan.contractPythonPath,plan.exportWorkerPath,'--plan',plan.exportPlanPath],signal);
+      await this.finite('inventory',[plan.contractPythonPath,plan.inventoryWorkerPath,'--plan',plan.inventoryPlanPath,'--output',plan.exportPlanPath,'--arguments',plan.qualificationInputsWorkerPath],signal,this.compose,plan.exportCoordinatorService??plan.coordinatorService);
+      await this.finite('export',[plan.contractPythonPath,plan.exportWorkerPath,'--plan',plan.exportPlanPath],signal,this.compose,plan.exportCoordinatorService??plan.coordinatorService);
       const manifestPath=join(plan.retainedDirectory,'export-manifest.json');
       const manifest=object(JSON.parse((await readFile(manifestPath)).toString('utf8')));
       if(manifest.status!=='complete'||manifest.runId!==plan.runId||!Array.isArray(manifest.entries)||!manifest.entries.length) throw new Error('retained manifest incomplete');

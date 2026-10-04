@@ -1,0 +1,61 @@
+---
+x-evidence: &evidence
+  image: "${LEGACY_EVIDENCE_IMAGE:?immutable source evidence image required}"
+  pull_policy: never
+  user: "10001:1000"
+  init: true
+  userns_mode: keep-id:uid=1000,gid=1000
+  network_mode: none
+  read_only: true
+  mem_limit: 512m
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:rw,mode=1777,size=128m
+  environment:
+    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?owner required}"
+    ROBOTICS_RETENTION_CLASS: pull-request-7d
+    ROBOTICS_RECORDING_MODE: bounded
+    ROBOTICS_COMPRESSION: zstd
+    EVIDENCE_MODE: local
+    EVIDENCE_SPOOL_DIR: /run/robotics/evidence/bags
+    EVIDENCE_REGISTRATION_DIR: /run/robotics/evidence/state/registrations
+    EVIDENCE_SUMMARY_DIR: /run/robotics/evidence/summaries
+    EVIDENCE_STATE_DIR: /run/robotics/evidence/state
+    EVIDENCE_INDEX_PATH: /run/robotics/evidence/evidence-index.json
+    EVIDENCE_RECEIPT_DIR: /run/robotics/evidence/receipts
+    EVIDENCE_MAX_SEGMENT_DURATION_SEC: "30"
+    EVIDENCE_MAX_SEGMENT_SIZE_BYTES: "2097152"
+    EVIDENCE_DELETE_CONFIRMED_LOCAL: "false"
+  entrypoint: [/usr/local/bin/evidence-sink]
+  volumes:
+    - run-data:/run/robotics
+  labels:
+    org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+services:
+  evidence-sink:
+    <<: *evidence
+    command: [watch]
+  evidence-finalize:
+    <<: *evidence
+    command: [finalize]
+  legacy-export:
+    image: "${LEGACY_COORDINATOR_IMAGE:?immutable coordinator required}"
+    pull_policy: never
+    user: "1000:1000"
+    init: true
+    userns_mode: keep-id:uid=1000,gid=1000
+    network_mode: none
+    read_only: true
+    mem_limit: 512m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,mode=1777,size=512m
+    entrypoint: []
+    volumes:
+      - run-data:/run/robotics:ro
+      - run-input:/run/robotics/input:ro
+      - retained-data:/retained
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"

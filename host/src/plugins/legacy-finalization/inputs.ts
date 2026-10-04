@@ -22,6 +22,7 @@ export interface LegacyFinalizationPlan {
   stepperService:string;
   simulationService:string;
   coordinatorService:string;
+  exportCoordinatorService?:string;
   lastStateWorkerPath:string;
   exportWorkerPath:string;
   inventoryWorkerPath:string;
