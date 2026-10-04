@@ -719,11 +719,8 @@ FROM edge-runtime-base AS edge-runtime
 COPY --from=foundation-contracts /opt/contracts /opt/contracts
 COPY --from=edge-runtime-interfaces /opt/robotics_ws/install /opt/robotics_ws/install
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
-RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
-    yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
-      > /usr/share/robotics-runtime/foundation-lock.json \
-    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json \
-    && source "/opt/ros/${ROS_DISTRO}/setup.bash" \
+COPY --chmod=0444 config/foundation-lock.json /usr/share/robotics-runtime/foundation-lock.json
+RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
     && source /opt/robotics_ws/install/setup.bash \
     && ros2 interface show \
       robotics_observability_msgs/msg/TraceContext > /dev/null \
@@ -1284,11 +1281,8 @@ RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
     && chown -R ubuntu:ubuntu build install log
 
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
-RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
-    yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
-      > /usr/share/robotics-runtime/foundation-lock.json \
-    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json \
-    && ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
+COPY --chmod=0444 config/foundation-lock.json /usr/share/robotics-runtime/foundation-lock.json
+RUN ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 

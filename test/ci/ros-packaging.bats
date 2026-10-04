@@ -170,7 +170,7 @@ prepare_playback_transport() {
   export PLAYBACK_TRACE="${BATS_TEST_TMPDIR}/docker-trace"
   export PLAYBACK_LARGE_DOMAIN=87 PLAYBACK_NEGATIVE_DATA=0 PLAYBACK_LOG_FAILURE_DOMAIN=none
   export PLAYBACK_WRONG_IMAGE=0
-  export ROBOTICS_FOUNDATION_LOCK="${REPO_ROOT}/foundation.repos" ROS_DISTRO=jazzy
+  export ROBOTICS_FOUNDATION_LOCK="${REPO_ROOT}/config/foundation-lock.json" ROS_DISTRO=jazzy
   export GITHUB_SHA
   GITHUB_SHA="$(printf '%040d' 2)"
   : "${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}"
