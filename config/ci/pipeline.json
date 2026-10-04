@@ -329,6 +329,18 @@
         "compose.legacy-retained.yaml",
         "compose.legacy-finalization.podman.yaml"
       ]
+    },
+    {
+      "name": "isaac-bootstrap",
+      "files": [
+        "compose.isaac.yaml"
+      ]
+    },
+    {
+      "name": "isaac-provider",
+      "files": [
+        "compose.isaac-provider.yaml"
+      ]
     }
   ]
 }

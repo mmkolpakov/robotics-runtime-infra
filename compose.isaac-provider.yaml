@@ -1,3 +1,4 @@
+---
 services:
   isaac-native:
     image: nvcr.io/nvidia/isaac-sim:6.1.0@sha256:0c16dd67d09a70ea474f2c809a13c4d09bd23c738184cf1bf28af487ecd39080

@@ -36,6 +36,14 @@
     "./plugins/webots": {
       "types": "./dist/src/plugins/webots-provider/index.d.ts",
       "import": "./dist/src/plugins/webots-provider/index.js"
+    },
+    "./plugins/isaac": {
+      "types": "./dist/src/plugins/isaac-provider/index.d.ts",
+      "import": "./dist/src/plugins/isaac-provider/index.js"
+    },
+    "./plugins/isaac-inputs": {
+      "types": "./dist/src/plugins/isaac-provider/inputs.d.ts",
+      "import": "./dist/src/plugins/isaac-provider/inputs.js"
     }
   },
   "files": [

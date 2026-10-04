@@ -14,7 +14,8 @@ jq -e '
     (.files | type == "array" and length > 0) and
     (.files[0] as $base |
       ["compose.yaml", "compose.host.yaml", "compose.host-storage.yaml", "compose.media.yaml",
-       "compose.webots.yaml", "compose.px4.yaml", "compose.legacy-retained.yaml"] |
+       "compose.webots.yaml", "compose.px4.yaml", "compose.legacy-retained.yaml",
+       "compose.isaac.yaml", "compose.isaac-provider.yaml"] |
       index($base) != null) and
     all(.files[]; type == "string" and endswith(".yaml"))
   ) and
