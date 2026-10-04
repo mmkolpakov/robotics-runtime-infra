@@ -28,3 +28,9 @@ node host/tools/qualify-gazebo-startup.mjs \
   sha256:59e092393a655e736b56c928acd51b921411fa4810cb030591e00138b2fc5ed4 \
   sha256:1c227795630eb5d3a5069774031321f7aa48a47179af8345432bf1a0be6c7c60
 ```
+
+## Preparation before clock ownership
+
+The trusted issued DTO may include fixed `preClockReadyJobs` finite Compose argv and `readyObservationServices`. Preparation runs after native asset/canonical initialization and before the periodic owner. Native entity and canonical facts are checked again after preparation. Late auxiliary services may start after the manifest exists; the actual acceptance observer starts in the combined measurement phase after full backend readiness. No established owner is stopped/restarted for conformance.
+
+Source run rr-c09-1791132515543 used exact coordinator image 1c227795630eb5d3a5069774031321f7aa48a47179af8345432bf1a0be6c7c60 for ROS roles and public admission. Native five-step conformance passed before the periodic owner: paused15950000000→stepped15955000000 ns (exact5×1000000), then resumed15971000000 ns. Strict entity/Clock/JointState/TF reproof, native completion and actual empty cleanup all passed. Raw artifacts remain in artifacts/c09/startup-source-11. The image's embedded older foundation-lock revision is distinct from the observed installed public package versions18.2/19.1; this test does not claim the embedded source revision was upgraded.

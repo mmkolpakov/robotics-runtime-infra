@@ -92,6 +92,13 @@ export class GazeboRosV1 extends Service {
       }
       if(!canonical) throw new Error('native canonical initialization after asset creation not observed');
     }
+    for(const job of this.input.preClockReadyJobs??[]) await this.require('pre-clock-'+job.id,job.args,signal);
+    if((this.input.preClockReadyJobs?.length??0)>0 && this.input.admittedDescriptionPath) {
+      await this.require('native-entity-after-preparation',['exec','-T','simulation','robotics-entrypoint','python3',this.input.entityWorkerPath,'--expect','present'],signal);
+      const canonical=await this.require('canonical-after-preparation',['logs','--no-color','simulation'],signal);
+      if(!canonical.stdout.includes('InitializeCanonicalLinks')) throw new Error('native canonical initialization absent after preparation');
+    }
+    if(this.input.readyObservationServices?.length) await this.require('late-observation-start',['up','--detach','--no-build','--wait','--wait-timeout','120',...this.input.readyObservationServices],signal);
     await this.require('exclusive-clock-owner',['up','--detach','--no-build','simulation-stepper'],signal);
     const stepperId=await this.require('stepper-id',['ps','--quiet','simulation-stepper'],signal);
     this.stepperContainerId=stepperId.stdout.trim();

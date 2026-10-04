@@ -13,6 +13,9 @@ export interface LegacyRunInput {
   compose: ComposeOptions;
   artifactDirectory: string;
   observationServices: readonly string[];
+  /** Fixed finite preparation commands issued by the trusted bootstrap, never raw scenario code. */
+  preClockReadyJobs?: readonly {id:string;args:readonly string[]}[];
+  readyObservationServices?: readonly string[];
   simulationRequirement: ContainerRequirement;
   stepperRequirement: ContainerRequirement;
   admittedDescriptionPath?: string;
@@ -27,6 +30,8 @@ export class LegacyInputs extends Service {
   issue(input:LegacyRunInput): void {
     if(this.runs.has(input.runId)) throw new Error('legacy run input already issued');
     if(input.runId!==input.simulationRequirement.runId || input.runId!==input.stepperRequirement.runId || input.compose.projectName!==input.simulationRequirement.projectName || input.compose.projectName!==input.stepperRequirement.projectName) throw new Error('admitted run/owner bindings disagree');
+    const jobs=input.preClockReadyJobs??[];
+    if(jobs.some(job=>!/^[-a-zA-Z0-9_.]+$/.test(job.id)||job.id.startsWith('.')||!job.args.length)||new Set(jobs.map(job=>job.id)).size!==jobs.length) throw new Error('pre-clock preparation job IDs/argv must be fixed and unique');
     const copy=structuredClone(input);
     this.runs.set(input.runId,freeze(copy));
   }
