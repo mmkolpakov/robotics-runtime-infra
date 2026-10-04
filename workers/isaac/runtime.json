@@ -22,7 +22,10 @@
     "rep.orchestrator.step",
     "Timeline.pause",
     "RTSPStreamWriter.attach/detach",
-    "kit livestream Server factory"
+    "kit livestream Server factory",
+    "SimulationApp.is_running",
+    "SimulationManager.step(callback=...)",
+    "SimulationManager.get_device"
   ],
   "raw_observation_scope": "native world/body/physics time and optional retained RGBA/PNG; native requests and exit zero do not establish RTSP consumer qualification",
   "runtime_qualified": false,
@@ -39,5 +42,17 @@
     "compatibility_checker": "isaac-sim.compatibility_check.bat",
     "runtime_qualified": false,
     "observed_internal_version": "6.1.0-rc.26+release.49347.2d230af4.gl"
+  },
+  "provider_source": {
+    "service": "isaac",
+    "inputs_service": "isaacInputs",
+    "scope": "one finite native episode",
+    "ready": "live PAUSED SDK + fresh native phase facts + current Engine metadata",
+    "measurement": "native SimulationManager.step; optional native Replicator RGB capture",
+    "clock": "native float seconds; no exact nanoseconds",
+    "control_reset_capabilities": false,
+    "phase_token": "correlation nonce; not authentication",
+    "positive_provider_phase_qualified": false,
+    "positive_linux_oci_qualified": false
   }
 }

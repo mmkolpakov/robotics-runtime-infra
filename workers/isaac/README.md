@@ -43,9 +43,37 @@ lookup paths. The native RTSP plugin therefore failed to load. Windows RTSP rema
 unqualified; SDK files and system libraries are unchanged. This Windows observation
 does not qualify the Linux OCI deployment or a desktop GUI.
 
-This source bootstrap is a finite SDK episode. A complete Cordis provider and live
-backend admission are still required. A completed episode does not implement a
-persistent backend's ready(), control or reset capabilities.
+The source Cordis modules are in `host/src/plugins/isaac-provider`.
+The root program installs `IsaacInputs`, issues an immutable owner-bound plan,
+then supplies its token to the `IsaacNative` Loader entry. The plan binds retained
+source/checker references, finite episode counts, the absolute Compose executable
+and Unix Engine socket, and distinct external input/result volumes. Its output
+directory maps to `output/isaac/<scope>` in the result volume. The Node host creates
+it with shared GID 1000; the SDK worker receives that supplementary group. The
+runtime core remains the installed peer package. The package export is integrated
+by the root project.
+
+`compose.isaac-provider.yaml` runs the same bootstrap in its optional private
+phase mode. After native stage/physics initialization the application stays alive
+and PAUSED. `ready(signal)` requires changing native paused observations, matching
+source/scene bytes and a current native Engine observation. `measure(signal)`
+opens the one finite episode; its native result/capture is retained while the
+application remains PAUSED. `exportEvidence(signal)` returns byte references
+before cleanup releases the application. Cleanup keeps graceful-close errors,
+attempts bounded scoped teardown after fresh ownership checks, and independently
+observes remaining physical resources. Startup failure diagnostics use
+`diagnosticEvidence(signal)`; they do not establish readiness.
+
+The private start/release/cancel files only connect these phases. Their token is a
+correlation nonce printed in SDK argv, not an authentication or security boundary.
+They implement no general simulator command protocol. `cancel()` requests early
+episode closure; native step cancellation uses the SDK's step callback. No
+persistent control/reset capability or completed-episode readiness is advertised.
+
+Source compilation, installed Cordis Admission/Include refusal on HOME WSL and
+private marker tests are separate from positive SDK execution. The new PAUSED
+provider phase and native Linux OCI execution still require C17 evidence. The
+existing Windows batch workload observations do not qualify this provider phase.
 
 Vendor references:
 [workstation installation](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/installation/install_workstation.html),
