@@ -67,6 +67,12 @@ export class EngineMetadata {
     const docker = new Docker({socketPath: endpoint.socketPath, version: `v${facts.clientApi}`});
     return new EngineMetadata(docker, endpoint.socketPath, facts);
   }
+  /** Actual deployment metadata from the same selected SDK and Unix endpoint. */
+  async deploymentInfo(options:MetadataReadOptions={}):Promise<{engine:EngineFacts;info:unknown}> {
+    const signal=metadataSignal(options);
+    const info=await readJson(this.docker,'/info',signal);
+    signal.throwIfAborted();return {engine:this.facts,info};
+  }
   async rootlessParentMaps(options:MetadataReadOptions={}): Promise<{nativeApi: string; uidMap: unknown[]; gidMap: unknown[]; raw: unknown}> {
     const signal=metadataSignal(options);
     const version = object(this.facts.versionResponse);
