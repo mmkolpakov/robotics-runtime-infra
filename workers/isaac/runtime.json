@@ -53,6 +53,8 @@
     "control_reset_capabilities": false,
     "phase_token": "correlation nonce; not authentication",
     "positive_provider_phase_qualified": false,
-    "positive_linux_oci_qualified": false
+    "positive_linux_oci_qualified": false,
+    "deployment_admission": "same selected Dockerode Unix /info: OperatingSystem, KernelVersion, Architecture, Runtimes.nvidia.path; client distro diagnostic only",
+    "checker_admission": "explicit successful root source verification outcome plus retained opaque vendor byte references"
   }
 }

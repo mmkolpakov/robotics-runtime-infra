@@ -46,12 +46,22 @@ does not qualify the Linux OCI deployment or a desktop GUI.
 The source Cordis modules are in `host/src/plugins/isaac-provider`.
 The root program installs `IsaacInputs`, issues an immutable owner-bound plan,
 then supplies its token to the `IsaacNative` Loader entry. The plan binds retained
-source/checker references, finite episode counts, the absolute Compose executable
+source references, an explicit successful source checker outcome with retained
+byte references, finite episode counts, the absolute Compose executable
 and Unix Engine socket, and distinct external input/result volumes. Its output
 directory maps to `output/isaac/<scope>` in the result volume. The Node host creates
 it with shared GID 1000; the SDK worker receives that supplementary group. The
 runtime core remains the installed peer package. The package export is integrated
-by the root project.
+by the root project. The checker outcome is the trusted root's verification; opaque
+vendor byte references alone do not establish that the checker passed.
+
+The Node process distribution is diagnostic only; C08 uses a Debian Trixie client
+container. Before any launch job, the provider reads Dockerode `/info` on the same
+selected Unix Engine socket. Actual `OperatingSystem`, `KernelVersion`,
+`Architecture` and `Runtimes.nvidia.path` must match this native Ubuntu 24.04/NVIDIA
+profile. Missing fields remain incomplete. The local kernel still provides an
+early WSL refusal; declarations and the client distribution never replace Engine
+deployment facts.
 
 `compose.isaac-provider.yaml` runs the same bootstrap in its optional private
 phase mode. After native stage/physics initialization the application stays alive
