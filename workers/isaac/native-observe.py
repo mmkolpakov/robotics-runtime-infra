@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import sys
+import time
 from pathlib import Path
 
 LOGGER = logging.getLogger(__name__)
@@ -21,6 +22,8 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--dt", type=float, default=1 / 60)
     parser.add_argument("--render-frames", type=int, default=0)
     parser.add_argument("--capture-directory", type=Path)
+    parser.add_argument("--rtsp-port", type=int)
+    parser.add_argument("--stream-seconds", type=float, default=10)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     args = parser.parse_args()
@@ -32,6 +35,11 @@ def arguments() -> argparse.Namespace:
         parser.error("capture dimensions must be bounded")
     if args.capture_directory and args.render_frames < 1:
         parser.error("capture requires rendered frames")
+    if args.rtsp_port is not None:
+        if not 1024 <= args.rtsp_port <= 65535 or args.render_frames < 1:
+            parser.error("RTSP requires an unprivileged port and rendered frames")
+        if not math.isfinite(args.stream_seconds) or not 0 < args.stream_seconds <= 60:
+            parser.error("RTSP duration must be finite and within (0, 60]")
     args.scene = args.scene.resolve(strict=True)
     if not args.scene.is_file():
         parser.error("scene must be a regular file")
@@ -52,6 +60,7 @@ def main() -> int:
     stage = None
     render_product = None
     annotator = None
+    rtsp_writer = None
     exit_code = 1
     try:
         from isaacsim.core.experimental.prims import RigidPrim
@@ -78,7 +87,7 @@ def main() -> int:
         if not math.isfinite(begin) or not math.isfinite(end) or end <= begin:
             raise RuntimeError("native physics time did not advance")
         capture = None
-        if args.capture_directory:
+        if args.capture_directory or args.rtsp_port is not None:
             import omni.replicator.core as rep
 
             if not stage.GetPrimAtPath("/World/Camera").IsValid():
@@ -86,10 +95,35 @@ def main() -> int:
             render_product = rep.create.render_product(
                 "/World/Camera", (args.width, args.height)
             )
-            annotator = rep.AnnotatorRegistry.get_annotator("rgb")
-            annotator.attach([render_product.path])
+            if args.capture_directory:
+                annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+                annotator.attach([render_product.path])
+            if args.rtsp_port is not None:
+                import omni.kit.app
+
+                manager = omni.kit.app.get_app().get_extension_manager()
+                manager.set_extension_enabled_immediate("isaacsim.core.nodes", True)
+                manager.set_extension_enabled_immediate("isaacsim.streaming.rtsp", True)
+                from isaacsim.streaming.rtsp import RTSPStreamWriter
+                from isaacsim.streaming.rtsp.impl.render_var_utils import (
+                    ensure_render_var_on_product,
+                )
+
+                valid, _ = ensure_render_var_on_product(
+                    stage, render_product.path, "LdrColor", "h264"
+                )
+                if not valid:
+                    raise RuntimeError("native H.264 render variable is unavailable")
+                rtsp_writer = RTSPStreamWriter(
+                    port=args.rtsp_port,
+                    mountPath="/stream",
+                    encoding="h264",
+                    width=args.width,
+                    height=args.height,
+                )
+                rtsp_writer.attach([render_product])
         for _ in range(args.render_frames):
-            if annotator is not None:
+            if render_product is not None:
                 rep.orchestrator.step(
                     rt_subframes=4,
                     delta_time=0.0,
@@ -98,6 +132,15 @@ def main() -> int:
                 )
             else:
                 RenderingManager.render()
+        if rtsp_writer is not None:
+            deadline = time.monotonic() + args.stream_seconds
+            while time.monotonic() < deadline:
+                rep.orchestrator.step(
+                    rt_subframes=1,
+                    delta_time=0.0,
+                    pause_timeline=False,
+                    wait_for_render=True,
+                )
         if annotator is not None:
             rgba = annotator.get_data()
             if rgba.shape != (args.height, args.width, 4):
@@ -155,6 +198,11 @@ def main() -> int:
             "native_time_representation": "float seconds; no exact ns claim",
             "requested_render_frames": args.render_frames,
             "native_capture": capture,
+            "rtsp_requested": args.rtsp_port is not None,
+            "rtsp_port": args.rtsp_port,
+            "stream_wall_seconds_requested": args.stream_seconds
+            if rtsp_writer
+            else None,
             "frame_capture_qualified": False,
             "rtsp_qualified": False,
         }
@@ -177,8 +225,12 @@ def main() -> int:
                 if annotator is not None and render_product is not None:
                     annotator.detach([render_product.path])
             finally:
-                if render_product is not None:
-                    render_product.destroy()
+                try:
+                    if rtsp_writer is not None:
+                        rtsp_writer.detach()
+                finally:
+                    if render_product is not None:
+                        render_product.destroy()
         except Exception:
             exit_code = 1
             LOGGER.exception("Native renderer resource cleanup failed")
