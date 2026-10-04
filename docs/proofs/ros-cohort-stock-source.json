@@ -96,5 +96,40 @@
     "path": "srv/StepSimulation.srv",
     "sha256": "22fcbf9c325cd020f0fef4e4315415706576418d5fcbc239feb21b56b0ba386a",
     "bytes": 704
+  },
+  {
+    "repository": "ros_gz",
+    "commit": "5912bfe7976a79d2cc9f373b2d40a8a3a3e33da2",
+    "path": "ros_gz_sim/src/gz_simulation_interfaces/services/get_simulator_features.cpp",
+    "sha256": "5c0f7ff4bb31c087a98a76ac2a977df90ff906b0a08c9ad61faa7f577788c1c8",
+    "bytes": 3119
+  },
+  {
+    "repository": "ros_gz",
+    "commit": "5912bfe7976a79d2cc9f373b2d40a8a3a3e33da2",
+    "path": "ros_gz_sim/src/gz_simulation_interfaces/services/reset_simulation.cpp",
+    "sha256": "95fc9b9d8d4991b46cc0543edcd61988cac39fcdfa1736c9bfaf5354e688a252",
+    "bytes": 3920
+  },
+  {
+    "repository": "ros_gz",
+    "commit": "5912bfe7976a79d2cc9f373b2d40a8a3a3e33da2",
+    "path": "ros_gz_sim/src/gz_simulation_interfaces/services/get_entity_state.cpp",
+    "sha256": "e9afc66605a68cc9298e031b839075990fc0616c4c0882a3296d446e1d9b1a0c",
+    "bytes": 5106
+  },
+  {
+    "repository": "simulation_interfaces",
+    "commit": "a3c60ff2715dbe5e9d5cddce410d9a7ffe771960",
+    "path": "srv/ResetSimulation.srv",
+    "sha256": "ba46f990b3c6b589feda5217a4cf5ae877324af5c8b95e565d3b32b3dedaf9d8",
+    "bytes": 1184
+  },
+  {
+    "repository": "simulation_interfaces",
+    "commit": "a3c60ff2715dbe5e9d5cddce410d9a7ffe771960",
+    "path": "srv/GetEntityState.srv",
+    "sha256": "ba4d05270ea30c7cd3d8edfdc5387f003f28a6918e5541a1c64a3f842b8265bc",
+    "bytes": 371
   }
 ]

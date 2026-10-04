@@ -1,0 +1,212 @@
+{
+  "scope": "independent stock1.0.24 source control/asset/readiness/retention review",
+  "sourcePipelineRevision": "d0113530814cc4139bf71d177850ef9c31ff7a98",
+  "sourceRunId": "run-8e1b2371-57e3-4882-a8f4-276ca0b3a837",
+  "retainedVolume": "rr-c11-stock-retained-20261004",
+  "retainedRefsVerified": 361,
+  "completionStatus": "passed",
+  "sourceMountPresent": false,
+  "resetProbe": {
+    "runId": "run-c1810f34-8334-43d9-a52a-86e820d87a1a",
+    "passed": true,
+    "features": [
+      0,
+      1,
+      4,
+      8,
+      9,
+      10,
+      11,
+      12,
+      20,
+      24,
+      25,
+      26,
+      31,
+      32,
+      33
+    ],
+    "initialState": 1,
+    "beforePartial": {
+      "clockNs": "383000000",
+      "state": 2,
+      "entities": [
+        "reset_probe_robot"
+      ],
+      "model": {
+        "header": {
+          "stamp": {
+            "sec": 0,
+            "nanosec": 383000000
+          },
+          "frame_id": "world"
+        },
+        "pose": {
+          "position": {
+            "x": 3.0,
+            "y": 2.0,
+            "z": 5.0
+          },
+          "orientation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+          }
+        },
+        "twist": {
+          "linear": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "angular": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "acceleration": {
+          "linear": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "angular": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      }
+    },
+    "afterPartial": {
+      "clockNs": "383000000",
+      "state": 2,
+      "entities": [
+        "reset_probe_robot"
+      ],
+      "model": {
+        "header": {
+          "stamp": {
+            "sec": 0,
+            "nanosec": 383000000
+          },
+          "frame_id": "world"
+        },
+        "pose": {
+          "position": {
+            "x": 3.0,
+            "y": 2.0,
+            "z": 5.0
+          },
+          "orientation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+          }
+        },
+        "twist": {
+          "linear": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "angular": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "acceleration": {
+          "linear": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "angular": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      }
+    },
+    "resetEpochObserved": true,
+    "resetZeroObserved": true,
+    "afterResetState": 1,
+    "afterResetEntities": [],
+    "modelGetterMissingResult": 4,
+    "explicitPostResetPause": {
+      "requestedState": 2,
+      "state": 2,
+      "quiescentClockNs": "665000000"
+    },
+    "cleanupEmpty": true
+  },
+  "rawRefs": [
+    {
+      "path": "artifacts/ros-cohort/independent-retained-review/independent-retained-review.json",
+      "sha256": "f9ffa5cc38a68667de4a89f48a7e470795c9d13e38f72d97fc07073a4829e514",
+      "size_bytes": 242499
+    },
+    {
+      "path": "artifacts/ros-cohort/independent-retained-review/native-metadata.json",
+      "sha256": "755fc89f26f2da7b6a208156bf1597db0989d7feb4cd11eea50871d7e31a6055",
+      "size_bytes": 25670
+    },
+    {
+      "path": "artifacts/ros-cohort/independent-retained-review/cleanup-after.json",
+      "sha256": "7810a2d542d88d191a1b8302ada50f7e3e5bae691eb3490094991812595904f6",
+      "size_bytes": 1872
+    },
+    {
+      "path": "artifacts/ros-cohort/independent-retained-review/result.json",
+      "sha256": "f81e1fd0f723a63ed4b65be1bb8c95c152b748d779c7c05f98651a961111166e",
+      "size_bytes": 250
+    },
+    {
+      "path": "artifacts/ros-cohort/native-reset-4/native-reset-probe.json",
+      "sha256": "816051c3c03ddc25a4a7343bba02f9736ee0c1dba1f3041d066ed7b7c85d6e11",
+      "size_bytes": 23805
+    },
+    {
+      "path": "artifacts/ros-cohort/native-reset-4/native-reset-probe-job.json",
+      "sha256": "d9ecdac3a622074b2972d05b66fb7ab6964e57ad5b2a61f245a90f3f58ac26d6",
+      "size_bytes": 27397
+    },
+    {
+      "path": "artifacts/ros-cohort/native-reset-4/simulation-native-metadata.json",
+      "sha256": "5c5c942ca8022134e328ceeaab7cbe92ec86ef077d499a801162df9d5a1d4af8",
+      "size_bytes": 25552
+    },
+    {
+      "path": "artifacts/ros-cohort/native-reset-4/cleanup-before.json",
+      "sha256": "91c3bdab11335ba45069bcc276ebd21381d54e44ea2ead33e155c6c28634a5ad",
+      "size_bytes": 48679
+    },
+    {
+      "path": "artifacts/ros-cohort/native-reset-4/cleanup-after.json",
+      "sha256": "7810a2d542d88d191a1b8302ada50f7e3e5bae691eb3490094991812595904f6",
+      "size_bytes": 1872
+    },
+    {
+      "path": "artifacts/ros-cohort/native-reset-4/result.json",
+      "sha256": "f77278c4baaef2eff9e2b3e068b60ce8a3dfe7c0060ccb8b806209997229936d",
+      "size_bytes": 318
+    }
+  ],
+  "historicalFailuresPreserved": [
+    "artifacts/ros-cohort/native-reset",
+    "artifacts/ros-cohort/native-reset-2",
+    "artifacts/ros-cohort/native-reset-3"
+  ],
+  "releasedR10Equivalence": "separate pending gate",
+  "canonicalLogCounts": {
+    "before": 1,
+    "after": 2
+  },
+  "nativeCreateProcess": "neutral_robot_create-3",
+  "canonicalBeforeExclusiveOwner": true
+}
