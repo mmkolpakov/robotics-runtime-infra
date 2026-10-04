@@ -8,7 +8,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {setTimeout as pause} from 'node:timers/promises';
 import {ComposeExecution} from '../../compose-execution.js';
 import {EngineMetadata} from '../../engine-metadata.js';
-import {requireNativeIsaacHost,observeIsaacHost} from './admission.js';
+import {requireSupportedIsaacClient,observeIsaacClient,admitIsaacDeployment} from './admission.js';
 import {ISAAC_IMAGE,ISAAC_SCENE_SHA256} from './inputs.js';
 import type {IsaacPlan} from './inputs.js';
 
@@ -55,19 +55,20 @@ export class IsaacNative extends Service {
     return AbortSignal.any([cancel,AbortSignal.timeout(this.plan.deadlineMs)]);
   }
   private async launch(signal:AbortSignal):Promise<void>{
-    signal.throwIfAborted();const host=await observeIsaacHost();requireNativeIsaacHost(host);
-    for(const ref of [...this.plan.sourceRefs,...this.plan.compatibilityCheckerRefs]){
+    signal.throwIfAborted();const client=await observeIsaacClient();requireSupportedIsaacClient(client);
+    for(const ref of [...this.plan.sourceRefs,...this.plan.sourceCheckerOutcome.evidenceRefs]){
       const actual=await reference(fileURLToPath(ref.uri));
       if(actual.sha256!==ref.sha256||actual.size_bytes!==ref.size_bytes)throw new Error('admitted source/checker bytes changed before native launch');
     }
+    const deployment=await admitIsaacDeployment(client,{socketPath:this.plan.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},signal);
+    this.engine=deployment.engine;
     signal.throwIfAborted();
     if(this.cancelRequested)throw new Error('finite Isaac episode cancelled before launch');
     await mkdir(this.plan.outputDirectory,{recursive:false,mode:0o770});
     await chmod(this.plan.outputDirectory,0o2770);
     if((await stat(this.plan.outputDirectory)).gid!==1000)throw new Error('SDK output directory requires the admitted shared GID 1000');
-    await this.write('host-admission.json',{host,profile:'native-linux-nvidia',runtimeQualified:false});
+    await this.write('deployment-admission.json',{client,deployment:deployment.observed,sourceCheckerOutcome:this.plan.sourceCheckerOutcome,profile:'native-linux-nvidia',runtimeQualified:false});
     await this.compose.requireVersion(signal);
-    this.engine=await EngineMetadata.connect({socketPath:this.plan.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
     this.ctx.runResources.track({id:this.plan.compose.projectName,ownerId:this.plan.runId,
       cleanup:async()=>{
         const errors:string[]=[];let admittedOwnership=false;
@@ -174,7 +175,7 @@ export class IsaacNative extends Service {
       ready.bootstrap_sha256!==this.plan.sourceRefs.find(v=>v.uri.endsWith('/native-observe.py'))!.sha256)throw new Error('fresh native PAUSED world/body readiness is absent');
     await this.write('native-ready-observed-'+this.refs.length+'.json',{ready,current});
     await this.live(signal);
-    return {ready:true,evidenceRefs:[...this.plan.sourceRefs,...this.plan.compatibilityCheckerRefs,...this.refs]};
+    return {ready:true,evidenceRefs:[...this.plan.sourceRefs,...this.plan.sourceCheckerOutcome.evidenceRefs,...this.refs]};
   }
   private async marker(action:'start'|'release'|'cancel'):Promise<void>{
     const path=join(this.plan.outputDirectory,action+'.json');
@@ -203,7 +204,7 @@ export class IsaacNative extends Service {
       try{this.refs.push(await reference(join(this.plan.outputDirectory,name)))}
       catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
     }
-    return [...this.plan.sourceRefs,...this.plan.compatibilityCheckerRefs,...this.refs];
+    return [...this.plan.sourceRefs,...this.plan.sourceCheckerOutcome.evidenceRefs,...this.refs];
   }
   measure(cancel:AbortSignal):Promise<Record<string,unknown>>{
     return this.measurement??=this.observeEpisode(cancel);
@@ -225,7 +226,7 @@ export class IsaacNative extends Service {
       names.push('capture/camera.rgba','capture/camera.png');
     }
     const output=await Promise.all(names.map(name=>reference(join(this.plan.outputDirectory,name))));
-    return [...this.plan.sourceRefs,...this.plan.compatibilityCheckerRefs,...this.refs,...output];
+    return [...this.plan.sourceRefs,...this.plan.sourceCheckerOutcome.evidenceRefs,...this.refs,...output];
   }
 }
 export default IsaacNative;
