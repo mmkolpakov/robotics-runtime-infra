@@ -16,9 +16,15 @@
     "SimulationManager.step",
     "SimulationManager.get_simulation_time",
     "RenderingManager.render",
-    "isaacsim.core.version.get_version"
+    "isaacsim.core.version.get_version",
+    "RigidPrim.get_world_poses",
+    "Replicator rgb annotator",
+    "rep.orchestrator.step",
+    "Timeline.pause",
+    "RTSPStreamWriter.attach/detach",
+    "kit livestream Server factory"
   ],
-  "raw_observation_scope": "native world loading and physics time; render requests do not qualify captured frames",
+  "raw_observation_scope": "native world/body/physics time and optional retained RGBA/PNG; native requests and exit zero do not establish RTSP consumer qualification",
   "runtime_qualified": false,
   "rtsp_api": "isaacsim.streaming.rtsp.RTSPStreamWriter",
   "rtsp_qualified": false,
@@ -31,6 +37,7 @@
     "vendor_md5": "a07968e980072c9ca27b2166443e2d89",
     "observed_artifact_sha256": "dc7cfc966cd0aea105e97bb1b9b30a8e91306a3254f231bca9caa5c97ae74ae9",
     "compatibility_checker": "isaac-sim.compatibility_check.bat",
-    "runtime_qualified": false
+    "runtime_qualified": false,
+    "observed_internal_version": "6.1.0-rc.26+release.49347.2d230af4.gl"
   }
 }

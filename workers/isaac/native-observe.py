@@ -104,6 +104,11 @@ def main() -> int:
                 manager = omni.kit.app.get_app().get_extension_manager()
                 manager.set_extension_enabled_immediate("isaacsim.core.nodes", True)
                 manager.set_extension_enabled_immediate("isaacsim.streaming.rtsp", True)
+                from omni.kit.livestream.core import Server
+
+                # The writer logs and suppresses server failures; require its native factory.
+                native_server = Server("rtsp")
+                native_server.close()
                 from isaacsim.streaming.rtsp import RTSPStreamWriter
                 from isaacsim.streaming.rtsp.impl.render_var_utils import (
                     ensure_render_var_on_product,

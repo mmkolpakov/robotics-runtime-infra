@@ -49,6 +49,25 @@ class AdmissionTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 MODULE.refuse_unsupported_environment(self.facts() | change)
 
+    def test_windows_requires_its_own_artifact_and_checker(self) -> None:
+        facts = {
+            "os": "windows",
+            "release": "11",
+            "architecture": "amd64",
+            "artifact_sha256": "dc7cfc966cd0aea105e97bb1b9b30a8e91306a3254f231bca9caa5c97ae74ae9",
+            "compatibility_checker_passed": True,
+        }
+        MODULE.refuse_unsupported_windows_environment(facts)
+        for change in [
+            {"artifact_sha256": "0" * 64},
+            {"os": "linux"},
+            {"release": "10"},
+            {"architecture": "arm64"},
+            {"compatibility_checker_passed": False},
+        ]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                MODULE.refuse_unsupported_windows_environment(facts | change)
+
 
 if __name__ == "__main__":
     unittest.main()
