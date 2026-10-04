@@ -20,6 +20,14 @@
     "./plugins/legacy-inputs": {
       "types": "./dist/src/plugins/gazebo-ros-v1/inputs.d.ts",
       "import": "./dist/src/plugins/gazebo-ros-v1/inputs.js"
+    },
+    "./plugins/legacy-finalization": {
+      "types": "./dist/src/plugins/legacy-finalization/index.d.ts",
+      "import": "./dist/src/plugins/legacy-finalization/index.js"
+    },
+    "./plugins/legacy-finalization-inputs": {
+      "types": "./dist/src/plugins/legacy-finalization/inputs.d.ts",
+      "import": "./dist/src/plugins/legacy-finalization/inputs.js"
     }
   },
   "files": [
