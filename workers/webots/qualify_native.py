@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import time
@@ -14,7 +15,12 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--init-path", type=Path, required=True)
     args = p.parse_args()
+    init = args.init_path.resolve(strict=True)
+    assert hashlib.sha256(init.read_bytes()).hexdigest() == (
+        "43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba"
+    ), "qualifier requires the C08 stock catatonit asset"
     args.output.mkdir(parents=True, exist_ok=True)
     observations = []
     for mode in (
@@ -33,6 +39,9 @@ def main() -> None:
             "podman",
             "run",
             "--rm",
+            "--init",
+            "--init-path",
+            str(init),
             "--name",
             name,
             "--userns=keep-id:uid=10001,gid=10001",
@@ -133,6 +142,13 @@ def main() -> None:
             native = json.loads((directory / "controller-result.json").read_bytes())
             worker = json.loads((directory / "worker-result.json").read_bytes())
             assert native["status"] == "completed"
+            actual_init = json.loads((directory / "oci-init.json").read_bytes())
+            assert actual_init["pid"] == 1
+            assert (
+                actual_init["sha256"] == hashlib.sha256(init.read_bytes()).hexdigest()
+            )
+            assert actual_init["comm"] and actual_init["executable"]
+            assert all(child["group_absent"] for child in worker["children"])
             assert (
                 worker["processes_reaped"] and worker["evidence_exported_before_stop"]
             )

@@ -31,8 +31,12 @@ are retained. Native desktop/display and hardware GPU qualification require sepa
 
 Measurement state and camera payloads are fsynced/exported before native reset/quit and process
 cleanup. Reset records request, native step result and observed clock regression in a new epoch.
-Cancellation exports observed state/diagnostics and reaps the controller, Webots and Xvfb process
-groups. Foreign owner markers are refused. ROS, PX4, simulation_interfaces and RTSP capabilities
+Cancellation exports observed state/diagnostics and terminates each registered controller,
+Webots and Xvfb process group, including groups whose root PID already exited. Bounded cleanup
+observes disappearance with `killpg(pgid, 0)`; direct PID exit alone is insufficient. The worker
+requires the C08 stock catatonit asset as actual PID 1 and retains its observed executable hash.
+Compose requests `init: true` and Engine readiness requires observed `HostConfig.Init: true`.
+Foreign owner markers are refused. ROS, PX4, simulation_interfaces and RTSP capabilities
 are not declared.
 
 Build in a project container context after downloading and verifying the named artifact:
@@ -41,6 +45,7 @@ Build in a project container context after downloading and verifying the named a
 podman build --platform linux/amd64 --ignorefile workers/webots/container.ignore \
   -f docker/webots.Dockerfile -t robotics-webots:candidate .
 python3 workers/webots/qualify_native.py --image robotics-webots@sha256:MANIFEST \
+  --init-path /absolute/project/host/.tools/oci-init/catatonit \
   --output /absolute/new-qualification-directory
 ```
 

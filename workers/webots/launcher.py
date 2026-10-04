@@ -13,6 +13,7 @@ from pathlib import Path
 
 from common import reference, write_json
 
+INIT_SHA256 = "43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba"
 ROOT = Path(__file__).resolve().parent
 WEBOTS = Path("/usr/local/webots")
 stopping = False
@@ -42,21 +43,39 @@ def parse() -> argparse.Namespace:
     return p.parse_args()
 
 
+def group_exists(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
 def reap(process: subprocess.Popen[bytes]) -> dict[str, object]:
-    if process.poll() is None:
+    # Every registered child was created with start_new_session=True. Its group
+    # can outlive the root PID, so root exit never skips group termination.
+    signals = []
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        if not group_exists(process.pid):
+            break
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            os.killpg(process.pid, signum)
+            signals.append(signum.name)
         except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=2)
+            break
+        deadline = time.monotonic() + 2
+        while group_exists(process.pid) and time.monotonic() < deadline:
+            process.poll()  # reap our direct child; stock OCI init owns orphans
+            time.sleep(0.02)
+    process.poll()
+    absent = not group_exists(process.pid)
     return {
         "pid": process.pid,
+        "registered_pgid": process.pid,
         "exit_code": process.returncode,
-        "reaped": process.poll() is not None,
+        "signals": signals,
+        "group_absent": absent,
+        "reaped": process.returncode is not None and absent,
     }
 
 
@@ -81,6 +100,17 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=True)
     args.output.chmod(0o2770)
     write_json(args.output / "owner.json", {"owner_id": args.owner_id})
+    init = {
+        "pid": 1,
+        "executable": os.readlink("/proc/1/exe"),
+        "comm": Path("/proc/1/comm").read_text().strip(),
+        "sha256": reference(Path("/proc/1/exe"))["sha256"],
+        "expected_sha256": INIT_SHA256,
+        "source": "C08 stock catatonit asset",
+    }
+    if init["sha256"] != INIT_SHA256:
+        raise RuntimeError("the qualified stock OCI init is required as observed PID 1")
+    write_json(args.output / "oci-init.json", init)
     exported = args.output / "inputs"
     exported.mkdir()
     for name in (
@@ -175,6 +205,7 @@ def main() -> int:
         shutil.copyfile(packages, args.output / "packages.tsv")
         shutil.copyfile(binaries, args.output / "binaries.sha256")
         identity = {
+            "owner_id": args.owner_id,
             "release": (WEBOTS / "resources/version.txt").read_text().strip(),
             "upstream": json.loads((ROOT / "upstream.json").read_bytes()),
             "packages_ref": reference(args.output / "packages.tsv"),
@@ -182,6 +213,7 @@ def main() -> int:
             "renderer_ref": reference(args.output / "renderer.txt"),
             "uid": os.getuid(),
             "gid": os.getgid(),
+            "oci_init": init,
         }
         write_json(args.output / "worker-identity.json", identity)
         simulator = spawn(
@@ -277,6 +309,11 @@ def main() -> int:
             stream.close()
         result["children"] = children
         result["processes_reaped"] = all(child["reaped"] for child in children)
+        if not result["processes_reaped"]:
+            result["status"] = "error"
+            result["diagnostic"] = (
+                "registered process group remains after bounded cleanup"
+            )
         result["log_refs"] = [
             reference(args.output / (name + ".log")) for name, _ in processes
         ]

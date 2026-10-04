@@ -107,11 +107,13 @@ export class WebotsNative extends Service {
     const observed: MetadataObservation = await this.engine.inspect(id, {
       runId: this.ownerId, projectName: this.project, imageDigest: this.config.workerImage,
       mounts: [{destination: '/run/robotics', readOnly: false, volumeName: this.config.runVolume}],
-      hostConfig: {ReadonlyRootfs: true, NetworkMode: 'none', Memory: 2147483648}, user: '10001:1000',
+      hostConfig: {Init: true, ReadonlyRootfs: true, NetworkMode: 'none', Memory: 2147483648}, user: '10001:1000',
     });
     const ready = await this.waitFile('ready.json', signal);
     await writeFile(join(this.output, 'engine-readiness.json'), JSON.stringify(observed));
     if (observed.status !== 'complete' || record(record(observed.container).State).Running !== true) throw new Error('native worker Engine facts are incomplete or mismatched');
+    const init = record(record(await this.waitFile('worker-identity.json', signal)).oci_init);
+    if (init.pid !== 1 || init.sha256 !== '43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba' || typeof init.comm !== 'string' || !init.comm || typeof init.executable !== 'string') throw new Error('actual stock OCI init identity is unqualified');
     if (ready.ready !== true || record(ready.robot).name !== 'rr-native-probe') throw new Error('native world/robot readiness is absent');
     return {ready: true, evidenceRefs: [await reference(join(this.output, 'ready.json')),
       await reference(join(this.output, 'worker-identity.json'))]};
@@ -128,7 +130,7 @@ export class WebotsNative extends Service {
     const result = await this.waitFile('worker-result.json', signal);
     if (result.evidence_exported_before_stop !== true) throw new Error('native payload export is not confirmed');
 
-    const names = ['worker-result.json', 'controller-result.json', 'last-native-state.json', 'ready.json', 'worker-identity.json', 'engine-readiness.json', 'renderer.txt', 'packages.tsv', 'binaries.sha256', 'controller.log', 'webots.log', 'xvfb.log'];
+    const names = ['worker-result.json', 'controller-result.json', 'last-native-state.json', 'ready.json', 'worker-identity.json', 'oci-init.json', 'engine-readiness.json', 'renderer.txt', 'packages.tsv', 'binaries.sha256', 'controller.log', 'webots.log', 'xvfb.log'];
     if (this.config.mode === 'offscreen-camera') names.push('camera.bgra', 'camera.png');
     return Promise.all(names.map(name => reference(join(this.output, name))));
   }

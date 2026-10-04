@@ -3,6 +3,7 @@ services:
   webots-native:
     image: "${ROBOTICS_WEBOTS_IMAGE:?immutable Webots worker image required}"
     pull_policy: never
+    init: true
     user: "10001:1000"
     network_mode: none
     read_only: true
@@ -31,6 +32,7 @@ services:
   webots-signal:
     image: "${ROBOTICS_WEBOTS_IMAGE:?immutable Webots worker image required}"
     pull_policy: never
+    init: true
     user: "10001:1000"
     network_mode: none
     read_only: true
