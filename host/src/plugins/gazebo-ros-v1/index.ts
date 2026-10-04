@@ -19,22 +19,23 @@ export class GazeboRosV1 extends Service {
   private stepperContainerId:string|undefined;
   private readonly nativeMetadataRefs:ArtifactRef[]=[];
   private readyWork:Promise<BackendReadiness>|undefined;
+  private startupReady=false;
   constructor(ctx:Context) {
     super(ctx,'gazeboRosV1');
     this.input=ctx.legacyInputs.get(ctx.runResources.ownerId);
     this.compose=new ComposeExecution(ctx.jobs,this.input.compose);
     ctx.runResources.track({id:this.input.compose.projectName,ownerId:ctx.runResources.ownerId,
       cleanup:async()=>{if(this.acquired) await this.require('cleanup',['down','--volumes'])},
-      verifyCleanup:async()=>{
-        const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'});
-        const actual=await engine.remainingOwned(this.input.runId);
+      verifyCleanup:async(signal)=>{
+        const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
+        const actual=await engine.remainingOwned(this.input.runId,{cancelSignal:signal});
         const ref=await this.retain('cleanup-native-inventory',actual);
         const volumes=actual.volumes as {Volumes?:unknown[]|null};
         return {released:actual.containers.length===0 && actual.networks.length===0 && Object.hasOwn(volumes,'Volumes') && (volumes.Volumes===null || volumes.Volumes?.length===0),evidenceRefs:[ref]};
       }});
   }
   snapshot() {
-    if(!this.simulationContainerId||!this.stepperContainerId) throw new Error('native startup snapshot incomplete');
+    if(!this.startupReady||!this.simulationContainerId||!this.stepperContainerId) throw new Error('native startup snapshot incomplete');
     return Object.freeze({runId:this.input.runId,simulationContainerId:this.simulationContainerId,stepperContainerId:this.stepperContainerId,readyRefs:Object.freeze(this.refs.map(ref=>Object.freeze({...ref}))),nativeMetadataRefs:Object.freeze(this.nativeMetadataRefs.map(ref=>Object.freeze({...ref}))),compose:Object.freeze({projectName:this.input.compose.projectName}),sharedRoot:'/run/robotics',inputRoot:'/run/robotics/input',evidenceRoot:'/run/robotics/evidence',resultsRoot:'/run/robotics/results'});
   }
   ready(signal:AbortSignal):Promise<BackendReadiness> {return this.readyWork??=this.start(signal)}
@@ -45,19 +46,21 @@ export class GazeboRosV1 extends Service {
     return Object.freeze(await referenceFile(path));
   }
   private async require(name:string,args:readonly string[],signal?:AbortSignal,expectedExit=0):Promise<JobResult> {
+    signal?.throwIfAborted();
     const result=await this.compose.run(args,signal);
     this.refs.push(await this.retain(name,result));
     if(result.exitCode!==expectedExit || result.timedOut || result.canceled || (expectedExit===0&&!result.ok)) throw new Error(`${name}: ${result.diagnostic??result.stderr}`);
-    return result;
+    signal?.throwIfAborted();return result;
   }
   private async start(signal:AbortSignal):Promise<BackendReadiness> {
-    await this.compose.requireVersion();
+    signal.throwIfAborted();await this.compose.requireVersion(signal);
+    signal.throwIfAborted();
     this.acquired=true;
     await this.require('application-start',['up','--detach','--no-build','--wait','--wait-timeout','120','simulation',...this.input.observationServices],signal);
-    const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'});
+    const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
     const id=await this.require('simulation-id',['ps','--quiet','simulation'],signal);
     this.simulationContainerId=id.stdout.trim();
-    const metadata=await engine.inspect(this.simulationContainerId,this.input.simulationRequirement);
+    const metadata=await engine.inspect(this.simulationContainerId,this.input.simulationRequirement,{cancelSignal:signal});
     const simulationRef=await this.retain('simulation-native-metadata',metadata);this.refs.push(simulationRef);this.nativeMetadataRefs.push(simulationRef);
     if(metadata.status!=='complete') throw new Error('required observed simulation metadata incomplete');
     if(this.input.admittedDescriptionPath) {
@@ -102,7 +105,7 @@ export class GazeboRosV1 extends Service {
     await this.require('exclusive-clock-owner',['up','--detach','--no-build','simulation-stepper'],signal);
     const stepperId=await this.require('stepper-id',['ps','--quiet','simulation-stepper'],signal);
     this.stepperContainerId=stepperId.stdout.trim();
-    const stepper=await engine.inspect(this.stepperContainerId,{...this.input.stepperRequirement,networkNamespaceContainerId:this.simulationContainerId,hostConfig:{...this.input.stepperRequirement.hostConfig,IpcMode:'container:'+this.simulationContainerId}});
+    const stepper=await engine.inspect(this.stepperContainerId,{...this.input.stepperRequirement,networkNamespaceContainerId:this.simulationContainerId,hostConfig:{...this.input.stepperRequirement.hostConfig,IpcMode:'container:'+this.simulationContainerId}},{cancelSignal:signal});
     const stepperRef=await this.retain('stepper-native-state',stepper);this.refs.push(stepperRef);this.nativeMetadataRefs.push(stepperRef);
     const raw=stepper.container as {State?:{Running?:boolean;ExitCode?:number}};
     if(stepper.status!=='complete'||raw.State?.Running!==true) throw new Error('native exact stepper is not running');
@@ -110,10 +113,11 @@ export class GazeboRosV1 extends Service {
     const cursor=(JSON.parse(clock.stdout) as {last_ns?:unknown}).last_ns;
     if(typeof cursor!=='string'||!/^\d+$/.test(cursor)||BigInt(cursor)<=0n) throw new Error('native Clock cursor must remain a positive lossless ns string');
     if(this.input.admittedDescriptionPath) await this.require('native-robot-readiness',['exec','-T','neutral-robot','robotics-entrypoint','python3',this.input.readinessWorkerPath,'--after-ns',cursor],signal);
-    const lastStepper=await engine.inspect(this.stepperContainerId,{...this.input.stepperRequirement,networkNamespaceContainerId:this.simulationContainerId,hostConfig:{...this.input.stepperRequirement.hostConfig,IpcMode:'container:'+this.simulationContainerId}});
+    const lastStepper=await engine.inspect(this.stepperContainerId,{...this.input.stepperRequirement,networkNamespaceContainerId:this.simulationContainerId,hostConfig:{...this.input.stepperRequirement.hostConfig,IpcMode:'container:'+this.simulationContainerId}},{cancelSignal:signal});
     const lastRef=await this.retain('stepper-native-state-after-readiness',lastStepper);this.refs.push(lastRef);this.nativeMetadataRefs.push(lastRef);
     if(lastStepper.status!=='complete'||(lastStepper.container as {State?:{Running?:boolean}}).State?.Running!==true) throw new Error('exact stepper stopped during backend readiness');
     await this.require('strict-stepper-native-log',['logs','--no-color','simulation-stepper'],signal);
+    signal.throwIfAborted();this.startupReady=true;
     return Object.freeze({ready:true,evidenceRefs:Object.freeze([...this.refs])});
   }
 }

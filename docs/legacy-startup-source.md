@@ -64,3 +64,15 @@ node host/tools/qualify-gazebo-startup.mjs \
   sha256:59e092393a655e736b56c928acd51b921411fa4810cb030591e00138b2fc5ed4 \
   sha256:1c227795630eb5d3a5069774031321f7aa48a47179af8345432bf1a0be6c7c60
 ```
+
+## Bounded metadata
+
+Engine discovery and container/image/network/namespace/inventory reads have
+finite deadlines and propagate caller cancellation to the native SDK request.
+Endpoint and requirements are copied before asynchronous work. Cancellation
+remains an error and cannot advance startup. The startup snapshot is available
+only after completed native readiness.
+
+Focused transport checks cover held Unix HTTP responses, request closure,
+caller mutation and foreign ownership. Raw native facts are retained under
+artifacts/c09/metadata-bounds-native; this read-only check is not full B3.

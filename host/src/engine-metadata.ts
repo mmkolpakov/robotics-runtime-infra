@@ -6,6 +6,19 @@ type RecordValue = Record<string, unknown>;
 const object = (v: unknown): RecordValue | undefined => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as RecordValue : undefined;
 const api = (v: unknown): number | undefined => typeof v === 'string' && /^1\.\d+$/.test(v) ? Number(v.slice(2)) : undefined;
 export interface EngineEndpoint {socketPath: string; operationMinApi: string; operationMaxApi: string}
+export interface MetadataReadOptions {deadlineMs?:number;cancelSignal?:AbortSignal}
+function metadataSignal(options:MetadataReadOptions):AbortSignal {
+  const deadlineMs=options.deadlineMs??30000,cancel=options.cancelSignal;
+  if(!Number.isSafeInteger(deadlineMs)||deadlineMs<1||deadlineMs>120000) throw new Error('invalid finite native metadata deadline');
+  const signal=cancel?AbortSignal.any([cancel,AbortSignal.timeout(deadlineMs)]):AbortSignal.timeout(deadlineMs);
+  signal.throwIfAborted();return signal;
+}
+function readJson<T>(docker:Docker,path:string,signal:AbortSignal,options?:Record<string,unknown>):Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve,reject)=>docker.modem.dial({path,method:'GET',abortSignal:signal,options,
+    statusCodes:{200:true,400:'invalid native metadata request',404:'native metadata is unavailable',500:'Engine metadata read failed'},
+  },(error:unknown,value:unknown)=>error?reject(error):resolve(value as T)));
+}
 export interface EngineFacts {endpoint: string; serverApi: string; serverMinApi: string; clientApi: string; versionResponse: unknown}
 export interface ContainerRequirement {
   runId: string;
@@ -38,22 +51,26 @@ export function selectApi(versionResponse: unknown, endpoint: EngineEndpoint): E
 }
 export class EngineMetadata {
   private constructor(private readonly docker: Docker, private readonly socketPath: string, readonly facts: EngineFacts) {}
-  static async connect(endpoint: EngineEndpoint): Promise<EngineMetadata> {
+  static async connect(requestedEndpoint:EngineEndpoint,options:MetadataReadOptions={}):Promise<EngineMetadata> {
+    const endpoint={...requestedEndpoint},signal=metadataSignal(options);
     if (!isAbsolute(endpoint.socketPath)) throw new Error('Engine requires an absolute Unix socket');
     // /version is unversioned discovery. Dockerode does not negotiate client APIs.
     const bootstrap = new Docker({socketPath: endpoint.socketPath});
-    const facts = selectApi(await bootstrap.version(), endpoint);
+    const facts = selectApi(await readJson(bootstrap,'/version',signal), endpoint);
+    signal.throwIfAborted();
     const docker = new Docker({socketPath: endpoint.socketPath, version: `v${facts.clientApi}`});
     return new EngineMetadata(docker, endpoint.socketPath, facts);
   }
-  async rootlessParentMaps(): Promise<{nativeApi: string; uidMap: unknown[]; gidMap: unknown[]; raw: unknown}> {
+  async rootlessParentMaps(options:MetadataReadOptions={}): Promise<{nativeApi: string; uidMap: unknown[]; gidMap: unknown[]; raw: unknown}> {
+    const signal=metadataSignal(options);
     const version = object(this.facts.versionResponse);
     const components = Array.isArray(version?.Components) ? version.Components : [];
     const component = components.map(object).find(c => c?.Name === 'Podman Engine');
     const nativeApi = object(component?.Details)?.APIVersion;
     if (nativeApi !== '4.9.3') throw new Error('unqualified native parent namespace API');
     const native = new Docker({socketPath: this.socketPath, version: `v${nativeApi}`});
-    const raw = await new Promise<unknown>((resolve, reject) => native.modem.dial({path: '/libpod/info', method: 'GET', statusCodes: {200: true}}, (error: unknown, value: unknown) => error ? reject(error) : resolve(value)));
+    const raw=await readJson(native,'/libpod/info',signal);
+    signal.throwIfAborted();
     const host = object(object(raw)?.host);
     if (object(host?.security)?.rootless !== true) throw new Error('native Engine is not observed rootless');
     const maps = object(host?.idMappings);
@@ -61,10 +78,16 @@ export class EngineMetadata {
     if (!valid(maps?.uidmap) || !valid(maps?.gidmap)) throw new Error('incomplete native parent UID/GID maps');
     return {nativeApi, uidMap: maps.uidmap, gidMap: maps.gidmap, raw};
   }
-  async remainingOwned(runId: string): Promise<{containers: unknown[]; volumes: unknown; networks: unknown[]}> {
-    const filters = {label: [`org.robotics.runtime.run-id=${runId}`]};
-    const [containers, volumes, networks] = await Promise.all([this.docker.listContainers({all: true, filters}), this.docker.listVolumes({filters}), this.docker.listNetworks({filters})]);
-    return {containers, volumes, networks};
+  async remainingOwned(runId:string,options:MetadataReadOptions={}):Promise<{containers:unknown[];volumes:unknown;networks:unknown[]}> {
+    const signal=metadataSignal(options);
+    if(!runId) throw new Error('native metadata inventory requires an owner');
+    const filters={label:[`org.robotics.runtime.run-id=${runId}`]};
+    const [containers,volumes,networks]=await Promise.all([
+      readJson<unknown[]>(this.docker,'/containers/json?',signal,{all:true,filters}),
+      readJson(this.docker,'/volumes?',signal,{filters}),
+      readJson<unknown[]>(this.docker,'/networks?',signal,{filters}),
+    ]);
+    signal.throwIfAborted();return {containers,volumes,networks};
   }
   /** Read evidence only: no Engine exec or lifecycle writes are exposed here. */
   async readLogs(containerId:string,requestedOwner:{runId:string;projectName:string},
@@ -105,19 +128,21 @@ export class EngineMetadata {
       stream.destroy();
     }
   }
-  async inspect(containerId: string, required: ContainerRequirement): Promise<MetadataObservation> {
+  async inspect(containerId:string,requestedRequirement:ContainerRequirement,options:MetadataReadOptions={}): Promise<MetadataObservation> {
+    const required=structuredClone(requestedRequirement),signal=metadataSignal(options);
     if (!/^[a-f0-9]{64}$/.test(containerId)) throw new Error('exact acquired container ID required');
-    const container = await this.docker.getContainer(containerId).inspect();
+    const container=await readJson(this.docker,'/containers/'+containerId+'/json',signal);
     const imageId = object(container)?.Image;
-    const image = typeof imageId === 'string' ? await this.docker.getImage(imageId).inspect() : undefined;
+    const image = typeof imageId === 'string' ? await readJson(this.docker,'/images/'+encodeURIComponent(imageId)+'/json',signal) : undefined;
     const networks = object(object(object(container)?.NetworkSettings)?.Networks);
     const networkMode = object(object(container)?.HostConfig)?.NetworkMode;
     const parentId = typeof networkMode === 'string' && /^container:[a-f0-9]{64}$/.test(networkMode) ? networkMode.slice(10) : undefined;
-    const networkNamespaceContainer = parentId ? await this.docker.getContainer(parentId).inspect() : undefined;
+    const networkNamespaceContainer = parentId ? await readJson(this.docker,'/containers/'+parentId+'/json',signal) : undefined;
     const namespaceMode = networkNamespaceContainer ? object(object(networkNamespaceContainer)?.HostConfig)?.NetworkMode : networkMode;
     const namespaceNetworks = networkNamespaceContainer ? object(object(networkNamespaceContainer)?.NetworkSettings)?.Networks : networks;
     const ids = namespaceMode === 'none' ? [] : Object.values(object(namespaceNetworks) ?? {}).map(n => object(n)?.NetworkID).filter((v): v is string => typeof v === 'string' && v.length > 0);
-    const networkObjects = await Promise.all(ids.map(id => this.docker.getNetwork(id).inspect().catch((error:unknown)=>({requestedNetworkId:id,inspectionError:String(error)}))));
+    const networkObjects=await Promise.all(ids.map(id=>readJson(this.docker,'/networks/'+encodeURIComponent(id),signal).catch((error:unknown)=>{signal.throwIfAborted();return {requestedNetworkId:id,inspectionError:String(error)}})));
+    signal.throwIfAborted();
     return validateObservation(this.facts, container, image, networkObjects, required, networkNamespaceContainer);
   }
 }

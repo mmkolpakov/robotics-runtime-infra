@@ -53,8 +53,8 @@ export class ComposeExecution {
       extendEnv: false,
     });
   }
-  async requireVersion(): Promise<FiniteJobResult> {
-    const result = await this.run(['version', '--short']);
+  async requireVersion(cancelSignal?:AbortSignal): Promise<FiniteJobResult> {
+    const result = await this.run(['version', '--short'],cancelSignal);
     if (!result.ok || result.stdout.trim() !== '5.3.1') throw new Error(`Compose 5.3.1 required: ${result.diagnostic ?? result.stdout}`);
     return result;
   }
