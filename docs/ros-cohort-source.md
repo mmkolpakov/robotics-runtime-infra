@@ -35,3 +35,11 @@ Stock B3 must separately prove canonical initialization before the sole Clock
 owner, entity presence, exact stepping, fresh JointState/TF, original LIVE
 evaluation, recording drain, durable export, guarded cleanup and portable verification.
 Installed-package proof does not qualify a released caller.
+
+The full neutral SOURCE B3 run on the stock cohort passed. Independent review
+after source storage removal verified 361 completion/resource references.
+Separate fresh-scene requests proved supported full reset and unsupported partial
+reset. Full reset starts a new Clock epoch and removes dynamically spawned models;
+retained evidence must precede that operation. Explicit pause is a separate call.
+[The review](ros-cohort-independent-review.md) links the exact native evidence.
+These accepted source gates do not qualify released R10 or the full legacy CLI.

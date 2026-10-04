@@ -22,7 +22,13 @@
   "nativeMetadataStatus": "complete",
   "observedApi": "1.41",
   "actualProjectCleanupEmpty": true,
-  "strictSourceB3": "pending",
+  "strictSourceB3": {
+    "status": "passed",
+    "pipelineRevision": "d0113530814cc4139bf71d177850ef9c31ff7a98",
+    "runId": "run-8e1b2371-57e3-4882-a8f4-276ca0b3a837",
+    "independentReview": "docs/proofs/ros-cohort-independent-review.json",
+    "releasedEquivalence": "separate pending gate"
+  },
   "rawRefs": [
     {
       "path": "artifacts/ros-cohort/native-facts/packages.txt",

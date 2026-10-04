@@ -1,11 +1,23 @@
-# Independent stock ROS source review
+# Stock ROS source qualification
 
-The stock 1.0.24 SOURCE run `run-8e1b2371-57e3-4882-a8f4-276ca0b3a837` on producer `d0113530814cc4139bf71d177850ef9c31ff7a98` passed the independently checked asset/control/readiness and retention boundaries. The reader mounted only retained evidence plus its review code, both read-only. After outer source volume deletion, all 361 unique completion/resource references matched their actual hashes and sizes. Core completion passed without errors; actual owned cleanup was empty. The reader's own project also cleaned up completely.
+The neutral SOURCE run on stock ros_gz_sim 1.0.24 / interfaces 1.5.1 passed native
+asset/canonical ordering, exact stepping, fresh Clock/JointState/TF, original LIVE,
+recording/finalization and guarded cleanup. After source storage removal, a
+read-only consumer verified all 361 completion/resource references by hash and size.
+The reader's own project cleanup was also empty.
 
-Native missing-file creation ACK was followed by GetEntities absent/OK and exit 70. Fresh native creation yielded the required entity and canonical initialization before the sole periodic owner. Conformance paused at 22,487,000,000 ns, stepped exactly five 1 ms steps to 22,492,000,000 ns, and resumed at 22,525,000,000 ns. A single Clock publisher advanced 32,843,000,000 → 32,844,000,000 ns. Clock, exact zero slider JointState, and the required base_link → slider_link transform all had fresh stamps 33,600,000,000 ns. Final capture was PAUSED at 33,967,000,000 ns with no reset.
+A separate fresh scene used imported native interface constants and observed
+request, response and effect. SCOPE_TIME returned FEATURE_UNSUPPORTED, preserving
+clock/state/model. SCOPE_ALL returned RESULT_OK, reset Clock to zero and removed
+the dynamically spawned model from successful GetEntities output.
+Initial and final state were PLAYING; a separate pause produced PAUSED and
+quiescent Clock. Reset does not promise to preserve PAUSED.
 
-A separate fresh scene tested the imported native 1.5.1 API and constants. GetSimulatorFeatures advertised full reset and pause/state/single/multiple stepping; partial reset features were absent. A runtime model was spawned and moved through native services. SCOPE_TIME returned RESULT_FEATURE_UNSUPPORTED and left clock (383000000 ns), state, model names, and model state unchanged. SCOPE_ALL returned RESULT_OK, produced an observed Clock epoch jump to zero, and removed the runtime-spawned model from the successful GetEntities result. Initial and post-reset state were PLAYING. ResetSimulation does not promise PAUSED preservation; a subsequent explicit native pause independently produced quiescent Clock 665000000 ns and PAUSED state. The missing model's GetEntityState returned native OPERATION_FAILED/code 4 with “Requested entity not found”; that classification is retained verbatim and is not translated to NOT_FOUND/code 2 or used as the absence oracle.
+The removed model's GetEntityState returned OPERATION_FAILED with its original
+diagnostic. Absence is proved through successful GetEntities, not an inferred
+error-code translation. Earlier failed assumptions and raw results remain retained.
 
-Three prior probe failures remain: read-only ROS logging had no writable directory; a paused-preservation assumption caused a quiescence timeout; and a NOT_FOUND error-code assumption rejected real model removal. The final probe used native GetEntities as the absence oracle and observed the reset effect directly. The d011 positive scene and immutable R10 were never reset or modified. No upstream patch, overlay, or controller/protocol implementation was added.
-
-The independent retained report SHA-256 is `f9ffa5cc38a68667de4a89f48a7e470795c9d13e38f72d97fc07073a4829e514`. The final native reset report is `816051c3c03ddc25a4a7343bba02f9736ee0c1dba1f3041d066ed7b7c85d6e11`. Exact hash/size references, actual requests/responses, before/after state, and all cleanup observations are indexed in `docs/proofs/ros-cohort-independent-review.json`; raw data remain under `artifacts/ros-cohort/independent-retained-review` and `artifacts/ros-cohort/native-reset-4`. Released R10 B3 and broader C11 CLI equivalence remain separate gates.
+[The evidence index](proofs/ros-cohort-independent-review.json) binds native
+requests/responses, state, entities, exact byte references and cleanup observations.
+The original positive scene and immutable R10 were untouched.
+Released B3 and broader legacy CLI equivalence remain separate gates.
