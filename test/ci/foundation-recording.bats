@@ -715,24 +715,36 @@ PY
   done
 }
 
-@test "source recorder starts after provider manifest and publisher while playback keeps early capture" {
+@test "source startup defers neutral readiness before stepping and keeps playback capture early" {
   local boundary="${BATS_TEST_TMPDIR}/capture-boundary.sh"
   {
     cat <<'SH'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-root="$1"; data_source="$2"; run_dir="$3"
+root="$1"; data_source="$2"; run_dir="$3"; robot_selected="$4"
 script_dir="${root}/scripts/ci/foundation"
-foundation_bin="${root}/dependencies/robotics-runtime/.venv/bin"
-ROBOTICS_SIMULATION_OCI_DIGEST=fixture-digest
+foundation_bin="${run_dir}/bin"
+ROBOTICS_SIMULATION_OCI_DIGEST=fixture
+ROBOTICS_ROBOT_DESCRIPTION_PATH=/fixture/neutral.urdf
+FOUNDATION_NATIVE_READINESS_STATUS="${5:-0}"
 artifact_dir="${run_dir}/artifacts"
-mkdir -p "${run_dir}/configuration" "${artifact_dir}/provider"
+mkdir -p "${run_dir}/configuration" "${artifact_dir}/provider" "${foundation_bin}"
 events="${run_dir}/events"
 compose=(docker compose)
 extra_services=()
-robot_selected="$("${FOUNDATION_PYTHON}" "${root}/docker/runtime/admit-robot-description" \
-  --root "${root}" --scenario "${root}/examples/minimal-consumer/scenario.yaml" | jq -r '.selected')"
-[[ "${robot_selected}" == false ]]
+startup_extra_services=()
+if [[ "${robot_selected}" == false ]]; then
+  [[ "$("${FOUNDATION_PYTHON}" "${root}/docker/runtime/admit-robot-description" \
+    --root "${root}" --scenario "${root}/examples/minimal-consumer/scenario.yaml" | jq -r '.selected')" == false ]]
+fi
+# Harness explanation is a leaf invocation here; role binding is tested separately.
+cat >"${foundation_bin}/python" <<'PYTHON'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "$1" == -I && "$2" == -m && "$3" == robotics_acceptance_harness.cli && "$4" == explain ]]
+printf '{}\n'
+PYTHON
+chmod +x "${foundation_bin}/python"
 publish() { printf '%s\n' "$1" >>"${events}"; }
 sudo() {
   if [[ "$1" == install ]]; then
@@ -746,20 +758,50 @@ provider_fixture() {
   printf '{}\n' >"${artifact_dir}/provider/bindings.json"
 }
 collect_playback_provider() { provider_fixture; }
-bash() { provider_fixture; }
+bash() {
+  if [[ "$1" == *"/wait-ready.sh" ]]; then
+    publish readiness
+    # A paused periodic writer must not own the clock during native readiness.
+    [[ ! -e "${run_dir}/stepper-started" ]] || return 61
+    return "${FOUNDATION_NATIVE_READINESS_STATUS}"
+  fi
+  provider_fixture
+}
 docker() {
   if [[ "$1" == inspect ]]; then
     printf '[{"HostConfig":{}}]\n'
   elif [[ " $* " == *' up '* ]]; then
+    if [[ "${@: -1}" == simulation-stepper ]]; then
+      publish stepper
+      : >"${run_dir}/stepper-started"
+    fi
+    [[ "${@: -1}" != neutral-robot ]] || publish robot
     [[ " $* " != *' recorder '* ]] || publish recorder
     [[ " $* " != *' runtime-probe-publisher '* ]] || publish publisher
   elif [[ " $* " == *' run '* ]]; then
-    publish manifest
-    jq -n --arg digest "$(sha256sum "${root}/config/fastdds/udp-only.xml" | cut -d' ' -f1)" \
-      '{schema_version:"runtime-manifest.v1",
-        data_plane:{middleware_configuration_sha256:$digest},
-        configuration_artifacts:[{kind:"host_topology"},{kind:"runtime_resources"}]}' \
-      >"${run_dir}/runtime-manifest.json"
+    if [[ " $* " == *' check_urdf '* ]]; then
+      publish parse
+      printf 'parse-check-executed\n'
+    elif [[ " $* " == *' -name unreadable_neutral_robot '* ]]; then
+      printf 'Entity creation successful.\n'
+    else
+      publish manifest
+      jq -n --arg digest "$(sha256sum "${root}/config/fastdds/udp-only.xml" | cut -d' ' -f1)" \
+        '{schema_version:"runtime-manifest.v1",
+          data_plane:{middleware_configuration_sha256:$digest},
+          configuration_artifacts:[{kind:"host_topology"},{kind:"runtime_resources"}]}' \
+        >"${run_dir}/runtime-manifest.json"
+    fi
+  elif [[ " $* " == *' exec '* ]]; then
+    if [[ "${@: -1}" == /run/robotics/product/.readiness-missing.urdf ]]; then
+      return 0
+    fi
+    cat >/dev/null
+    if [[ " $* " == *' --entity unreadable_neutral_robot '* ]]; then
+      printf '{"status":"entity_absent","result":{"result":1},"entity":"unreadable_neutral_robot","expected":"present","exists":false}\n'
+      return 70
+    fi
+    printf '{"status":"passed","result":{"result":1},"exists":false}\n'
   elif [[ " $* " == *' port '* ]]; then
     printf '127.0.0.1:13133\n'
   elif [[ " $* " == *' ps '* ]]; then
@@ -768,9 +810,12 @@ docker() {
     return 90
   fi
 }
+# The production deadline runs a child Bash; export only these leaf I/O spies.
+export root run_dir artifact_dir events FOUNDATION_NATIVE_READINESS_STATUS
+export -f docker bash publish provider_fixture
 SH
-    # Execute the contiguous production startup through publication. Only leaf
-    # transports above are fixtures; this does not claim native ROS observation.
+    # Execute contiguous production startup through publication. Leaf transports
+    # expose ordering and failure propagation, not native ROS observation.
     awk '
       /^sudo chown -R 1000:1000/ { emit = 1 }
       emit && /^observer_compose=/ { exit }
@@ -780,12 +825,12 @@ SH
   local source
   for source in simulator recording_playback; do
     run bash "${boundary}" "${REPOSITORY_ROOT}" "${source}" \
-      "${BATS_TEST_TMPDIR}/${source}"
+      "${BATS_TEST_TMPDIR}/${source}" false
     printf '%s\n' "${output}"
     [ "${status}" -eq 0 ]
     local expected="${BATS_TEST_TMPDIR}/expected-${source}"
     if [[ "${source}" == simulator ]]; then
-      printf 'provider\nmanifest\npublisher\nrecorder\n' >"${expected}"
+      printf 'provider\nstepper\nmanifest\npublisher\nrecorder\n' >"${expected}"
     else
       printf 'recorder\nprovider\nmanifest\n' >"${expected}"
     fi
@@ -793,6 +838,26 @@ SH
     printf '%s\n' "${output}"
     [ "${status}" -eq 0 ]
   done
+
+  run bash "${boundary}" "${REPOSITORY_ROOT}" simulator \
+    "${BATS_TEST_TMPDIR}/neutral" true
+  printf '%s\n' "${output}"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${BATS_TEST_TMPDIR}/neutral/events")" = $'provider\nmanifest\nparse\nrobot\nreadiness\nstepper\npublisher\nrecorder' ]
+
+  run bash "${boundary}" "${REPOSITORY_ROOT}" simulator \
+    "${BATS_TEST_TMPDIR}/failed-readiness" true 77
+  [ "${status}" -eq 77 ]
+  [ "$(cat "${BATS_TEST_TMPDIR}/failed-readiness/events")" = $'provider\nmanifest\nparse\nrobot\nreadiness' ]
+  [ ! -e "${BATS_TEST_TMPDIR}/failed-readiness/stepper-started" ]
+
+  # The old early stepper order must fail this fixture before capture starts.
+  local early_stepper="${BATS_TEST_TMPDIR}/early-stepper.sh"
+  sed 's/ && "${robot_selected}" != true//' "${boundary}" >"${early_stepper}"
+  run bash "${early_stepper}" "${REPOSITORY_ROOT}" simulator \
+    "${BATS_TEST_TMPDIR}/early-stepper" true
+  [ "${status}" -eq 61 ]
+  [ "$(cat "${BATS_TEST_TMPDIR}/early-stepper/events")" = $'provider\nstepper\nmanifest\nparse\nrobot\nreadiness' ]
 }
 
 

@@ -530,9 +530,9 @@ else
 fi
 sudo install -o 1000 -g 1000 -m 0644 \
   "${artifact_dir}/provider/bindings.json" "${run_dir}/provider-bindings.json"
-# The conformance probe controls pause/step/resume itself. Start the periodic
-# stepper only after the probe has finished, before the observation window.
-if [[ "${data_source}" == simulator ]]; then
+# The conformance probe owns pause/step/resume. Neutral software readiness
+# also needs advancing time, so defer its periodic stepper until that gate.
+if [[ "${data_source}" == simulator && "${robot_selected}" != true ]]; then
   "${compose[@]}" --profile stepped \
     up --detach --no-build --wait --wait-timeout 120 simulation-stepper
 fi
@@ -610,6 +610,9 @@ SH
   if ((${#extra_services[@]} > 0)); then
     "${compose[@]}" up --detach --no-build "${extra_services[@]}"
   fi
+  # Entity creation and Clock/JointState/TF readiness precede the stepped window.
+  "${compose[@]}" --profile stepped \
+    up --detach --no-build --wait --wait-timeout 120 simulation-stepper
 fi
 if [[ "${data_source}" == simulator ]]; then
   "${compose[@]}" --profile acceptance --profile observability \
