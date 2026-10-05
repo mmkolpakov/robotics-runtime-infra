@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {TestContext} from 'node:test';
 import {createServer} from 'node:http';
-import {mkdtemp, mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {lstat, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -152,4 +152,47 @@ test('missing volume inventory cannot qualify cleanup as released', async t => {
     assert.equal(observed.released, false);
     assert.ok(observed.observation.missing.includes('project.volumes'));
   } finally {await api.close();}
+});
+
+test('repeated identical export reuses retained regular files without replacing or rewriting them', async t => {
+  const {provider} = await fixture(t);
+  await nativeFiles(provider);
+  const first = await provider.exportEvidence(AbortSignal.timeout(1000));
+  const path = join(provider.retainedOutput, 'controller-result.json');
+  const before = await lstat(path, {bigint: true});
+  const repeated = await provider.exportEvidence(AbortSignal.timeout(1000));
+  const after = await lstat(path, {bigint: true});
+  assert.deepEqual(repeated, first);
+  assert.equal(after.ino, before.ino);
+  assert.equal(after.mtimeNs, before.mtimeNs);
+  assert.equal(after.ctimeNs, before.ctimeNs);
+});
+
+test('different existing retained bytes refuse export without overwriting source or prior target', async t => {
+  const {provider} = await fixture(t);
+  const expected = await nativeFiles(provider);
+  await mkdir(provider.retainedOutput, {recursive: true});
+  const target = join(provider.retainedOutput, 'controller-result.json');
+  await writeFile(target, 'prior retained bytes');
+  const before = await lstat(target, {bigint: true});
+  await assert.rejects(provider.exportEvidence(AbortSignal.timeout(1000)), /retained native bytes differ/);
+  assert.equal(await readFile(target, 'utf8'), 'prior retained bytes');
+  const after = await lstat(target, {bigint: true});
+  assert.equal(after.ino, before.ino);
+  assert.equal(after.mtimeNs, before.mtimeNs);
+  assert.deepEqual(await readFile(join(provider.output, 'controller-result.json')), expected.get('controller-result.json'));
+});
+
+test('an existing retained symlink is refused even if its destination has identical bytes', async t => {
+  const {root, provider} = await fixture(t);
+  const expected = await nativeFiles(provider);
+  await mkdir(provider.retainedOutput, {recursive: true});
+  const prior = join(root, 'prior-file');
+  await writeFile(prior, expected.get('controller-result.json')!);
+  const target = join(provider.retainedOutput, 'controller-result.json');
+  await symlink(prior, target);
+  await assert.rejects(provider.exportEvidence(AbortSignal.timeout(1000)), /regular file/);
+  assert.equal((await lstat(target)).isSymbolicLink(), true);
+  assert.deepEqual(await readFile(prior), expected.get('controller-result.json'));
+  assert.deepEqual(await readFile(join(provider.output, 'controller-result.json')), expected.get('controller-result.json'));
 });

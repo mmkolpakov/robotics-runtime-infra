@@ -1,7 +1,8 @@
 import {Service, referenceFile} from "@robotics-runtime/host";
 import type {ArtifactRef, Context} from "@robotics-runtime/host";
 import {createHash, randomUUID} from 'node:crypto';
-import {copyFile, mkdir, readFile, stat, writeFile} from 'node:fs/promises';
+import {constants} from 'node:fs';
+import {copyFile, lstat, mkdir, readFile, stat, writeFile} from 'node:fs/promises';
 import {isAbsolute, join} from 'node:path';
 import {setTimeout as pause} from 'node:timers/promises';
 import {ComposeExecution} from '../../compose-execution.js';
@@ -14,7 +15,7 @@ export interface WebotsConfig {
   workerImage: string; runVolume: string; outputRoot: string;
   mode: 'physics-only' | 'offscreen-camera';
   deadlineMs?: number;
-  /** Independent Host-owned retention root; never removed by this acquired project. */
+  /** Caller-selected retention root; storage independence must be qualified separately. */
   artifactDirectory?: string;
 }
 const record = (value: unknown): Record<string, unknown> => {
@@ -129,8 +130,14 @@ export class WebotsNative extends Service {
     await mkdir(this.retainedOutput, {recursive: true});
     if (target !== source) {
       const before = await reference(source);
-      await copyFile(source, target);
+      try {await copyFile(source, target, constants.COPYFILE_EXCL);}
+      catch (error) {if (record(error).code !== 'EEXIST') throw error;}
+      const retainedBefore = await lstat(target, {bigint: true});
+      if (!retainedBefore.isFile()) throw new Error('retained native target must be a regular file');
       const after = await reference(target);
+      const retainedAfter = await lstat(target, {bigint: true});
+      if (!retainedAfter.isFile() || retainedBefore.dev !== retainedAfter.dev || retainedBefore.ino !== retainedAfter.ino ||
+          retainedBefore.size !== retainedAfter.size || retainedBefore.mtimeNs !== retainedAfter.mtimeNs || retainedBefore.ctimeNs !== retainedAfter.ctimeNs) throw new Error('retained native target changed during verification');
       if (before.sha256 !== after.sha256 || before.size_bytes !== after.size_bytes) throw new Error('retained native bytes differ');
       return after;
     }
