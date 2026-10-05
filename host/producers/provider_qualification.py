@@ -312,6 +312,8 @@ def produce(
     generated_at: str,
     run_id: str,
 ) -> dict[str, Path]:
+    if output.exists():
+        raise FileExistsError("qualification output directory must be new")
     if backend not in ["gazebo", "webots", "isaac"]:
         raise ValueError("missing or unsupported provider")
     manifest = load_mapping(manifest_path)
@@ -337,7 +339,7 @@ def produce(
         },
     }
     draft = create_evidence_index(template)
-    output.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=False)
     for name, expected in manifest["files"].items():
         path = input_root / name
         protect_inputs(
@@ -369,7 +371,6 @@ def produce(
         "provider_kind": "simulator",
         "requirements": [{"capability": c, "required": True} for c in CAPABILITIES],
     }
-    output.mkdir(parents=True, exist_ok=True)
     profile_path = output / "qualification-profile.json"
     for destination in [
         profile_path,

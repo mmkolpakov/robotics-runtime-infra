@@ -40,13 +40,13 @@ class NativeDocuments(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
-    def run_provider(self, backend, inputs=None, manifest=None):
+    def run_provider(self, backend, inputs=None, manifest=None, output=None):
         return produce(
             backend,
             inputs or FIXTURES / "native" / backend,
             manifest or FIXTURES / (backend + "-inputs.json"),
             SCHEMA,
-            self.root / backend,
+            output or self.root / backend,
             generated_at="2026-10-05T00:00:00Z",
             run_id="run-cc58f1f4-2bfb-44aa-b33c-aa2a1cb3e37b",
         )
@@ -215,8 +215,30 @@ class NativeDocuments(unittest.TestCase):
             (inputs / "controller-result.json").read_bytes() + b" "
         )
         with self.assertRaises(ContractError):
-            self.run_provider("webots", inputs=inputs)
+            self.run_provider("webots", inputs=inputs, output=self.root / "new-webots")
         self.assertEqual(paths["conformance"].read_bytes(), before)
+
+    def test_rebound_semantic_error_cannot_replace_a_prior_bundle(self):
+        paths = self.run_provider("webots")
+        before = {
+            p.relative_to(self.root / "webots"): p.read_bytes()
+            for p in (self.root / "webots").rglob("*")
+            if p.is_file()
+        }
+        inputs, manifest = self.changed_inputs(
+            "webots",
+            "pre-reset.json",
+            lambda d: d["reset"].__setitem__("observed", True),
+        )
+        with self.assertRaisesRegex(FileExistsError, "must be new"):
+            self.run_provider("webots", inputs, manifest)
+        after = {
+            p.relative_to(self.root / "webots"): p.read_bytes()
+            for p in (self.root / "webots").rglob("*")
+            if p.is_file()
+        }
+        self.assertEqual(before, after)
+        self.assertTrue(paths["conformance"].is_file())
 
     def test_missing_native_evidence_refuses(self):
         inputs = self.root / "missing"

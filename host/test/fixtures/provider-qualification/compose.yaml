@@ -31,7 +31,7 @@ services:
       - "${NATIVE_QUALIFIER_ROOT:?root required}/host/producers:/producer:ro"
       - "${NATIVE_QUALIFIER_ROOT:?root required}/host/test/fixtures/provider-qualification:/fixtures:ro"
       - "${NATIVE_QUALIFIER_ROOT:?root required}/config/qualification:/schemas:ro"
-      - "${NATIVE_QUALIFIER_ROOT:?root required}/artifacts/qualification/produced:/produced:rw"
+      - "${NATIVE_QUALIFIER_OUTPUT:?new output directory required}:/produced:rw"
     entrypoint: [/opt/contracts/bin/python, /producer/provider_qualification.py]
     labels:
       org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run required}"
