@@ -14,6 +14,8 @@ set -- run --rm --user "$task_uid:$task_gid"
 if [ "$engine" = podman ]; then
   set -- "$@" --userns=keep-id
 fi
+# Keep the single-quoted variables literal for the container shell.
+# shellcheck disable=SC2016
 "$engine" "$@" --volume "$root/terraform:/src/terraform:rw" \
   --env CHECKPOINT_DISABLE=1 --env TF_IN_AUTOMATION=1 --env AWS_EC2_METADATA_DISABLED=true \
   --env TF_CLI_CONFIG_FILE=/dev/null --env GIT_CONFIG_GLOBAL=/dev/null \
