@@ -37,11 +37,15 @@
 - name: Install only enabled canonical sampler units
   ansible.builtin.copy:
     src: "{{ robotics_time_asset_root }}/systemd/robotics-{{ robotics_time_pair.0 }}-sample.{{ robotics_time_pair.1 }}"
-    dest: "{{ robotics_time_file_root }}/etc/systemd/system/robotics-{{ robotics_time_pair.0 }}-sample.{{ robotics_time_pair.1 }}"
+    dest: >-
+      {{ robotics_time_file_root }}/etc/systemd/system/robotics-{{ robotics_time_pair.0 }}-sample.{{
+      robotics_time_pair.1 }}
     owner: root
     group: root
     mode: "0644"
-  loop: "{{ (['chrony'] if 'time_chrony' in robotics_node_features else []) | union(['ptp'] if 'time_ptp' in robotics_node_features else []) | product(['service', 'timer']) | list }}"
+  loop: >-
+    {{ (['chrony'] if 'time_chrony' in robotics_node_features else []) | union(['ptp'] if 'time_ptp' in
+    robotics_node_features else []) | product(['service', 'timer']) | list }}
   loop_control:
     loop_var: robotics_time_pair
   notify: Reload product time units

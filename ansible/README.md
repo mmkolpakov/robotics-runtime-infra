@@ -74,7 +74,8 @@ decommissioning requires a separate reviewed site action.
 
 ## Checks and remaining acceptance
 
-From the repository root, run `scripts/ci/check-product-ansible.sh`.
+From the repository root, run `scripts/ci/check-product-ansible.sh` with Docker.
+For the declared rootless Podman environment, set `ROBOTICS_IMAGE_ENGINE=podman`.
 It builds a project container from pinned Ubuntu/uv images and the Ubuntu
 20260930 snapshot, installs the hash-locked controller dependencies, then
 runs without networking. Its small CHOWN/FOWNER capability set permits real
@@ -83,8 +84,8 @@ devices, a service manager, a Podman socket, or a writable repository.
 
 The checks run syntax validation, production-profile ansible-lint, explicit-site
 negative assertions, byte identity against canonical assets, site template
-checks, owner/mode and nonce-symlink checks, and two real copy/template/file passes followed by
-check/diff. The second file pass must report zero changes. Production entrypoint
+checks, owner/mode and final/ancestor nonce-symlink checks, and two real copy/template/file passes
+followed by check/diff. The second file pass must report zero changes. Production entrypoint
 guards reject local connections and nonempty staging roots.
 
 This fixture intentionally imports only validation/file tasks into a disposable

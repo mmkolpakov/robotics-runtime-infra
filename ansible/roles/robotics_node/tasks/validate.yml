@@ -3,10 +3,14 @@
   ansible.builtin.assert:
     that:
       - robotics_node_enrolled | bool
-      - robotics_node_features is sequence and robotics_node_features is not string and robotics_node_features is not mapping
+      - >-
+        robotics_node_features is sequence and robotics_node_features is not string and
+        robotics_node_features is not mapping
       - robotics_node_features | length > 0
       - robotics_node_features | unique | length == robotics_node_features | length
-      - robotics_node_features | difference(['time_chrony', 'time_ptp', 'can_observation', 'physical_attach_permissions']) | length == 0
+      - >-
+        robotics_node_features | difference(['time_chrony', 'time_ptp', 'can_observation',
+        'physical_attach_permissions']) | length == 0
       - robotics_node_package_versions is mapping
     fail_msg: Explicit product enrollment, features and package versions are required.
 
@@ -23,7 +27,9 @@
       - robotics_node_chrony_existing_config_reviewed | default(false) | bool
       - robotics_node_chrony_sources | default([]) | length > 0
       - robotics_node_chrony_sources is sequence and robotics_node_chrony_sources is not string
-      - robotics_node_chrony_sources | select('match', '^(server|pool) [a-zA-Z0-9.:-]+( iburst)?$') | list | length == robotics_node_chrony_sources | length
+      - >-
+        robotics_node_chrony_sources | select('match', '^(server|pool) [a-zA-Z0-9.:-]+( iburst)?$') |
+        list | length == robotics_node_chrony_sources | length
   when: "'time_chrony' in robotics_node_features"
 
 - name: Require explicit hardware PTP site settings

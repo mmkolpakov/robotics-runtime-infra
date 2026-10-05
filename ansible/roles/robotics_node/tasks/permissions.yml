@@ -1,4 +1,20 @@
 ---
+- name: Observe canonical physical store paths before any permission changes
+  ansible.builtin.command:
+    argv: [/usr/bin/realpath, --canonicalize-missing, --, "{{ robotics_node_file_root }}{{ item }}"]
+  loop: "{{ [robotics_node_authorization_dir, robotics_node_nonce_dir] }}"
+  register: robotics_node_canonical_stores
+  changed_when: false
+  check_mode: false
+
+- name: Reject physical stores reached through ancestor symlinks
+  ansible.builtin.assert:
+    that:
+      - item.stdout == robotics_node_file_root + item.item
+  loop: "{{ robotics_node_canonical_stores.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
 - name: Observe physical store paths without following links
   ansible.builtin.stat:
     path: "{{ robotics_node_file_root }}{{ item }}"

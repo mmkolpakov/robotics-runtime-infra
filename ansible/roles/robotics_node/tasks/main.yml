@@ -30,7 +30,8 @@
 - name: Determine required product packages
   ansible.builtin.set_fact:
     robotics_node_required_packages: >-
-      {{ (['bash', 'coreutils', 'jq', 'chrony'] if ('time_chrony' in robotics_node_features or 'time_ptp' in robotics_node_features) else [])
+      {{ (['bash', 'coreutils', 'jq', 'chrony'] if ('time_chrony' in robotics_node_features or 'time_ptp'
+      in robotics_node_features) else [])
          + (['linuxptp'] if 'time_ptp' in robotics_node_features else [])
          + (['can-utils', 'iproute2'] if 'can_observation' in robotics_node_features else []) }}
 
