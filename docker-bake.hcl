@@ -31,11 +31,11 @@ variable "LINUX_LIBC_DEV_VERSION" {
 }
 
 variable "ROS_SNAPSHOT" {
-  default = "2026-06-18"
+  default = "2026-09-11"
 }
 
 variable "ROSDISTRO_INDEX_REVISION" {
-  default = "9f76014b84955f757306270d6860fa3bc1c30b57"
+  default = "8e9a99d200fd312f106418b2b497b0cc5146e6a7"
 }
 
 # FOUNDATION_GENERATED_START
