@@ -1,6 +1,12 @@
 # Minimal Runtime Consumer
 
-This example qualifies a stepped simulation and a declared UInt64 topic,
+This example defines the stock UInt64 ROS v1 profile, which passed on released
+R9. It is a source/released invocation example, not the current neutral-robot B3
+acceptance result. [The baseline](../../docs/qualification-baseline.md) records
+that R10 was published and the later neutral-robot caller failed. Architecture C
+is the selected target; native providers are qualified by their own profiles.
+
+A successful run qualifies a stepped simulation and a declared UInt64 topic,
 retaining original ROS recordings, telemetry, logs, JSON/JUnit results and a signed
 qualification statement. The caller's standalone Compose file contains only
 caller-owned services; foundation services remain in pinned tooling.
@@ -76,7 +82,9 @@ To qualify published images, retain the canonical release's unchanged
       release_lock: path/to/release.env
 ```
 
-Pin `tooling_ref` to the tooling commit for that release. The independently
+Pin the reusable workflow and `tooling_ref` to the same reviewed full tooling
+commit. This may differ from the image-source commit recorded in the release
+lock; neither SHA is inferred from the caller checkout. The independently
 selected tag identifies the canonical GitHub release; the job verifies both
 that release and the exact lock bytes before using image references. It then
 verifies each selected infra image's workflow, source commit and digest before

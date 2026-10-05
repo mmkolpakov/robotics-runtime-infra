@@ -1,0 +1,64 @@
+---
+- name: Reject staged roots in production time service operations
+  ansible.builtin.assert:
+    that: robotics_time_file_root == ''
+    fail_msg: Staging roots are only accepted by the isolated file-task checks.
+
+- name: Read service inventory before configuring host time
+  ansible.builtin.service_facts:
+
+- name: Require a reviewed existing PTP daemon unit
+  ansible.builtin.assert:
+    that:
+      - "'ptp4l.service' in ansible_facts.services"
+      - robotics_node_ptp_interface in ansible_facts.interfaces
+    fail_msg: Supply the site's reviewed ptp4l.service and hardware timestamp interface.
+  when: "'time_ptp' in robotics_node_features"
+
+- name: Read existing Chrony configuration
+  ansible.builtin.slurp:
+    src: /etc/chrony/chrony.conf
+  register: robotics_time_chrony_main
+  when: "'time_chrony' in robotics_node_features"
+
+- name: Require Chrony to load the canonical fragment directory
+  ansible.builtin.assert:
+    that:
+      - robotics_time_chrony_main.content | b64decode is search('(?m)^confdir +/etc/chrony/conf.d')
+  when: "'time_chrony' in robotics_node_features"
+
+- name: Install product time files
+  ansible.builtin.import_tasks: files.yml
+
+- name: Apply changed unit and directory policy before starting services
+  ansible.builtin.meta: flush_handlers
+
+- name: Restore missing runtime directory state from canonical policy
+  ansible.builtin.command:
+    argv: [/usr/bin/systemd-tmpfiles, --create, /etc/tmpfiles.d/robotics-time.conf]
+    creates: /run/robotics-time/pmc.log
+
+- name: Apply reviewed Chrony configuration
+  ansible.builtin.systemd_service:
+    name: chrony.service
+    enabled: true
+    state: >-
+      {{ 'restarted' if robotics_time_chrony_socket.changed or robotics_time_chrony_sources.changed else
+      'started' }}
+  when: "'time_chrony' in robotics_node_features"
+
+- name: Apply reviewed PTP configuration
+  ansible.builtin.systemd_service:
+    name: ptp4l.service
+    enabled: true
+    state: "{{ 'restarted' if robotics_time_ptp_config.changed or robotics_time_ptp_override.changed else 'started' }}"
+  when: "'time_ptp' in robotics_node_features"
+
+- name: Enable only selected sampler timers
+  ansible.builtin.systemd_service:
+    name: "robotics-{{ item }}-sample.timer"
+    enabled: true
+    state: started
+  loop: >-
+    {{ (['chrony'] if 'time_chrony' in robotics_node_features else []) | union(['ptp'] if 'time_ptp' in
+    robotics_node_features else []) }}

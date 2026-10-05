@@ -1,0 +1,10 @@
+---
+- name: Validate nonce store installation without service operations
+  hosts: fixture
+  gather_facts: false
+  vars_files: [site.yml]
+  tasks:
+    - name: Install isolated physical attach permissions
+      ansible.builtin.import_role:
+        name: robotics_node
+        tasks_from: permissions

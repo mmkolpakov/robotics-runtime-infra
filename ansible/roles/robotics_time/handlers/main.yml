@@ -1,0 +1,11 @@
+---
+- name: Reapply product time runtime directory policy
+  ansible.builtin.command:
+    argv: [/usr/bin/systemd-tmpfiles, --create, /etc/tmpfiles.d/robotics-time.conf]
+  changed_when: true
+  when: robotics_time_file_root == ''
+
+- name: Reload product time units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: robotics_time_file_root == ''

@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:robotics:infra:native-provider-source:v1",
+  "title": "Native provider source observation",
+  "description": "Informational source facts carried by public conformance-result.v1. Shape validity does not establish execution or a verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scope",
+    "backend",
+    "native_times",
+    "frame",
+    "lifecycle",
+    "operations",
+    "native_execution_id",
+    "execution_evaluation"
+  ],
+  "properties": {
+    "scope": {
+      "enum": [
+        "native-cpu-source",
+        "representative"
+      ]
+    },
+    "backend": {
+      "enum": [
+        "gazebo",
+        "webots",
+        "isaac"
+      ]
+    },
+    "native_times": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/integerNs"
+          },
+          {
+            "$ref": "#/$defs/floatSeconds"
+          }
+        ]
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native_name",
+        "native_basis",
+        "position_unit",
+        "up_axis",
+        "source"
+      ],
+      "properties": {
+        "native_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "native_basis": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "position_unit": {
+          "const": "m"
+        },
+        "up_axis": {
+          "enum": [
+            "X",
+            "Y",
+            "Z"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_before_destructive_reset",
+        "cleanup_verified",
+        "source",
+        "cleanup_evidence_scope"
+      ],
+      "properties": {
+        "evidence_before_destructive_reset": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cleanup_verified": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "cleanup_evidence_scope": {
+          "enum": [
+            "native-project-inventory",
+            "registered-native-process-groups",
+            "unobserved"
+          ]
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    },
+    "native_execution_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "execution_evaluation": {
+      "enum": [
+        "accepted-source-proof",
+        "unevaluated"
+      ]
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "pointer"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "pointer": {
+          "type": "string",
+          "pattern": "^(/([^/~]|~[01])*)*$",
+          "maxLength": 4096
+        }
+      }
+    },
+    "integerNs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "epoch",
+        "unit",
+        "representation",
+        "value",
+        "source"
+      ],
+      "properties": {
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "epoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "unit": {
+          "const": "ns"
+        },
+        "representation": {
+          "const": "integer-decimal"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        }
+      }
+    },
+    "floatSeconds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "epoch",
+        "unit",
+        "representation",
+        "value",
+        "hex",
+        "source"
+      ],
+      "properties": {
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "epoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "unit": {
+          "const": "s"
+        },
+        "representation": {
+          "const": "ieee754-binary64"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hex": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]+\\.[0-9a-f]+p[+-][0-9]+$"
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native_api",
+        "request",
+        "result",
+        "effect"
+      ],
+      "properties": {
+        "native_api": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "request": {
+          "$ref": "#/$defs/source"
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "source"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "native-return",
+                "native-void-return",
+                "unobserved"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/source"
+            }
+          }
+        },
+        "effect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observed",
+            "source"
+          ],
+          "properties": {
+            "observed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/source"
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "backend": {
+            "const": "isaac"
+          }
+        },
+        "required": [
+          "backend"
+        ]
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "const": "representative"
+          },
+          "lifecycle": {
+            "properties": {
+              "evidence_before_destructive_reset": {
+                "const": null
+              },
+              "cleanup_verified": {
+                "const": null
+              },
+              "cleanup_evidence_scope": {
+                "const": "unobserved"
+              }
+            }
+          },
+          "execution_evaluation": {
+            "const": "unevaluated"
+          }
+        }
+      }
+    }
+  ]
+}

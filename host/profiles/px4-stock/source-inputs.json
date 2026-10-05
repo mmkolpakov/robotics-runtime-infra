@@ -1,0 +1,18 @@
+{
+  "scope": "source candidate: CPU stock x500 takeoff effect; no hardware, Spiral, full mission or released qualification",
+  "px4_commit": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+  "models_commit": "b6127f4ec20de867e215fb5f78ae88b80f371909",
+  "worker_image": "localhost/rr-c13-px4@sha256:39c184c711d698d8c434c608946e0713dd22ea9c60361557ad87d348ffb783fa",
+  "dependency_image_id": "sha256:b4bcf2e7635dad083143092325cd6ac179eebd492709134d731a7e876774d454",
+  "core_source_commit": "bb8582f8bd42cff0ebceb61423e5c05c740b9a49",
+  "core_asset_sha256": "e13ae0b5fe2828d311ac3cb0d02e53274e7fd54ec7d6e2b71e3011c65a406179",
+  "native_profile": "gz_x500/default/SYS_AUTOSTART4001",
+  "native_api": [
+    "MAVSDK generated Core/Telemetry/Action",
+    "Gz Scene/Pose_V/WorldStatistics/WorldControl",
+    "stock PX4 logger CLI"
+  ],
+  "node": "24.21.0",
+  "npm": "11.19.0",
+  "native_preflight_required": true
+}

@@ -1,0 +1,17 @@
+{
+  "release": "R2025a",
+  "release_tag_commit": "c6793d8f7230a311c4bc2a3101d9f1a8bc0aa01b",
+  "release_tag_object": "9a715941a67b24333568e2294266b0f6245fa046",
+  "release_target_commitish": "234898f4d82e5510f85273e9696b5e16f4005aa1",
+  "artifact": {
+    "url": "https://github.com/cyberbotics/webots/releases/download/R2025a/webots_2025a_amd64.deb",
+    "name": "webots_2025a_amd64.deb",
+    "size_bytes": 162910802,
+    "sha256": "6253d58c9b625a83ed7b62cd85a640fd0542d441c48d633a60932208b40b0657",
+    "checksum_source": "https://cyberbotics.com/debian/binary-amd64/Packages",
+    "github_asset_digest": null
+  },
+  "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260901T000000Z",
+  "platform": "linux/amd64",
+  "scope": "native Python Robot/Supervisor, CPU physics and optional Mesa/Xvfb offscreen camera; no ROS, PX4 or RTSP capability"
+}

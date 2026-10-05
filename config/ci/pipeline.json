@@ -1,20 +1,63 @@
 {
   "compose_models": [
     {
+      "name": "media",
+      "files": [
+        "compose.media.yaml"
+      ]
+    },
+    {
+      "name": "host",
+      "files": [
+        "compose.host.yaml"
+      ]
+    },
+    {
+      "name": "host-podman",
+      "files": [
+        "compose.host.yaml",
+        "compose.host.podman.yaml"
+      ]
+    },
+    {
+      "name": "host-storage",
+      "files": [
+        "compose.host-storage.yaml"
+      ]
+    },
+    {
+      "name": "host-storage-podman",
+      "files": [
+        "compose.host-storage.yaml",
+        "compose.host-storage.podman.yaml"
+      ]
+    },
+    {
       "name": "base",
-      "files": ["compose.yaml"]
+      "files": [
+        "compose.yaml"
+      ]
     },
     {
       "name": "playback",
-      "files": ["compose.yaml", "compose.playback.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.playback.yaml"
+      ]
     },
     {
       "name": "record",
-      "files": ["compose.yaml", "compose.record.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.record.yaml"
+      ]
     },
     {
       "name": "evidence",
-      "files": ["compose.yaml", "compose.evidence.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.evidence.yaml"
+      ]
     },
     {
       "name": "evidence-test",
@@ -26,27 +69,45 @@
     },
     {
       "name": "high-throughput",
-      "files": ["compose.yaml", "compose.high-throughput.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.high-throughput.yaml"
+      ]
     },
     {
       "name": "benchmark",
-      "files": ["compose.yaml", "compose.benchmark.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.benchmark.yaml"
+      ]
     },
     {
       "name": "security",
-      "files": ["compose.yaml", "compose.security.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.security.yaml"
+      ]
     },
     {
       "name": "stepped",
-      "files": ["compose.yaml", "compose.stepped.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.stepped.yaml"
+      ]
     },
     {
       "name": "simulation-conformance",
-      "files": ["compose.yaml", "compose.simulation-conformance.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.simulation-conformance.yaml"
+      ]
     },
     {
       "name": "edge-attach",
-      "files": ["compose.yaml", "compose.edge-attach.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.edge-attach.yaml"
+      ]
     },
     {
       "name": "real-observation",
@@ -67,43 +128,73 @@
     },
     {
       "name": "amd",
-      "files": ["compose.yaml", "compose.amd.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.amd.yaml"
+      ]
     },
     {
       "name": "intel",
-      "files": ["compose.yaml", "compose.intel.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.intel.yaml"
+      ]
     },
     {
       "name": "nvidia",
-      "files": ["compose.yaml", "compose.nvidia.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.nvidia.yaml"
+      ]
     },
     {
       "name": "nvidia-simulation",
-      "files": ["compose.yaml", "compose.nvidia-sim.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.nvidia-sim.yaml"
+      ]
     },
     {
       "name": "nvidia-jetson",
-      "files": ["compose.yaml", "compose.nvidia-jetson.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.nvidia-jetson.yaml"
+      ]
     },
     {
       "name": "rknn",
-      "files": ["compose.yaml", "compose.rknn.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.rknn.yaml"
+      ]
     },
     {
       "name": "serial",
-      "files": ["compose.yaml", "compose.serial.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.serial.yaml"
+      ]
     },
     {
       "name": "time",
-      "files": ["compose.yaml", "compose.time.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.time.yaml"
+      ]
     },
     {
       "name": "can-observation",
-      "files": ["compose.yaml", "compose.can-observation.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.can-observation.yaml"
+      ]
     },
     {
       "name": "observability",
-      "files": ["compose.yaml", "compose.observability.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.observability.yaml"
+      ]
     },
     {
       "name": "foundation",
@@ -180,7 +271,76 @@
     },
     {
       "name": "zenoh",
-      "files": ["compose.yaml", "compose.zenoh.yaml"]
+      "files": [
+        "compose.yaml",
+        "compose.zenoh.yaml"
+      ]
+    },
+    {
+      "name": "webots",
+      "files": [
+        "compose.webots.yaml"
+      ]
+    },
+    {
+      "name": "webots-podman",
+      "files": [
+        "compose.webots.yaml",
+        "compose.webots.podman.yaml"
+      ]
+    },
+    {
+      "name": "px4",
+      "files": [
+        "compose.px4.yaml"
+      ]
+    },
+    {
+      "name": "px4-podman",
+      "files": [
+        "compose.px4.yaml",
+        "compose.px4.podman.yaml"
+      ]
+    },
+    {
+      "name": "legacy-finalization",
+      "files": [
+        "compose.host-storage.yaml",
+        "compose.legacy-finalization.yaml"
+      ]
+    },
+    {
+      "name": "legacy-finalization-podman",
+      "files": [
+        "compose.host-storage.yaml",
+        "compose.legacy-finalization.yaml",
+        "compose.legacy-finalization.podman.yaml"
+      ]
+    },
+    {
+      "name": "legacy-retained",
+      "files": [
+        "compose.legacy-retained.yaml"
+      ]
+    },
+    {
+      "name": "legacy-retained-podman",
+      "files": [
+        "compose.legacy-retained.yaml",
+        "compose.legacy-finalization.podman.yaml"
+      ]
+    },
+    {
+      "name": "isaac-bootstrap",
+      "files": [
+        "compose.isaac.yaml"
+      ]
+    },
+    {
+      "name": "isaac-provider",
+      "files": [
+        "compose.isaac-provider.yaml"
+      ]
     }
   ]
 }

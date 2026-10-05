@@ -1,0 +1,6 @@
+---
+robotics_node_enrolled: false
+robotics_node_features: []
+robotics_node_package_versions: {}
+robotics_node_asset_root: "{{ playbook_dir }}/.."
+robotics_node_file_root: ""

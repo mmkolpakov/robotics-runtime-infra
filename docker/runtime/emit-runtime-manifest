@@ -43,9 +43,45 @@ foundation_lock="${ROBOTICS_FOUNDATION_LOCK:-/usr/share/robotics-runtime/foundat
 [[ -r "$foundation_lock" ]] || fail "foundation lock is not readable: $foundation_lock"
 
 workspace_revision="$(
-  jq -er '.repositories["robotics-runtime"].version' "$foundation_lock"
+  jq -er '.workspace.revision' "$foundation_lock"
 )"
 [[ "$workspace_revision" =~ ^[0-9a-f]{40}$ ]] || fail 'foundation revision must be a full Git SHA'
+foundation_python="${ROBOTICS_FOUNDATION_PYTHON:-/opt/contracts/bin/python}"
+[[ -x "$foundation_python" ]] || fail 'installed foundation Python is unavailable'
+require_harness="$(boolean "${ROBOTICS_REQUIRE_HARNESS:-false}")"
+"$foundation_python" - "$foundation_lock" "${ROBOTICS_SDK_IDENTITY_OUTPUT:-}" "$require_harness" <<'PYTHON'
+import importlib.metadata
+import json
+import sys
+from pathlib import Path
+
+lock = json.loads(Path(sys.argv[1]).read_bytes())
+required = ["contracts"] + (["harness"] if sys.argv[3] == "true" else [])
+for kind in required:
+    if kind not in lock["packages"]:
+        raise SystemExit(f"required {kind} package is missing from the canonical foundation lock")
+actual = {}
+for kind, item in lock["packages"].items():
+    try:
+        actual[kind] = importlib.metadata.version(item["distribution"])
+    except importlib.metadata.PackageNotFoundError:
+        actual[kind] = None
+        if kind in required:
+            raise SystemExit(f"required installed {kind} package is unavailable")
+    if actual[kind] is not None and actual[kind] != item["version"]:
+        raise SystemExit(f"installed {kind} version does not match declared foundation lock")
+if sys.argv[2]:
+    target = Path(sys.argv[2])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("x", encoding="utf-8") as stream:
+        json.dump({"declared_workspace": lock["workspace"], "declared_packages": lock["packages"],
+                   "required_producer_packages": required,
+                   "observation_python": sys.executable,
+                   "observed_installed_versions": actual,
+                   "source_commit_claim": "declared source lock; installed versions alone do not prove source revision"},
+                  stream, indent=2)
+        stream.write("\n")
+PYTHON
 contracts_cli="${ROBOTICS_CONTRACTS_CLI:-robotics-contracts}"
 command -v "${contracts_cli}" >/dev/null 2>&1 || fail 'contracts CLI is unavailable'
 jq -e -s 'length == 1 and (.[0] | type == "object")' \

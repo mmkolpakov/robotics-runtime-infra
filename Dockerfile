@@ -24,8 +24,8 @@ ARG UBUNTU_SNAPSHOT=20260930T000000Z
 ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16
 ARG CA_CERTIFICATES_VERSION=20260601~24.04.1
 ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142
-ARG ROS_SNAPSHOT=2026-06-18
-ARG ROSDISTRO_INDEX_REVISION=9f76014b84955f757306270d6860fa3bc1c30b57
+ARG ROS_SNAPSHOT=2026-09-11
+ARG ROSDISTRO_INDEX_REVISION=8e9a99d200fd312f106418b2b497b0cc5146e6a7
 
 FROM ${UV_IMAGE} AS uv
 FROM ${RCLONE_IMAGE} AS rclone
@@ -719,11 +719,8 @@ FROM edge-runtime-base AS edge-runtime
 COPY --from=foundation-contracts /opt/contracts /opt/contracts
 COPY --from=edge-runtime-interfaces /opt/robotics_ws/install /opt/robotics_ws/install
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
-RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
-    yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
-      > /usr/share/robotics-runtime/foundation-lock.json \
-    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json \
-    && source "/opt/ros/${ROS_DISTRO}/setup.bash" \
+COPY --chmod=0444 config/foundation-lock.json /usr/share/robotics-runtime/foundation-lock.json
+RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
     && source /opt/robotics_ws/install/setup.bash \
     && ros2 interface show \
       robotics_observability_msgs/msg/TraceContext > /dev/null \
@@ -1127,7 +1124,9 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,ro 
       > /usr/share/robotics-runtime/python-packages.txt \
     && rm -rf /home/ubuntu/.cache/uv /tmp/python
 
-ENV PATH="/opt/venv/bin:${PATH}"
+ENV PATH="/opt/venv/bin:${PATH}" \
+    ROBOTICS_FOUNDATION_PYTHON=/opt/venv/bin/python \
+    ROBOTICS_REQUIRE_HARNESS=true
 
 LABEL org.opencontainers.image.title="Robotics acceptance observer" \
       org.opencontainers.image.description="Attach-only ROS 2 acceptance observation and machine-readable results."
@@ -1212,6 +1211,7 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --chmod=0444 docker/python/observability.lock /tmp/observability.lock
 COPY --chmod=0555 docker/apt/use-package-snapshots /usr/local/sbin/use-package-snapshots
 COPY --chmod=0444 docker/apt/ros-snapshot-key.gpg /usr/share/keyrings/ros-snapshot-key.gpg
+COPY --chmod=0444 docker/apt/ros-cohort-source.packages /tmp/native-ros-cohort.packages
 COPY --from=geographiclib-datasets /tmp/datasets /tmp/geographiclib
 
 RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-rosdep-cache,ro \
@@ -1222,6 +1222,11 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       /usr/local/sbin/use-package-snapshots \
     && export HOME=/root \
     && apt-get update \
+    && mapfile -t native_packages < /tmp/native-ros-cohort.packages \
+    && apt-get install -y --no-install-recommends "${native_packages[@]}" \
+    && for spec in "${native_packages[@]}"; do \
+         test "$(dpkg-query --show --showformat='${Version}' "${spec%%=*}")" = "${spec#*=}" || exit 65; \
+       done \
     && apt-get install -y --no-install-recommends \
       jq \
       "libssl-dev=${OPENSSL_VERSION}" \
@@ -1284,11 +1289,8 @@ RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
     && chown -R ubuntu:ubuntu build install log
 
 COPY --chmod=0444 foundation.repos /usr/share/robotics-runtime/foundation.repos
-RUN --mount=from=yq,source=/out/yq,target=/usr/local/bin/yq,ro \
-    yq -o=json '.' /usr/share/robotics-runtime/foundation.repos \
-      > /usr/share/robotics-runtime/foundation-lock.json \
-    && chmod 0444 /usr/share/robotics-runtime/foundation-lock.json \
-    && ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
+COPY --chmod=0444 config/foundation-lock.json /usr/share/robotics-runtime/foundation-lock.json
+RUN ln -s /opt/contracts/bin/robotics-contracts /usr/local/bin/robotics-contracts
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/robotics-entrypoint
 COPY --chmod=0555 docker/runtime/emit-runtime-manifest /usr/local/bin/emit-runtime-manifest
 

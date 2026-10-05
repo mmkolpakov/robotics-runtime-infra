@@ -26,7 +26,7 @@ python3 scripts/ci/foundation/sync-workspace-pins.py --check
 for image in "${SIMULATION_IMAGE}" "${OBSERVER_IMAGE}"; do
   test "$(
     docker run --rm --pull never --entrypoint jq "${image}" \
-      -er '.repositories["robotics-runtime"].version' \
+      -er '.workspace.revision' \
       /usr/share/robotics-runtime/foundation-lock.json
   )" = "${workspace_revision}"
 done

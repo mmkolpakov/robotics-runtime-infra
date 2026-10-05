@@ -1,0 +1,33 @@
+{
+  "backend": "webots",
+  "acceptedSourceRevision": "c7ed2ad6fddf9e5746e3eb3468ed141f664ab8ff",
+  "nativeProofScope": "Linux amd64 CPU source",
+  "version": "R2025a",
+  "executionSubjectDigest": "sha256:40ab3b23a99c6ddff68ba6398a2275789b4967ae26d1c1f159385af9f147e339",
+  "files": {
+    "controller-result.json": {
+      "sha256": "aec825d2e9b00bcdfb8fe6167c575393f5f9a5144111726fb70bd61d991a322c",
+      "size_bytes": 3405
+    },
+    "worker-result.json": {
+      "sha256": "f442a765eca44b113bb7ce79ee83d243346b25e8fec66d6ddd83c249a1fe2be0",
+      "size_bytes": 1890
+    },
+    "last-native-state.json": {
+      "sha256": "3099d0e5ecb6e737d87df1ecd8c297944459573469129d5fe05a1b02a996ac8b",
+      "size_bytes": 148
+    },
+    "ready.json": {
+      "sha256": "c90f760e7bda9c92f08866d54b2ed9bc53f8dbd72bbf80a69746571ab9172a8d",
+      "size_bytes": 1058
+    },
+    "pre-reset.json": {
+      "sha256": "909dfe9ef39c1513e2765fd9d16f07c7550ddad944d47d9b7baf3d0a61e61a8c",
+      "size_bytes": 3293
+    },
+    "measurement.json": {
+      "sha256": "c949f63ddb898a6f8bb4daef9a7760c031183e41930fa160b4cf06d69fda04c0",
+      "size_bytes": 3224
+    }
+  }
+}

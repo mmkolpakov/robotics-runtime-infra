@@ -1,0 +1,25 @@
+{
+  "kind": "representative-fixture",
+  "execution_evaluation": "unevaluated",
+  "native_execution_id": "representative-not-executed",
+  "time": {
+    "authority": "Isaac native simulation physics time",
+    "unit": "s",
+    "representation": "ieee754-binary64",
+    "value": 0.0
+  },
+  "frame": {
+    "native_name": "/World/Body",
+    "native_basis": "USD world XYZ Z-up",
+    "position_unit": "m",
+    "up_axis": "Z"
+  },
+  "operation": {
+    "request": {
+      "native_api": "World.step",
+      "steps": 1
+    },
+    "result": null,
+    "effect": null
+  }
+}

@@ -1,0 +1,267 @@
+---
+x-ros: &ros
+  image: "${LEGACY_SIMULATION_IMAGE:?immutable source image required}"
+  pull_policy: never
+  user: "1000:1000"
+  init: true
+  userns_mode: keep-id:uid=1000,gid=1000
+  mem_limit: 512m
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment: &ros-env
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:?domain required}"
+    GZ_PARTITION: "${GZ_PARTITION:?partition required}"
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    RCUTILS_COLORIZED_OUTPUT: "0"
+    FASTRTPS_DEFAULT_PROFILES_FILE: /run/robotics/input/config/fastdds/udp-only.xml
+    RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+    ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?owner required}"
+    ROBOTICS_DOMAIN_ID: primary
+  volumes: &ros-volumes
+    - run-data:/run/robotics
+    - run-input:/run/robotics/input:ro
+  labels:
+    org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+services:
+  admission:
+    image: "${LEGACY_COORDINATOR_IMAGE:?immutable coordinator required}"
+    pull_policy: never
+    user: "0:0"
+    userns_mode: keep-id:uid=1000,gid=1000
+    network_mode: none
+    entrypoint: [/opt/contracts/bin/python]
+    command:
+      - /source/host/workers/legacy-live/prepare-live.py
+      - '--source'
+      - /source
+      - '--input'
+      - /run/robotics/input
+      - '--data'
+      - /run/robotics
+      - '--run-id'
+      - ${ROBOTICS_RUN_ID:?owner required}
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input
+      - type: bind
+        source: "${LEGACY_SOURCE_ROOT:?source root required}"
+        target: /source
+        read_only: true
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+  simulation:
+    <<: *ros
+    network_mode: none
+    ipc: shareable
+    command: [ros2, launch, robotics_runtime_infra, headless.launch.py]
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/robotics-entrypoint
+        - timeout
+        - '5'
+        - ros2
+        - service
+        - type
+        - /simulator/get_simulator_features
+      interval: 2s
+      timeout: 6s
+      start_period: 15s
+      retries: 15
+  neutral-robot:
+    <<: *ros
+    network_mode: service:simulation
+    ipc: service:simulation
+    command:
+      - ros2
+      - launch
+      - robotics_runtime_infra
+      - neutral_robot.launch.xml
+      - start_simulator:=false
+      - >-
+        description_file:=/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf
+  simulation-stepper:
+    <<: *ros
+    network_mode: service:simulation
+    ipc: service:simulation
+    command:
+      - python3
+      - '-m'
+      - robotics_runtime_infra.simulation_control
+      - '--namespace'
+      - /simulator
+      - step
+      - '--steps'
+      - '1'
+      - '--step-size-ns'
+      - '1000000'
+      - '--interval-sec'
+      - '0.01'
+  runtime-probe-publisher:
+    <<: *ros
+    network_mode: service:simulation
+    ipc: service:simulation
+    command:
+      - ros2
+      - topic
+      - pub
+      - '--rate'
+      - '20'
+      - '--print'
+      - '0'
+      - '--wait-matching-subscriptions'
+      - '1'
+      - '--max-wait-time-secs'
+      - '30'
+      - '--qos-reliability'
+      - reliable
+      - '--qos-depth'
+      - '100'
+      - /example/sequence
+      - std_msgs/msg/UInt64
+      - '{data: 1}'
+  runtime-metrics:
+    <<: *ros
+    network_mode: service:simulation
+    ipc: service:simulation
+    command: [ros2, run, robotics_observability, runtime_metrics]
+    environment:
+      <<: *ros-env
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://127.0.0.1:4318/v1/metrics
+      OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED: "true"
+      ROBOTICS_METRICS_EXPORT_INTERVAL_MS: "200"
+      ROBOTICS_METRICS_TOPIC: /example/sequence
+      ROBOTICS_TIME_TOPIC: /clock
+      ROBOTICS_TIME_SOURCE_ID: gazebo-clock
+  recorder:
+    <<: *ros
+    network_mode: service:simulation
+    ipc: service:simulation
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    command:
+      - ros2
+      - bag
+      - record
+      - '--storage'
+      - mcap
+      - '--output'
+      - /run/robotics/evidence/bags/recording
+      - '--regex'
+      - ^(/clock|/example/sequence|/joint_states|/tf)$
+      - '--qos-profile-overrides-path'
+      - /run/robotics/input/config/recording/qos-overrides.yaml
+      - '--storage-config-file'
+      - /run/robotics/input/config/recording/mcap-writer.yaml
+      - '--max-bag-size'
+      - '1048576'
+      - '--max-bag-duration'
+      - '30'
+      - '--max-cache-size'
+      - '67108864'
+      - '--use-sim-time'
+      - '--disable-keyboard-controls'
+    healthcheck:
+      test: [CMD, /usr/local/bin/robotics-entrypoint, timeout, "5", ros2, service, type, /rosbag2_recorder/stop]
+      interval: 2s
+      timeout: 6s
+      start_period: 10s
+      retries: 10
+  otel-collector:
+    # yamllint disable-line rule:line-length
+    image: "docker.io/otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa"
+    pull_policy: never
+    user: "1000:1000"
+    userns_mode: keep-id:uid=1000,gid=1000
+    network_mode: service:simulation
+    read_only: true
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?owner required}"
+      ROBOTICS_DOMAIN_ID: primary
+    command: [--config=/run/robotics/input/config/observability/otel-collector.yaml]
+    volumes: *ros-volumes
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+  acceptance-observer:
+    <<: *ros
+    network_mode: service:simulation
+    ipc: service:simulation
+    command:
+      - /opt/contracts/bin/robotics-acceptance
+      - verify
+      - '--scenario'
+      - /run/robotics/scenario.yaml
+      - '--runtime'
+      - /run/robotics/runtime-manifest.json
+      - '--run-id'
+      - ${ROBOTICS_RUN_ID:?owner required}
+      - '--domain-id'
+      - primary
+      - '--run-context'
+      - /run/robotics/acceptance-run.json
+      - '--evidence-index'
+      - /run/robotics/evidence/evidence-index.json
+      - '--receipt-inventory'
+      - /run/robotics/evidence/receipt-inventory.json
+      - '--otel-metrics'
+      - /run/robotics/evidence/metrics.otlp.jsonl
+      - '--measurement-complete'
+      - /run/robotics/measurement-complete
+      - '--output'
+      - /run/robotics/results
+  legacy-coordinator:
+    image: "${LEGACY_COORDINATOR_IMAGE:?immutable coordinator required}"
+    pull_policy: never
+    user: "1000:1000"
+    init: true
+    userns_mode: keep-id:uid=1000,gid=1000
+    network_mode: service:simulation
+    ipc: service:simulation
+    mem_limit: 512m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [/usr/local/bin/robotics-entrypoint]
+    environment:
+      <<: *ros-env
+      ROBOTICS_RUNTIME_ID: org.example.neutral-robot.native-state
+      ROBOTICS_OCI_DIGEST: "${LEGACY_SIMULATION_DIGEST:?actual image digest required}"
+      ROBOTICS_OCI_REFERENCE: "${LEGACY_SIMULATION_REFERENCE:?actual image reference required}"
+      ROBOTICS_INFRA_REVISION: "${LEGACY_SOURCE_REVISION:?source revision required}"
+      ROBOTICS_FOUNDATION_LOCK: /source/config/foundation-lock.json
+      ROBOTICS_FOUNDATION_PYTHON: /opt/contracts/bin/python
+      ROBOTICS_CONTRACTS_CLI: /opt/contracts/bin/robotics-contracts
+      ROBOTICS_HOST_PLATFORM_FILE: /run/robotics/configuration/host-platform.json
+      ROBOTICS_PROVIDER_BINDINGS_FILE: /run/robotics/provider/bindings.json
+      ROBOTICS_HOST_TOPOLOGY_CONFIG: /run/robotics/configuration/host-topology.json
+      ROBOTICS_RUNTIME_RESOURCES_CONFIG: /run/robotics/configuration/runtime-resources.json
+      ROBOTICS_SDK_IDENTITY_OUTPUT: /run/robotics/configuration/sdk-package-identity.json
+      ROBOTICS_ROBOT_DESCRIPTION_FILE: /run/robotics/input/product/examples/neutral-robot/sim/robot-description.json
+      ROBOTICS_TIME_MODE: simulation_stepped
+      ROBOTICS_DATA_PLANE_PROFILE: standard_isolated
+      ROBOTICS_PRIVATE_IPC: "false"
+      ROBOTICS_IPC_NAMESPACE: shared-simulation-parent
+      ROBOTICS_NETWORK_NAMESPACE: shared-simulation-parent
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input:ro
+      - retained-data:/retained
+      - type: bind
+        source: "${LEGACY_SOURCE_ROOT:?source root required}"
+        target: /source
+        read_only: true
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+volumes:
+  run-data:
+    external: true
+    name: "${LEGACY_SHARED_VOLUME:?Host-owned source volume required}"
+  retained-data:
+    external: true
+    name: "${ROBOTICS_RETAINED_VOLUME:?Host-owned retained volume required}"
+  run-input:
+    name: "${ROBOTICS_RUN_ID:?owner required}-input"
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"

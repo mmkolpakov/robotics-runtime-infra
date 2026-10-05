@@ -31,11 +31,11 @@ variable "LINUX_LIBC_DEV_VERSION" {
 }
 
 variable "ROS_SNAPSHOT" {
-  default = "2026-06-18"
+  default = "2026-09-11"
 }
 
 variable "ROSDISTRO_INDEX_REVISION" {
-  default = "9f76014b84955f757306270d6860fa3bc1c30b57"
+  default = "8e9a99d200fd312f106418b2b497b0cc5146e6a7"
 }
 
 # FOUNDATION_GENERATED_START
@@ -540,4 +540,44 @@ target "permit-preflight-ci" {
     COSIGN_IMAGE = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
+}
+
+# The compiled host asset is supplied independently from the Python foundation pin.
+# C20/C21 provide its released H identity; this target is not in the release group.
+variable "HOST_ASSET_CONTEXT" {
+  default = "host/.tools/host-asset"
+}
+variable "HOST_ASSET_SHA256" {
+  default = ""
+}
+variable "HOST_INFRA_ASSET_SHA256" {
+  default = ""
+}
+group "host" {
+  targets = ["cordis-host"]
+}
+target "cordis-host" {
+  context = "."
+  dockerfile = "docker/host.Dockerfile"
+  contexts = { "host-asset" = HOST_ASSET_CONTEXT }
+  args = {
+    HOST_ASSET_SHA256 = HOST_ASSET_SHA256
+    HOST_INFRA_ASSET_SHA256 = HOST_INFRA_ASSET_SHA256
+    IMAGE_CREATED = IMAGE_CREATED
+    VCS_REF = VCS_REF
+  }
+  platforms = ["linux/amd64"]
+  tags = ["${REGISTRY}/robotics-runtime-infra/host:${VERSION}"]
+}
+
+# Independent finite GI worker. Source candidate until C21 image inventory gates.
+group "media" {
+  targets = ["media-worker"]
+}
+target "media-worker" {
+  context = "."
+  dockerfile = "docker/media.Dockerfile"
+  args = { UBUNTU_SNAPSHOT = UBUNTU_SNAPSHOT }
+  platforms = ["linux/amd64"]
+  tags = ["${REGISTRY}/robotics-runtime-infra/media:${VERSION}"]
 }

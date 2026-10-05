@@ -28,6 +28,16 @@ env:
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
 
 jobs:
+  product-ansible:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Check product node provisioning without applying host services
+        run: scripts/ci/check-product-ansible.sh
   static-analysis:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -66,6 +76,13 @@ jobs:
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
           -s test/ci -p test_consumer_configuration.py -v
+      - name: Test native provider qualification documents
+        run: |
+          NATIVE_PRODUCER_DIRECTORY="${PWD}/host/producers" \
+          NATIVE_FIXTURE_DIRECTORY="${PWD}/host/test/fixtures/provider-qualification" \
+          NATIVE_SCHEMA_DIRECTORY="${PWD}/config/qualification" \
+            dependencies/robotics-runtime/.venv/bin/python \
+            host/test/fixtures/provider-qualification/test_native_documents.py
       - name: Test synthetic physical runtime observations
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
@@ -91,6 +108,8 @@ jobs:
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture
         run: bats test/ci
+      - name: Build and check the pinned host assets
+        run: bash scripts/ci/host/build-assets.sh
       - name: Validate Docker Bake definition
         run: scripts/ci/static-analysis/validate-docker-bake-definition.sh
       - name: Build the pinned policy engine
@@ -538,6 +557,7 @@ jobs:
   ci:
     if: always()
     needs:
+      - product-ansible
       - static-analysis
       - compose-version
       - integration

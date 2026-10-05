@@ -1,0 +1,3 @@
+---
+robotics_can_asset_root: "{{ robotics_node_asset_root }}"
+robotics_can_file_root: "{{ robotics_node_file_root }}"

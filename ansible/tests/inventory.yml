@@ -1,0 +1,8 @@
+---
+all:
+  children:
+    robotics_product_nodes:
+      hosts:
+        fixture:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3

@@ -1,0 +1,28 @@
+x-native: &native
+  image: "${ROS_COHORT_IMAGE:?exact image required}"
+  user: "1000:1000"
+  userns_mode: keep-id:uid=1000,gid=1000
+  init: true
+  mem_limit: 512m
+  labels:
+    org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run required}"
+  environment:
+    ROS_DOMAIN_ID: "211"
+    GZ_PARTITION: "${ROBOTICS_RUN_ID:?run required}"
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    ROS_LOG_DIR: /tmp/ros-logs
+services:
+  simulation:
+    <<: *native
+    network_mode: none
+    ipc: shareable
+    command: [ros2, launch, robotics_runtime_infra, headless.launch.py]
+  probe:
+    <<: *native
+    network_mode: service:simulation
+    ipc: service:simulation
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=64m"]
+    volumes:
+      - "${ROS_REVIEW_SOURCE_ROOT:?source root required}/host/workers/ros-cohort-review:/probe:ro"
+    command: [/opt/contracts/bin/python, /probe/reset.py]

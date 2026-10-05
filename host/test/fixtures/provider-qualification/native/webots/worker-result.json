@@ -1,0 +1,70 @@
+{
+  "owner_id": "c14-5577de9995644fa5a54e73bcc43131b6",
+  "status": "completed",
+  "platform": "linux/amd64",
+  "main_view_rendering": false,
+  "sensor_rendering": false,
+  "display": "Xvfb :99",
+  "renderer_policy": "Mesa software, LIBGL_ALWAYS_SOFTWARE=1",
+  "children": [
+    {
+      "name": "controller",
+      "pid": 57,
+      "registered_pgid": 57,
+      "exit_code": 0,
+      "signals": [],
+      "group_absent": true,
+      "reaped": true
+    },
+    {
+      "name": "webots",
+      "pid": 56,
+      "registered_pgid": 56,
+      "exit_code": 0,
+      "signals": [],
+      "group_absent": true,
+      "reaped": true
+    },
+    {
+      "name": "xvfb",
+      "pid": 3,
+      "registered_pgid": 3,
+      "exit_code": 0,
+      "signals": [
+        "SIGTERM"
+      ],
+      "group_absent": true,
+      "reaped": true
+    }
+  ],
+  "evidence_exported_before_stop": true,
+  "controller_result_ref": {
+    "uri": "file:///run/robotics/output/controller-result.json",
+    "sha256": "aec825d2e9b00bcdfb8fe6167c575393f5f9a5144111726fb70bd61d991a322c",
+    "size_bytes": 3405
+  },
+  "requested_mode": "physics-only",
+  "worker_identity_ref": {
+    "uri": "file:///run/robotics/output/worker-identity.json",
+    "sha256": "df475e04feab1d1e61d6fcf25766f9342c2ed52c77782277efcbc10882e5ab15",
+    "size_bytes": 1881
+  },
+  "processes_reaped": true,
+  "log_refs": [
+    {
+      "uri": "file:///run/robotics/output/xvfb.log",
+      "sha256": "0bac115c5580e35921d81254a7da3faf4a2bcbffe9063af638a27e97a1471a01",
+      "size_bytes": 1255
+    },
+    {
+      "uri": "file:///run/robotics/output/webots.log",
+      "sha256": "6ba4282d4aa8836c278b80ad794604c03484e6ad0f1d1f4f3b3c6145dab1fa85",
+      "size_bytes": 2373
+    },
+    {
+      "uri": "file:///run/robotics/output/controller.log",
+      "sha256": "cdb6c2e436f2e1f009bea2d11f272959dbf74833c040f508890f792e4f636093",
+      "size_bytes": 70
+    }
+  ]
+}

@@ -1,6 +1,13 @@
 ---
 # Tooling-owned fixture: only the admitted snapshot is mounted into native ROS.
 services:
+  simulation:
+    volumes:
+      - type: bind
+        source: "${ROBOTICS_RUN_DIR:-./runs/current}/product"
+        target: /run/robotics/product
+        read_only: true
+
   neutral-robot:
     image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"
     profiles: [neutral-robot]

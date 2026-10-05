@@ -1,0 +1,30 @@
+{
+  "schema_version": "infra-host-inputs.v1",
+  "node": "24.21.0",
+  "npm": "11.19.0",
+  "platform": "linux/amd64",
+  "node_image_index": "sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe",
+  "node_image_platform": "sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697",
+  "compose": {
+    "version": "5.3.1",
+    "url": "https://github.com/docker/compose/releases/download/v5.3.1/docker-compose-linux-x86_64",
+    "sha256": "f9ebc6ebdb19d769b793c245a736caaeb198c62587f13b25c660c13b4987f959"
+  },
+  "metadata_client": {
+    "package": "dockerode",
+    "version": "5.0.1",
+    "types": "4.0.1",
+    "api_selection": "explicit intersection after same-socket unversioned /version",
+    "operation_api_policy_bounds": [
+      "1.24",
+      "1.53"
+    ],
+    "policy_note": "Application policy for selected metadata operations, not Dockerode SDK support guarantee; required fields are verified on the actual endpoint"
+  },
+  "host_asset": {
+    "status": "not released; separate H asset required by C20/C21",
+    "build_context_file": "/host.tgz",
+    "sha256_argument_required": true
+  },
+  "qualification_scope": "source candidate; Engine/storage fixture does not qualify Python CLI entrypoints or published host"
+}

@@ -1,0 +1,6 @@
+---
+services:
+  px4-native:
+    userns_mode: keep-id:uid=1000,gid=1000
+  mavsdk-native:
+    userns_mode: keep-id:uid=1000,gid=1000

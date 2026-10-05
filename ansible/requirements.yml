@@ -1,0 +1,4 @@
+---
+# Only ansible.builtin is used, pinned through ansible-core.
+collections: []
+roles: []
