@@ -1,0 +1,42 @@
+aws_region = "REPLACE_WITH_REGION"
+aws_account_id = "REPLACE_WITH_ACCOUNT_ID"
+cluster_name = "REPLACE_WITH_CLUSTER_NAME"
+kubernetes_version = "REPLACE_WITH_APPROVED_EKS_MINOR"
+kubernetes_support_type = "REPLACE_WITH_STANDARD_OR_EXTENDED"
+cluster_admin_role_arns = ["arn:aws:iam::REPLACE_WITH_ACCOUNT_ID:role/REPLACE_WITH_CLUSTER_ADMIN_ROLE"]
+availability_zones = ["REPLACE_WITH_AZ_1", "REPLACE_WITH_AZ_2"]
+vpc_cidr = "REPLACE_WITH_VPC_CIDR"
+private_subnet_cidrs = ["REPLACE_WITH_PRIVATE_SUBNET_1", "REPLACE_WITH_PRIVATE_SUBNET_2"]
+public_subnet_cidrs = ["REPLACE_WITH_PUBLIC_SUBNET_1", "REPLACE_WITH_PUBLIC_SUBNET_2"]
+service_ipv4_cidr = "REPLACE_WITH_SERVICE_CIDR"
+egress_mode = "REPLACE_WITH_NAT_SINGLE_NAT_PER_AZ_OR_ENDPOINTS"
+api_public_access_cidrs = []
+node_capacity = { min = 1, desired = 1, max = 2 }
+node_profile = {
+  architecture = "x86_64"
+  ami_type = "AL2023_x86_64_STANDARD"
+  ami_release_version = "REPLACE_WITH_COMPATIBLE_APPROVED_RELEASE"
+  instance_types = ["REPLACE_WITH_COMPATIBLE_CPU_INSTANCE"]
+  root_volume_gib = 40
+}
+addon_versions = {
+  vpc-cni = "REPLACE_WITH_APPROVED_BUILD"
+  kube-proxy = "REPLACE_WITH_APPROVED_BUILD"
+  coredns = "REPLACE_WITH_APPROVED_BUILD"
+  eks-pod-identity-agent = "REPLACE_WITH_APPROVED_BUILD"
+  aws-ebs-csi-driver = "REPLACE_WITH_APPROVED_BUILD"
+}
+control_plane_log_retention_days = 30
+state_bucket_name = "REPLACE_WITH_STATE_BUCKET"
+evidence_bucket_name = "REPLACE_WITH_DISTINCT_EVIDENCE_BUCKET"
+evidence_key_prefix = "retained/"
+evidence_retention_days = 365
+product_namespace = "robotics"
+evidence_service_account = "evidence-sink"
+ecr_repository_names = ["robotics-runtime", "robotics-runtime-infra"]
+tags = {
+  Product = "REPLACE_WITH_PRODUCT"
+  Environment = "REPLACE_WITH_ENVIRONMENT"
+  Owner = "REPLACE_WITH_OWNER"
+  CostCenter = "REPLACE_WITH_COST_CENTER"
+}

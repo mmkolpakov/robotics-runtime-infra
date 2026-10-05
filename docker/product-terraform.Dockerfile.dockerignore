@@ -1,0 +1,15 @@
+**
+!terraform/
+!terraform/**
+!scripts/
+!scripts/ci/
+!scripts/ci/check-product-terraform.sh
+**/.terraform
+**/.terraform/**
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/*.tfvars
+**/*.tfvars.json
+**/*.pem
+**/*.key
