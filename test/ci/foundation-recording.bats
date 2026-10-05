@@ -905,3 +905,59 @@ SH
   [ "$(cat "${FOUNDATION_LIFECYCLE_TRACE}")" = check_urdf ]
   [ ! -e "${FOUNDATION_LIFECYCLE_TRACE}.container" ]
 }
+
+@test "native recorder sealing precedes publisher shutdown and preserves failure exits" {
+  local boundary="${BATS_TEST_TMPDIR}/seal-boundary.sh"
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+data_source="$1"
+simulation_container=fixture-playback
+trace="$2"
+sealed=0
+compose_leaf() {
+  [[ " $* " == *' stop '* ]]
+  if [[ "${@: -1}" == recorder ]]; then
+    printf 'recorder\n' >>"${trace}"
+    [[ "${SEAL_FAILURE:-0}" != 1 ]] || return 31
+    sealed=1
+  else
+    [[ "${sealed}" == 1 ]] || return 87
+    printf '%s\n' "${@: -1}" >>"${trace}"
+  fi
+}
+docker() {
+  [[ "$1" == inspect ]]
+  printf '%s\n' "${PLAYBACK_RUNNING:-true}"
+}
+compose=(compose_leaf)
+SH
+    # Exercise production ordering; native closure and rollover are separate gates.
+    awk '
+      /^# Seal native capture while observed publishers remain active\./ { emit = 1 }
+      emit && /^sleep 2$/ { exit }
+      emit { print }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
+  } >"${boundary}"
+  local source trace
+  for source in simulator recording_playback; do
+    trace="${BATS_TEST_TMPDIR}/${source}.events"
+    run bash "${boundary}" "${source}" "${trace}"
+    [ "${status}" -eq 0 ]
+    [ "$(head -n 1 "${trace}")" = recorder ]
+    if [[ "${source}" == simulator ]]; then
+      [ "$(cat "${trace}")" = $'recorder\nruntime-probe-publisher' ]
+    else
+      [ "$(cat "${trace}")" = $'recorder\nruntime-metrics\nplayback' ]
+    fi
+    trace="${BATS_TEST_TMPDIR}/${source}-seal-failed.events"
+    run env SEAL_FAILURE=1 bash "${boundary}" "${source}" "${trace}"
+    [ "${status}" -eq 31 ]
+    [ "$(cat "${trace}")" = recorder ]
+  done
+  trace="${BATS_TEST_TMPDIR}/ended-playback.events"
+  run env PLAYBACK_RUNNING=false bash "${boundary}" recording_playback "${trace}"
+  [ "${status}" -eq 70 ]
+  [ ! -e "${trace}" ]
+}

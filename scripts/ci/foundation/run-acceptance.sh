@@ -677,10 +677,14 @@ while [[ ! -f "${measurement_complete}" ]]; do
   fi
   sleep 1
 done
+# Seal native capture while observed publishers remain active.
 if [[ "${data_source}" == recording_playback ]]; then
   [[ "$(docker inspect --format '{{.State.Running}}' "${simulation_container}")" == true ]] || {
     printf 'recorded playback ended before the live completion proof\n' >&2; exit 70;
   }
+fi
+"${compose[@]}" --profile record stop recorder
+if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile observability stop runtime-metrics
   "${compose[@]}" --profile playback stop playback
 else
@@ -693,7 +697,6 @@ test -s "${run_dir}/evidence/metrics.otlp.jsonl"
   evidence-sink artifact \
   /evidence/metrics.otlp.jsonl application/x-ndjson \
   "${evidence_metrics_segment_index}"
-"${compose[@]}" --profile record stop recorder
 "${compose[@]}" --profile evidence run --rm evidence-finalize
 observer_status="$(docker wait "${observer}")"
 publish_acceptance_results
