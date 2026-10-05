@@ -2,9 +2,89 @@
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-09-08",
   "author": "mmkolpakov",
-  "timestamp": "2026-10-02T08:41:44Z",
-  "version": 8,
+  "timestamp": "2026-10-05T16:51:50Z",
+  "version": 9,
   "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2024-35948"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Reviewed 2026-10-05 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. A missing bounds check in the bcachefs superblock clean-section journal parser can overrun the section. The implementation and its internal error-types header are absent. The Linux CNA identifies fs/bcachefs/sb-clean.c, fs/bcachefs/sb-errors_types.h (record updated 2026-08-05T11:31:07.533Z). Independently downloaded, SHA256-matched binary payloads contain 988 amd64 or 960 arm64 usr/include headers plus changelog/copyright only, no kernel implementation sources, ELF binaries or modules; none of the identified files is supplied. Ubuntu's CVE tracker data updated 2026-10-05T07:06:31.830049+00:00 still marks the noble linux source as needed/vulnerable; this is a binary-content applicability statement, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/35xxx/CVE-2024-35948.json; https://ubuntu.com/security/cves/CVE-2024-35948.json; https://packages.ubuntu.com/noble-updates/linux-libc-dev. Package payload SHA256: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. This statement does not qualify the host kernel or hardware, other binaries from the linux source package, another package version/architecture, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2024-38581"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Reviewed 2026-10-05 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. The AMD GPU MES fence fallback timer lifetime can cause a kernel use-after-free. The GPU-driver implementation is absent. The Linux CNA identifies drivers/gpu/drm/amd/amdgpu/amdgpu_mes.c (record updated 2026-08-05T11:32:57.888Z). Independently downloaded, SHA256-matched binary payloads contain 988 amd64 or 960 arm64 usr/include headers plus changelog/copyright only, no kernel implementation sources, ELF binaries or modules; none of the identified files is supplied. Ubuntu's CVE tracker data updated 2026-10-05T07:01:01.217684+00:00 still marks the noble linux source as needed/vulnerable; this is a binary-content applicability statement, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/38xxx/CVE-2024-38581.json; https://ubuntu.com/security/cves/CVE-2024-38581.json; https://packages.ubuntu.com/noble-updates/linux-libc-dev. Package payload SHA256: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. This statement does not qualify the host kernel or hardware, other binaries from the linux source package, another package version/architecture, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2024-40954"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Reviewed 2026-10-05 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. A failed kernel socket creation can leave a dangling sk reference reachable by an fentry/BPF socket-cookie probe. The socket-lifetime implementation is absent; exported socket UAPI declarations do not supply that code. The Linux CNA identifies net/core/sock.c (record updated 2026-08-05T11:34:13.912Z). Independently downloaded, SHA256-matched binary payloads contain 988 amd64 or 960 arm64 usr/include headers plus changelog/copyright only, no kernel implementation sources, ELF binaries or modules; none of the identified files is supplied. Ubuntu's CVE tracker data updated 2026-10-05T06:46:59.989774+00:00 still marks the noble linux source as needed/vulnerable; this is a binary-content applicability statement, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/40xxx/CVE-2024-40954.json; https://ubuntu.com/security/cves/CVE-2024-40954.json; https://packages.ubuntu.com/noble-updates/linux-libc-dev. Package payload SHA256: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. This statement does not qualify the host kernel or hardware, other binaries from the linux source package, another package version/architecture, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2024-44964"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Reviewed 2026-10-05 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. Intel IDPF soft reset can leave queue/vport backpointers dangling and leak queue allocations. The network-driver reset implementation is absent. The Linux CNA identifies drivers/net/ethernet/intel/idpf/idpf_lib.c (record updated 2026-05-11T20:32:50.659Z). Independently downloaded, SHA256-matched binary payloads contain 988 amd64 or 960 arm64 usr/include headers plus changelog/copyright only, no kernel implementation sources, ELF binaries or modules; none of the identified files is supplied. Ubuntu's CVE tracker data updated 2026-10-05T06:46:59.989774+00:00 still marks the noble linux source as needed/vulnerable; this is a binary-content applicability statement, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/44xxx/CVE-2024-44964.json; https://ubuntu.com/security/cves/CVE-2024-44964.json; https://packages.ubuntu.com/noble-updates/linux-libc-dev. Package payload SHA256: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. This statement does not qualify the host kernel or hardware, other binaries from the linux source package, another package version/architecture, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-74350"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Reviewed 2026-10-05 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. Malformed OCFS2 fast-symlink inode size or termination can cause an out-of-bounds read during inode/symlink processing. The filesystem implementation is absent. The Linux CNA identifies fs/ocfs2/inode.c (record updated 2026-08-17T05:46:13.886Z). Independently downloaded, SHA256-matched binary payloads contain 988 amd64 or 960 arm64 usr/include headers plus changelog/copyright only, no kernel implementation sources, ELF binaries or modules; none of the identified files is supplied. Ubuntu's CVE tracker data updated 2026-10-05T08:24:17.814058+00:00 still marks the noble linux source as needed/vulnerable; this is a binary-content applicability statement, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/74xxx/CVE-2026-74350.json; https://ubuntu.com/security/cves/CVE-2026-74350.json; https://packages.ubuntu.com/noble-updates/linux-libc-dev. Package payload SHA256: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. This statement does not qualify the host kernel or hardware, other binaries from the linux source package, another package version/architecture, or any other vulnerability."
+    },
     {
       "vulnerability": {
         "name": "CVE-2026-43379"

@@ -530,9 +530,9 @@ else
 fi
 sudo install -o 1000 -g 1000 -m 0644 \
   "${artifact_dir}/provider/bindings.json" "${run_dir}/provider-bindings.json"
-# The conformance probe controls pause/step/resume itself. Start the periodic
-# stepper only after the probe has finished, before the observation window.
-if [[ "${data_source}" == simulator ]]; then
+# The conformance probe owns pause/step/resume. Neutral software readiness
+# also needs advancing time, so defer its periodic stepper until that gate.
+if [[ "${data_source}" == simulator && "${robot_selected}" != true ]]; then
   "${compose[@]}" --profile stepped \
     up --detach --no-build --wait --wait-timeout 120 simulation-stepper
 fi
@@ -610,6 +610,9 @@ SH
   if ((${#extra_services[@]} > 0)); then
     "${compose[@]}" up --detach --no-build "${extra_services[@]}"
   fi
+  # Entity creation and Clock/JointState/TF readiness precede the stepped window.
+  "${compose[@]}" --profile stepped \
+    up --detach --no-build --wait --wait-timeout 120 simulation-stepper
 fi
 if [[ "${data_source}" == simulator ]]; then
   "${compose[@]}" --profile acceptance --profile observability \
@@ -677,10 +680,14 @@ while [[ ! -f "${measurement_complete}" ]]; do
   fi
   sleep 1
 done
+# Seal native capture while observed publishers remain active.
 if [[ "${data_source}" == recording_playback ]]; then
   [[ "$(docker inspect --format '{{.State.Running}}' "${simulation_container}")" == true ]] || {
     printf 'recorded playback ended before the live completion proof\n' >&2; exit 70;
   }
+fi
+"${compose[@]}" --profile record stop recorder
+if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile observability stop runtime-metrics
   "${compose[@]}" --profile playback stop playback
 else
@@ -693,7 +700,6 @@ test -s "${run_dir}/evidence/metrics.otlp.jsonl"
   evidence-sink artifact \
   /evidence/metrics.otlp.jsonl application/x-ndjson \
   "${evidence_metrics_segment_index}"
-"${compose[@]}" --profile record stop recorder
 "${compose[@]}" --profile evidence run --rm evidence-finalize
 observer_status="$(docker wait "${observer}")"
 publish_acceptance_results

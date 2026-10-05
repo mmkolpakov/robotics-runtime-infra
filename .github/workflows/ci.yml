@@ -28,6 +28,16 @@ env:
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
 
 jobs:
+  product-terraform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Check product AWS configuration without account or backend access
+        run: scripts/ci/check-product-terraform.sh
   product-ansible:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -557,6 +567,7 @@ jobs:
   ci:
     if: always()
     needs:
+      - product-terraform
       - product-ansible
       - static-analysis
       - compose-version
