@@ -34,21 +34,14 @@ each engine.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    profile["Consumer-owned profile / workload"]
-    host["Cordis host<br/>composition, ownership, readiness"]
-    executor["Compose / Execa<br/>workers and resources"]
-    providers["Native providers<br/>Gazebo / Webots / Isaac"]
-    facts["Observed identity / time / payloads"]
-    contracts["Contracts<br/>exact documents and references"]
-    harness["Harness<br/>evaluation and reports"]
+The C4 views describe the platform shared with robotics-runtime. Diagram sources
+and generated views are maintained there.
 
-    profile -. trusted configuration .-> host
-    host -. lifecycle .-> executor
-    executor -. ownership .-> providers
-    providers --> facts --> contracts --> harness
-```
+![C4 Context](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/Context.svg)
+
+![C4 Container](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/Container.svg)
+
+[Sequence, lifecycle and deployment views](https://github.com/mmkolpakov/robotics-runtime/tree/main/docs/architecture).
 
 Host lifecycle is separate from native control and video connections. The
 common document/evaluator environment does not require a simulator SDK or ROS.
