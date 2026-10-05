@@ -1,7 +1,7 @@
 import {Service, referenceFile} from "@robotics-runtime/host";
 import type {ArtifactRef, Context} from "@robotics-runtime/host";
 import {createHash, randomUUID} from 'node:crypto';
-import {readFile, writeFile} from 'node:fs/promises';
+import {copyFile, mkdir, readFile, stat, writeFile} from 'node:fs/promises';
 import {isAbsolute, join} from 'node:path';
 import {setTimeout as pause} from 'node:timers/promises';
 import {ComposeExecution} from '../../compose-execution.js';
@@ -14,6 +14,8 @@ export interface WebotsConfig {
   workerImage: string; runVolume: string; outputRoot: string;
   mode: 'physics-only' | 'offscreen-camera';
   deadlineMs?: number;
+  /** Independent Host-owned retention root; never removed by this acquired project. */
+  artifactDirectory?: string;
 }
 const record = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('worker fact must be an object');
@@ -31,15 +33,19 @@ export class WebotsNative extends Service {
   private readonly deadline: number;
   private started: Promise<{ready: boolean; evidenceRefs: ArtifactRef[]}> | undefined;
   private engine: EngineMetadata | undefined;
-  constructor(ctx: Context, readonly config: WebotsConfig) {
+  readonly config: Readonly<WebotsConfig>;
+  readonly retainedOutput: string;
+  constructor(ctx: Context, requestedConfig: WebotsConfig) {
     super(ctx, "webots");
-    if (![config.composeExecutable, config.socketPath, ...config.composeFiles, config.cwd, config.outputRoot].every(isAbsolute)) throw new Error('native provider paths must be absolute');
+    const config = this.config = Object.freeze({...requestedConfig, composeFiles: Object.freeze([...requestedConfig.composeFiles])});
+    if (![config.composeExecutable, config.socketPath, ...config.composeFiles, config.cwd, config.outputRoot, ...(config.artifactDirectory ? [config.artifactDirectory] : [])].every(isAbsolute)) throw new Error('native provider paths must be absolute');
     if (!/@sha256:[a-f0-9]{64}$/.test(config.workerImage)) throw new Error('immutable worker image digest is required');
     if (!['physics-only', 'offscreen-camera'].includes(config.mode)) throw new Error('unsupported native Webots mode');
     this.ownerId = ctx.runResources.ownerId;
     const scope = createHash('sha256').update(this.ownerId + randomUUID()).digest('hex').slice(0,24);
     this.project = 'rr-webots-' + scope;
     this.output = join(config.outputRoot, scope);
+    this.retainedOutput = config.artifactDirectory ? join(config.artifactDirectory, scope) : this.output;
     this.deadline = config.deadlineMs ?? 120000;
     if (!Number.isSafeInteger(this.deadline) || this.deadline <= 0 || this.deadline > 300000) throw new Error('invalid finite Webots deadline');
     const options: ComposeOptions = {
@@ -51,6 +57,11 @@ export class WebotsNative extends Service {
     this.compose = new ComposeExecution(ctx.jobs, options);
     ctx.runResources.track({id: this.project, ownerId: this.ownerId,
       cleanup: async () => {
+        if (!this.engine) throw new Error('native Engine ownership was not observed; cleanup effects refused');
+        const before = await this.engine.projectOwnership({runId: this.ownerId, projectName: this.project}, {deadlineMs: Math.min(this.deadline, 120000)});
+        await mkdir(this.retainedOutput, {recursive: true});
+        await writeFile(join(this.retainedOutput, 'engine-cleanup-before.json'), JSON.stringify(before));
+        if (before.status !== 'complete') throw new Error('native Webots project ownership is incomplete; cleanup effects refused');
         const stopped = await this.compose.run(['stop', '--timeout', '3', 'webots-native']);
         if (!stopped.ok) throw new Error(stopped.diagnostic ?? 'native worker stop failed');
         const down = await this.compose.run(['down', '--remove-orphans']);
@@ -59,17 +70,17 @@ export class WebotsNative extends Service {
       verifyCleanup: async signal => {
         signal.throwIfAborted();
         if (!this.engine) return {released: false, evidenceRefs: [], diagnostic: 'native Engine readiness was not observed'};
-        const owned = await this.engine.remainingOwned(this.ownerId);
-        const own = (items: unknown[]) => items.filter(item => {
-          const labels = record(record(item).Labels ?? {});
-          return labels['com.docker.compose.project'] === this.project;
-        });
-        const released = !own(owned.containers).length && !own(owned.networks).length;
-        const {writeFile} = await import('node:fs/promises');
-        const path = join(this.output, 'engine-cleanup.json');
+        const observed = await this.engine.projectOwnership({runId: this.ownerId, projectName: this.project}, {deadlineMs: Math.min(this.deadline, 120000), cancelSignal: signal});
+        const volumes = record(observed.inventory.volumes).Volumes;
+        const released = observed.status === 'complete' && observed.inventory.containers.length === 0 && observed.inventory.networks.length === 0 && (!Array.isArray(volumes) || volumes.length === 0);
+        await mkdir(this.retainedOutput, {recursive: true});
+        const path = join(this.retainedOutput, 'engine-cleanup.json');
         await writeFile(path, JSON.stringify({owner_id: this.ownerId, project: this.project, released,
-          observed_owned: owned, retained_host_volume: this.config.runVolume}));
-        return {released, evidenceRefs: [await reference(path)]};
+          observation: observed, retained_host_volume: this.config.runVolume}));
+        const before = join(this.retainedOutput, 'engine-cleanup-before.json');
+        const refs = [await reference(path)];
+        try {refs.push(await reference(before));} catch (error) {if (record(error).code !== 'ENOENT') throw error;}
+        return {released, evidenceRefs: refs};
       }});
   }
   ready(signal: AbortSignal): Promise<{ready: boolean; evidenceRefs: ArtifactRef[]}> {
@@ -93,8 +104,8 @@ export class WebotsNative extends Service {
     }
   }
   private async start(signal: AbortSignal): Promise<{ready: boolean; evidenceRefs: ArtifactRef[]}> {
-    await this.compose.requireVersion();
-    this.engine = await EngineMetadata.connect({socketPath: this.config.socketPath, operationMinApi: '1.24', operationMaxApi: '1.53'});
+    await this.compose.requireVersion(signal);
+    this.engine = await EngineMetadata.connect({socketPath: this.config.socketPath, operationMinApi: '1.24', operationMaxApi: '1.53'}, {deadlineMs: Math.min(this.deadline, 120000), cancelSignal: signal});
     const launched = await this.compose.run(['up', '--detach', 'webots-native'], signal);
     if (!launched.ok) throw new Error(launched.diagnostic ?? 'native worker launch failed');
     const ps = await this.compose.run(['ps', '--all', '--quiet', 'webots-native'], signal);
@@ -104,15 +115,26 @@ export class WebotsNative extends Service {
       runId: this.ownerId, projectName: this.project, imageDigest: this.config.workerImage,
       mounts: [{destination: '/run/robotics', readOnly: false, volumeName: this.config.runVolume}],
       hostConfig: {Init: true, ReadonlyRootfs: true, NetworkMode: 'none', Memory: 2147483648}, user: '10001:1000',
-    });
+    }, {deadlineMs: Math.min(this.deadline, 120000), cancelSignal: signal});
     const ready = await this.waitFile('ready.json', signal);
     await writeFile(join(this.output, 'engine-readiness.json'), JSON.stringify(observed));
     if (observed.status !== 'complete' || record(record(observed.container).State).Running !== true) throw new Error('native worker Engine facts are incomplete or mismatched');
     const init = record(record(await this.waitFile('worker-identity.json', signal)).oci_init);
     if (init.pid !== 1 || init.sha256 !== '43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba' || typeof init.comm !== 'string' || !init.comm || typeof init.executable !== 'string') throw new Error('actual stock OCI init identity is unqualified');
     if (ready.ready !== true || record(ready.robot).name !== 'rr-native-probe') throw new Error('native world/robot readiness is absent');
-    return {ready: true, evidenceRefs: [await reference(join(this.output, 'ready.json')),
-      await reference(join(this.output, 'worker-identity.json'))]};
+    return {ready: true, evidenceRefs: await Promise.all(['ready.json', 'worker-identity.json', 'engine-readiness.json'].map(name => this.retain(name)))};
+  }
+  private async retain(name: string): Promise<ArtifactRef> {
+    const source = join(this.output, name), target = join(this.retainedOutput, name);
+    await mkdir(this.retainedOutput, {recursive: true});
+    if (target !== source) {
+      const before = await reference(source);
+      await copyFile(source, target);
+      const after = await reference(target);
+      if (before.sha256 !== after.sha256 || before.size_bytes !== after.size_bytes) throw new Error('retained native bytes differ');
+      return after;
+    }
+    return reference(source);
   }
   async measure(signal: AbortSignal): Promise<Record<string, unknown>> {
     await this.ready(signal);
@@ -126,9 +148,10 @@ export class WebotsNative extends Service {
     const result = await this.waitFile('worker-result.json', signal);
     if (result.evidence_exported_before_stop !== true) throw new Error('native payload export is not confirmed');
 
-    const names = ['worker-result.json', 'controller-result.json', 'last-native-state.json', 'ready.json', 'worker-identity.json', 'oci-init.json', 'engine-readiness.json', 'renderer.txt', 'packages.tsv', 'binaries.sha256', 'controller.log', 'webots.log', 'xvfb.log'];
+    const names = ['worker-result.json', 'controller-result.json', 'measurement.json', 'last-native-state.json', 'ready.json', 'worker-identity.json', 'oci-init.json', 'engine-readiness.json', 'renderer.txt', 'packages.tsv', 'binaries.sha256', 'controller.log', 'webots.log', 'xvfb.log'];
+    try {await stat(join(this.output, 'pre-reset.json')); names.push('pre-reset.json');} catch (error) {if (record(error).code !== 'ENOENT') throw error;}
     if (this.config.mode === 'offscreen-camera') names.push('camera.bgra', 'camera.png');
-    return Promise.all(names.map(name => reference(join(this.output, name))));
+    return Promise.all(names.map(name => this.retain(name)));
   }
 }
 export default WebotsNative;
