@@ -117,14 +117,16 @@ Real IAM denial and storage isolation must be qualified before support.
 Run `scripts/ci/check-product-terraform.sh` from the repository root. Docker is
 the default CI engine; HOME uses the explicit
 `ROBOTICS_IMAGE_ENGINE=podman scripts/ci/check-product-terraform.sh` selection.
-Only docker/podman are accepted. The maintainer
-`scripts/ci/lock-product-terraform.sh` helper uses the same selection and caller
-UID/GID for its lockfile bind mount (with keep-id for rootless Podman). It builds
-a pinned project container, initializes only modules/provider packages with
+Only docker/podman are accepted. The check command builds a pinned project
+container, initializes modules/provider packages with
 `init -backend=false -lockfile=readonly`, then runs fmt/validate and full-graph
 plan tests with every provider mocked and networking disabled. No module graph
 is replaced by an override. Mock IAM-policy-document data is fake; product IAM
 JSON assertions inspect the product's own policy documents directly.
+
+The maintainer `scripts/ci/lock-product-terraform.sh` helper regenerates provider
+checksums with `init -backend=false`. It uses the same engine selection and caller
+UID/GID for its lockfile bind mount (with keep-id for rootless Podman).
 
 These are configuration checks, not AWS acceptance. Real acceptance must
 establish backend migration/locking, apply/second-plan convergence, account/
