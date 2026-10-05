@@ -1,0 +1,5 @@
+{{ lookup('ansible.builtin.file', robotics_time_asset_root + '/config/time/ptp4l.conf', rstrip=False) | regex_replace('(?m)^domainNumber [0-9]+$', 'domainNumber ' ~ robotics_node_ptp_domain) }}
+# Follow the declared external grandmaster.
+clientOnly 1
+
+[{{ robotics_node_ptp_interface }}]

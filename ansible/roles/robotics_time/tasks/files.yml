@@ -1,0 +1,118 @@
+---
+- name: Create product sampler and unit directories
+  ansible.builtin.file:
+    path: "{{ robotics_time_file_root }}{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /usr/local/libexec/robotics-time
+    - /etc/systemd/system
+    - /etc/tmpfiles.d
+
+- name: Install the canonical sampler and normalizer
+  ansible.builtin.copy:
+    src: "{{ robotics_time_asset_root }}/scripts/time/{{ item.name }}"
+    dest: "{{ robotics_time_file_root }}/usr/local/libexec/robotics-time/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - name: sample.sh
+      mode: "0755"
+    - name: normalize-sample.jq
+      mode: "0644"
+
+- name: Install the canonical runtime directory policy
+  ansible.builtin.copy:
+    src: "{{ robotics_time_asset_root }}/tmpfiles.d/robotics-time.conf"
+    dest: "{{ robotics_time_file_root }}/etc/tmpfiles.d/robotics-time.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reapply product time runtime directory policy
+  register: robotics_time_tmpfiles
+
+- name: Install only enabled canonical sampler units
+  ansible.builtin.copy:
+    src: "{{ robotics_time_asset_root }}/systemd/robotics-{{ robotics_time_pair.0 }}-sample.{{ robotics_time_pair.1 }}"
+    dest: "{{ robotics_time_file_root }}/etc/systemd/system/robotics-{{ robotics_time_pair.0 }}-sample.{{ robotics_time_pair.1 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ (['chrony'] if 'time_chrony' in robotics_node_features else []) | union(['ptp'] if 'time_ptp' in robotics_node_features else []) | product(['service', 'timer']) | list }}"
+  loop_control:
+    loop_var: robotics_time_pair
+  notify: Reload product time units
+  register: robotics_time_units
+
+- name: Create Chrony fragment directory
+  ansible.builtin.file:
+    path: "{{ robotics_time_file_root }}/etc/chrony/conf.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: "'time_chrony' in robotics_node_features"
+
+- name: Install the canonical Chrony command socket fragment
+  ansible.builtin.copy:
+    src: "{{ robotics_time_asset_root }}/config/time/chrony-command-socket.conf"
+    dest: "{{ robotics_time_file_root }}/etc/chrony/conf.d/robotics-command-socket.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  register: robotics_time_chrony_socket
+  when: "'time_chrony' in robotics_node_features"
+
+- name: Install reviewed site Chrony sources
+  ansible.builtin.template:
+    src: chrony-sources.conf.j2
+    dest: "{{ robotics_time_file_root }}/etc/chrony/conf.d/robotics-sources.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  register: robotics_time_chrony_sources
+  when: "'time_chrony' in robotics_node_features"
+
+- name: Create PTP configuration and service override directories
+  ansible.builtin.file:
+    path: "{{ robotics_time_file_root }}{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/linuxptp
+    - /etc/systemd/system/ptp4l.service.d
+  when: "'time_ptp' in robotics_node_features"
+
+- name: Render site PTP configuration from the canonical asset
+  ansible.builtin.template:
+    src: ptp4l.conf.j2
+    dest: "{{ robotics_time_file_root }}/etc/linuxptp/robotics-ptp4l.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  register: robotics_time_ptp_config
+  when: "'time_ptp' in robotics_node_features"
+
+- name: Bind the reviewed existing PTP daemon to its site configuration
+  ansible.builtin.template:
+    src: ptp4l-service.conf.j2
+    dest: "{{ robotics_time_file_root }}/etc/systemd/system/ptp4l.service.d/robotics.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload product time units
+  register: robotics_time_ptp_override
+  when: "'time_ptp' in robotics_node_features"
+
+- name: Create an owned time evidence output directory
+  ansible.builtin.file:
+    path: "{{ robotics_time_file_root }}{{ robotics_node_time_evidence_dir }}"
+    state: directory
+    owner: _chrony
+    group: _chrony
+    mode: "0770"

@@ -1,0 +1,66 @@
+---
+- name: Validate explicit site settings before any changes
+  ansible.builtin.import_tasks: validate.yml
+  tags: always
+
+- name: Require an SSH product node on the canonical platform
+  ansible.builtin.assert:
+    that:
+      - ansible_connection | default('ssh') != 'local'
+      - inventory_hostname not in ['localhost', '127.0.0.1', '::1']
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version == '24.04'
+      - ansible_facts.service_mgr == 'systemd'
+      - robotics_node_file_root == ''
+    fail_msg: Enroll Ubuntu 24.04 product nodes over SSH; staging roots are only for file tests.
+  tags: always
+
+- name: Observe the host service manager version
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, --version]
+  register: robotics_node_systemd
+  changed_when: false
+  check_mode: false
+
+- name: Require the qualified systemd generation
+  ansible.builtin.assert:
+    that:
+      - robotics_node_systemd.stdout.split()[1] | int >= 255
+
+- name: Determine required product packages
+  ansible.builtin.set_fact:
+    robotics_node_required_packages: >-
+      {{ (['bash', 'coreutils', 'jq', 'chrony'] if ('time_chrony' in robotics_node_features or 'time_ptp' in robotics_node_features) else [])
+         + (['linuxptp'] if 'time_ptp' in robotics_node_features else [])
+         + (['can-utils', 'iproute2'] if 'can_observation' in robotics_node_features else []) }}
+
+- name: Require exact reviewed package versions
+  ansible.builtin.assert:
+    that:
+      - item in robotics_node_package_versions
+      - robotics_node_package_versions[item] is match('^[0-9][a-zA-Z0-9.+:~_-]+$')
+    fail_msg: Supply exact versions from the approved product package repository.
+  loop: "{{ robotics_node_required_packages }}"
+
+- name: Require the qualified time package families
+  ansible.builtin.assert:
+    that:
+      - robotics_node_package_versions.chrony is match('^4[.]5[-+]')
+      - "'time_ptp' not in robotics_node_features or robotics_node_package_versions.linuxptp is match('^4[.]0[-+]')"
+  when: "'time_chrony' in robotics_node_features or 'time_ptp' in robotics_node_features"
+
+- name: Install pinned product dependencies without starting daemons
+  ansible.builtin.apt:
+    name: "{{ item }}={{ robotics_node_package_versions[item] }}"
+    state: present
+    update_cache: false
+    policy_rc_d: 101
+    allow_downgrade: false
+  loop: "{{ robotics_node_required_packages }}"
+
+- name: Install the owned product storage parent
+  ansible.builtin.import_tasks: storage.yml
+
+- name: Install physical attach directory permissions
+  ansible.builtin.import_tasks: permissions.yml
+  when: "'physical_attach_permissions' in robotics_node_features"

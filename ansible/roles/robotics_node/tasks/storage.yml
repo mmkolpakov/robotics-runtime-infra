@@ -1,0 +1,9 @@
+---
+- name: Create the root-owned product storage parent
+  ansible.builtin.file:
+    path: "{{ robotics_node_file_root }}/var/lib/robotics"
+    state: directory
+    follow: false
+    owner: root
+    group: root
+    mode: "0755"

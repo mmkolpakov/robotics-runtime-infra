@@ -1,0 +1,21 @@
+---
+robotics_node_enrolled: true
+robotics_node_features: [time_chrony, time_ptp, can_observation, physical_attach_permissions]
+robotics_node_package_versions: {}
+robotics_node_asset_root: /src
+robotics_node_file_root: /tmp/robotics-product-node-fixture
+robotics_node_time_evidence_dir: /var/lib/robotics/time-evidence
+robotics_node_chrony_sources: [server clock.example.invalid iburst]
+robotics_node_chrony_existing_config_reviewed: true
+robotics_node_ptp_interface: enp1s0
+robotics_node_ptp_domain: 24
+robotics_node_ptp_time_source: external-grandmaster
+robotics_node_ptp_existing_service_reviewed: true
+robotics_node_can_interfaces:
+  - name: can0
+    bitrate: 500000
+    device_identity: /sys/devices/pci0000:00/0000:00:01.0
+robotics_node_can_network_ready: true
+robotics_node_authorization_dir: /var/lib/robotics/authorization-output
+robotics_node_nonce_dir: /var/lib/robotics/nonces
+robotics_node_physical_device_identities: [/dev/serial/by-id/usb-reviewed-controller]

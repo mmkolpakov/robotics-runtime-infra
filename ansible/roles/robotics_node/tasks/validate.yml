@@ -1,0 +1,85 @@
+---
+- name: Require explicit product enrollment and supported features
+  ansible.builtin.assert:
+    that:
+      - robotics_node_enrolled | bool
+      - robotics_node_features is sequence and robotics_node_features is not string and robotics_node_features is not mapping
+      - robotics_node_features | length > 0
+      - robotics_node_features | unique | length == robotics_node_features | length
+      - robotics_node_features | difference(['time_chrony', 'time_ptp', 'can_observation', 'physical_attach_permissions']) | length == 0
+      - robotics_node_package_versions is mapping
+    fail_msg: Explicit product enrollment, features and package versions are required.
+
+- name: Require an owned time evidence directory
+  ansible.builtin.assert:
+    that:
+      - robotics_node_time_evidence_dir | default('') is match('^/var/lib/robotics/[a-zA-Z0-9/_-]+$')
+      - "'..' not in robotics_node_time_evidence_dir"
+  when: "'time_chrony' in robotics_node_features or 'time_ptp' in robotics_node_features"
+
+- name: Require reviewed Chrony sources and socket consumers
+  ansible.builtin.assert:
+    that:
+      - robotics_node_chrony_existing_config_reviewed | default(false) | bool
+      - robotics_node_chrony_sources | default([]) | length > 0
+      - robotics_node_chrony_sources is sequence and robotics_node_chrony_sources is not string
+      - robotics_node_chrony_sources | select('match', '^(server|pool) [a-zA-Z0-9.:-]+( iburst)?$') | list | length == robotics_node_chrony_sources | length
+  when: "'time_chrony' in robotics_node_features"
+
+- name: Require explicit hardware PTP site settings
+  ansible.builtin.assert:
+    that:
+      - robotics_node_ptp_interface | default('') is match('^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,14}$')
+      - robotics_node_ptp_domain | default(-1) is integer
+      - robotics_node_ptp_domain | default(-1) >= 0 and robotics_node_ptp_domain | default(-1) <= 127
+      - robotics_node_ptp_time_source | default('') == 'external-grandmaster'
+      - robotics_node_ptp_existing_service_reviewed | default(false) | bool
+  when: "'time_ptp' in robotics_node_features"
+
+- name: Require explicit CAN interfaces and an existing internal network
+  ansible.builtin.assert:
+    that:
+      - robotics_node_can_interfaces | default([]) | length > 0
+      - robotics_node_can_network_ready | default(false) | bool
+  when: "'can_observation' in robotics_node_features"
+
+- name: Validate each CAN interface and stable identity
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,14}$')
+      - item.bitrate is integer and item.bitrate > 0
+      - item.device_identity is match('^/sys/devices/[a-zA-Z0-9/_.:-]+$')
+      - "'..' not in item.device_identity"
+  loop: "{{ robotics_node_can_interfaces | default([]) }}"
+  when: "'can_observation' in robotics_node_features"
+
+- name: Require separate physical authorization and nonce directories
+  ansible.builtin.assert:
+    that:
+      - robotics_node_authorization_dir | default('') is match('^/var/lib/robotics/[a-zA-Z0-9/_-]+$')
+      - robotics_node_nonce_dir | default('') is match('^/var/lib/robotics/[a-zA-Z0-9/_-]+$')
+      - "'..' not in robotics_node_authorization_dir"
+      - "'..' not in robotics_node_nonce_dir"
+      - robotics_node_authorization_dir != robotics_node_nonce_dir
+      - not robotics_node_authorization_dir.startswith(robotics_node_nonce_dir + '/')
+      - not robotics_node_nonce_dir.startswith(robotics_node_authorization_dir + '/')
+      - robotics_node_physical_device_identities | default([]) | length > 0
+  when: "'physical_attach_permissions' in robotics_node_features"
+
+- name: Require reviewed stable physical device names
+  ansible.builtin.assert:
+    that:
+      - item is match('^/dev/(serial/by-id|serial/by-path)/[a-zA-Z0-9_.:+-]+$')
+  loop: "{{ robotics_node_physical_device_identities | default([]) }}"
+  when: "'physical_attach_permissions' in robotics_node_features"
+
+- name: Keep time evidence outside physical authorization and nonce stores
+  ansible.builtin.assert:
+    that:
+      - robotics_node_time_evidence_dir != item
+      - not robotics_node_time_evidence_dir.startswith(item + '/')
+      - not item.startswith(robotics_node_time_evidence_dir + '/')
+  loop: "{{ [robotics_node_authorization_dir, robotics_node_nonce_dir] }}"
+  when:
+    - "'physical_attach_permissions' in robotics_node_features"
+    - "'time_chrony' in robotics_node_features or 'time_ptp' in robotics_node_features"

@@ -1,0 +1,12 @@
+---
+- name: Provision explicitly enrolled product nodes
+  hosts: robotics_product_nodes
+  become: true
+  gather_facts: true
+  serial: 1
+  roles:
+    - role: robotics_node
+    - role: robotics_time
+      when: "'time_chrony' in robotics_node_features or 'time_ptp' in robotics_node_features"
+    - role: robotics_can
+      when: "'can_observation' in robotics_node_features"

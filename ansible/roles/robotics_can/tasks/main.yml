@@ -1,0 +1,61 @@
+---
+- name: Reject staged roots in production CAN service operations
+  ansible.builtin.assert:
+    that: robotics_can_file_root == ''
+    fail_msg: Staging roots are only accepted by the isolated file-task checks.
+
+- name: Observe the required cgroup hierarchy
+  ansible.builtin.stat:
+    path: /sys/fs/cgroup/cgroup.controllers
+  register: robotics_can_cgroup
+
+- name: Reject hosts without cgroup v2
+  ansible.builtin.assert:
+    that: robotics_can_cgroup.stat.exists
+    fail_msg: The gateway requires cgroup v2 and operational cgroup-BPF qualification.
+
+- name: Observe existing CAN state without changing it
+  ansible.builtin.command:
+    argv: [/usr/sbin/ip, -details, -json, link, show, dev, "{{ item.name }}"]
+  loop: "{{ robotics_node_can_interfaces }}"
+  register: robotics_can_links
+  changed_when: false
+  check_mode: false
+
+- name: Observe stable CAN device identity
+  ansible.builtin.command:
+    argv: [/usr/bin/readlink, -f, "/sys/class/net/{{ item.name }}/device"]
+  loop: "{{ robotics_node_can_interfaces }}"
+  register: robotics_can_devices
+  changed_when: false
+  check_mode: false
+
+- name: Verify declared CAN state and bitrate
+  ansible.builtin.assert:
+    that:
+      - "'UP' in (item.stdout | from_json)[0].flags"
+      - (item.stdout | from_json)[0].linkinfo.info_kind == 'can'
+      - (item.stdout | from_json)[0].linkinfo.info_data.bittiming.bitrate == item.item.bitrate
+  loop: "{{ robotics_can_links.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Verify declared stable CAN device identity
+  ansible.builtin.assert:
+    that: item.stdout == item.item.device_identity
+  loop: "{{ robotics_can_devices.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Install product CAN files
+  ansible.builtin.import_tasks: files.yml
+
+- name: Apply changed gateway unit before starting services
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable declared observation gateways without link or transmit actions
+  ansible.builtin.systemd_service:
+    name: "robotics-can-observation@{{ item.name }}.service"
+    enabled: true
+    state: started
+  loop: "{{ robotics_node_can_interfaces }}"
