@@ -550,6 +550,9 @@ variable "HOST_ASSET_CONTEXT" {
 variable "HOST_ASSET_SHA256" {
   default = ""
 }
+variable "HOST_INFRA_ASSET_SHA256" {
+  default = ""
+}
 group "host" {
   targets = ["cordis-host"]
 }
@@ -559,6 +562,7 @@ target "cordis-host" {
   contexts = { "host-asset" = HOST_ASSET_CONTEXT }
   args = {
     HOST_ASSET_SHA256 = HOST_ASSET_SHA256
+    HOST_INFRA_ASSET_SHA256 = HOST_INFRA_ASSET_SHA256
     IMAGE_CREATED = IMAGE_CREATED
     VCS_REF = VCS_REF
   }

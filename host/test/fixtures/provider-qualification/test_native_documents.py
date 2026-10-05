@@ -1,4 +1,5 @@
 import sys
+import os
 import unittest
 import tempfile
 import json
@@ -7,7 +8,7 @@ import shutil
 import importlib.metadata
 from pathlib import Path
 
-sys.path.insert(0, "/producer")
+sys.path.insert(0, os.environ.get("NATIVE_PRODUCER_DIRECTORY", "/producer"))
 from provider_qualification import (
     produce,
     time_value,
@@ -26,8 +27,11 @@ from robotics_acceptance_harness.evidence import (
     EvidenceValidationError,
 )
 
-FIXTURES = Path("/fixtures")
-SCHEMA = Path("/schemas/native-provider-source.v1.schema.json")
+FIXTURES = Path(os.environ.get("NATIVE_FIXTURE_DIRECTORY", "/fixtures"))
+SCHEMA = (
+    Path(os.environ.get("NATIVE_SCHEMA_DIRECTORY", "/schemas"))
+    / "native-provider-source.v1.schema.json"
+)
 
 
 class NativeDocuments(unittest.TestCase):

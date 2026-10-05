@@ -6,7 +6,7 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
         # Public writers emit exact JSON bytes; changing them invalidates linked digests.
-        exclude: ^test/qualification/fixtures/.*\.json$
+        exclude: ^(test/qualification/fixtures/|host/test/fixtures/provider-qualification/native/).*\.json$
       - id: check-json
       - id: check-yaml
         exclude: ^compose\.(released|foundation-playback)\.yaml$

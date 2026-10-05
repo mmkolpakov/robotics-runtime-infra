@@ -66,6 +66,13 @@ jobs:
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
           -s test/ci -p test_consumer_configuration.py -v
+      - name: Test native provider qualification documents
+        run: |
+          NATIVE_PRODUCER_DIRECTORY="${PWD}/host/producers" \
+          NATIVE_FIXTURE_DIRECTORY="${PWD}/host/test/fixtures/provider-qualification" \
+          NATIVE_SCHEMA_DIRECTORY="${PWD}/config/qualification" \
+            dependencies/robotics-runtime/.venv/bin/python \
+            host/test/fixtures/provider-qualification/test_native_documents.py
       - name: Test synthetic physical runtime observations
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
@@ -91,6 +98,8 @@ jobs:
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture
         run: bats test/ci
+      - name: Build and check the pinned host assets
+        run: bash scripts/ci/host/build-assets.sh
       - name: Validate Docker Bake definition
         run: scripts/ci/static-analysis/validate-docker-bake-definition.sh
       - name: Build the pinned policy engine

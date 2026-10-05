@@ -1,13 +1,22 @@
-# Common native provider source qualification
+# Native provider source qualification
 
-C16 reuses P0.18.2 / H0.19.1 public qualification-profile, conformance-result, provider requirement, writer, and evidence-loader APIs. The single infra extension `urn:robotics:infra:native-provider-source:v1` supplies structured native lifecycle, time precision/epoch, frame/units, and separate request/result/effect evidence pointers. It is self-contained and passed through the existing digest-pinned extension boundary. Shape validity and informational observed_value fields do not establish an execution verdict. No active core contract, evaluator, serializer, protocol, scene translator, shared package, README or CI file was changed.
+The producers use the public qualification-profile, conformance-result, provider requirement and
+evidence-index APIs. The infra-owned extension records native time representation and epoch,
+frames and units, lifecycle facts, and separate operation request, result and effect references.
+It is validated through the existing digest-pinned extension boundary.
 
-Gazebo inputs reuse the accepted stock 1.0.24 / interfaces 1.5.1 d011 source run and independent retained/control evidence. Webots inputs reuse the accepted R2025a Linux amd64 CPU physics/reset case and registered process-group proof from c7ed2ad. Each fixed input manifest binds the actual retained source bytes. The producer projects already qualified source check outcomes into the public conformance role; it does not repeat either native physics run. Evidence is copied byte-for-byte through the public atomic byte writer, re-bound and finalized by the public evidence-index writer. The existing Harness independently accepts those retained bytes after original inputs are removed and rejects later tamper.
+The fixed Gazebo and Webots inputs contain accepted native CPU source observations. Projection
+into conformance documents does not rerun physics. Gazebo records project cleanup; the selected
+Webots proof records native process-group cleanup and evidence retained before reset. Their scopes
+remain distinct. Native integer nanoseconds stay decimal strings; Webots binary64 seconds retain
+their hexadecimal representation. Non-ROS providers do not imitate Clock, JointState or TF.
 
-Gazebo keeps native integer ns as decimal strings, including values above JavaScript integer precision. Webots keeps native binary64 seconds, its exact float.hex representation, request milliseconds, and ENU/Z-up/metre frame metadata. Reset and step remain distinct operations; native void reset does not acquire a fictitious numeric return. Webots pre-reset bytes are checked separately from final effect; Gz's selected unsupported TIME operation retains actual request/result and unchanged effect facts. Gz lifecycle scope covers native project cleanup, while the selected Webots standalone CPU case covers registered native process groups. These scopes are explicit. Non-ROS providers do not acquire Clock/JointState/TF.
+Isaac representative inputs produce skipped conformance, unevaluated execution and no capabilities.
+They cannot satisfy a request for native execution. GPU, sensor, RTSP, GUI and installed-consumer
+qualification require their own execution evidence.
 
-Isaac fixtures cover structure and refusal only. Core conformance status is skipped (the existing role has no unevaluated status enum), extension execution is explicitly unevaluated, and capabilities are empty. The public provider requirement API rejects any requested execution capability. No Isaac execution, renderer, hardware, GUI, or C17 acceptance is inferred from schema shape.
-
-Fourteen source checks passed through real core Jobs → Compose 5.3.1 → the installed public Python APIs: accepted CPU documents, native float/ns precision, ISAAC refusal, missing provider/capability/evidence, original and retained tamper, time-unit mismatch, export-after-reset snapshot mismatch, extension digest/shape and frame-unit mismatch, inability to merge incomplete provider scenes, and retained evidence after input removal. The first attempt failed the existing upload_mode semantic guard; local_only corrected the producer and the raw failure remains. Ruff 0.14.3 and strict TypeScript 7 checks passed. Actual project ownership preflight and post-cleanup inventory were complete/empty.
-
-Produced reviewable documents and byte-bound payloads are under `artifacts/qualification/produced/{gazebo,webots,isaac}`. The compact hash index is `docs/proofs/native-provider-source-qualification.json`; raw native public API jobs/cleanup observations are under `artifacts/qualification/public-api-checks-5`. The API reuse rationale is retained in `artifacts/qualification/C16-API-REUSE.md`. C17 and independently installed/published C18/C21 execution remain separate.
+Run `host/tools/qualify-provider-documents.mjs` with the source root, the selected Engine socket and
+a new output directory. Public API checks cover missing providers and capabilities, source and
+retained tamper, time and frame units, export-before-reset, extension binding and retained payloads
+after original inputs are removed. Source proof hashes are recorded in
+`docs/proofs/native-provider-source-qualification.json`.
