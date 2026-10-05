@@ -1,10 +1,8 @@
-import {Service} from "@robotics-runtime/host";
+import {Service, referenceFile} from "@robotics-runtime/host";
 import type {ArtifactRef, Context} from "@robotics-runtime/host";
 import {createHash, randomUUID} from 'node:crypto';
-import {createReadStream} from 'node:fs';
-import {readFile, stat, writeFile} from 'node:fs/promises';
+import {readFile, writeFile} from 'node:fs/promises';
 import {isAbsolute, join} from 'node:path';
-import {pathToFileURL} from 'node:url';
 import {setTimeout as pause} from 'node:timers/promises';
 import {ComposeExecution} from '../../compose-execution.js';
 import type {ComposeOptions} from '../../compose-execution.js';
@@ -22,9 +20,7 @@ const record = (value: unknown): Record<string, unknown> => {
   return value as Record<string, unknown>;
 };
 export async function reference(path: string): Promise<ArtifactRef> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return {uri: pathToFileURL(path).href, sha256: hash.digest('hex'), size_bytes: (await stat(path)).size};
+  return referenceFile(path);
 }
 /** Native APIs stay in the worker; this provider owns only finite Compose jobs and evidence paths. */
 declare module "cordis" {interface Context {webots: WebotsNative}}
