@@ -60,7 +60,7 @@
     "@types/dockerode": "4.0.1",
     "@types/node": "24.19.1",
     "typescript": "7.0.2",
-    "@robotics-runtime/host": "file:.tools/core.tgz"
+    "@robotics-runtime/host": "file:.tools/core-338bb42449dba48cc7fefe0c03e2c89e9a8d1b42.tgz"
   },
   "peerDependencies": {
     "@robotics-runtime/host": "0.1.0-rc.0"

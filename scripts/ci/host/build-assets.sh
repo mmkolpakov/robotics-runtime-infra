@@ -14,8 +14,13 @@ if [[ ! -d "${core}/.git" ]]; then
   git clone --no-checkout --filter=blob:none "${url}" "${core}"
   git -C "${core}" checkout --detach "${revision}"
 fi
-[[ "$(git -C "${core}" rev-parse HEAD)" == "${revision}" ]] || exit 65
 [[ -z "$(git -C "${core}" status --porcelain)" ]] || exit 65
+[[ "$(git -C "${core}" remote get-url origin)" == "${url}" ]] || exit 65
+if [[ "$(git -C "${core}" rev-parse HEAD 2>/dev/null || true)" != "${revision}" ]]; then
+  git -C "${core}" fetch --depth=1 origin "${revision}"
+  git -C "${core}" checkout --detach "${revision}"
+fi
+[[ "$(git -C "${core}" rev-parse HEAD)" == "${revision}" ]] || exit 65
 git diff --exit-code -- host/src host/package.json host/package-lock.json
 mkdir -p "${asset}"
 node_image="node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697"
@@ -34,7 +39,9 @@ if [[ "${engine}" == podman ]]; then engine_options+=(--userns=keep-id); fi
   '
 core_file="${asset}/robotics-runtime-host-0.1.0-rc.0.tgz"
 printf '%s  %s\n' "${core_sha}" "${core_file}" | sha256sum --check
-cp "${core_file}" host/.tools/core.tgz
+core_dependency="$(python3 -c 'import json; print(json.load(open("host/package.json"))["devDependencies"]["@robotics-runtime/host"])')"
+[[ "${core_dependency}" == "file:.tools/core-${revision}.tgz" ]] || exit 65
+cp "${core_file}" "host/${core_dependency#file:}"
 "${engine}" run "${engine_options[@]}" --mount "type=bind,source=${root},target=/workspace" \
   --workdir /workspace/host "${node_image}" \
   bash -Eeuo pipefail -c '
