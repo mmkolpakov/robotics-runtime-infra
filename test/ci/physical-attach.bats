@@ -414,6 +414,108 @@ setup() {
   [ "${status}" -eq 0 ]
   [ "$(cat "${report_path}")" = "verified" ]
   [ ! -e "${pending}" ]
+  [ -z "$(find "${BATS_TEST_TMPDIR}" -maxdepth 1 -type d -name 'physical-attach-report.failure.*')" ]
+}
+
+
+@test "failed cleanup retains public physical diagnostics before deleting its workspace" {
+  report_path="$BATS_TEST_TMPDIR/physical-attach.json"
+  pending="$report_path.pending"
+  run env PHYSICAL_ATTACH_LIBRARY_ONLY=1 bash -c '
+    set -Eeuo pipefail
+    source "$1"
+    RUNNER_TEMP="$2"
+    work_root="$RUNNER_TEMP/physical-attach.early-failure"
+    mkdir -p "$work_root/keys" "$work_root/security/keystore"
+    report_output="$3"
+    report_pending="$4"
+    printf "not-success\n" >"$report_pending"
+    printf "partial-cases\n" >"$work_root/physical-attach-report.json"
+    printf "target-to-host\n" >"$work_root/serial-received.txt"
+    printf "host-to-target\n" >"$work_root/serial-reverse-received.txt"
+    printf "serial-public-log\n" >"$work_root/serial-socat.log"
+    printf "123#DEADBEEF\n" >"$work_root/can-received.txt"
+    printf "secret-key\n" >"$work_root/keys/operator.key"
+    printf "secret-keystore\n" >"$work_root/security/keystore/private.key"
+    printf "private-authorization\n" >"$work_root/execution-permit.json"
+    printf "private-signing-bundle\n" >"$work_root/operator.sigstore.json"
+    ln -s "$work_root/keys/operator.key" "$work_root/unexpected-can-frame.log"
+    ROBOTICS_TIME_EVIDENCE="$RUNNER_TEMP/physical-attach-time.otlp.json"
+    ROBOTICS_TIME_EVIDENCE_WINDOW="$RUNNER_TEMP/physical-attach-time-window.json"
+    printf "{ \"raw_time\": 1 }\n" >"$ROBOTICS_TIME_EVIDENCE"
+    printf "{ \"raw_window\": 2 }\n" >"$ROBOTICS_TIME_EVIDENCE_WINDOW"
+    cleanup_owned_host_resources() {
+      printf "owned-writer-stopped\n" >>"$work_root/can-received.txt"
+      return 0
+    }
+    sudo() { return 0; }
+    exit_with_cleanup 1
+  ' _ "$SCRIPT" "$BATS_TEST_TMPDIR" "$report_path" "$pending"
+
+  [ "$status" -eq 1 ]
+  [ ! -e "$BATS_TEST_TMPDIR/physical-attach.early-failure" ]
+  [ ! -e "$report_path" ]
+  [ ! -e "$pending" ]
+  diagnostics="$(find "$BATS_TEST_TMPDIR" -maxdepth 1 -type d -name 'physical-attach.failure.*')"
+  [ -d "$diagnostics" ]
+  [ "$(cat "$diagnostics/physical-attach-report.json")" = partial-cases ]
+  [ "$(cat "$diagnostics/serial-received.txt")" = target-to-host ]
+  [ "$(cat "$diagnostics/serial-reverse-received.txt")" = host-to-target ]
+  [ "$(cat "$diagnostics/serial-socat.log")" = serial-public-log ]
+  [ "$(cat "$diagnostics/can-received.txt")" = "$(printf '123#DEADBEEF\nowned-writer-stopped')" ]
+  cmp "$BATS_TEST_TMPDIR/physical-attach-time.otlp.json" "$diagnostics/time-evidence.otlp.json"
+  cmp "$BATS_TEST_TMPDIR/physical-attach-time-window.json" "$diagnostics/time-evidence-window.json"
+  [ ! -e "$diagnostics/unexpected-can-frame.log" ]
+  [ -z "$(find "$diagnostics" -type l -print -quit)" ]
+  [ "$(find "$diagnostics" -type f | wc -l)" -eq 8 ]
+  run grep -R -E 'secret-key|secret-keystore|private-authorization|private-signing-bundle' "$diagnostics"
+  [ "$status" -eq 1 ]
+  run jq -e '.status == "failed" and .exit_status == 1 and .snapshot == "available-after-owned-cleanup-attempt"' "$diagnostics/diagnostic.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "failure diagnostics omit unsafe workspaces and unrecognized time input paths" {
+  report_path="$BATS_TEST_TMPDIR/physical-attach.json"
+  run env PHYSICAL_ATTACH_LIBRARY_ONLY=1 bash -c '
+    set -Eeuo pipefail
+    source "$1"
+    RUNNER_TEMP="$2"
+    work_root="$RUNNER_TEMP/physical-attach.rejected-input"
+    mkdir "$work_root"
+    report_output="$3"
+    printf "can-public\n" >"$work_root/can-received.txt"
+    ROBOTICS_TIME_EVIDENCE="$RUNNER_TEMP/arbitrary-time.json"
+    ROBOTICS_TIME_EVIDENCE_WINDOW="$RUNNER_TEMP/physical-attach-time-window.json"
+    printf "secret-input\n" >"$ROBOTICS_TIME_EVIDENCE"
+    ln -s "$ROBOTICS_TIME_EVIDENCE" "$ROBOTICS_TIME_EVIDENCE_WINDOW"
+    cleanup_owned_host_resources() { return 0; }
+    sudo() { return 0; }
+    exit_with_cleanup 1
+  ' _ "$SCRIPT" "$BATS_TEST_TMPDIR" "$report_path"
+
+  [ "$status" -eq 1 ]
+  diagnostics="$(find "$BATS_TEST_TMPDIR" -maxdepth 1 -type d -name 'physical-attach.failure.*')"
+  [ -d "$diagnostics" ]
+  [ ! -e "$diagnostics/time-evidence.otlp.json" ]
+  [ ! -e "$diagnostics/time-evidence-window.json" ]
+
+  unsafe_report="$BATS_TEST_TMPDIR/unsafe-physical-attach.json"
+  run env PHYSICAL_ATTACH_LIBRARY_ONLY=1 bash -c '
+    set -Eeuo pipefail
+    source "$1"
+    RUNNER_TEMP="$2"
+    work_root="$RUNNER_TEMP/foreign-workspace"
+    mkdir "$work_root"
+    report_output="$3"
+    printf "must-not-copy\n" >"$work_root/can-received.txt"
+    cleanup_owned_host_resources() { return 0; }
+    sudo() { return 0; }
+    exit_with_cleanup 1
+  ' _ "$SCRIPT" "$BATS_TEST_TMPDIR" "$unsafe_report"
+
+  [ "$status" -eq 70 ]
+  [ -d "$BATS_TEST_TMPDIR/foreign-workspace" ]
+  [ -z "$(find "$BATS_TEST_TMPDIR" -maxdepth 1 -type d -name 'unsafe-physical-attach.failure.*')" ]
 }
 
 @test "workspace cleanup failure suppresses a pending successful report" {
