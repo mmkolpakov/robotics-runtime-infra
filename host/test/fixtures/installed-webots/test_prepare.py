@@ -247,6 +247,25 @@ class Preparation(unittest.TestCase):
         self.assertEqual(marker.read_bytes(), b"retained partial attempt")
         self.assertEqual(self.podman_calls, [])
 
+    def test_existing_source_ancestor_refused_without_overwriting_sentinels(self):
+        self.consumer = self.repo.parent
+        sentinels = {
+            name: ("existing ancestor " + name).encode()
+            for name in (
+                "package.json",
+                "Dockerfile",
+                "identity.json",
+                "package-lock.json",
+            )
+        }
+        for name, raw in sentinels.items():
+            (self.consumer / name).write_bytes(raw)
+        with self.assertRaisesRegex(FileExistsError, "fresh and nonexistent"):
+            self.prepare()
+        self.assertEqual(self.podman_calls, [])
+        for name, raw in sentinels.items():
+            self.assertEqual((self.consumer / name).read_bytes(), raw)
+
     def test_worker_exports_exact_producer_revision_and_current_foundation_lock(self):
         old_producer = (
             self.repo / "host/producers/provider_qualification.py"
