@@ -267,6 +267,10 @@ cleanup() {
       "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"/physical-attach.*)
         sudo chown -hR "$(id -u):$(id -g)" "${work_root}" ||
           status=70
+        if test "${status}" -ne 0; then
+          retain_failure_diagnostics "${status}" ||
+            printf 'failed to retain physical-attach diagnostics\n' >&2
+        fi
         rm -rf -- "${work_root}" || status=70
         ;;
       *)
