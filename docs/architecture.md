@@ -102,7 +102,7 @@ checks pass; application composition does not provide cluster scheduling.
 The cloud path separates infrastructure, workload packaging, native lifecycle
 and retained evidence. This is a responsibility map; it does not describe a
 qualified cloud execution. Terraform foundation source is implemented. Helm
-packaging is a source candidate under integration. The native Kubernetes
+packaging has offline lint, render, schema and ownership checks. The native Kubernetes
 provider, durable recovery/export and actual EKS acceptance remain
 open.
 
@@ -110,13 +110,13 @@ open.
 ```mermaid
 flowchart TB
     terraform["Terraform — source implemented"]
-    helm["Helm — source candidate / integration"]
+    helm["Helm — source packaging / offline checks"]
 
     subgraph cloud["AWS / EKS — actual cloud qualification open"]
         foundation["AWS foundation: VPC / EKS / CPU nodes / IAM / CSI"]
         shared["Shared identity and storage: ServiceAccount / gp3 Retain"]
         spool["Per-run retained PVC: RWOP / independent lifetime"]
-        subgraph attempt["Per-attempt finite Job / Pod — Helm source candidate"]
+        subgraph attempt["Per-attempt finite Job / Pod — source packaging"]
             host["Run host: one lifecycle owner"]
             workers["Native SDK workers: profile-specific control / data"]
         end
@@ -158,12 +158,13 @@ association. See [AWS foundation](../terraform/README.md).
 Helm separates long-lived shared identity/StorageClass, one retained RWOP PVC
 per admitted run, and a finite Job per attempt. The retained PVC has no Job
 owner reference. Job TTL or attempt cleanup does not reclaim that PVC.
-The proposed Job places one lifecycle host beside finite native SDK workers;
+The source Job template places one lifecycle host beside finite native SDK workers;
 read-only admitted inputs stay separate from retained results, and only IPC
-and scratch are ephemeral. This candidate packaging does not run the existing
+and scratch are ephemeral. This packaging does not run the existing
 Docker/Compose providers inside Kubernetes.
 
-The planned native Kubernetes provider uses the official `@kubernetes/client-node` API to observe actual
+The planned native Kubernetes provider uses the official
+`@kubernetes/client-node` API to observe actual
 Job/Pod/PVC identities and implement bounded cancellation and cleanup with
 UID checks. Labels locate resources; exact owner bindings govern effects.
 SDK readiness, simulation time, control and media remain native profile facts.
@@ -172,7 +173,8 @@ repositories and selected SDKs; the common lifecycle does not translate them.
 No custom operator, scheduler, workflow engine, distributed state database
 or lock service is introduced.
 
-Cloud recovery must retain a durable sealed attempt journal on the PVC and establish
+Cloud recovery must retain a durable sealed attempt journal on the PVC and
+establish
 that the previous writer has stopped before recovery. RWOP, a terminal API
 phase and Job parallelism do not provide effect fencing or exactly-once
 execution. Lost or ambiguous attempts remain incomplete. Export recovery

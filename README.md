@@ -48,7 +48,7 @@ common document/evaluator environment does not require a simulator SDK or ROS.
 evidence-before-reset ordering.
 
 [Kubernetes and AWS responsibilities](docs/architecture.md#kubernetes-and-aws-responsibilities)
-shows the implemented Terraform source, Helm candidate and pending native
+shows Terraform and checked Helm source, plus pending native
 execution/recovery boundaries; real cloud qualification remains open.
 
 Read the shared diagrams by purpose:
