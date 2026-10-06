@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--consumer", type=Path, required=True)
     parser.add_argument("--assets", type=Path, required=True)
+    parser.add_argument("--deployment-revision", required=True)
     parser.add_argument("--compose", type=Path, required=True)
     parser.add_argument("--simulation-image", required=True)
     parser.add_argument("--simulation-id", required=True)
@@ -65,7 +66,15 @@ def main():
             r"[a-f0-9]{40}", entry["revision"]
         ):
             raise ValueError(f"coordinated {component} revision is invalid")
-    revision = identities["infra"]["revision"]
+    if not re.fullmatch(r"[a-f0-9]{40}", args.deployment_revision):
+        raise ValueError("deployment revision must be an immutable full Git commit")
+    revision = subprocess.check_output(
+        ["git", "rev-parse", "--verify", args.deployment_revision + "^{commit}"],
+        cwd=root,
+        text=True,
+    ).strip()
+    if revision != args.deployment_revision:
+        raise ValueError("deployment revision did not resolve to its exact Git commit")
     fixture_revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=root, text=True
     ).strip()

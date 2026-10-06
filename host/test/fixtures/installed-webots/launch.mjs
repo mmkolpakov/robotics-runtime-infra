@@ -5,6 +5,7 @@ import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
 
 const [root, socket, executable, image, artifacts] = process.argv.slice(2);
+assert.match(image, /^[^\s@]+@sha256:[a-f0-9]{64}$/, 'observed full Node RepoDigest required');
 assert.ok(import.meta.resolve('@robotics-runtime/infra-host').startsWith('file://' + root + '/node_modules/'));
 const identity = JSON.parse(await readFile(root + '/identity.json', 'utf8'));
 for (const name of [identity.sourceVolume, identity.retainedVolume]) {

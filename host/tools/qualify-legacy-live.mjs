@@ -37,7 +37,7 @@ export function validateLegacyLiveFixture(parameters,fixture={}){
   assert.ok(copy.profile,'installed host binding requires an immutable profile');
   const host=copy.hostRequirement;
   assert.ok(typeof host.runId==='string'&&host.runId.length>0&&typeof host.projectName==='string'&&host.projectName.length>0&&copy.hostService==='installed-host','explicit installed host ownership required');
-  assert.match(host.imageDigest,/^sha256:[a-f0-9]{64}$/);
+  assert.match(host.imageDigest,/^[^\s@]+@sha256:[a-f0-9]{64}$/,'installed host requires its observed full RepoDigest');
   assert.equal(host.user,'1000:1000');
   for(const [destination,name] of [['/run/robotics',sourceVolume],['/retained',retainedVolume]]){
    const mount=host.mounts?.find(row=>row.destination===destination);

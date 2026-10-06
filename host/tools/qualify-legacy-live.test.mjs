@@ -13,7 +13,7 @@ const fixture=()=>({
  profile:{id:'installed-ros-live',profilePath:'/app/profiles/ros.yml',files:[{path:'/app/profiles/ros.yml',sha256:'d'.repeat(64)}],requiredBindings:[{entryId:'gazebo',service:'gazeboRosV1'}],isolatedServices:['gazeboRosV1','legacyFinalization'],deadlineMs:1000},
  finalizerPlugin:'@robotics-runtime/infra-host/plugins/legacy-finalization',hostService:'installed-host',
  imageBindings:{simulation:{imageId:image,reference},finalizer:{reference},evidence:{reference}},
- hostRequirement:{runId:'fixture-owner',projectName:'fixture-project',imageDigest:image,user:'1000:1000',mounts:[{destination:'/run/robotics',readOnly:false,volumeName:'rr-source-fixture'},{destination:'/retained',readOnly:false,volumeName:'rr-retained-fixture'}]},
+ hostRequirement:{runId:'fixture-owner',projectName:'fixture-project',imageDigest:reference,user:'1000:1000',mounts:[{destination:'/run/robotics',readOnly:false,volumeName:'rr-source-fixture'},{destination:'/retained',readOnly:false,volumeName:'rr-retained-fixture'}]},
 });
 test('source wrapper retains all twelve positional bindings and default source route',()=>{
  const args=argv('/output'),parameters=legacyLiveParameters(args);
@@ -32,6 +32,7 @@ for(const [name,change] of [
  ['profile Include not bound',value=>{value.profile.files[0].path='/foreign/profile.yml'}],
  ['profile hash malformed',value=>{value.profile.files[0].sha256='mutable'}],
  ['foreign host storage',value=>{value.hostRequirement.mounts[0].volumeName='foreign-volume'}],
+ ['host config ID mistaken for RepoDigest',value=>{value.hostRequirement.imageDigest=image}],
  ['wrong selected image',value=>{value.imageBindings.simulation.imageId='sha256:'+'e'.repeat(64)}],
  ['mutable helper reference',value=>{value.imageBindings.finalizer.reference='localhost/helper:latest'}],
  ['reserved run owner override',value=>{value.composeEnvironment={ROBOTICS_RUN_ID:'foreign-owner'}}],

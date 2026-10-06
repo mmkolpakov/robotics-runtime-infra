@@ -5,6 +5,7 @@ import {Context, Jobs} from '@robotics-runtime/host';
 import {ComposeExecution, EngineMetadata} from '@robotics-runtime/infra-host';
 
 const [root, socket, image, artifacts] = process.argv.slice(2);
+assert.match(image, /^[^\s@]+@sha256:[a-f0-9]{64}$/, 'observed full Node RepoDigest required');
 assert.ok(import.meta.resolve('@robotics-runtime/infra-host').startsWith('file://' + root + '/node_modules/'));
 const identity = JSON.parse(await readFile(root + '/identity.json', 'utf8'));
 const runId = 'run-' + randomUUID(), project = 'rr-installed-ros-host-' + runId.slice(4, 12);
