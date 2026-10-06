@@ -61,3 +61,11 @@
 !docker/host/init.Dockerfile
 !docker/foundation-coordinator.Dockerfile
 !docker/evidence-source.Dockerfile
+
+!docker/legacy-finalizer.Dockerfile
+!host/workers/
+!host/workers/legacy-finalization/
+!host/workers/legacy-finalization/**
+!scripts/qualification/
+!scripts/qualification/**
+!scripts/ci/foundation/sign-ephemeral-qualification.sh

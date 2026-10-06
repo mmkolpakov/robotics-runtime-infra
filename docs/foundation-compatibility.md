@@ -4,10 +4,10 @@ Generated from the single workspace revision in `foundation.repos`.
 
 | Component | Version | Workspace commit |
 | --- | --- | --- |
-| `robotics-runtime-contracts` | `0.18.2` | `dc02c62897372514537cf241f06dc71b9f960c44` |
-| `robotics-acceptance-harness` | `0.19.1` | `dc02c62897372514537cf241f06dc71b9f960c44` |
+| `robotics-runtime-contracts` | `0.18.3` | `ecfb0446fddad70e8ab1094694dddacfeb496d53` |
+| `robotics-acceptance-harness` | `0.19.2` | `ecfb0446fddad70e8ab1094694dddacfeb496d53` |
 
-The pin is bound to the source tags `harness-v0.19.1` and `contracts-v0.18.2`.
+The pin is bound to the source tags `harness-v0.19.2` and `contracts-v0.18.3`.
 The pinned commit matches the harness tag, and its contracts source
 tree is identical to the contracts tag.
 This proves source identity, not completed package publication.
