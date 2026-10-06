@@ -91,6 +91,7 @@ jobs:
           NATIVE_PRODUCER_DIRECTORY="${PWD}/host/producers" \
           NATIVE_FIXTURE_DIRECTORY="${PWD}/host/test/fixtures/provider-qualification" \
           NATIVE_SCHEMA_DIRECTORY="${PWD}/config/qualification" \
+          ROBOTICS_FOUNDATION_LOCK="${PWD}/config/foundation-lock.json" \
             dependencies/robotics-runtime/.venv/bin/python \
             host/test/fixtures/provider-qualification/test_native_documents.py
       - name: Test synthetic physical runtime observations

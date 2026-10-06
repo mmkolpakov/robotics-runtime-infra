@@ -145,12 +145,22 @@ class NativeDocuments(unittest.TestCase):
             validate_provider_requirements(requirement, bindings)
 
     def test_installed_public_packages(self):
-        self.assertEqual(
-            importlib.metadata.version("robotics-runtime-contracts"), "0.18.2"
+        self.assertTrue(
+            os.environ.get("ROBOTICS_FOUNDATION_LOCK"),
+            "a caller-selected foundation lock is required",
         )
-        self.assertEqual(
-            importlib.metadata.version("robotics-acceptance-harness"), "0.19.1"
-        )
+        packages = json.loads(
+            Path(os.environ["ROBOTICS_FOUNDATION_LOCK"]).read_bytes()
+        )["packages"]
+        for role, distribution in (
+            ("contracts", "robotics-runtime-contracts"),
+            ("harness", "robotics-acceptance-harness"),
+        ):
+            with self.subTest(role=role):
+                self.assertEqual(packages[role]["distribution"], distribution)
+                self.assertEqual(
+                    importlib.metadata.version(distribution), packages[role]["version"]
+                )
 
     def test_accepted_cpu_source_documents_and_native_precision(self):
         for backend in ["gazebo", "webots"]:
