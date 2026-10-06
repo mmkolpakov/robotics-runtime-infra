@@ -53,6 +53,69 @@ assert_previous_output_preserved() {
   [ -z "$(find "${BATS_TEST_TMPDIR}" -name '.runtime-*' -print -quit)" ]
 }
 
+sdk_identity_matches_caller_lock() {
+  local caller_lock="$1" identity="$2" require_harness="$3"
+  jq -e --slurpfile caller_lock "$caller_lock" --argjson require_harness "$require_harness" '
+    $caller_lock[0] as $lock |
+    ($lock.packages | keys) == ["contracts", "harness"] and
+    $lock.packages.contracts.distribution == "robotics-runtime-contracts" and
+    $lock.packages.harness.distribution == "robotics-acceptance-harness" and
+    .declared_workspace == $lock.workspace and
+    .declared_packages == $lock.packages and
+    .required_producer_packages == (if $require_harness then ["contracts", "harness"] else ["contracts"] end) and
+    (.observed_installed_versions | keys) == ["contracts", "harness"] and
+    .observed_installed_versions.contracts == $lock.packages.contracts.version and
+    (.observed_installed_versions.harness == $lock.packages.harness.version or
+      (.observed_installed_versions.harness == null and ($require_harness | not))) and
+    (.source_commit_claim | contains("versions alone do not prove"))
+  ' "$identity"
+}
+
+@test "SDK identity assertions use the explicit caller lock and reject incompatible role facts" {
+  local identity="${BATS_TEST_TMPDIR}/observed-identity.json"
+  jq '{declared_workspace: .workspace, declared_packages: .packages,
+    required_producer_packages: ["contracts"],
+    observed_installed_versions: {contracts: .packages.contracts.version, harness: .packages.harness.version},
+    source_commit_claim: "installed versions alone do not prove source revision"}' \
+    "$ROBOTICS_FOUNDATION_LOCK" >"$identity"
+  run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "$identity" false
+  [ "$status" -eq 0 ]
+
+  local case filter mutated="${BATS_TEST_TMPDIR}/incompatible-identity.json"
+  while IFS=$'\t' read -r case filter; do
+    jq "$filter" "$identity" >"$mutated"
+    run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "$mutated" false
+    [ "$status" -ne 0 ] || { printf 'identity accepted: %s\n' "$case" >&2; return 1; }
+  done <<'CASES'
+wrong-contracts	.observed_installed_versions.contracts = "0.0.0"
+wrong-present-harness	.observed_installed_versions.harness = "0.0.0"
+missing-contracts	.observed_installed_versions.contracts = null
+absent-contracts-role	.observed_installed_versions |= del(.contracts)
+absent-optional-harness-role	.observed_installed_versions |= del(.harness)
+wrong-required-role	.required_producer_packages = ["contracts", "unknown"]
+wrong-workspace	.declared_workspace.revision = "0000000000000000000000000000000000000000"
+CASES
+
+  jq '.observed_installed_versions.harness = null' "$identity" >"$mutated"
+  run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "$mutated" false
+  [ "$status" -eq 0 ]
+  jq '.required_producer_packages = ["contracts", "harness"]' "$mutated" >"${mutated}.strict"
+  run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "${mutated}.strict" true
+  [ "$status" -ne 0 ]
+  jq '.required_producer_packages = ["contracts", "harness"]' "$identity" >"${mutated}.strict"
+  run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "${mutated}.strict" true
+  [ "$status" -eq 0 ]
+
+  local wrong_lock="${BATS_TEST_TMPDIR}/wrong-caller-lock.json"
+  jq '.packages.contracts.version = "0.0.0"' "$ROBOTICS_FOUNDATION_LOCK" >"$wrong_lock"
+  run sdk_identity_matches_caller_lock "$wrong_lock" "$identity" false
+  [ "$status" -ne 0 ]
+  jq '.packages.contracts.distribution = "unrecognized-contracts"' "$ROBOTICS_FOUNDATION_LOCK" >"$wrong_lock"
+  jq --slurpfile lock "$wrong_lock" '.declared_packages = $lock[0].packages' "$identity" >"$mutated"
+  run sdk_identity_matches_caller_lock "$wrong_lock" "$mutated" false
+  [ "$status" -ne 0 ]
+}
+
 @test "runtime producer uses the contracts writer and observed v1 fields" {
   run bash "${EMITTER}" "${OUTPUT}"
   [ "${status}" -eq 0 ]
@@ -391,10 +454,7 @@ CASES
   export ROBOTICS_SDK_IDENTITY_OUTPUT="${BATS_TEST_TMPDIR}/sdk-identity.json"
   run bash "$EMITTER" "$OUTPUT"
   [ "$status" -eq 0 ]
-  run jq -e '.declared_workspace.revision == "dc02c62897372514537cf241f06dc71b9f960c44" and
-    .required_producer_packages == ["contracts"] and
-    .observed_installed_versions == {contracts:"0.18.2",harness:"0.19.1"} and
-    (.source_commit_claim | contains("versions alone do not prove"))' "$ROBOTICS_SDK_IDENTITY_OUTPUT"
+  run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "$ROBOTICS_SDK_IDENTITY_OUTPUT" false
   [ "$status" -eq 0 ]
 }
 
@@ -412,9 +472,7 @@ use_contracts_only_python() {
   [ "$status" -eq 0 ]
   run "$ROBOTICS_CONTRACTS_CLI" validate --quiet "$OUTPUT"
   [ "$status" -eq 0 ]
-  run jq -e '.declared_packages.harness.version == "0.19.1" and
-    .required_producer_packages == ["contracts"] and
-    .observed_installed_versions == {contracts:"0.18.2",harness:null}' "$ROBOTICS_SDK_IDENTITY_OUTPUT"
+  run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "$ROBOTICS_SDK_IDENTITY_OUTPUT" false
   [ "$status" -eq 0 ]
 }
 
@@ -459,7 +517,23 @@ use_contracts_only_python() {
   export ROBOTICS_SDK_IDENTITY_OUTPUT="${BATS_TEST_TMPDIR}/sdk-identity.json"
   run bash "$EMITTER" "$OUTPUT"
   [ "$status" -eq 0 ]
-  run jq -e '.required_producer_packages == ["contracts","harness"] and
-    .observed_installed_versions == {contracts:"0.18.2",harness:"0.19.1"}' "$ROBOTICS_SDK_IDENTITY_OUTPUT"
+  run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "$ROBOTICS_SDK_IDENTITY_OUTPUT" true
   [ "$status" -eq 0 ]
+}
+
+@test "runtime producer retains subsecond observation order in generated time" {
+  date() { command date --date='2026-10-05T06:49:56.765432Z' "$@"; }
+  export -f date
+  run bash "${EMITTER}" "${OUTPUT}"
+  [ "${status}" -eq 0 ]
+  run "${ROBOTICS_FOUNDATION_PYTHON}" - "${OUTPUT}" <<'PY'
+import sys
+from datetime import datetime
+from robotics_runtime_contracts import load_mapping
+
+observed = datetime.fromisoformat("2026-10-05T06:49:56.765432+00:00")
+generated = datetime.fromisoformat(load_mapping(sys.argv[1])["generated_at"])
+assert generated == observed, (generated, observed)
+PY
+  [ "${status}" -eq 0 ]
 }

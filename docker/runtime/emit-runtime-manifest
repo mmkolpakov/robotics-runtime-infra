@@ -236,7 +236,7 @@ temporary="$(mktemp "$(dirname "$output")/.runtime-manifest.XXXXXX")"
 
 jq -n \
   --arg runtime_id "${ROBOTICS_RUNTIME_ID}" \
-  --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')" \
   --arg image_reference "${ROBOTICS_OCI_REFERENCE}" \
   --arg image_digest "${ROBOTICS_OCI_DIGEST}" \
   --arg workspace_revision "$workspace_revision" \

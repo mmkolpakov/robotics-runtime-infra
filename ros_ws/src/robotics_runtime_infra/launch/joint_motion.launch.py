@@ -19,6 +19,7 @@ from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -28,14 +29,17 @@ def generate_launch_description() -> LaunchDescription:
     controllers = share / "config" / "joint_controllers.yaml"
     headless_launch = share / "launch" / "headless.launch.py"
     gz_ros2_control_plugins = Path(get_package_prefix("gz_ros2_control")) / "lib"
-    robot_description = Command(
-        [
-            FindExecutable(name="xacro"),
-            " ",
-            str(description),
-            " controllers_file:=",
-            str(controllers),
-        ]
+    robot_description = ParameterValue(
+        Command(
+            [
+                FindExecutable(name="xacro"),
+                " ",
+                str(description),
+                " controllers_file:=",
+                str(controllers),
+            ]
+        ),
+        value_type=str,
     )
 
     robot_state_publisher = Node(
@@ -47,7 +51,7 @@ def generate_launch_description() -> LaunchDescription:
     spawn_robot = Node(
         package="ros_gz_sim",
         executable="create",
-        arguments=["-topic", "robot_description", "-name", "joint_motion_probe"],
+        parameters=[{"string": robot_description, "name": "joint_motion_probe"}],
         output="screen",
     )
     controllers_start = generate_controllers_spawner_launch_description(

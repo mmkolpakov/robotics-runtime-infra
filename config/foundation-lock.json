@@ -1,22 +1,22 @@
 {
   "workspace": {
     "url": "https://github.com/mmkolpakov/robotics-runtime.git",
-    "revision": "dc02c62897372514537cf241f06dc71b9f960c44",
-    "source_date_epoch": 1791039579,
-    "uv_lock_sha256": "9ac3bf309c9f6c3d69de9074b81ce916d6c5b49d033e384e84476ad2746b224d"
+    "revision": "ecfb0446fddad70e8ab1094694dddacfeb496d53",
+    "source_date_epoch": 1791204054,
+    "uv_lock_sha256": "35672b35aaac5b0c003e4a6356ffe5bec6187e409d170fe5d0d8c8cc60494e84"
   },
   "packages": {
     "contracts": {
       "distribution": "robotics-runtime-contracts",
-      "version": "0.18.2",
+      "version": "0.18.3",
       "path": "packages/contracts",
-      "git_tree": "d32c2a8f4d9660ff3d3e8512eb4e039fc75eb558"
+      "git_tree": "ab4853d72e1774a0aad815b049f90c1ad614081a"
     },
     "harness": {
       "distribution": "robotics-acceptance-harness",
-      "version": "0.19.1",
+      "version": "0.19.2",
       "path": "packages/harness",
-      "git_tree": "1192a8d85ab1362a17a7e7b7cf5f73749cc41631"
+      "git_tree": "159d28e1ba02f642abdfbe8d880ad8c63fd908c5"
     }
   }
 }
