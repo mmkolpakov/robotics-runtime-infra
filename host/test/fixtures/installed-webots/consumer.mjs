@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
-import {createReadStream} from 'node:fs';
+import {constants,createReadStream} from 'node:fs';
 import {readFile,writeFile,mkdir,readdir,stat,copyFile} from 'node:fs/promises';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -98,6 +98,97 @@ const remedial=await cancelCompose.run(['down','--remove-orphans']);assert.equal
 const cancelAfter=await engine.projectOwnership({runId:cancelProvider.ownerId,projectName:cancelProvider.project});assert.equal(cancelAfter.status,'complete');assert.equal(cancelAfter.inventory.containers.length,0);
 await save('/retained/cancel-cleanup.json',{scope:'diagnostic cleanup after bounded foreign fixture expired; prior provider refusal preserved',remedial,cancelAfter});
 await cancelCtx.fiber.dispose();
+
+// Observe the stock native deadline after an actual READY worker was acquired.
+const timeoutRun=await ctx.runOwner.start('webots',randomUUID());
+const timeoutProvider=timeoutRun.context.get('webots');
+const timeoutRoot='/retained/native-timeout-'+timeoutRun.runId;
+await mkdir(timeoutRoot,{recursive:false});await mkdir(timeoutRoot+'/raw',{recursive:false});
+assert.equal(timeoutRun.phase,'ready');assert.ok(timeoutRun.profile.deadlineMs>=120000);
+const timeoutReady=await read(join(timeoutProvider.output,'ready.json'));
+const timeoutMetadata=await read(join(timeoutProvider.output,'engine-readiness.json'));
+assert.equal(timeoutReady.owner_id,timeoutRun.runId);assert.equal(timeoutReady.ready,true);
+assert.equal(timeoutMetadata.status,'complete');assert.ok(timeoutMetadata.image.RepoDigests.includes(identity.workerImage));
+const timeoutContainerId=timeoutMetadata.container.Id;
+const timeoutOwner={runId:timeoutProvider.ownerId,projectName:timeoutProvider.project};
+const timeoutBefore=await engine.projectOwnership(timeoutOwner);assert.equal(timeoutBefore.status,'complete');
+const timeoutRunning=timeoutBefore.containerDetails.find(row=>row.Id===timeoutContainerId);
+assert.equal(timeoutRunning?.State.Running,true);
+const timeoutCommand=timeoutRunning.Config.Cmd;
+assert.ok(Array.isArray(timeoutCommand));const deadlineIndex=timeoutCommand.indexOf('--deadline-seconds');
+assert.ok(deadlineIndex>=0);assert.equal(timeoutCommand[deadlineIndex+1],'90');
+for(const marker of ['measure','cancel'])await assert.rejects(stat(join(timeoutProvider.output,marker)),{code:'ENOENT'});
+const timeoutAcquiredRef=await save(timeoutRoot+'/acquired-ready.json',{ready:timeoutReady,metadata:timeoutMetadata,ownership:timeoutBefore,measureGateUnopened:true});
+const timeoutEnd=performance.now()+120000,timeoutStarted=performance.now();
+let timeoutWorker,timeoutController,timeoutObservationRef,timeoutSettled=false;
+timeoutRun.beginMeasurement();
+const timeoutCompletion=await timeoutRun.finish({
+ closeMeasurement:async signal=>{
+  for(;;){
+   signal.throwIfAborted();
+   try{timeoutWorker=await read(join(timeoutProvider.output,'worker-result.json'));break}
+   catch(error){if(error.code!=='ENOENT'||performance.now()>=timeoutEnd)throw error;await pause(25,undefined,{signal})}
+  }
+  assert.equal(timeoutWorker.owner_id,timeoutRun.runId);assert.notEqual(timeoutWorker.status,'completed');
+  timeoutController=await read(join(timeoutProvider.output,'controller-result.json'));
+  assert.equal(timeoutController.owner_id,timeoutRun.runId);assert.notEqual(timeoutController.status,'completed');
+  let marker;try{marker=await readFile(join(timeoutProvider.output,'cancel'),'utf8')}catch(error){if(error.code!=='ENOENT')throw error}
+  const diagnostic=[timeoutWorker.diagnostic,timeoutController.diagnostic,marker].filter(Boolean).join('; ');
+  assert.match(diagnostic,/deadline/);assert.ok(marker==='worker deadline'||/measurement admission deadline exceeded/.test(timeoutController.diagnostic??''));
+  assert.equal(timeoutController.samples.length,0);
+  await assert.rejects(stat(join(timeoutProvider.output,'measure')),{code:'ENOENT'});
+  await assert.rejects(stat(join(timeoutProvider.output,'measurement.json')),{code:'ENOENT'});
+  timeoutObservationRef=await save(timeoutRoot+'/native-deadline-observation.json',{diagnostic,worker:timeoutWorker,controller:timeoutController,elapsedAfterReadyMs:performance.now()-timeoutStarted,measureGateUnopened:true});
+  throw new Error('observed native worker deadline: '+diagnostic);
+ },
+ captureLastState:async signal=>{
+  signal.throwIfAborted();
+  assert.ok(timeoutWorker&&timeoutController,'native deadline must settle before last-state export');
+  const source=join(timeoutProvider.output,'last-native-state.json'),target=timeoutRoot+'/raw/last-native-state.json';
+  const expected=await referenceFile(source);await copyFile(source,target,constants.COPYFILE_EXCL);
+  const retained=await referenceFile(target);assert.equal(retained.sha256,expected.sha256);assert.equal(retained.size_bytes,expected.size_bytes);
+  return [retained];
+ },
+ drainRecorders:async signal=>{
+  assert.equal(timeoutWorker?.processes_reaped,true);assert.equal(timeoutWorker?.evidence_exported_before_stop,true);
+  assert.ok(timeoutWorker.children.length>0);assert.ok(timeoutWorker.children.every(row=>row.reaped&&row.group_absent));
+  let ended;
+  for(;;){
+   signal.throwIfAborted();
+   const remaining=Math.ceil(timeoutEnd-performance.now());if(remaining<=0)throw new Error('native timed-out worker did not exit within outer deadline');
+   ended=await engine.projectOwnership(timeoutOwner,{cancelSignal:signal,deadlineMs:Math.min(120000,remaining)});
+   assert.equal(ended.status,'complete');
+   const worker=ended.containerDetails.find(row=>row.Id===timeoutContainerId);assert.ok(worker);
+   if(worker.State.Running===false&&worker.State.Status==='exited'){assert.equal(worker.State.ExitCode,1);break}
+   if(performance.now()>=timeoutEnd)throw new Error('native timed-out worker did not exit within outer deadline');
+   await pause(25,undefined,{signal});
+  }
+  timeoutSettled=true;
+  return [await save(timeoutRoot+'/native-drain.json',{children:timeoutWorker.children,ended,scope:'native worker process groups and actual exited container; no ROS recorder'})];
+ },
+ exportEvidence:async signal=>{
+  assert.equal(timeoutSettled,true,'unsettled native producer forbids diagnostic export and cleanup');
+  assert.ok(timeoutObservationRef,'observed native timeout diagnostics are required');
+  const refs=[timeoutAcquiredRef,timeoutObservationRef];
+  for(const source of await allFiles(timeoutProvider.output)){
+   signal.throwIfAborted();
+   const target=join(timeoutRoot,'raw',source.slice(timeoutProvider.output.length+1));
+   await mkdir(join(target,'..'),{recursive:true});const expected=await referenceFile(source);
+   try{await copyFile(source,target,constants.COPYFILE_EXCL)}catch(error){if(error.code!=='EEXIST')throw error}
+   const retained=await referenceFile(target);assert.equal(retained.sha256,expected.sha256);assert.equal(retained.size_bytes,expected.size_bytes);refs.push(retained);
+  }
+  assert.ok(refs.length);refs.push(await save(timeoutRoot+'/diagnostic-export.json',{scope:'available native timeout diagnostics only; no measurement or conformance PASS',refs}));
+  return refs;
+ },
+});
+await save(timeoutRoot+'/completion.json',timeoutCompletion);
+assert.equal(timeoutCompletion.status,'error');assert.ok(timeoutCompletion.errors.some(error=>error.includes('observed native worker deadline')));
+assert.ok(timeoutCompletion.resourceOutcomes.length>0);
+assert.ok(timeoutCompletion.resourceOutcomes.every(row=>row.attempted&&row.released&&row.evidenceRefs.length&&!row.cleanupError));
+for(const ref of timeoutCompletion.evidenceRefs){const path=fileURLToPath(ref.uri);assert.ok(path.startsWith('/retained/'));const actual=await referenceFile(path);assert.equal(actual.sha256,ref.sha256);assert.equal(actual.size_bytes,ref.size_bytes)}
+const timeoutAfter=await engine.projectOwnership(timeoutOwner);assert.equal(timeoutAfter.status,'complete');
+assert.equal(timeoutAfter.inventory.containers.length,0);assert.equal(timeoutAfter.inventory.networks.length,0);
+await save('/retained/native-timeout.json',{scope:'stock native deadline after acquired READY; failed measurement, available-byte export and verified owned cleanup',runId:timeoutRun.runId,project:timeoutProvider.project,retainedDirectory:timeoutRoot,completion:timeoutCompletion,after:timeoutAfter,sourceRetainedUntilOuterByteAudit:true});
 await ctx.fiber.dispose();
-await save('/retained/result.json',{passed:true,scope:'ordinary installed HOME CPU Webots consumer; no Gazebo/ROS gate or hardware claim',identity,origins,runId:provider.ownerId,checks:['native lifecycle/time/evidence','wrong scene native rejection','wrong installed module digest admission','missing provider before acquisition','missing capability public API','tampered raw/public harness','foreign signal isolation','owned cancel no measurement pass','physical project cleanup','same-project foreign orphan refuses cleanup before effects']});
+await save('/retained/result.json',{passed:true,scope:'ordinary installed HOME CPU Webots consumer; no Gazebo/ROS gate or hardware claim',identity,origins,runId:provider.ownerId,checks:['native lifecycle/time/evidence','wrong scene native rejection','wrong installed module digest admission','missing provider before acquisition','missing capability public API','tampered raw/public harness','foreign signal isolation','owned cancel no measurement pass','stock native timeout after acquired READY and diagnostic cleanup','physical project cleanup','same-project foreign orphan refuses cleanup before effects']});
 console.log(JSON.stringify({passed:true,runId:provider.ownerId,retained:'/retained/result.json'}));

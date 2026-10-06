@@ -169,6 +169,25 @@ class FreshDocumentMetadata(unittest.TestCase):
             self.create()
         self.assertFalse((self.output / "documents/conformance-result.json").exists())
 
+    def test_timed_out_native_bytes_cannot_become_a_passed_conformance_report(self):
+        self.worker["status"] = "canceled"
+        self.worker["diagnostic"] = (
+            "InterruptedError: finite worker canceled or deadline exceeded"
+        )
+        self.bind_identity()
+        controller_path = self.native / "controller-result.json"
+        controller = json.loads(controller_path.read_bytes())
+        controller["status"] = "canceled"
+        controller["diagnostic"] = (
+            "InterruptedError: measurement canceled before opening"
+        )
+        controller["samples"] = []
+        controller_path.write_text(json.dumps(controller, indent=2) + "\n")
+        with self.assertRaisesRegex(ValueError, "accepted Webots check outcome"):
+            self.create()
+        self.assertFalse((self.output / "documents/conformance-result.json").exists())
+        self.assertFalse((self.output / "documents/evidence-index.json").exists())
+
     def test_existing_output_and_original_native_bytes_remain_unchanged(self):
         self.output.mkdir()
         marker = self.output / "previous"
