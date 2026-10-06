@@ -1,10 +1,9 @@
-import {Service} from '@robotics-runtime/host';
+import {Service,referenceFile} from '@robotics-runtime/host';
 import type {ArtifactRef,Context} from '@robotics-runtime/host';
 import {createHash} from 'node:crypto';
-import {createReadStream} from 'node:fs';
 import {mkdir,readFile,stat,writeFile,lstat,chmod} from 'node:fs/promises';
 import {join} from 'node:path';
-import {fileURLToPath,pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
 import {setTimeout as pause} from 'node:timers/promises';
 import {ComposeExecution} from '../../compose-execution.js';
 import {EngineMetadata} from '../../engine-metadata.js';
@@ -18,8 +17,7 @@ const record=(value:unknown):Record<string,unknown>=>{
 };
 async function reference(path:string):Promise<ArtifactRef>{
   const facts=await lstat(path);if(!facts.isFile())throw new Error('native Isaac evidence must be a regular file');
-  const hash=createHash('sha256');for await(const chunk of createReadStream(path))hash.update(chunk);
-  return {uri:pathToFileURL(path).href,sha256:hash.digest('hex'),size_bytes:(await stat(path)).size};
+  return referenceFile(path);
 }
 declare module 'cordis' {interface Context {isaac:IsaacNative}}
 /** Finite SDK episode; native world/physics/rendering stay entirely in the worker. */
