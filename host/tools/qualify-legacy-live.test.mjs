@@ -34,6 +34,11 @@ for(const [name,change] of [
  ['foreign host storage',value=>{value.hostRequirement.mounts[0].volumeName='foreign-volume'}],
  ['wrong selected image',value=>{value.imageBindings.simulation.imageId='sha256:'+'e'.repeat(64)}],
  ['mutable helper reference',value=>{value.imageBindings.finalizer.reference='localhost/helper:latest'}],
+ ['reserved run owner override',value=>{value.composeEnvironment={ROBOTICS_RUN_ID:'foreign-owner'}}],
+ ['reserved source storage override',value=>{value.composeEnvironment={LEGACY_SHARED_VOLUME:'foreign-volume'}}],
+ ['reserved helper image override',value=>{value.composeEnvironment={LEGACY_COORDINATOR_IMAGE:'foreign-image'}}],
+ ['zero Compose concurrency',value=>{value.composeEnvironment={COMPOSE_PARALLEL_LIMIT:'0'}}],
+ ['invalid Compose concurrency',value=>{value.composeEnvironment={COMPOSE_PARALLEL_LIMIT:'1; command'}}],
 ]){
  test(name+' is rejected before output or runtime work',async()=>{
   const root=await mkdtemp(join(tmpdir(),'legacy-live-bindings-')),output=join(root,'output');
@@ -62,4 +67,10 @@ test('changed immutable Include bytes are refused by public Admission before Job
   await assert.rejects(qualifyLegacyLive(argv(output),selected),/changed|digest|hash|immutable/i);
   await assert.rejects(access(output),{code:'ENOENT'});
  }finally{await rm(root,{recursive:true,force:true})}
+});
+
+test('fixture Compose concurrency is explicit while source default remains unchanged',()=>{
+ const parameters=legacyLiveParameters(argv('/output'));
+ assert.deepEqual(validateLegacyLiveFixture(parameters),{});
+ assert.deepEqual(validateLegacyLiveFixture(parameters,{composeEnvironment:{COMPOSE_PARALLEL_LIMIT:'1'}}),{composeEnvironment:{COMPOSE_PARALLEL_LIMIT:'1'}});
 });

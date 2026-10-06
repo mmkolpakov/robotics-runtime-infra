@@ -20,6 +20,12 @@ export function validateLegacyLiveFixture(parameters,fixture={}){
  assert.match(simulationReference,/^[^\s@]+@sha256:[a-f0-9]{64}$/);
  assert.ok([coordinatorImage,evidenceImage].every(value=>typeof value==='string'&&/^(?:(?:sha256:)?[a-f0-9]{64}|[^\s@]+@sha256:[a-f0-9]{64})$/.test(value)),'immutable helper image bindings required');
  const copy=structuredClone(fixture);
+ if(copy.composeEnvironment!==undefined){
+  const env=copy.composeEnvironment;
+  assert.ok(env&&typeof env==='object'&&!Array.isArray(env),'fixture Compose environment must be an object');
+  assert.ok(Object.keys(env).every(key=>key==='COMPOSE_PARALLEL_LIMIT'),'fixture Compose environment cannot override reserved bindings');
+  if(env.COMPOSE_PARALLEL_LIMIT!==undefined)assert.ok(typeof env.COMPOSE_PARALLEL_LIMIT==='string'&&/^[1-9][0-9]*$/.test(env.COMPOSE_PARALLEL_LIMIT)&&Number.isSafeInteger(Number(env.COMPOSE_PARALLEL_LIMIT)),'fixture Compose concurrency limit must be a positive integer');
+ }
  if(copy.profile){
   const profile=copy.profile;
   assert.ok(typeof profile.id==='string'&&profile.id.length>0&&isAbsolute(profile.profilePath),'explicit immutable profile required');
