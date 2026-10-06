@@ -34,19 +34,29 @@ each engine.
 
 ## Architecture
 
-The C4 views describe the platform shared with robotics-runtime. Diagram sources
-and generated views are maintained there.
+The local execution view shows owned worker environments and retained results.
+The shared C4 model and generated diagrams are maintained in robotics-runtime.
 
-![C4 Context](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/Context.svg)
+![Local execution topology: composition host, owned workers and retained results](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/ExecutionDeployment.svg "Local execution — source topology")
 
-![C4 Container](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/Container.svg)
-
-[Sequence, lifecycle and deployment views](https://github.com/mmkolpakov/robotics-runtime/tree/main/docs/architecture).
+Source topology, not a qualification result. The published ROS profile and
+candidate providers retain their own version, environment and evidence scopes.
 
 Host lifecycle is separate from native control and video connections. The
 common document/evaluator environment does not require a simulator SDK or ROS.
 [Architecture](docs/architecture.md) describes native API boundaries and
 evidence-before-reset ordering.
+
+Read the shared diagrams by purpose:
+
+- [Platform context](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Context.svg)
+- [Process composition](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Container.svg)
+- [Native and consumer interfaces](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/ContainerDetail.svg)
+- [Run ordering](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/run-sequence.svg)
+- [Retention and recovery](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/run-state.svg)
+
+[Diagram sources and scope](https://github.com/mmkolpakov/robotics-runtime/tree/main/docs/architecture)
+describe the model and its qualification boundaries.
 
 ## Run the published simulation
 
