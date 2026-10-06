@@ -84,8 +84,12 @@ jobs:
           contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
           echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
           echo "ROBOTICS_FOUNDATION_PYTHON=${PWD}/dependencies/robotics-runtime/.venv/bin/python" >> "$GITHUB_ENV"
+      - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
+        with:
+          version: v5.3.1
       - name: Test installed consumer preparation and native document boundaries
         run: |
+          bash scripts/ci/host/run-installed-legacy.sh --check-config
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover \
             -s host/test/fixtures/installed-webots -p test_prepare.py -v
           dependencies/robotics-runtime/.venv/bin/python \

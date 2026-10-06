@@ -23,6 +23,7 @@ services:
     environment:
       C18_HOST_OWNER: "${C18_HOST_OWNER:?required}"
       C18_HOST_PROJECT: "${C18_HOST_PROJECT:?required}"
+      C18_SOCKET_GID: "${C18_SOCKET_GID:?actual socket group required}"
       C18_NODE_IMAGE: "${C18_NODE_IMAGE:?required}"
       C18_SOURCE_VOLUME: "${C18_SOURCE_VOLUME:?required}"
       C18_RETAINED_VOLUME: "${C18_RETAINED_VOLUME:?required}"

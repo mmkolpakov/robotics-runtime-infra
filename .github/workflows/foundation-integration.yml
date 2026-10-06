@@ -58,6 +58,9 @@ jobs:
         with:
           bats-version: "1.14.0"
       - uses: ./.github/actions/setup-buildx
+      - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
+        with:
+          version: v5.3.1
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
           cosign-release: v3.1.3
@@ -71,6 +74,8 @@ jobs:
         run: bash scripts/ci/foundation/build-images.sh
       - name: Verify embedded foundation revisions
         run: bash scripts/ci/foundation/verify-image-lock.sh
+      - name: Qualify the positive installed ROS host consumer on Docker
+        run: bash scripts/ci/host/run-installed-legacy.sh
       - name: Verify versioned S3 evidence with the installed harness
         run: bash scripts/ci/integration/verify-versioned-s3-evidence.sh
       - name: Run scenario against the real ROS graph

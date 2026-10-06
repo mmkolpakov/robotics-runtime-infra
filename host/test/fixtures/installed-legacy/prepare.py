@@ -203,8 +203,10 @@ def main():
         "launch.mjs",
         "compose.host.yaml",
         "compose.host.podman.yaml",
+        "compose.host.docker.yaml",
         "compose.post.yaml",
         "compose.post.podman.yaml",
+        "compose.post.docker.yaml",
         "Node.Dockerfile",
     ):
         destination = consumer / ("Dockerfile" if name == "Node.Dockerfile" else name)

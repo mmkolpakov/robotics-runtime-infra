@@ -127,9 +127,12 @@ test('HOME Compose receipt cannot precede actual failed or incompatible version 
 test('explicit Docker profile retains the exact default namespace and snapshots its identity',()=>{
  const parameters=legacyLiveParameters(argv('/output')),selected=fixture();
  selected.engineProfile={engine:'docker',expectedUsernsMode:''};
+ selected.socketGid=998;
  selected.hostRequirement.hostConfig={UsernsMode:''};
  const copy=validateLegacyLiveFixture(parameters,selected);
  selected.engineProfile.expectedUsernsMode='private';
+ selected.socketGid=999;
+ assert.equal(copy.socketGid,998);
  assert.deepEqual(copy.engineProfile,{engine:'docker',expectedUsernsMode:''});
  assert.equal(copy.hostRequirement.hostConfig.UsernsMode,'');
  const podman=fixture();podman.engineProfile={engine:'podman',expectedUsernsMode:'private'};
@@ -167,3 +170,15 @@ test('native Docker default namespace must be observed exactly before it satisfi
   assert.ok(observed.mismatches.includes('container.HostConfig.UsernsMode'));
  }
 });
+
+for(const socketGid of [undefined,-1,1.5,'998']){
+ test('Docker socket group '+String(socketGid)+' cannot become an admitted native group',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'legacy-live-socket-')),output=join(root,'output');
+  try{
+   const selected=fixture();selected.engineProfile={engine:'docker',expectedUsernsMode:''};
+   selected.hostRequirement.hostConfig={UsernsMode:''};selected.socketGid=socketGid;
+   await assert.rejects(qualifyLegacyLive(argv(output),selected),/actual Docker socket group required/);
+   await assert.rejects(access(output),{code:'ENOENT'});
+  }finally{await rm(root,{recursive:true,force:true})}
+ });
+}

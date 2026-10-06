@@ -28,6 +28,7 @@ export function validateLegacyLiveFixture(parameters,fixture={}){
   assert.equal(selected.expectedUsernsMode,selected.engine==='docker'?'':'private','fixture engine namespace expectation differs');
   assert.ok(copy.profile&&copy.hostRequirement,'engine profile requires installed host admission');
   assert.equal(copy.hostRequirement.hostConfig?.UsernsMode,selected.expectedUsernsMode,'installed host namespace expectation differs');
+  if(selected.engine==='docker')assert.ok(Number.isSafeInteger(copy.socketGid)&&copy.socketGid>=0,'actual Docker socket group required');
  }
  if(copy.composeEnvironment!==undefined){
   const env=copy.composeEnvironment;
@@ -106,7 +107,9 @@ if(fixture.hostRequirement){
  const inventory=await engine.remainingOwned(fixture.hostRequirement.runId);
  const host=inventory.containers.find(row=>row.Labels?.['com.docker.compose.service']===fixture.hostService);assert.ok(host,'installed host ownership not observed');
  const observed=await engine.inspect(host.Id,fixture.hostRequirement);
- assert.equal(observed.status,'complete',JSON.stringify(observed));await save('installed-host-native-metadata',observed);
+ assert.equal(observed.status,'complete',JSON.stringify(observed));
+ if(selectedEngine==='docker')assert.deepEqual(observed.container.HostConfig?.GroupAdd,[String(fixture.socketGid)],'installed host supplemental group differs from actual socket group');
+ await save('installed-host-native-metadata',observed);
  const origins=Object.fromEntries(['@robotics-runtime/host','@robotics-runtime/infra-host','@robotics-runtime/infra-host/plugins/gazebo-ros-v1'].map(name=>[name,import.meta.resolve(name)]));
  assert.ok(Object.values(origins).every(value=>value.startsWith('file:///app/node_modules/')));await save('installed-origins',origins);
  if(selectedEngine==='podman')await retainHomeComposeQualification(compose,save,fixture.composeEnvironment);

@@ -59,6 +59,11 @@ const observed = await engine.inspect(host.Id, {
   hostConfig: {Init: true, ReadonlyRootfs: true, NetworkMode: 'none', Memory: 1073741824, UsernsMode: engineProfile.expectedUsernsMode},
 });
 assert.equal(observed.status, 'complete', JSON.stringify(observed));
+if (engineProfile.engine === 'docker') {
+  const socketGid = (await stat('/engine.sock')).gid;
+  assert.equal(String(socketGid), process.env.C18_SOCKET_GID);
+  assert.deepEqual(observed.container.HostConfig?.GroupAdd, [String(socketGid)], 'retained host supplemental group differs from actual socket group');
+}
 assert.ok(!observed.container.Mounts.some(row => row.Name === process.env.C18_SOURCE_VOLUME || row.Destination === '/run/robotics'));
 await writeFile(control + '/retained-only-host.json', JSON.stringify(observed, null, 2) + '\n');
 try {

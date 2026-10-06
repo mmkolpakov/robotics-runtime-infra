@@ -164,7 +164,7 @@ class InstalledPreparation(unittest.TestCase):
     COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
 )
 class ComposeProfiles(unittest.TestCase):
-    def test_podman_overlay_changes_only_declared_namespace_mode(self):
+    def test_engine_overlays_keep_native_namespace_and_socket_groups_explicit(self):
         self.assertEqual(
             hashlib.sha256(Path(COMPOSE).read_bytes()).hexdigest(),
             "f9ebc6ebdb19d769b793c245a736caaeb198c62587f13b25c660c13b4987f959",
@@ -189,6 +189,7 @@ class ComposeProfiles(unittest.TestCase):
             "C18_SOURCE_VOLUME": "rr-source",
             "C18_RETAINED_VOLUME": "rr-retained",
             "C18_SOCKET": "/engine.sock",
+            "C18_SOCKET_GID": "998",
             "C18_DEPLOYMENT_HOST_ROOT": str(ROOT),
         }
         groups = [
@@ -198,14 +199,17 @@ class ComposeProfiles(unittest.TestCase):
                     "host/test/fixtures/legacy-live/evidence.yaml",
                 ],
                 "host/test/fixtures/legacy-live/compose.podman.yaml",
+                None,
             ),
             (
                 ["host/test/fixtures/installed-legacy/compose.host.yaml"],
                 "host/test/fixtures/installed-legacy/compose.host.podman.yaml",
+                "host/test/fixtures/installed-legacy/compose.host.docker.yaml",
             ),
             (
                 ["host/test/fixtures/installed-legacy/compose.post.yaml"],
                 "host/test/fixtures/installed-legacy/compose.post.podman.yaml",
+                "host/test/fixtures/installed-legacy/compose.post.docker.yaml",
             ),
         ]
 
@@ -220,11 +224,14 @@ class ComposeProfiles(unittest.TestCase):
                 )
             )
 
-        for bases, overlay in groups:
+        for bases, overlay, docker_overlay in groups:
             with self.subTest(bases=bases):
-                docker, podman = model(bases), model([*bases, overlay])
+                docker = model([*bases, docker_overlay] if docker_overlay else bases)
+                podman = model([*bases, overlay])
                 for name, service in docker["services"].items():
                     self.assertNotIn("userns_mode", service)
+                    if name in ("installed-host", "installed-postprocessor"):
+                        self.assertEqual(service.pop("group_add"), ["998"])
                     self.assertEqual(
                         podman["services"][name].pop("userns_mode"),
                         "keep-id:uid=1000,gid=1000",

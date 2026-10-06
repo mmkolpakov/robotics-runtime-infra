@@ -32,3 +32,14 @@ Configuration checks use the existing pinned tools without native workloads:
 
     ROBOTICS_COMPOSE=/absolute/path/to/pinned/docker-compose python3 -m unittest discover -s host/test/fixtures/installed-legacy -p test_prepare.py -v
     node --test host/tools/qualify-legacy-live.test.mjs
+
+The existing foundation job calls scripts/ci/host/run-installed-legacy.sh.
+Its --check-config route is also used by static analysis and performs no image
+build or native workload. The full route builds ordinary package assets and
+the existing helper Dockerfiles, then resolves exact observed RepoDigests
+through an ephemeral official registry bound only to runner loopback.
+
+Docker overlays add the group measured from the actual Unix socket. Both
+installed processes verify the socket stat GID and native HostConfig.GroupAdd
+array. The socket mode is not changed; default namespace metadata remains
+the exact empty string, without a remapping or rootless claim.

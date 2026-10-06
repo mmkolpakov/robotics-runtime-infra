@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile, stat} from 'node:fs/promises';
 import {Context, Jobs} from '@robotics-runtime/host';
 import Docker from 'dockerode';
 import {ComposeExecution, EngineMetadata} from '@robotics-runtime/infra-host';
@@ -13,7 +13,7 @@ const engineProfile = identity.engineProfile ?? {engine: 'podman', expectedUsern
 assert.ok(engineProfile && typeof engineProfile === 'object' && !Array.isArray(engineProfile) && Object.keys(engineProfile).length === 2 && Object.keys(engineProfile).every(key => ['engine', 'expectedUsernsMode'].includes(key)), 'explicit fixture engine profile required');
 assert.ok(['podman', 'docker'].includes(engineProfile.engine));
 assert.equal(engineProfile.expectedUsernsMode, engineProfile.engine === 'docker' ? '' : 'private');
-const podmanFiles = base => [base, ...(engineProfile.engine === 'podman' ? [base.replace('.yaml', '.podman.yaml')] : [])];
+const engineFiles = base => [base, base.replace('.yaml', '.' + engineProfile.engine + '.yaml')];
 const runId = 'run-' + randomUUID(), project = 'rr-installed-ros-host-' + runId.slice(4, 12);
 const owner = 'installed-ros-host-' + runId.slice(4, 12);
 for (const name of [identity.sourceVolume, identity.retainedVolume]) assert.match(name, /^rr-[a-z0-9][a-z0-9-]{1,120}$/);
@@ -29,6 +29,8 @@ const actualEngine = Array.isArray(components) && components.some(row => row?.Na
   Array.isArray(components) && components.some(row => row?.Name === 'Engine') ? 'docker' : undefined;
 assert.equal(actualEngine, engineProfile.engine, 'selected fixture engine differs from actual native version metadata');
 await save('installed-engine-profile', {profile: engineProfile, engine: engine.facts});
+const socketGid = (await stat(socket)).gid;
+await save('native-socket-group', {socket, gid: socketGid});
 const absentVolume = async name => {
   try {await native.getVolume(name).inspect({abortSignal: AbortSignal.timeout(10000)});}
   catch (error) {
@@ -45,13 +47,13 @@ const job = async (name, args) => {
   return result;
 };
 const env = {
-  C18_NODE_IMAGE: image, C18_SOCKET: socket, C18_HOST_OWNER: owner, C18_HOST_PROJECT: project,
+  C18_NODE_IMAGE: image, C18_SOCKET: socket, C18_SOCKET_GID: String(socketGid), C18_HOST_OWNER: owner, C18_HOST_PROJECT: project,
   C18_SOURCE_VOLUME: identity.sourceVolume, C18_RETAINED_VOLUME: identity.retainedVolume,
   C18_DEPLOYMENT_HOST_ROOT: root + '/deployment',
 };
 const compose = new ComposeExecution(ctx.jobs, {
   executable: root + '/tools/docker-compose', socketPath: socket, projectName: project,
-  files: podmanFiles(root + '/compose.host.yaml'), cwd: root, env, timeoutMs: 600000, maxBufferBytes: 4194304,
+  files: engineFiles(root + '/compose.host.yaml'), cwd: root, env, timeoutMs: 600000, maxBufferBytes: 4194304,
 });
 const lastJson = text => JSON.parse(text.trim().split('\n').reverse().find(line => line.startsWith('{')));
 try {
@@ -101,7 +103,7 @@ try {
   const postProject = project + '-retained';
   const postprocess = new ComposeExecution(ctx.jobs, {
     executable: root + '/tools/docker-compose', socketPath: socket, projectName: postProject,
-    files: podmanFiles(root + '/compose.post.yaml'), cwd: root, env: {...env, C18_HOST_PROJECT: postProject},
+    files: engineFiles(root + '/compose.post.yaml'), cwd: root, env: {...env, C18_HOST_PROJECT: postProject},
     timeoutMs: 600000, maxBufferBytes: 4194304,
   });
   const qualified = await postprocess.run(['run', '--rm', '--no-deps', 'installed-postprocessor', '/retained/control-' + runId]);
