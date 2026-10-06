@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {mkdtemp,access,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,access,rm,writeFile,chmod} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -63,8 +63,9 @@ test('changed immutable Include bytes are refused by public Admission before Job
  const root=await mkdtemp(join(tmpdir(),'legacy-live-admission-')),output=join(root,'output'),path=join(root,'profile.json');
  try{
   await writeFile(path,JSON.stringify([{id:'gazebo',name:'@robotics-runtime/infra-host/plugins/gazebo-ros-v1'}]));
+  await chmod(path,0o444);
   const selected=fixture();selected.profile.profilePath=path;selected.profile.files=[{path,sha256:'0'.repeat(64)}];
-  await assert.rejects(qualifyLegacyLive(argv(output),selected),/changed|digest|hash|immutable/i);
+  await assert.rejects(qualifyLegacyLive(argv(output),selected),/immutable file digest mismatch/);
   await assert.rejects(access(output),{code:'ENOENT'});
  }finally{await rm(root,{recursive:true,force:true})}
 });
