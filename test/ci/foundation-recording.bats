@@ -109,6 +109,7 @@ ci_require_policy_allows() {
 }
 docker() {
   printf '%s\n' "${ROBOTICS_MAX_BAG_DURATION:-unset}" >"${FOUNDATION_RECORDING_ENV}"
+  printf '%s\n' "${ROBOTICS_METRICS_EXPORT_INTERVAL_MS:-unset}" >"${FOUNDATION_METRICS_ENV}"
   printf '%s\n' "${ROBOTICS_METRICS_TOPIC:-unset}" "${ROBOTICS_RECORD_REGEX:-unset}" \
     >"${FOUNDATION_TOPIC_ENV}"
   return 88
@@ -127,6 +128,7 @@ SH
   export FOUNDATION_REAL_PYTHON="${FOUNDATION_PYTHON}"
   export FOUNDATION_CREATE_RUN_ARGS="${BATS_TEST_TMPDIR}/create-run-arguments"
   export FOUNDATION_RECORDING_ENV="${BATS_TEST_TMPDIR}/compose-duration"
+  export FOUNDATION_METRICS_ENV="${BATS_TEST_TMPDIR}/compose-metric-cadence"
   export FOUNDATION_TOPIC_ENV="${BATS_TEST_TMPDIR}/compose-topics"
   export FOUNDATION_SCENARIO_POLICY_INPUT="${BATS_TEST_TMPDIR}/scenario-policy-input.json"
   export FOUNDATION_SCENARIO_POLICY_STATUS=0
@@ -160,6 +162,49 @@ SH
   [[ ! /sensor/axb =~ ${regex} ]]
   [[ ! /robotics/runtime_probe =~ ${regex} ]]
   [[ /custom/probe =~ ${regex} ]]
+}
+
+@test "acceptance resolves the product metric cadence and preserves a caller interval" {
+  prepare_orchestration_fixture
+  write_orchestration_scenario '{"evidence_policy":{"max_segment_duration_sec":7}}'
+  local requested expected
+  for requested in default 150; do
+    if [[ "${requested}" == default ]]; then
+      unset ROBOTICS_METRICS_EXPORT_INTERVAL_MS
+      expected=100
+    else
+      export ROBOTICS_METRICS_EXPORT_INTERVAL_MS="${requested}"
+      expected="${requested}"
+    fi
+    run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
+    [ "${status}" -eq 88 ]
+    source "${REPOSITORY_ROOT}/scripts/ci/lib.sh"
+    ci_set_compose_fixture_env
+    run "${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" "${FOUNDATION_METRICS_ENV}" "${expected}" <<'PY'
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+repository, captured, expected = Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3])
+environment = dict(os.environ)
+cadence = captured.read_text().strip()
+if cadence == "unset":
+    environment.pop("ROBOTICS_METRICS_EXPORT_INTERVAL_MS", None)
+else:
+    environment["ROBOTICS_METRICS_EXPORT_INTERVAL_MS"] = cadence
+model = json.loads(subprocess.check_output([
+    "docker", "compose", "--env-file", "/dev/null",
+    "-f", "compose.yaml", "-f", "compose.observability.yaml",
+    "--profile", "*", "config", "--format", "json"],
+    cwd=repository, env=environment))
+assert int(model["services"]["runtime-metrics"]["environment"][
+    "ROBOTICS_METRICS_EXPORT_INTERVAL_MS"]) == expected
+PY
+    printf '%s\n' "${output}"
+    [ "${status}" -eq 0 ]
+  done
 }
 
 @test "acceptance stops before Compose when the scenario policy rejects the run" {
@@ -344,7 +389,7 @@ PY
 @test "playback desired duration follows the inherited window without overstretching stock timestamp groups" {
   source "${REPOSITORY_ROOT}/scripts/ci/lib.sh"
   ci_set_compose_fixture_env
-  # The canonical runner sets this interval before resolving the same model.
+  # The recorded-playback runner uses this cadence for slowed native timestamp groups.
   export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
   local window span
   for setting in "10 382000000" "4 382000000" "4 20000000000"; do
@@ -393,6 +438,7 @@ else:
         "-f", "compose.yaml", "-f", "compose.observability.yaml",
         "--profile", "*", "config", "--format", "json"], cwd=repository))
     interval_ms = int(model["services"]["runtime-metrics"]["environment"]["ROBOTICS_METRICS_EXPORT_INTERVAL_MS"])
+    assert interval_ms == 200
     gaps = [following - previous for previous, following in zip(times, times[1:])]
     assert min(gaps) == 1_000_000 and max(gaps) == 2_000_000
     old_rate = (times[-1] - times[0]) / 10**9 / 120
@@ -405,6 +451,18 @@ assert "replay_budget_sec" not in parameters
 PY
     printf '%s\n' "${output}"
     [ "${status}" -eq 0 ]
+    prepare_orchestration_fixture
+    cp "${PREPARED}/scenario.json" "${SCENARIO}"
+    export ROBOTICS_FOUNDATION_PLAYBACK_INPUTS="${PREPARED}"
+    unset ROBOTICS_METRICS_EXPORT_INTERVAL_MS
+    run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
+    [ "${status}" -eq 88 ]
+    [ "$(cat "${FOUNDATION_METRICS_ENV}")" = 200 ]
+    export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=150
+    run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
+    [ "${status}" -eq 88 ]
+    [ "$(cat "${FOUNDATION_METRICS_ENV}")" = 150 ]
+    export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
   done
 }
 
