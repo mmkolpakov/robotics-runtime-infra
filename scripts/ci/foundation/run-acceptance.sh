@@ -188,8 +188,8 @@ export ROBOTICS_METRICS_TOPIC ROBOTICS_RECORD_REGEX
 ROBOTICS_METRICS_TOPIC="$(jq -er '.metrics_topic' <<<"${topic_configuration}")"
 ROBOTICS_RECORD_REGEX="$(jq -er '.record_regex' <<<"${topic_configuration}")"
 if [[ "${data_source}" == recording_playback ]]; then
-  # Slowed native timestamp groups need the playback cadence; simulation uses the product default.
-  export ROBOTICS_METRICS_EXPORT_INTERVAL_MS="${ROBOTICS_METRICS_EXPORT_INTERVAL_MS:-200}"
+  # Native received playback uses the product cadence; explicit caller intervals survive.
+  export ROBOTICS_METRICS_EXPORT_INTERVAL_MS="${ROBOTICS_METRICS_EXPORT_INTERVAL_MS:-100}"
   export ROBOTICS_DATASET_DIR="${run_dir}/source"
   export ROBOTICS_PLAYBACK_BAG=/datasets/bag
   export ROBOTICS_PLAYBACK_CONFIG_DIR="${run_dir}/source/qos"
