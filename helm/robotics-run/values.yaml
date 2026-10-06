@@ -1,0 +1,35 @@
+---
+enabled: false
+name: ""
+mode: simulation
+binding:
+  runId: ""
+  domainId: ""
+  profileId: ""
+  profileSha256: ""
+spool:
+  name: ""
+  uid: ""
+  release: ""
+  storageClassName: ""
+identity:
+  serviceAccount: ""
+  namespace: ""
+  roleArn: ""
+  region: ""
+  bucket: ""
+  prefix: ""
+preflightImage: ""
+deadlineSeconds: 1800
+terminationGracePeriodSeconds: 30
+ttlSecondsAfterFinished: 86400
+host:
+  image: ""
+  command: []
+  args: []
+  env: {}
+  uid: 1000
+  resources:
+    requests: {cpu: "250m", memory: "256Mi"}
+    limits: {cpu: "1", memory: "1Gi"}
+workers: []

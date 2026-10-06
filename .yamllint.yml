@@ -1,6 +1,10 @@
 ---
 extends: default
 
+# Helm validates templates after rendering them in the product-helm CI gate.
+ignore: |
+  helm/*/templates/
+
 rules:
   document-start:
     present: true

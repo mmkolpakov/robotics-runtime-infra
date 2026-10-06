@@ -47,6 +47,10 @@ common document/evaluator environment does not require a simulator SDK or ROS.
 [Architecture](docs/architecture.md) describes native API boundaries and
 evidence-before-reset ordering.
 
+[Kubernetes and AWS responsibilities](docs/architecture.md#kubernetes-and-aws-responsibilities)
+shows Terraform and checked Helm source, plus pending native
+execution/recovery boundaries; real cloud qualification remains open.
+
 Read the shared diagrams by purpose:
 
 - [Platform context](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Context.svg)
@@ -120,6 +124,11 @@ source, image, workload and environment.
 profiles; [WSL2](docs/wsl2.md) records host limitations. Image builds and
 accelerator imports are not device qualification. Real actuation is outside
 the retained profile's supported scope.
+
+Product cloud configuration is a development candidate: [AWS foundation](terraform/README.md)
+and [Helm packaging](helm/README.md) keep infrastructure, retained run storage
+and attempt workloads under separate owners. Offline configuration checks do not
+establish Kubernetes or AWS runtime qualification.
 
 Build and verify the source checkout:
 

@@ -96,3 +96,94 @@ language/tool boundaries and planned Ansible, Terraform and Kubernetes paths.
 independent of a particular development machine and of private home infrastructure.
 Cloud configuration and execution remain unqualified until their own acceptance
 checks pass; application composition does not provide cluster scheduling.
+
+## Kubernetes and AWS responsibilities
+
+The cloud path separates infrastructure, workload packaging, native lifecycle
+and retained evidence. This is a responsibility map; it does not describe a
+qualified cloud execution. Terraform foundation source is implemented. Helm
+packaging has offline lint, render, schema and ownership checks. The native Kubernetes
+provider, durable recovery/export and actual EKS acceptance remain
+open.
+
+<!-- kubernetes-boundaries:start -->
+```mermaid
+flowchart TB
+    terraform["Terraform — source implemented"]
+    helm["Helm — source packaging / offline checks"]
+
+    subgraph cloud["AWS / EKS — actual cloud qualification open"]
+        foundation["AWS foundation: VPC / EKS / CPU nodes / IAM / CSI"]
+        shared["Shared identity and storage: ServiceAccount / gp3 Retain"]
+        spool["Per-run retained PVC: RWOP / independent lifetime"]
+        subgraph attempt["Per-attempt finite Job / Pod — source packaging"]
+            host["Run host: one lifecycle owner"]
+            workers["Native SDK workers: profile-specific control / data"]
+        end
+        api["Kubernetes API: observed Job / Pod / PVC UIDs"]
+        evidence["Evidence S3: VersionId / SHA-256 / signed bytes"]
+    end
+
+    provider["Native Kubernetes provider — implementation pending"]
+    recovery["Export and recovery — implementation pending"]
+    product["Product repositories: models / control / media"]
+
+    terraform --> foundation
+    terraform --> evidence
+    helm --> shared
+    helm --> spool
+    helm -->|finite Job| host
+    shared -.-> host
+    host -->|retained mount| spool
+    host -->|SDK lifecycle| workers
+    workers -->|retained bytes| spool
+    provider -->|observe / cancel by UID| api
+    foundation -.-> api
+    api -.-> host
+    recovery -->|sealed attempt only| spool
+    recovery -->|export / materialize exact versions| evidence
+    product -.-> workers
+```
+<!-- kubernetes-boundaries:end -->
+
+This native Mermaid block is the editable source for this responsibility map.
+The shared runtime C4 continues to show the current local source topology.
+
+Terraform owns VPC/EKS, bounded On-Demand CPU node capacity, ECR, IAM/Pod
+Identity, EBS CSI add-ons and encrypted/versioned S3. State and evidence use
+separate buckets; standard S3 backend locking belongs to Terraform state.
+The product namespace and ServiceAccount must match the Pod Identity
+association. See [AWS foundation](../terraform/README.md).
+
+Helm separates long-lived shared identity/StorageClass, one retained RWOP PVC
+per admitted run, and a finite Job per attempt. The retained PVC has no Job
+owner reference. Job TTL or attempt cleanup does not reclaim that PVC.
+The source Job template places one lifecycle host beside finite native SDK workers;
+read-only admitted inputs stay separate from retained results, and only IPC
+and scratch are ephemeral. This packaging does not run the existing
+Docker/Compose providers inside Kubernetes.
+
+The planned native Kubernetes provider uses the official
+`@kubernetes/client-node` API to observe actual
+Job/Pod/PVC identities and implement bounded cancellation and cleanup with
+UID checks. Labels locate resources; exact owner bindings govern effects.
+SDK readiness, simulation time, control and media remain native profile facts.
+Product models, control policy and media pipelines stay in their product
+repositories and selected SDKs; the common lifecycle does not translate them.
+No custom operator, scheduler, workflow engine, distributed state database
+or lock service is introduced.
+
+Cloud recovery must retain a durable sealed attempt journal on the PVC and
+establish
+that the previous writer has stopped before recovery. RWOP, a terminal API
+phase and Job parallelism do not provide effect fencing or exactly-once
+execution. Lost or ambiguous attempts remain incomplete. Export recovery
+starts no measurement workers and never replays physical actions. It verifies
+the original S3 VersionId, SHA-256, size and signatures, then materializes
+verified bytes in an isolated POSIX root for the existing harness.
+
+Offline Terraform/Helm checks are distinct from real EKS/IAM/CSI credential,
+storage, node-loss, drain/export and cleanup acceptance. Storage encryption,
+PVC retention and signature verification do not qualify a workload.
+Product Ansible handles enrolled product nodes independently; private
+home-infra and developer-machine rules are not product dependencies.

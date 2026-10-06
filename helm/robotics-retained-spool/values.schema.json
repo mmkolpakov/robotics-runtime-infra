@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "storageClassName": {
+      "type": "string"
+    },
+    "capacity": {
+      "type": "string"
+    },
+    "binding": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "enabled",
+    "name",
+    "storageClassName",
+    "capacity",
+    "binding"
+  ],
+  "if": {
+    "properties": {
+      "enabled": {
+        "const": true
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "name": {
+        "pattern": "^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$"
+      },
+      "storageClassName": {
+        "pattern": "^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$"
+      },
+      "capacity": {
+        "pattern": "^[1-9][0-9]*(Gi|Ti)$"
+      },
+      "binding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runId",
+          "domainId",
+          "profileId",
+          "profileSha256"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "domainId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "profileId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "profileSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    }
+  }
+}
