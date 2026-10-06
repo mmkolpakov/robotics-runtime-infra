@@ -62,8 +62,10 @@ services:
         - '5'
         - ros2
         - service
-        - type
+        - call
         - /simulator/get_simulator_features
+        - simulation_interfaces/srv/GetSimulatorFeatures
+        - '{}'
       interval: 2s
       timeout: 6s
       start_period: 15s
