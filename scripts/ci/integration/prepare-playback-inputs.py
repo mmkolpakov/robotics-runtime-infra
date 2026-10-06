@@ -239,12 +239,23 @@ def finalized_recording(
     )
 
 
+def capture_time_basis(custom: dict[str, Any]) -> str:
+    policy = custom.get("capture_clock_policy")
+    actual = custom.get("record_timestamp_basis")
+    if policy == "ros-time-no-reset" and (
+        "record_timestamp_basis" not in custom or actual == "ros_time"
+    ):
+        return "ros_time"
+    if policy == "system-time" and actual == "system_time":
+        return "system_time"
+    raise ValueError("qualified capture clock policy does not match its recorded mode")
+
+
 def dataset_document(output: Path, host: Path) -> dict[str, Any]:
     metadata, _ = captured_document(output / "source/bag/metadata.yaml")
     info = metadata["rosbag2_bagfile_information"]
     custom = info["custom_data"]
-    if custom["capture_clock_policy"] != "ros-time-no-reset":
-        raise ValueError("capture must declare its ROS time no-reset policy")
+    basis = capture_time_basis(custom)
     runtime, _ = captured_document(output / "source/capture/runtime-manifest.json")
     summary, _ = captured_document(output / "source/capture/recording-summary.json")
     filename = info["relative_file_paths"][0]
@@ -279,7 +290,7 @@ def dataset_document(output: Path, host: Path) -> dict[str, Any]:
         },
         "channels": channels,
         "time": {
-            "basis": "ros_time",
+            "basis": basis,
             "start_ns": stats["message_start_time_ns"],
             "end_ns": stats["message_end_time_ns"],
             "clock_jumps": [],
