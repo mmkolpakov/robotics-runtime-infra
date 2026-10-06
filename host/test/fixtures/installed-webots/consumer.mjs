@@ -8,6 +8,7 @@ import {setTimeout as pause} from 'node:timers/promises';
 import {Context,Jobs,Admission,RunOwner,RunResources,isDisposed,referenceFile} from '@robotics-runtime/host';
 import {ComposeExecution,EngineMetadata} from '@robotics-runtime/infra-host';
 import WebotsNative from '@robotics-runtime/infra-host/plugins/webots';
+import {readNativeTimeoutDiagnostics} from './timeout-diagnostics.mjs';
 const identity=JSON.parse(await readFile('/app/identity.json','utf8'));
 const sourceVolume=process.env.C18_SOURCE_VOLUME,retainedVolume=process.env.C18_RETAINED_VOLUME;
 const workerComposeFiles=identity.deployment.composeFiles.map(name=>'/app/'+name);
@@ -100,6 +101,7 @@ await save('/retained/cancel-cleanup.json',{scope:'diagnostic cleanup after boun
 await cancelCtx.fiber.dispose();
 
 // Observe the stock native deadline after an actual READY worker was acquired.
+const timeoutStarted=performance.now();
 const timeoutRun=await ctx.runOwner.start('webots',randomUUID());
 const timeoutProvider=timeoutRun.context.get('webots');
 const timeoutRoot='/retained/native-timeout-'+timeoutRun.runId;
@@ -119,8 +121,8 @@ assert.ok(Array.isArray(timeoutCommand));const deadlineIndex=timeoutCommand.inde
 assert.ok(deadlineIndex>=0);assert.equal(timeoutCommand[deadlineIndex+1],'90');
 for(const marker of ['measure','cancel'])await assert.rejects(stat(join(timeoutProvider.output,marker)),{code:'ENOENT'});
 const timeoutAcquiredRef=await save(timeoutRoot+'/acquired-ready.json',{ready:timeoutReady,metadata:timeoutMetadata,ownership:timeoutBefore,measureGateUnopened:true});
-const timeoutEnd=performance.now()+120000,timeoutStarted=performance.now();
-let timeoutWorker,timeoutController,timeoutObservationRef,timeoutSettled=false;
+const timeoutEnd=performance.now()+120000,timeoutReadyAt=performance.now();
+let timeoutWorker,timeoutDiagnostics,timeoutObservationRef,timeoutSettled=false;
 timeoutRun.beginMeasurement();
 const timeoutCompletion=await timeoutRun.finish({
  closeMeasurement:async signal=>{
@@ -129,28 +131,27 @@ const timeoutCompletion=await timeoutRun.finish({
    try{timeoutWorker=await read(join(timeoutProvider.output,'worker-result.json'));break}
    catch(error){if(error.code!=='ENOENT'||performance.now()>=timeoutEnd)throw error;await pause(25,undefined,{signal})}
   }
-  assert.equal(timeoutWorker.owner_id,timeoutRun.runId);assert.notEqual(timeoutWorker.status,'completed');
-  timeoutController=await read(join(timeoutProvider.output,'controller-result.json'));
-  assert.equal(timeoutController.owner_id,timeoutRun.runId);assert.notEqual(timeoutController.status,'completed');
-  let marker;try{marker=await readFile(join(timeoutProvider.output,'cancel'),'utf8')}catch(error){if(error.code!=='ENOENT')throw error}
-  const diagnostic=[timeoutWorker.diagnostic,timeoutController.diagnostic,marker].filter(Boolean).join('; ');
-  assert.match(diagnostic,/deadline/);assert.ok(marker==='worker deadline'||/measurement admission deadline exceeded/.test(timeoutController.diagnostic??''));
-  assert.equal(timeoutController.samples.length,0);
-  await assert.rejects(stat(join(timeoutProvider.output,'measure')),{code:'ENOENT'});
-  await assert.rejects(stat(join(timeoutProvider.output,'measurement.json')),{code:'ENOENT'});
-  timeoutObservationRef=await save(timeoutRoot+'/native-deadline-observation.json',{diagnostic,worker:timeoutWorker,controller:timeoutController,elapsedAfterReadyMs:performance.now()-timeoutStarted,measureGateUnopened:true});
+  timeoutDiagnostics=await readNativeTimeoutDiagnostics(timeoutProvider.output,timeoutRun.runId);
+  timeoutWorker=timeoutDiagnostics.worker;
+  const elapsedSinceLaunchRequestMs=performance.now()-timeoutStarted;
+  assert.ok(elapsedSinceLaunchRequestMs>=Number(timeoutCommand[deadlineIndex+1])*1000,'stock native deadline did not elapse');
+  const diagnostic=[timeoutWorker.diagnostic,timeoutDiagnostics.controller.value?.diagnostic,timeoutDiagnostics.marker].filter(Boolean).join('; ');
+  timeoutObservationRef=await save(timeoutRoot+'/native-deadline-observation.json',{...timeoutDiagnostics,diagnostic,elapsedSinceLaunchRequestMs,elapsedAfterReadyMs:performance.now()-timeoutReadyAt});
   throw new Error('observed native worker deadline: '+diagnostic);
  },
  captureLastState:async signal=>{
   signal.throwIfAborted();
-  assert.ok(timeoutWorker&&timeoutController,'native deadline must settle before last-state export');
+  assert.ok(timeoutObservationRef,'validated native deadline is required before state availability export');
+  const availability=await save(timeoutRoot+'/last-state-availability.json',{available:timeoutDiagnostics.lastState.available,scope:'last-native-state.json only; READY initial_state remains acquisition evidence, not a final snapshot'});
+  if(!timeoutDiagnostics.lastState.available)return [availability];
   const source=join(timeoutProvider.output,'last-native-state.json'),target=timeoutRoot+'/raw/last-native-state.json';
   const expected=await referenceFile(source);await copyFile(source,target,constants.COPYFILE_EXCL);
   const retained=await referenceFile(target);assert.equal(retained.sha256,expected.sha256);assert.equal(retained.size_bytes,expected.size_bytes);
-  return [retained];
+  return [availability,retained];
  },
  drainRecorders:async signal=>{
-  assert.equal(timeoutWorker?.processes_reaped,true);assert.equal(timeoutWorker?.evidence_exported_before_stop,true);
+  assert.ok(timeoutObservationRef,'validated native deadline is required before drain');
+  assert.equal(timeoutWorker?.processes_reaped,true);
   assert.ok(timeoutWorker.children.length>0);assert.ok(timeoutWorker.children.every(row=>row.reaped&&row.group_absent));
   let ended;
   for(;;){

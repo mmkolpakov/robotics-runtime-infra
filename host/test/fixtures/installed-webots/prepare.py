@@ -154,6 +154,7 @@ def main():
     for name in [
         "prepare.py",
         "consumer.mjs",
+        "timeout-diagnostics.mjs",
         "init-storage.mjs",
         "launch.mjs",
         "compose.host.yaml",
@@ -197,7 +198,7 @@ def main():
         == COMPOSE_SHA256
     )
     (consumer / "tools/docker-compose").chmod(0o555)
-    for name in ["consumer.mjs", "init-storage.mjs"]:
+    for name in ["consumer.mjs", "timeout-diagnostics.mjs", "init-storage.mjs"]:
         (consumer / "app" / name).write_bytes(fixture_contents[name])
     for name in ["launch.mjs", "compose.host.yaml", "compose.retained.yaml"]:
         (consumer / name).write_bytes(fixture_contents[name])

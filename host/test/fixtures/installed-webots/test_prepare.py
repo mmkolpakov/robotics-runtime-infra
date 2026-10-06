@@ -154,6 +154,10 @@ class Preparation(unittest.TestCase):
     def test_deployment_bytes_survive_layout_changes_and_overlay_is_selected(self):
         self.prepare()
         self.assertEqual(
+            (self.consumer / "app/timeout-diagnostics.mjs").read_bytes(),
+            (FIXTURE / "timeout-diagnostics.mjs").read_bytes(),
+        )
+        self.assertEqual(
             (self.consumer / "compose.worker.yaml").read_bytes(), self.source_bytes
         )
         self.assertEqual(
