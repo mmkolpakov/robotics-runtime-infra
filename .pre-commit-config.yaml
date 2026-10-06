@@ -9,7 +9,7 @@ repos:
         exclude: ^(test/qualification/fixtures/|host/test/fixtures/provider-qualification/native/).*\.json$
       - id: check-json
       - id: check-yaml
-        exclude: ^compose\.(released|foundation-playback)\.yaml$
+        exclude: ^(compose\.(released|foundation-playback)\.yaml$|helm/[^/]+/templates/)
       - id: check-yaml
         name: check Compose merge-tag syntax
         files: ^compose\.(released|foundation-playback)\.yaml$

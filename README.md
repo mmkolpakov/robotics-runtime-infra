@@ -121,6 +121,11 @@ profiles; [WSL2](docs/wsl2.md) records host limitations. Image builds and
 accelerator imports are not device qualification. Real actuation is outside
 the retained profile's supported scope.
 
+Product cloud configuration is a development candidate: [AWS foundation](terraform/README.md)
+and [Helm packaging](helm/README.md) keep infrastructure, retained run storage
+and attempt workloads under separate owners. Offline configuration checks do not
+establish Kubernetes or AWS runtime qualification.
+
 Build and verify the source checkout:
 
 ```bash
