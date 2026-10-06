@@ -19,7 +19,7 @@ RUN printf '%s\n' '8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f45754c
     && apt-get install -y --no-install-recommends jq inotify-tools passwd \
     && /usr/local/bin/uv pip install --python /opt/contracts/bin/python --require-hashes --no-deps -r /tmp/evidence-sink.lock \
     && /usr/local/bin/uv pip check --python /opt/contracts/bin/python \
-    && /opt/contracts/bin/python -c 'import importlib.metadata as m;assert m.version("robotics-runtime-contracts")=="0.18.2";assert m.version("robotics-acceptance-harness")=="0.19.1";from robotics_runtime_contracts.recordings import recording_summary_from_mcap;from mcap.reader import make_reader' \
+    && /opt/contracts/bin/python -c 'import json;from importlib.metadata import version;lock=json.load(open("/usr/share/robotics-runtime/foundation-lock.json"));assert all(version(p["distribution"])==p["version"] for p in lock["packages"].values());from robotics_runtime_contracts.recordings import recording_summary_from_mcap;from mcap.reader import make_reader' \
     && cosign version --json \
     && test "$(cosign version --json | jq -r '.gitVersion | ltrimstr("v") | split("+")[0]')" = '3.1.3' \
     && /usr/local/bin/uv pip freeze --python /opt/contracts/bin/python > /usr/share/robotics-runtime/evidence-python-packages.txt \

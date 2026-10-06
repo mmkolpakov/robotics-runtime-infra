@@ -12,6 +12,8 @@ import launch_testing.asserts
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
 
+from robotics_runtime_infra.moveit_configuration import joint_motion_moveit_config
+
 
 def generate_test_description() -> tuple[launch.LaunchDescription, dict[str, Node]]:
     launch_file = (
@@ -23,7 +25,7 @@ def generate_test_description() -> tuple[launch.LaunchDescription, dict[str, Nod
         package="robotics_runtime_infra",
         executable="moveit_plan_probe",
         output="screen",
-        parameters=[{"use_sim_time": True}],
+        parameters=[joint_motion_moveit_config().to_dict(), {"use_sim_time": True}],
     )
     return (
         launch.LaunchDescription(
