@@ -47,6 +47,10 @@ common document/evaluator environment does not require a simulator SDK or ROS.
 [Architecture](docs/architecture.md) describes native API boundaries and
 evidence-before-reset ordering.
 
+[Kubernetes and AWS responsibilities](docs/architecture.md#kubernetes-and-aws-responsibilities)
+shows the implemented Terraform source, Helm candidate and pending native
+execution/recovery boundaries; real cloud qualification remains open.
+
 Read the shared diagrams by purpose:
 
 - [Platform context](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Context.svg)
