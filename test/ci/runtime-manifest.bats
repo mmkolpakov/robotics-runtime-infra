@@ -520,3 +520,20 @@ use_contracts_only_python() {
   run sdk_identity_matches_caller_lock "$ROBOTICS_FOUNDATION_LOCK" "$ROBOTICS_SDK_IDENTITY_OUTPUT" true
   [ "$status" -eq 0 ]
 }
+
+@test "runtime producer retains subsecond observation order in generated time" {
+  date() { command date --date='2026-10-05T06:49:56.765432Z' "$@"; }
+  export -f date
+  run bash "${EMITTER}" "${OUTPUT}"
+  [ "${status}" -eq 0 ]
+  run "${ROBOTICS_FOUNDATION_PYTHON}" - "${OUTPUT}" <<'PY'
+import sys
+from datetime import datetime
+from robotics_runtime_contracts import load_mapping
+
+observed = datetime.fromisoformat("2026-10-05T06:49:56.765432+00:00")
+generated = datetime.fromisoformat(load_mapping(sys.argv[1])["generated_at"])
+assert generated == observed, (generated, observed)
+PY
+  [ "${status}" -eq 0 ]
+}
