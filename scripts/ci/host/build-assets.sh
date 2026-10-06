@@ -47,6 +47,9 @@ cp "${core_file}" "host/${core_dependency#file:}"
   bash -Eeuo pipefail -c '
     npm ci --ignore-scripts --no-fund
     npm test
+    node --test \
+      tools/qualify-legacy-live.test.mjs \
+      test/fixtures/installed-webots/timeout-diagnostics.test.mjs
     npm audit --audit-level=high
     npm pack --ignore-scripts --pack-destination .tools/host-asset --json
   '
