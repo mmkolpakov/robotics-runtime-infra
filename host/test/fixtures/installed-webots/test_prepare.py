@@ -85,6 +85,20 @@ class Preparation(unittest.TestCase):
         }
         self.manifest.write_text(json.dumps(self.identity))
         self.consumer = self.root / "consumer"
+        self.image = "localhost/webots@sha256:" + "a" * 64
+        self.image_id = "sha256:" + "b" * 64
+        self.inspection = [{"Id": self.image_id, "RepoDigests": [self.image]}]
+        lock_bytes = (self.repo / "config/foundation-lock.json").read_bytes()
+        self.foundation = json.loads(lock_bytes)
+        self.public_python = {
+            "installed": {
+                package["distribution"]: package["version"]
+                for package in self.foundation["packages"].values()
+            },
+            "foundationLock": self.foundation,
+            "foundationLockSha256": hashlib.sha256(lock_bytes).hexdigest(),
+        }
+        self.podman_calls = []
 
     def git(self, *args):
         return subprocess.check_output(
@@ -107,14 +121,27 @@ class Preparation(unittest.TestCase):
             "--compose",
             str(self.compose),
             "--worker-image",
-            "localhost/webots@sha256:" + "a" * 64,
+            self.image,
             "--source-volume",
             "rr-webots-review-source",
             "--retained-volume",
             "rr-webots-review-retained",
         ]
+        actual_check_output = subprocess.check_output
+
+        def check_output(command, **kwargs):
+            if command[0] != "podman":
+                return actual_check_output(command, **kwargs)
+            self.podman_calls.append(command)
+            if command[1:3] == ["image", "inspect"]:
+                return json.dumps(self.inspection).encode()
+            if command[1] == "run":
+                return json.dumps(self.public_python).encode()
+            raise AssertionError("unexpected prerequisite command")
+
         with (
             patch.object(sys, "argv", arguments),
+            patch.object(prepare.subprocess, "check_output", side_effect=check_output),
             patch.object(
                 prepare,
                 "COMPOSE_SHA256",
@@ -161,12 +188,64 @@ class Preparation(unittest.TestCase):
             identity["hostOwner"],
         )
         self.assertEqual(identity["hostProject"], identity["hostOwner"])
+        self.assertEqual(identity["observedImageId"], self.image_id)
+        self.assertEqual(identity["RepoDigests"], [self.image])
+        self.assertEqual(identity["publicPythonProbe"], self.public_python)
+        self.assertEqual(identity["foundationLock"]["document"], self.foundation)
+        self.assertEqual(identity["foundationLock"]["revision"], self.revision)
+        self.assertIn(self.image_id, self.podman_calls[1])
+        self.assertNotIn(self.image, self.podman_calls[1])
 
     def test_tgz_drift_refused_before_consumer_is_written(self):
         self.core.write_bytes(self.core.read_bytes() + b"drift")
         with self.assertRaisesRegex(ValueError, "core TGZ checksum mismatch"):
             self.prepare()
         self.assertFalse(self.consumer.exists())
+
+    def test_historical_worker_pair_refused_before_consumer_write(self):
+        self.public_python["installed"]["robotics-runtime-contracts"] = "0.18.2"
+        self.public_python["installed"]["robotics-acceptance-harness"] = "0.19.1"
+        with self.assertRaisesRegex(ValueError, "installed public Python pair differs"):
+            self.prepare()
+        self.assertFalse(self.consumer.exists())
+
+    def test_worker_full_source_lock_must_match_exact_git_lock(self):
+        changed = json.loads(json.dumps(self.foundation))
+        changed["workspace"]["revision"] = "0" * 40
+        self.public_python["foundationLock"] = changed
+        with self.assertRaisesRegex(ValueError, "embedded foundation lock differs"):
+            self.prepare()
+        self.assertFalse(self.consumer.exists())
+
+    def test_worker_source_lock_bytes_must_match_exact_git_lock(self):
+        self.public_python["foundationLockSha256"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "foundation lock bytes differ"):
+            self.prepare()
+        self.assertFalse(self.consumer.exists())
+
+    def test_unobserved_worker_digest_refused_before_probe_or_consumer_write(self):
+        self.inspection[0]["RepoDigests"] = []
+        with self.assertRaisesRegex(ValueError, "observed immutable RepoDigest"):
+            self.prepare()
+        self.assertEqual(len(self.podman_calls), 1)
+        self.assertFalse(self.consumer.exists())
+
+    def test_dirty_fixture_refused_before_probe_or_consumer_write(self):
+        target = self.repo / "host/test/fixtures/installed-webots/consumer.mjs"
+        target.write_bytes(target.read_bytes() + b"// changed after source commit\\n")
+        with self.assertRaisesRegex(ValueError, "differs from committed HEAD"):
+            self.prepare()
+        self.assertEqual(self.podman_calls, [])
+        self.assertFalse(self.consumer.exists())
+
+    def test_partial_consumer_refused_without_replacing_existing_bytes(self):
+        self.consumer.mkdir()
+        marker = self.consumer / "partial.json"
+        marker.write_bytes(b"retained partial attempt")
+        with self.assertRaisesRegex(FileExistsError, "fresh and nonexistent"):
+            self.prepare()
+        self.assertEqual(marker.read_bytes(), b"retained partial attempt")
+        self.assertEqual(self.podman_calls, [])
 
     def test_worker_exports_exact_producer_revision_and_current_foundation_lock(self):
         old_producer = (

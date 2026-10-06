@@ -13,6 +13,87 @@ COMPOSE_FILES = ["compose.worker.yaml", "compose.podman.yaml", "compose.fixture.
 NODE = "docker.io/library/node@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697"
 
 
+def probe_worker(image, foundation, lock_sha256):
+    if not re.fullmatch(r".+@sha256:[a-f0-9]{64}", image):
+        raise ValueError("worker image requires an immutable RepoDigest")
+    inspected = json.loads(
+        subprocess.check_output(
+            ["podman", "image", "inspect", image], stderr=subprocess.PIPE, timeout=30
+        )
+    )
+    if not isinstance(inspected, list) or len(inspected) != 1:
+        raise ValueError("worker inspect must identify one installed image")
+    metadata = inspected[0]
+    if not isinstance(metadata, dict):
+        raise ValueError("worker inspect metadata must be an object")
+    image_id, digests = metadata.get("Id"), metadata.get("RepoDigests")
+    if not isinstance(image_id, str) or not re.fullmatch(
+        r"(?:sha256:)?[a-f0-9]{64}", image_id
+    ):
+        raise ValueError("worker inspect did not return an exact image ID")
+    if not isinstance(digests, list) or image not in digests:
+        raise ValueError("worker image must be an observed immutable RepoDigest")
+    probe = (
+        "import hashlib,json;from pathlib import Path;from importlib.metadata import version;"
+        "raw=Path('/usr/share/robotics-runtime/foundation-lock.json').read_bytes();"
+        "lock=json.loads(raw);"
+        "print(json.dumps({'installed':{p['distribution']:version(p['distribution']) "
+        "for p in lock['packages'].values()},'foundationLock':lock,"
+        "'foundationLockSha256':hashlib.sha256(raw).hexdigest()}))"
+    )
+    public_python = json.loads(
+        subprocess.check_output(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--pull",
+                "never",
+                "--network",
+                "none",
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--pids-limit",
+                "32",
+                "--memory",
+                "128m",
+                "--userns",
+                "keep-id:uid=1000,gid=1000",
+                "--user",
+                "10001:1000",
+                "--entrypoint",
+                "/opt/contracts/bin/python",
+                image_id,
+                "-B",
+                "-c",
+                probe,
+            ],
+            stderr=subprocess.PIPE,
+            timeout=45,
+        )
+    )
+    expected = {
+        package["distribution"]: package["version"]
+        for package in foundation["packages"].values()
+    }
+    if public_python.get("foundationLock") != foundation:
+        raise ValueError(
+            "worker embedded foundation lock differs from exact source lock"
+        )
+    if public_python.get("foundationLockSha256") != lock_sha256:
+        raise ValueError(
+            "worker embedded foundation lock bytes differ from exact source lock"
+        )
+    if public_python.get("installed") != expected:
+        raise ValueError(
+            "worker installed public Python pair differs from exact source lock"
+        )
+    return image_id, digests, public_python
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", type=Path, required=True)
@@ -30,10 +111,8 @@ def main():
     assert root not in [consumer, *consumer.parents], (
         "consumer must be outside the source repo"
     )
-    if (consumer / "node_modules").exists():
-        raise ValueError(
-            "use a fresh independent consumer directory for ordinary lock resolution"
-        )
+    if consumer.exists() or args.consumer.is_symlink():
+        raise FileExistsError("consumer directory must be fresh and nonexistent")
     for name in (args.source_volume, args.retained_volume):
         if not re.fullmatch(r"rr-[a-z0-9][a-z0-9-]{0,59}", name):
             raise ValueError(
@@ -71,7 +150,38 @@ def main():
         ["git", "rev-parse", "--verify", "HEAD^{commit}"], cwd=root, text=True
     ).strip()
     fixture = root / "host/test/fixtures/installed-webots"
-    consumer.mkdir(parents=True, exist_ok=True)
+    fixture_contents = {}
+    for name in [
+        "prepare.py",
+        "consumer.mjs",
+        "init-storage.mjs",
+        "launch.mjs",
+        "compose.host.yaml",
+        "compose.retained.yaml",
+        "Node.Dockerfile",
+    ]:
+        raw = subprocess.check_output(
+            [
+                "git",
+                "show",
+                source_revision + ":host/test/fixtures/installed-webots/" + name,
+            ],
+            cwd=root,
+        )
+        if (fixture / name).read_bytes() != raw:
+            raise ValueError(f"fixture file differs from committed HEAD: {name}")
+        fixture_contents[name] = raw
+    lock_bytes = subprocess.check_output(
+        ["git", "show", source_revision + ":config/foundation-lock.json"], cwd=root
+    )
+    foundation = json.loads(lock_bytes)
+    lock_sha256 = hashlib.sha256(lock_bytes).hexdigest()
+    observed_image_id, repo_digests, public_python = probe_worker(
+        args.worker_image, foundation, lock_sha256
+    )
+    if hashlib.sha256(args.compose.read_bytes()).hexdigest() != COMPOSE_SHA256:
+        raise ValueError("Compose executable checksum mismatch")
+    consumer.mkdir(parents=True, exist_ok=False)
     for part in ["assets", "app", "profiles", "tools"]:
         (consumer / part).mkdir(exist_ok=True)
     for path, name in [(args.core, "core.tgz"), (args.infra, "infra.tgz")]:
@@ -88,10 +198,10 @@ def main():
     )
     (consumer / "tools/docker-compose").chmod(0o555)
     for name in ["consumer.mjs", "init-storage.mjs"]:
-        shutil.copyfile(fixture / name, consumer / "app" / name)
+        (consumer / "app" / name).write_bytes(fixture_contents[name])
     for name in ["launch.mjs", "compose.host.yaml", "compose.retained.yaml"]:
-        shutil.copyfile(fixture / name, consumer / name)
-    shutil.copyfile(fixture / "Node.Dockerfile", consumer / "Dockerfile")
+        (consumer / name).write_bytes(fixture_contents[name])
+    (consumer / "Dockerfile").write_bytes(fixture_contents["Node.Dockerfile"])
     deployment_assets = {}
     for source, target in [
         ("compose.webots.yaml", "compose.worker.yaml"),
@@ -191,16 +301,8 @@ def main():
         "fixture": {
             "revision": source_revision,
             "files": {
-                name: hashlib.sha256((fixture / name).read_bytes()).hexdigest()
-                for name in [
-                    "prepare.py",
-                    "consumer.mjs",
-                    "init-storage.mjs",
-                    "launch.mjs",
-                    "compose.host.yaml",
-                    "compose.retained.yaml",
-                    "Node.Dockerfile",
-                ]
+                name: hashlib.sha256(raw).hexdigest()
+                for name, raw in fixture_contents.items()
             },
         },
         "deployment": {
@@ -212,6 +314,15 @@ def main():
         "infraSource": asset_identity["infra"]["revision"],
         "assetSourceIdentity": asset_identity,
         "workerImage": args.worker_image,
+        "observedImageId": observed_image_id,
+        "RepoDigests": repo_digests,
+        "publicPythonProbe": public_python,
+        "foundationLock": {
+            "revision": source_revision,
+            "path": "config/foundation-lock.json",
+            "sha256": lock_sha256,
+            "document": foundation,
+        },
         "nodeImage": NODE,
         "sourceVolume": args.source_volume,
         "retainedVolume": args.retained_volume,
@@ -240,8 +351,6 @@ def main():
         )
         + "\n"
     )
-    # A replaced local tarball at the same version requires a fresh ordinary lock resolution.
-    (consumer / "package-lock.json").unlink(missing_ok=True)
     print(json.dumps(identity))
 
 
