@@ -109,7 +109,7 @@ class StockMcapFileWriter(unittest.TestCase):
         )
         writer.create_topic(
             rosbag2_py.TopicMetadata(
-                name=topic, type=message_type, serialization_format="cdr"
+                id=0, name=topic, type=message_type, serialization_format="cdr"
             )
         )
         return writer
