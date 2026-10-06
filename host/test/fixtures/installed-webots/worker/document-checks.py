@@ -1,0 +1,206 @@
+"""Use installed public P/H APIs against the newly completed native Webots bytes."""
+
+import argparse
+import hashlib
+import importlib.metadata as metadata
+import json
+import shutil
+import tempfile
+from pathlib import Path
+from provider_qualification import produce, CAPABILITIES, NAMESPACE, SCHEMA_URI
+from robotics_runtime_contracts import ContractError, validate_document
+from robotics_runtime_contracts.providers import (
+    ProviderRequirementError,
+    validate_provider_requirements,
+)
+from robotics_runtime_contracts.writers import write_document
+from robotics_acceptance_harness.evidence import (
+    EvidenceValidationError,
+    load_evidence_index,
+)
+
+
+def reject(work, expected):
+    try:
+        work()
+    except expected as error:
+        return {"refused": True, "diagnostic": str(error)}
+    raise AssertionError("operation unexpectedly accepted")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--native", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--execution-subject-digest", required=True)
+    parser.add_argument("--verify-only", action="store_true")
+    args = parser.parse_args()
+    versions = {
+        name: metadata.version(name)
+        for name in ("robotics-runtime-contracts", "robotics-acceptance-harness")
+    }
+    foundation = json.loads(
+        Path("/usr/share/robotics-runtime/foundation-lock.json").read_bytes()
+    )
+    expected = {
+        package["distribution"]: package["version"]
+        for package in foundation["packages"].values()
+    }
+    assert versions == expected
+    assert not Path("/opt/ros").exists()
+    schema = Path("/opt/c18/native-provider-source.v1.schema.json")
+    if args.verify_only:
+        verified = load_evidence_index(
+            args.output / "documents/evidence-index.json", expected_run_id=args.run_id
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": True,
+                    "versions": versions,
+                    "links": len(verified.links),
+                    "source_present": args.native.exists(),
+                }
+            )
+        )
+        return
+    args.output.mkdir(parents=True, exist_ok=False)
+    native = json.loads((args.native / "controller-result.json").read_bytes())
+    worker = json.loads((args.native / "worker-result.json").read_bytes())
+    assert native["status"] == worker["status"] == "completed"
+    assert worker["processes_reaped"] and worker["evidence_exported_before_stop"]
+    assert native["reset"]["observed"] and native["camera"]["sampling_period_ms"] == 0
+    assert all(
+        s["result"] == 0 and s["after_seconds"] > s["before_seconds"]
+        for s in native["samples"]
+    )
+    assert (
+        native["last_native_state"]["body_position_m"][2]
+        < native["initial_state"]["body_position_m"][2]
+    )
+    names = [
+        "controller-result.json",
+        "worker-result.json",
+        "last-native-state.json",
+        "ready.json",
+        "pre-reset.json",
+        "measurement.json",
+    ]
+    manifest = {
+        "backend": "webots",
+        "version": "R2025a",
+        "executionSubjectDigest": args.execution_subject_digest,
+        "files": {
+            name: {
+                "sha256": hashlib.sha256((args.native / name).read_bytes()).hexdigest(),
+                "size_bytes": (args.native / name).stat().st_size,
+            }
+            for name in names
+        },
+    }
+    manifest_path = args.output / "native-inputs.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    paths = produce(
+        "webots",
+        args.native,
+        manifest_path,
+        schema,
+        args.output / "documents",
+        generated_at="2026-10-05T00:00:00Z",
+        run_id=args.run_id,
+    )
+    result = json.loads(paths["conformance"].read_bytes())
+    validate_document(result, extension_schemas={SCHEMA_URI: schema.read_bytes()})
+    assert result["status"] == "passed"
+    assert all(
+        row["unit"] == "s" and row["hex"] == float(row["value"]).hex()
+        for row in result["extensions"][NAMESPACE]["native_times"]
+    )
+    verified = load_evidence_index(paths["evidence"], expected_run_id=args.run_id)
+    checks = {
+        "installed_python_pair": versions,
+        "native_lifecycle": True,
+        "native_seconds_binary64": True,
+        "public_writer_and_harness": len(verified.links),
+        "source_scene_sha256": hashlib.sha256(
+            (args.native / "inputs/native.wbt").read_bytes()
+        ).hexdigest(),
+    }
+    checks["occupied_output"] = reject(
+        lambda: produce(
+            "webots",
+            args.native,
+            manifest_path,
+            schema,
+            args.output / "documents",
+            generated_at="2026-10-05T00:00:00Z",
+            run_id=args.run_id,
+        ),
+        FileExistsError,
+    )
+    checks["missing_provider"] = reject(
+        lambda: validate_provider_requirements(
+            {"capabilities": ["simulated_physics"]}, []
+        ),
+        ProviderRequirementError,
+    )
+    checks["missing_capability"] = reject(
+        lambda: validate_provider_requirements(
+            {"capabilities": ["native-rtx-execution"]}, [{"capabilities": CAPABILITIES}]
+        ),
+        ProviderRequirementError,
+    )
+    checks["wrong_selected_provider"] = reject(
+        lambda: produce(
+            "gazebo",
+            args.native,
+            manifest_path,
+            schema,
+            args.output / "wrong-provider",
+            generated_at="2026-10-05T00:00:00Z",
+            run_id=args.run_id,
+        ),
+        ValueError,
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        changed = Path(tmp) / "native"
+        shutil.copytree(args.native, changed)
+        (changed / "controller-result.json").write_bytes(
+            (changed / "controller-result.json").read_bytes() + b" "
+        )
+        before = paths["conformance"].read_bytes()
+        checks["tampered_native_bytes"] = reject(
+            lambda: produce(
+                "webots",
+                changed,
+                manifest_path,
+                schema,
+                args.output / "tampered",
+                generated_at="2026-10-05T00:00:00Z",
+                run_id=args.run_id,
+            ),
+            ContractError,
+        )
+        assert paths["conformance"].read_bytes() == before
+        copied = Path(tmp) / "copy"
+        shutil.copytree(args.output / "documents", copied)
+        copied_index = json.loads((copied / "evidence-index.json").read_bytes())
+        for row in copied_index["artifacts"]:
+            row["uri"] = (copied / "raw" / Path(row["uri"]).name).as_uri()
+        write_document(copied_index, copied / "evidence-index.json")
+        (copied / "raw/controller-result.json").write_bytes(
+            (copied / "raw/controller-result.json").read_bytes() + b" "
+        )
+        checks["harness_tamper"] = reject(
+            lambda: load_evidence_index(copied / "evidence-index.json"),
+            EvidenceValidationError,
+        )
+    (args.output / "document-checks.json").write_text(
+        json.dumps(checks, indent=2) + "\n"
+    )
+    print(json.dumps(checks))
+
+
+if __name__ == "__main__":
+    main()
