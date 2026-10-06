@@ -76,6 +76,37 @@ write_clock_facts() {
   ' "$1" >"$2"
 }
 
+retain_failure_diagnostics() {
+  local status="$1"
+  local destination filename
+  test -n "$report_output" || return 0
+  destination="$(mktemp -d "${report_output%.json}.failure.XXXXXXXX")" || return
+  # Owned writers have had their existing cleanup attempt. These are available
+  # diagnostic bytes, not a successful report or a completed measurement.
+  for filename in physical-attach-report.json serial-received.txt \
+    serial-reverse-received.txt serial-socat.log unexpected-can-frame.log \
+    can-received.txt; do
+    if test -f "$work_root/$filename" && test ! -L "$work_root/$filename"; then
+      install -m 0644 "$work_root/$filename" "$destination/$filename" || return
+    fi
+  done
+  # The host-time publisher owns these two fixed CI paths; do not copy arbitrary
+  # caller-selected files, a directory tree, or authorization material.
+  if test -n "${RUNNER_TEMP:-}" &&
+    test "${ROBOTICS_TIME_EVIDENCE:-}" = "$RUNNER_TEMP/physical-attach-time.otlp.json" &&
+    test "${ROBOTICS_TIME_EVIDENCE_WINDOW:-}" = "$RUNNER_TEMP/physical-attach-time-window.json" &&
+    test -f "$ROBOTICS_TIME_EVIDENCE" && test ! -L "$ROBOTICS_TIME_EVIDENCE" &&
+    test -f "$ROBOTICS_TIME_EVIDENCE_WINDOW" && test ! -L "$ROBOTICS_TIME_EVIDENCE_WINDOW"; then
+    install -m 0644 "$ROBOTICS_TIME_EVIDENCE" "$destination/time-evidence.otlp.json" || return
+    install -m 0644 "$ROBOTICS_TIME_EVIDENCE_WINDOW" "$destination/time-evidence-window.json" || return
+  fi
+  jq -n --argjson status "$status" '{
+    status: "failed",
+    exit_status: $status,
+    snapshot: "available-after-owned-cleanup-attempt"
+  }' >"$destination/diagnostic.json"
+}
+
 retain_runtime_evidence() {
   local destination filename
   destination="$(mktemp -d "${report_output%.json}.runtime.XXXXXXXX")"

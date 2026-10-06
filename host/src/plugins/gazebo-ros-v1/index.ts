@@ -27,10 +27,7 @@ export class GazeboRosV1 extends Service {
     this.compose=new ComposeExecution(ctx.jobs,this.input.compose);
     ctx.runResources.track({id:this.input.compose.projectName,ownerId:ctx.runResources.ownerId,
       cleanup:async()=>{if(this.acquired) {
-        const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'});
-        const owned=await engine.projectOwnership({runId:this.input.runId,projectName:this.input.compose.projectName,...(this.simulationContainerId?{networkNamespaceContainerId:this.simulationContainerId}:{})});
-        this.cleanupRefs.push(await this.retain('pre-cleanup-project-ownership',owned));
-        if(owned.status!=='complete')throw new Error('owned project cleanup refused foreign or unbound native resource');
+        await this.observeCleanupOwnership(AbortSignal.timeout(Math.min(this.input.compose.timeoutMs??120000,120000)));
         await this.require('cleanup',['down','--volumes','--remove-orphans']);
       }},
       verifyCleanup:async(signal)=>{
@@ -42,6 +39,36 @@ export class GazeboRosV1 extends Service {
         const volumes=actual.volumes as {Volumes?:unknown[]|null};
         return {released:project.status==='complete' && project.inventory.containers.length===0 && project.inventory.networks.length===0 && actual.containers.length===0 && actual.networks.length===0 && Object.hasOwn(volumes,'Volumes') && (volumes.Volumes===null || volumes.Volumes?.length===0),evidenceRefs:[...this.cleanupRefs,ref,projectRef]};
       }});
+  }
+  /** Bind partial startup from actual admitted metadata before callers retain diagnostics or request cleanup. */
+  async observeCleanupOwnership(signal:AbortSignal) {
+    const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
+    await this.bindPartialStartupParent(engine,signal);
+    const owned=await engine.projectOwnership({runId:this.input.runId,projectName:this.input.compose.projectName,...(this.simulationContainerId?{networkNamespaceContainerId:this.simulationContainerId}:{})},{cancelSignal:signal});
+    this.cleanupRefs.push(await this.retain('pre-cleanup-project-ownership',owned));
+    if(owned.status!=='complete')throw new Error('owned project cleanup refused foreign or unbound native resource');
+    return owned;
+  }
+  private async bindPartialStartupParent(engine:EngineMetadata,signal:AbortSignal):Promise<void> {
+    if(this.simulationContainerId)return;
+    const inventory=await engine.remainingOwned(this.input.runId,{cancelSignal:signal});
+    const candidates=inventory.containers.filter(raw=>{
+      const row=raw as {Labels?:Record<string,string>};
+      return row.Labels?.['org.robotics.runtime.run-id']===this.input.runId &&
+        row.Labels?.['com.docker.compose.project']===this.input.compose.projectName &&
+        row.Labels?.['com.docker.compose.service']==='simulation';
+    }) as {Id?:string}[];
+    this.cleanupRefs.push(await this.retain('partial-start-simulation-inventory',{inventory,candidateCount:candidates.length}));
+    if(candidates.length>1)throw new Error('partial startup cleanup has ambiguous simulation parents');
+    if(!candidates.length)return;
+    const id=candidates[0]!.Id;
+    if(typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id))throw new Error('partial startup simulation exact ID absent');
+    const metadata=await engine.inspect(id,this.input.simulationRequirement,{cancelSignal:signal});
+    this.cleanupRefs.push(await this.retain('partial-start-simulation-native-metadata',metadata));
+    const labels=(metadata.container as {Config?:{Labels?:Record<string,string>}}).Config?.Labels;
+    if(metadata.status!=='complete'||labels?.['com.docker.compose.service']!=='simulation')
+      throw new Error('partial startup simulation native binding incomplete');
+    this.simulationContainerId=id;
   }
   snapshot() {
     if(!this.startupReady||!this.simulationContainerId||!this.stepperContainerId) throw new Error('native startup snapshot incomplete');
@@ -68,10 +95,11 @@ export class GazeboRosV1 extends Service {
     await this.require('application-start',['up','--detach','--no-build','--wait','--wait-timeout','120','simulation',...this.input.observationServices],signal);
     const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
     const id=await this.require('simulation-id',['ps','--quiet','simulation'],signal);
-    this.simulationContainerId=id.stdout.trim();
-    const metadata=await engine.inspect(this.simulationContainerId,this.input.simulationRequirement,{cancelSignal:signal});
+    const simulationContainerId=id.stdout.trim();
+    const metadata=await engine.inspect(simulationContainerId,this.input.simulationRequirement,{cancelSignal:signal});
     const simulationRef=await this.retain('simulation-native-metadata',metadata);this.refs.push(simulationRef);this.nativeMetadataRefs.push(simulationRef);
     if(metadata.status!=='complete') throw new Error('required observed simulation metadata incomplete');
+    this.simulationContainerId=simulationContainerId;
     if(this.input.admittedDescriptionPath) {
       const initialLog=await this.require('canonical-initial-log',['logs','--no-color','simulation'],signal);
       const initialCount=(initialLog.stdout.match(/InitializeCanonicalLinks/g)??[]).length;

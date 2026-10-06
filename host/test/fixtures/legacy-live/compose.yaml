@@ -62,8 +62,10 @@ services:
         - '5'
         - ros2
         - service
-        - type
+        - call
         - /simulator/get_simulator_features
+        - simulation_interfaces/srv/GetSimulatorFeatures
+        - '{}'
       interval: 2s
       timeout: 6s
       start_period: 15s
@@ -129,7 +131,6 @@ services:
       <<: *ros-env
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://127.0.0.1:4318/v1/metrics
       OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED: "true"
-      ROBOTICS_METRICS_EXPORT_INTERVAL_MS: "200"
       ROBOTICS_METRICS_TOPIC: /example/sequence
       ROBOTICS_TIME_TOPIC: /clock
       ROBOTICS_TIME_SOURCE_ID: gazebo-clock

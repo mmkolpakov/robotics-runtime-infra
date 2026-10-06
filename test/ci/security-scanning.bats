@@ -107,25 +107,46 @@ EOF
         {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"},
         {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"}
       ];
+    def scoped_cves:
+      ["CVE-2024-46742", "CVE-2024-46833"];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 9
-    and (.statements | length == 189)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 134)
+    and .version == 10
+    and (.statements | length == 191)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 136)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
+    )
+    and (
+      [.statements[].vulnerability.name
+        | select(. as $name | scoped_cves | index($name) != null)]
+      | sort == scoped_cves
     )
     and all(
       .statements[];
       (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
       and (
-        .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
-        or (
+        if (.vulnerability.name as $name | scoped_cves | index($name)) != null then
           .products == reviewed_headers
           and (.impact_statement | contains("Sources: https://"))
-          and (.impact_statement | contains("does not qualify the host kernel or hardware"))
-        )
+          and (
+            .impact_statement
+            | contains("does not qualify")
+              and contains("host kernel")
+              and contains("hardware")
+              and contains("other binary packages from the linux source")
+              and contains("another package version/architecture")
+              and contains("any other vulnerability")
+          )
+        else
+          .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
+          or (
+            .products == reviewed_headers
+            and (.impact_statement | contains("Sources: https://"))
+            and (.impact_statement | contains("does not qualify the host kernel or hardware"))
+          )
+        end
       )
       and .status == "not_affected"
       and .justification == "vulnerable_code_not_present"
