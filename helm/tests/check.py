@@ -33,7 +33,6 @@ VALUES = {
     "identity": {
         "serviceAccount": "evidence-sink",
         "namespace": NAMESPACE,
-        "roleArn": "arn:aws:iam::000000000000:role/configuration-only",
         "region": "eu-west-1",
         "bucket": "configuration-only-evidence",
         "prefix": "retained",
