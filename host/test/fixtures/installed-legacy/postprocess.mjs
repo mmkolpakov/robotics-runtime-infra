@@ -9,6 +9,11 @@ import FinalInputs from '@robotics-runtime/infra-host/plugins/legacy-finalizatio
 import Finalizer from '@robotics-runtime/infra-host/plugins/legacy-finalization';
 
 const [control] = process.argv.slice(2);
+const identity = JSON.parse(await readFile('/app/identity.json', 'utf8'));
+const engineProfile = identity.engineProfile ?? {engine: 'podman', expectedUsernsMode: 'private'};
+assert.ok(engineProfile && typeof engineProfile === 'object' && !Array.isArray(engineProfile) && Object.keys(engineProfile).length === 2 && Object.keys(engineProfile).every(key => ['engine', 'expectedUsernsMode'].includes(key)), 'explicit fixture engine profile required');
+assert.ok(['podman', 'docker'].includes(engineProfile.engine));
+assert.equal(engineProfile.expectedUsernsMode, engineProfile.engine === 'docker' ? '' : 'private');
 assert.ok(control.startsWith('/retained/control-run-'));
 await assert.rejects(stat('/run/robotics'), {code: 'ENOENT'});
 const completion = JSON.parse(await readFile(control + '/live-completion.json', 'utf8'));
@@ -51,7 +56,7 @@ const observed = await engine.inspect(host.Id, {
   runId: process.env.C18_HOST_OWNER, projectName: process.env.C18_HOST_PROJECT,
   imageDigest: process.env.C18_NODE_IMAGE, user: '1000:1000',
   mounts: [{destination: '/retained', readOnly: false, volumeName: process.env.C18_RETAINED_VOLUME}],
-  hostConfig: {Init: true, ReadonlyRootfs: true, NetworkMode: 'none', Memory: 1073741824},
+  hostConfig: {Init: true, ReadonlyRootfs: true, NetworkMode: 'none', Memory: 1073741824, UsernsMode: engineProfile.expectedUsernsMode},
 });
 assert.equal(observed.status, 'complete', JSON.stringify(observed));
 assert.ok(!observed.container.Mounts.some(row => row.Name === process.env.C18_SOURCE_VOLUME || row.Destination === '/run/robotics'));

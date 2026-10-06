@@ -4,7 +4,6 @@ services:
     pull_policy: never
     init: true
     user: "0:0"
-    userns_mode: keep-id:uid=1000,gid=1000
     network_mode: none
     entrypoint: [node, /app/init-storage.mjs]
     volumes: [source:/run/robotics, retained:/retained]
@@ -15,7 +14,6 @@ services:
     pull_policy: never
     init: true
     user: "1000:1000"
-    userns_mode: keep-id:uid=1000,gid=1000
     network_mode: none
     read_only: true
     mem_limit: 1g

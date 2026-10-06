@@ -123,3 +123,47 @@ test('HOME Compose receipt cannot precede actual failed or incompatible version 
   assert.deepEqual(saved,[]);
  }
 });
+
+test('explicit Docker profile retains the exact default namespace and snapshots its identity',()=>{
+ const parameters=legacyLiveParameters(argv('/output')),selected=fixture();
+ selected.engineProfile={engine:'docker',expectedUsernsMode:''};
+ selected.hostRequirement.hostConfig={UsernsMode:''};
+ const copy=validateLegacyLiveFixture(parameters,selected);
+ selected.engineProfile.expectedUsernsMode='private';
+ assert.deepEqual(copy.engineProfile,{engine:'docker',expectedUsernsMode:''});
+ assert.equal(copy.hostRequirement.hostConfig.UsernsMode,'');
+ const podman=fixture();podman.engineProfile={engine:'podman',expectedUsernsMode:'private'};
+ podman.hostRequirement.hostConfig={UsernsMode:'private'};
+ assert.deepEqual(validateLegacyLiveFixture(parameters,podman),podman);
+});
+for(const [name,engineProfile,hostMode] of [
+ ['Docker default relabelled private',{engine:'docker',expectedUsernsMode:'private'},'private'],
+ ['foreign observed host namespace',{engine:'docker',expectedUsernsMode:''},'private'],
+ ['Podman relabelled Docker default',{engine:'podman',expectedUsernsMode:''},''],
+ ['unrecognised engine',{engine:'remote',expectedUsernsMode:''},''],
+ ['extra namespace declaration',{engine:'docker',expectedUsernsMode:'',rootless:true},''],
+]){
+ test(name+' refuses before any admission or output effect',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'legacy-live-engine-')),output=join(root,'output');
+  try{
+   const selected=fixture();selected.engineProfile=engineProfile;selected.hostRequirement.hostConfig={UsernsMode:hostMode};
+   await assert.rejects(qualifyLegacyLive(argv(output),selected));
+   await assert.rejects(access(output),{code:'ENOENT'});
+  }finally{await rm(root,{recursive:true,force:true})}
+ });
+}
+
+test('native Docker default namespace must be observed exactly before it satisfies the profile',async()=>{
+ const {validateObservation}=await import('@robotics-runtime/infra-host');
+ const facts={endpoint:'unix:///fixture.sock',serverApi:'1.41',serverMinApi:'1.24',clientApi:'1.41',versionResponse:{}};
+ const native={Id:'a'.repeat(64),Image:image,Config:{User:'1000:1000',Labels:{'org.robotics.runtime.run-id':'fixture-owner','com.docker.compose.project':'fixture-project'}},
+  State:{Status:'running',Running:true,ExitCode:0},Mounts:[],HostConfig:{NetworkMode:'none',UsernsMode:''},NetworkSettings:{Networks:{}}};
+ const requirement={runId:'fixture-owner',projectName:'fixture-project',imageId:image,user:'1000:1000',mounts:[],hostConfig:{UsernsMode:''}};
+ assert.equal(validateObservation(facts,native,{Id:image},[],requirement).status,'complete');
+ for(const mode of ['private','host',undefined]){
+  const changed=structuredClone(native);changed.HostConfig.UsernsMode=mode;
+  const observed=validateObservation(facts,changed,{Id:image},[],requirement);
+  assert.equal(observed.status,'incomplete');
+  assert.ok(observed.mismatches.includes('container.HostConfig.UsernsMode'));
+ }
+});
