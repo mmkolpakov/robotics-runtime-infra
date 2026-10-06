@@ -7,7 +7,8 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 export function legacyLiveParameters(argv){
  assert.equal(argv.length,12,'legacy live source CLI requires its twelve positional arguments');
  const [root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision]=argv;
- return {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision};
+ assert.match(simulationImage,/^(?:sha256:)?[a-f0-9]{64}$/);
+ return {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage:simulationImage.startsWith('sha256:')?simulationImage:'sha256:'+simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision};
 }
 export function validateLegacyLiveFixture(parameters,fixture={}){
  const {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision}=parameters;
@@ -53,6 +54,10 @@ export function validateLegacyLiveFixture(parameters,fixture={}){
  if(copy.deferQualification!==undefined)assert.equal(typeof copy.deferQualification,'boolean');
  return copy;
 }
+export async function retainHomeComposeQualification(compose,save,environment){
+ const versionProbe=await compose.requireVersion();
+ await save('home-compose-qualification',{version:versionProbe.stdout.trim(),versionProbe,environment,scope:'HOME source qualification only'});
+}
 export async function qualifyLegacyLive(argv,fixture={}){
  const parameters=legacyLiveParameters(argv);
  fixture=validateLegacyLiveFixture(parameters,fixture);
@@ -87,7 +92,7 @@ if(fixture.hostRequirement){
  assert.equal(observed.status,'complete',JSON.stringify(observed));await save('installed-host-native-metadata',observed);
  const origins=Object.fromEntries(['@robotics-runtime/host','@robotics-runtime/infra-host','@robotics-runtime/infra-host/plugins/gazebo-ros-v1'].map(name=>[name,import.meta.resolve(name)]));
  assert.ok(Object.values(origins).every(value=>value.startsWith('file:///app/node_modules/')));await save('installed-origins',origins);
- await save('home-compose-qualification',{version:'5.3.1',environment:fixture.composeEnvironment,scope:'HOME source qualification only'});
+ await retainHomeComposeQualification(compose,save,fixture.composeEnvironment);
 }else{
  const {default:Docker}=await import('dockerode');
 const native=new Docker({socketPath:socket,version:'v'+engine.facts.clientApi});

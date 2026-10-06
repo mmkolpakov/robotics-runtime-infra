@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {legacyLiveParameters,validateLegacyLiveFixture,qualifyLegacyLive} from './qualify-legacy-live.mjs';
+import {legacyLiveParameters,validateLegacyLiveFixture,retainHomeComposeQualification,qualifyLegacyLive} from './qualify-legacy-live.mjs';
 
 const image='sha256:'+'a'.repeat(64),reference='localhost/fixture@sha256:'+'b'.repeat(64);
 const argv=output=>['/source','/engine.sock','/tools/docker-compose','run-12345678-1234-1234-1234-123456789abc','rr-source-fixture','rr-retained-fixture',image,reference,reference,reference,output,'c'.repeat(40)];
@@ -75,4 +75,51 @@ test('fixture Compose concurrency is explicit while source default remains uncha
  const parameters=legacyLiveParameters(argv('/output'));
  assert.deepEqual(validateLegacyLiveFixture(parameters),{});
  assert.deepEqual(validateLegacyLiveFixture(parameters,{composeEnvironment:{COMPOSE_PARALLEL_LIMIT:'1'}}),{composeEnvironment:{COMPOSE_PARALLEL_LIMIT:'1'}});
+});
+
+test('accepted bare and prefixed simulation IDs become one expected metadata identity without changing argv',()=>{
+ const args=argv('/output'),bare=[...args];bare[6]=image.slice(7);
+ const before=[...bare],parameters=legacyLiveParameters(bare);
+ assert.equal(parameters.simulationImage,image);
+ assert.deepEqual(parameters,legacyLiveParameters(args));
+ assert.deepEqual(bare,before);
+ for(const selectedId of [image,image.slice(7)]){
+  const selected=fixture();selected.imageBindings.simulation.imageId=selectedId;
+  assert.deepEqual(validateLegacyLiveFixture(parameters,selected),selected);
+ }
+ const mismatched=fixture();mismatched.imageBindings.simulation.imageId='e'.repeat(64);
+ assert.throws(()=>validateLegacyLiveFixture(parameters,mismatched),/simulation image binding mismatch/);
+ for(const invalid of ['sha256:'+image,'a'.repeat(63),'A'.repeat(64)]){
+  const changed=[...args];changed[6]=invalid;assert.throws(()=>legacyLiveParameters(changed));
+ }
+});
+
+test('HOME Compose receipt retains the existing API validated probe and declared environment',async()=>{
+ const {ComposeExecution}=await import('@robotics-runtime/infra-host');
+ const probe={ok:true,exitCode:0,stdout:'5.3.1\n',stderr:'actual probe diagnostic',timedOut:false,canceled:false};
+ const requests=[],saved=[],environment={COMPOSE_PARALLEL_LIMIT:'1'};
+ const compose=new ComposeExecution({run:async request=>{requests.push(request);return probe}},{
+  executable:'/tools/docker-compose',socketPath:'/engine.sock',projectName:'fixture-home',
+  files:['/source/fixture.json'],cwd:'/source',env:environment,
+ });
+ await retainHomeComposeQualification(compose,async(name,value)=>saved.push({name,value}),environment);
+ assert.equal(requests.length,1);assert.deepEqual(requests[0].args.slice(-2),['version','--short']);
+ assert.equal(requests[0].env.COMPOSE_PARALLEL_LIMIT,'1');
+ assert.equal(requests[0].env.DOCKER_HOST,'unix:///engine.sock');assert.equal(requests[0].extendEnv,false);
+ assert.deepEqual(saved,[{name:'home-compose-qualification',value:{
+  version:'5.3.1',versionProbe:probe,environment,scope:'HOME source qualification only',
+ }}]);
+});
+
+test('HOME Compose receipt cannot precede actual failed or incompatible version admission',async()=>{
+ const {ComposeExecution}=await import('@robotics-runtime/infra-host');
+ for(const [ok,stdout] of [[true,'5.3.0\n'],[true,'5.3.1-suffix\n'],[true,''],[false,'5.3.1\n']]){
+  const saved=[];
+  const compose=new ComposeExecution({run:async()=>({ok,stdout})},{
+   executable:'/tools/docker-compose',socketPath:'/engine.sock',projectName:'fixture-home',
+   files:['/source/fixture.json'],cwd:'/source',
+  });
+  await assert.rejects(retainHomeComposeQualification(compose,async(name,value)=>saved.push({name,value}),{}),/Compose 5.3.1 required/);
+  assert.deepEqual(saved,[]);
+ }
 });
