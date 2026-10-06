@@ -376,16 +376,65 @@ publish_acceptance_results() {
   sudo cp -a "${run_dir}/results/." "${artifact_dir}/acceptance-results/"
   sudo chown -R "$(id -u):$(id -g)" "${artifact_dir}/acceptance-results"
 }
+capture_runtime_metrics_diagnostics() {
+  local phase="$1"
+  local destination="${run_dir}/runtime-metrics-diagnostics"
+  local containers container inspection
+
+  # A single snapshot preserves the available state before owned cleanup.
+  [[ ! -d "${destination}" ]] || return 0
+  containers="$(timeout 10 "${compose[@]}" ps --all --quiet runtime-metrics)" || return 0
+  mkdir -p "${destination}"
+  while IFS= read -r container; do
+    [[ "${container}" =~ ^[a-f0-9]{64}$ ]] || continue
+    # Inspect only this exact project's service; never retain Env or mounts.
+    if ! inspection="$(timeout 10 docker inspect "${container}" \
+      2>>"${destination}/capture-errors.log" |
+      jq -e --arg project "${project}" --arg container "${container}" \
+        --arg phase "${phase}" --arg captured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        .[0] |
+        select(.Id == $container and
+          .Config.Labels["com.docker.compose.project"] == $project and
+          .Config.Labels["com.docker.compose.service"] == "runtime-metrics") |
+        {
+          container_id: .Id,
+          image_id: .Image,
+          project: .Config.Labels["com.docker.compose.project"],
+          service: .Config.Labels["com.docker.compose.service"],
+          phase: $phase,
+          captured_at: $captured_at,
+          state: (.State | {Status, Running, StartedAt, FinishedAt, ExitCode}),
+          cpu_limits: (.HostConfig |
+            {NanoCpus, CpuPeriod, CpuQuota, CpuShares, CpusetCpus, CpusetMems})
+        }
+      ' 2>>"${destination}/capture-errors.log")"; then
+      continue
+    fi
+    mkdir -p "${destination}/${container}"
+    printf '%s\n' "${inspection}" >"${destination}/${container}/inspect.json"
+    timeout 10 docker stats --no-stream --format '{{json .}}' "${container}" \
+      >"${destination}/${container}/docker-stats.jsonl" \
+      2>>"${destination}/capture-errors.log" || true
+    timeout 10 docker exec "${container}" cat /sys/fs/cgroup/cpu.stat \
+      >"${destination}/${container}/cpu.stat" \
+      2>>"${destination}/capture-errors.log" || true
+    timeout 10 docker exec "${container}" cat /sys/fs/cgroup/cpu.max \
+      >"${destination}/${container}/cpu.max" \
+      2>>"${destination}/capture-errors.log" || true
+  done <<<"${containers}"
+}
 publish_failure_evidence() {
   local destination="${artifact_dir}/acceptance-evidence"
   local source
+  capture_runtime_metrics_diagnostics before_project_cleanup
   mkdir -p "${destination}"
   for source in \
     "${run_dir}/evidence/metrics.otlp.jsonl" \
     "${run_dir}/evidence/evidence-index.json" \
     "${run_dir}/evidence/summaries" \
     "${run_dir}/bags" \
-    "${run_dir}/scenario.yaml"; do
+    "${run_dir}/scenario.yaml" \
+    "${run_dir}/runtime-metrics-diagnostics"; do
     if [[ -e "${source}" ]]; then
       sudo cp -a "${source}" "${destination}/"
     fi
@@ -688,6 +737,7 @@ if [[ "${data_source}" == recording_playback ]]; then
   }
 fi
 "${compose[@]}" --profile record stop recorder
+capture_runtime_metrics_diagnostics before_metrics_stop
 if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile observability stop runtime-metrics
   "${compose[@]}" --profile playback stop playback
