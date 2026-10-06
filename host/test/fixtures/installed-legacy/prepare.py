@@ -20,7 +20,7 @@ DEPLOYMENT = [
     "scripts/ci/foundation/create-simulation-provider.py",
     "config/fastdds/udp-only.xml",
     "config/recording/qos-overrides.yaml",
-    "config/recording/mcap-writer.yaml",
+    "host/test/fixtures/legacy-live/mcap-writer-small-segment.yaml",
     "host/test/fixtures/legacy-live/compose.yaml",
     "host/test/fixtures/legacy-live/evidence.yaml",
     "host/test/fixtures/legacy-live/otel-collector.yaml",
