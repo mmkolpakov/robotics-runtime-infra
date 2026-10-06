@@ -2,22 +2,24 @@
 
 import argparse
 import hashlib
-import importlib.metadata as metadata
 import json
 import shutil
 import tempfile
+from datetime import datetime, timezone
+from importlib import metadata
 from pathlib import Path
-from provider_qualification import produce, CAPABILITIES, NAMESPACE, SCHEMA_URI
+
+from provider_qualification import CAPABILITIES, NAMESPACE, SCHEMA_URI, produce
+from robotics_acceptance_harness.evidence import (
+    EvidenceValidationError,
+    load_evidence_index,
+)
 from robotics_runtime_contracts import ContractError, validate_document
 from robotics_runtime_contracts.providers import (
     ProviderRequirementError,
     validate_provider_requirements,
 )
 from robotics_runtime_contracts.writers import write_document
-from robotics_acceptance_harness.evidence import (
-    EvidenceValidationError,
-    load_evidence_index,
-)
 
 
 def reject(work, expected):
@@ -26,6 +28,82 @@ def reject(work, expected):
     except expected as error:
         return {"refused": True, "diagnostic": str(error)}
     raise AssertionError("operation unexpectedly accepted")
+
+
+def create_native_documents(
+    native_root,
+    worker,
+    output,
+    schema,
+    execution_subject_digest,
+    run_id,
+    declared_upstream,
+):
+    identity_path = native_root / "worker-identity.json"
+    if not identity_path.is_file():
+        raise ValueError("native worker identity is absent")
+    raw_identity = identity_path.read_bytes()
+    identity_facts = {
+        "sha256": hashlib.sha256(raw_identity).hexdigest(),
+        "size_bytes": len(raw_identity),
+    }
+    reference = worker.get("worker_identity_ref")
+    if not isinstance(reference, dict) or (
+        reference.get("sha256"),
+        reference.get("size_bytes"),
+    ) != (identity_facts["sha256"], identity_facts["size_bytes"]):
+        raise ValueError("native worker identity bytes do not match worker result")
+    identity = json.loads(raw_identity)
+    declared_release = declared_upstream.get("release")
+    if not isinstance(declared_release, str) or not declared_release:
+        raise ValueError("declared Webots compatibility release is absent")
+    release = identity.get("release")
+    if not isinstance(release, str) or not release:
+        raise ValueError("observed native Webots release is absent")
+    if (
+        release != declared_release
+        or identity.get("upstream", {}).get("release") != declared_release
+    ):
+        raise ValueError("observed native Webots release differs from declared pin")
+    if identity.get("owner_id") != worker.get("owner_id"):
+        raise ValueError("native worker identity belongs to another owner")
+    names = [
+        "controller-result.json",
+        "worker-result.json",
+        "last-native-state.json",
+        "ready.json",
+        "pre-reset.json",
+        "measurement.json",
+        "worker-identity.json",
+    ]
+    manifest = {
+        "backend": "webots",
+        "version": release,
+        "executionSubjectDigest": execution_subject_digest,
+        "files": {
+            name: identity_facts
+            if name == "worker-identity.json"
+            else {
+                "sha256": hashlib.sha256((native_root / name).read_bytes()).hexdigest(),
+                "size_bytes": (native_root / name).stat().st_size,
+            }
+            for name in names
+        },
+    }
+    generated_at = datetime.now(timezone.utc).isoformat()
+    output.mkdir(parents=True, exist_ok=False)
+    manifest_path = output / "native-inputs.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    paths = produce(
+        "webots",
+        native_root,
+        manifest_path,
+        schema,
+        output / "documents",
+        generated_at=generated_at,
+        run_id=run_id,
+    )
+    return paths, manifest_path, generated_at
 
 
 def main():
@@ -65,7 +143,6 @@ def main():
             )
         )
         return
-    args.output.mkdir(parents=True, exist_ok=False)
     native = json.loads((args.native / "controller-result.json").read_bytes())
     worker = json.loads((args.native / "worker-result.json").read_bytes())
     assert native["status"] == worker["status"] == "completed"
@@ -79,36 +156,17 @@ def main():
         native["last_native_state"]["body_position_m"][2]
         < native["initial_state"]["body_position_m"][2]
     )
-    names = [
-        "controller-result.json",
-        "worker-result.json",
-        "last-native-state.json",
-        "ready.json",
-        "pre-reset.json",
-        "measurement.json",
-    ]
-    manifest = {
-        "backend": "webots",
-        "version": "R2025a",
-        "executionSubjectDigest": args.execution_subject_digest,
-        "files": {
-            name: {
-                "sha256": hashlib.sha256((args.native / name).read_bytes()).hexdigest(),
-                "size_bytes": (args.native / name).stat().st_size,
-            }
-            for name in names
-        },
-    }
-    manifest_path = args.output / "native-inputs.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    paths = produce(
-        "webots",
+    declared_upstream = json.loads(
+        Path("/opt/robotics/webots/upstream.json").read_bytes()
+    )
+    paths, manifest_path, generated_at = create_native_documents(
         args.native,
-        manifest_path,
+        worker,
+        args.output,
         schema,
-        args.output / "documents",
-        generated_at="2026-10-05T00:00:00Z",
-        run_id=args.run_id,
+        args.execution_subject_digest,
+        args.run_id,
+        declared_upstream,
     )
     result = json.loads(paths["conformance"].read_bytes())
     validate_document(result, extension_schemas={SCHEMA_URI: schema.read_bytes()})
@@ -122,6 +180,8 @@ def main():
         "installed_python_pair": versions,
         "native_lifecycle": True,
         "native_seconds_binary64": True,
+        "backend_version": result["provider"]["version"],
+        "document_generated_at": result["generated_at"],
         "public_writer_and_harness": len(verified.links),
         "source_scene_sha256": hashlib.sha256(
             (args.native / "inputs/native.wbt").read_bytes()
@@ -134,7 +194,7 @@ def main():
             manifest_path,
             schema,
             args.output / "documents",
-            generated_at="2026-10-05T00:00:00Z",
+            generated_at=generated_at,
             run_id=args.run_id,
         ),
         FileExistsError,
@@ -158,7 +218,7 @@ def main():
             manifest_path,
             schema,
             args.output / "wrong-provider",
-            generated_at="2026-10-05T00:00:00Z",
+            generated_at=generated_at,
             run_id=args.run_id,
         ),
         ValueError,
@@ -177,7 +237,7 @@ def main():
                 manifest_path,
                 schema,
                 args.output / "tampered",
-                generated_at="2026-10-05T00:00:00Z",
+                generated_at=generated_at,
                 run_id=args.run_id,
             ),
             ContractError,
