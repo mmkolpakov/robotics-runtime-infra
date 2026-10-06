@@ -95,10 +95,11 @@ export class GazeboRosV1 extends Service {
     await this.require('application-start',['up','--detach','--no-build','--wait','--wait-timeout','120','simulation',...this.input.observationServices],signal);
     const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
     const id=await this.require('simulation-id',['ps','--quiet','simulation'],signal);
-    this.simulationContainerId=id.stdout.trim();
-    const metadata=await engine.inspect(this.simulationContainerId,this.input.simulationRequirement,{cancelSignal:signal});
+    const simulationContainerId=id.stdout.trim();
+    const metadata=await engine.inspect(simulationContainerId,this.input.simulationRequirement,{cancelSignal:signal});
     const simulationRef=await this.retain('simulation-native-metadata',metadata);this.refs.push(simulationRef);this.nativeMetadataRefs.push(simulationRef);
     if(metadata.status!=='complete') throw new Error('required observed simulation metadata incomplete');
+    this.simulationContainerId=simulationContainerId;
     if(this.input.admittedDescriptionPath) {
       const initialLog=await this.require('canonical-initial-log',['logs','--no-color','simulation'],signal);
       const initialCount=(initialLog.stdout.match(/InitializeCanonicalLinks/g)??[]).length;

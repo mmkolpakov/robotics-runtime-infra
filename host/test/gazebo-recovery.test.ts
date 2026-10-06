@@ -10,6 +10,7 @@ import {Context, Jobs, RunResources} from '@robotics-runtime/host';
 import GazeboRosV1 from '../src/plugins/gazebo-ros-v1/index.js';
 import LegacyInputs from '../src/plugins/gazebo-ros-v1/inputs.js';
 import type {LegacyRunInput} from '../src/plugins/gazebo-ros-v1/inputs.js';
+import type {ContainerRequirement} from '../src/engine-metadata.js';
 
 const parentId='a'.repeat(64),childId='b'.repeat(64),imageId='sha256:'+'c'.repeat(64);
 const labels=(service:string)=>({'org.robotics.runtime.run-id':'run1','com.docker.compose.project':'owned-1','com.docker.compose.service':service});
@@ -19,7 +20,7 @@ const child=()=>({...parent(),Id:childId,Config:{User:'1000:1000',Labels:labels(
   HostConfig:{NetworkMode:'container:'+parentId,IpcMode:'container:'+parentId}});
 type NativeContainer=ReturnType<typeof parent>;
 
-async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]=[parent(),child()],listedContainers:NativeContainer[]=containers) {
+async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]=[parent(),child()],listedContainers:NativeContainer[]=containers,parentMetadata?:unknown,mounts:ContainerRequirement['mounts']=[]) {
   const root=await mkdtemp(join(tmpdir(),'rr-gazebo-recovery-')),ctx=new Context(),requests:string[]=[];
   const effects=join(root,'effects'),removed=join(root,'removed'),socketPath=join(root,'engine.sock');
   const api=createServer((request,response)=>{
@@ -29,6 +30,7 @@ async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]
     else if(path.startsWith('/v1.41/volumes'))value={Volumes:null};
     else if(path.startsWith('/v1.41/networks'))value=[];
     else if(path.startsWith('/v1.41/images/'))value={Id:imageId};
+    else if(path==='/v1.41/containers/'+parentId+'/json'&&parentMetadata!==undefined)value=parentMetadata;
     else value=containers.find(row=>path==='/v1.41/containers/'+row.Id+'/json');
     response.setHeader('content-type','application/json');
     if(value===undefined){response.statusCode=404;value={message:'missing test metadata'}}
@@ -45,7 +47,7 @@ async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]
     'else if(args.includes("exec"))console.log(JSON.stringify({last_ns:"1"}));\n'+
     'else if(args.includes("down"))writeFileSync('+JSON.stringify(removed)+',"removed");\n',{mode:0o700});
   await ctx.plugin(Jobs,{timeoutMs:2000,maxBufferBytes:1048576}).await();
-  const requirement={runId:'run1',projectName:'owned-1',imageId,user:'1000:1000',mounts:[],hostConfig:{}};
+  const requirement={runId:'run1',projectName:'owned-1',imageId,user:'1000:1000',mounts,hostConfig:{}};
   const input:LegacyRunInput={runId:'run1',compose:{executable,socketPath,projectName:'owned-1',files:[join(root,'compose.yaml')],cwd:root,timeoutMs:1000},
     artifactDirectory:join(root,'retained'),observationServices:[],simulationRequirement:requirement,stepperRequirement:requirement,
     entityWorkerPath:'/fixed/entity.py',clockWorkerPath:'/fixed/clock.py',readinessWorkerPath:'/fixed/readiness.py'};
@@ -139,5 +141,38 @@ for(const [name,actualLabels] of [
     await runFiber.dispose().catch(()=>{});
     assert.ok((await resources.verify(1000))[0]!.cleanupError);
     assert.equal((await commands(effects)).some(args=>args.includes('down')),false);
+  });
+}
+
+const admittedMount={destination:'/run/robotics/input',readOnly:true,volumeName:'owned-input'};
+for(const [name,metadata,mounts] of [
+  ['wrong image',{...parent(),Image:'sha256:'+'e'.repeat(64)},[]],
+  ['missing user',{...parent(),Config:{Labels:labels('simulation')}},[]],
+  ['missing admitted mount',parent(),[admittedMount]],
+  ['missing container metadata',{},[]],
+] as const){
+  test('successful up and ps cannot admit a parent with '+name+' for recovery or cleanup',async t=>{
+    const {root,runFiber,provider,resources,effects}=await fixture(t,'complete',[parent(),child()],[parent(),child()],metadata,mounts);
+    await assert.rejects(provider.ready(AbortSignal.timeout(1000)),/required observed simulation metadata incomplete/);
+    assert.throws(()=>provider.snapshot(),/incomplete/);
+    const paths=await readdir(join(root,'retained'));
+    const bytes=async(name:string)=>readFile(join(root,'retained',paths.find(path=>path.endsWith('-'+name+'.json'))!));
+    const started=JSON.parse((await bytes('application-start')).toString('utf8'));
+    const acquired=JSON.parse((await bytes('simulation-id')).toString('utf8'));
+    assert.equal(started.ok,true);assert.equal(acquired.ok,true);assert.equal(acquired.stdout.trim(),parentId);
+    const failedMetadata=await bytes('simulation-native-metadata');
+    const failedObservation=JSON.parse(failedMetadata.toString('utf8'));
+    assert.equal(failedObservation.status,'incomplete');
+    assert.deepEqual(failedObservation.container,metadata);
+    await assert.rejects(provider.observeCleanupOwnership(AbortSignal.timeout(1000)),/partial startup simulation native binding incomplete/);
+    assert.throws(()=>provider.snapshot(),/incomplete/);
+    assert.deepEqual(await bytes('simulation-native-metadata'),failedMetadata);
+    const recoveryFiles=await readdir(join(root,'retained'));
+    assert.ok(recoveryFiles.some(path=>path.endsWith('-partial-start-simulation-native-metadata.json')));
+    await runFiber.dispose().catch(()=>{});
+    const outcomes=await resources.verify(1000);
+    assert.equal(outcomes[0]!.released,false);assert.ok(outcomes[0]!.cleanupError);
+    assert.equal((await commands(effects)).some(args=>args.includes('down')),false);
+    assert.deepEqual(await bytes('simulation-native-metadata'),failedMetadata);
   });
 }
