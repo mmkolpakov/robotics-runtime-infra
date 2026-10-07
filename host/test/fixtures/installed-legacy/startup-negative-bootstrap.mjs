@@ -85,7 +85,7 @@ if(mode==='foreign-cleanup'){
 }
 const target='/retained/failed-source-'+runId;
 const exportEvidence=async signal=>{
- await job('diagnostic-source-export',['run','--rm','--no-deps','legacy-coordinator','/opt/contracts/bin/python','/source/host/workers/legacy-live/export-startup-failure.py','--source','/run/robotics','--destination',target,'--run-id',runId],signal);
+ await job('diagnostic-source-export',['run','--rm','--no-deps','legacy-export','/opt/contracts/bin/python','/run/robotics/input/helpers/export-startup-failure.py','--source','/run/robotics','--destination',target,'--run-id',runId],signal);
  const manifest=JSON.parse(await readFile(target+'/export-manifest.json','utf8'));assert.equal(manifest.status,'complete');assert.equal(manifest.runId,runId);assert.ok(manifest.entries.length);
  const refs=[await referenceFile(target+'/export-manifest.json')];
  for(const entry of manifest.entries){const ref=await referenceFile(target+'/'+entry.relativePath);assert.equal(ref.sha256,entry.sha256);assert.equal(ref.size_bytes,entry.size_bytes);refs.push(ref)}
