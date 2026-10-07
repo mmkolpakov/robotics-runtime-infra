@@ -15,21 +15,24 @@ export async function interruptedMeasurement(mode,{run,finalizer,engine,compose,
  }
  try{await access(plan.measurementCompletePath);assert.fail('measurement already completed before negative control')}catch(error){if(error.code!=='ENOENT')throw error}
  const saveJob=async(name,args,signal)=>{const result=await compose.run(args,signal);await save(name,{command:args,result});assert.equal(result.ok,true,result.diagnostic??result.stderr);return result};
- let controlReceipt;
+ let controlReceipt,lastStateObserved=false,writerDrainSettled=false;
  const closeMeasurement=async signal=>{
   const cancel=new AbortController(),deadlineMs=2000;
   const timed=mode==='timeout'?AbortSignal.timeout(deadlineMs):cancel.signal;
   const timer=mode==='cancel'?setTimeout(()=>cancel.abort(new Error('installed measurement cancellation acceptance')),deadlineMs):undefined;
   const combined=AbortSignal.any([signal,timed]);
   const startedAt=new Date().toISOString();
-  try{await finalizer.hooks.closeMeasurement(combined);assert.fail('interrupted measurement closed successfully')}
-  catch(error){
-   assert.equal(timed.aborted,true,'measurement failed before the selected negative control');
-   controlReceipt={mode,producer:'public legacyFinalization.hooks.closeMeasurement',control:mode==='timeout'?'explicit native producer deadline signal':'explicit cancellation signal',deadlineMs,startedAt,settledAt:new Date().toISOString(),controlReason:String(timed.reason),producerError:String(error),producerSettled:true,observerId:observer.Id,sourceId:plan.sourceContainerId};
-   await save('native-measurement-producer-settlement',controlReceipt);throw error;
-  }finally{if(timer)clearTimeout(timer)}
+  let outcome;
+  try{outcome=await finalizer.hooks.closeMeasurement(combined).then(value=>({status:'fulfilled',value}),reason=>({status:'rejected',reason}))}
+  finally{if(timer)clearTimeout(timer)}
+  assert.equal(outcome.status,'rejected','interrupted measurement closed successfully');
+  assert.equal(timed.aborted,true,'measurement failed before the selected negative control');
+  const error=outcome.reason;
+  assert.ok(error===combined.reason||error?.cause===combined.reason,'close producer rejection is not bound to the selected cancellation');
+  controlReceipt={mode,producer:'public legacyFinalization.hooks.closeMeasurement',control:mode==='timeout'?'explicit native producer deadline signal':'explicit cancellation signal',deadlineMs,startedAt,settledAt:new Date().toISOString(),controlReason:String(timed.reason),producerError:String(error),producerSettled:true,observerId:observer.Id,sourceId:plan.sourceContainerId};
+  await save('native-measurement-producer-settlement',controlReceipt);throw error;
  };
- const captureLastState=signal=>finalizer.hooks.captureLastState(signal);
+ const captureLastState=async signal=>{const refs=await finalizer.hooks.captureLastState(signal);lastStateObserved=true;return refs};
  const drainRecorders=async signal=>{
   const ownership=await engine.projectOwnership({runId,projectName:options.projectName,networkNamespaceContainerId:plan.sourceContainerId});await save('diagnostic-drain-ownership',ownership);assert.equal(ownership.status,'complete');
   const raw=await engine.readLogs(observer.Id,{runId,projectName:options.projectName},{tailLines:10000,maxBytes:1048576,deadlineMs:30000},signal);
@@ -45,11 +48,12 @@ export async function interruptedMeasurement(mode,{run,finalizer,engine,compose,
   }
   await save('native-writers-settled-before-export',inventory);
   await saveJob('diagnostic-foundation-logs',['logs','--no-color'],signal);
-  return [await referenceFile(rawPath)];
+  writerDrainSettled=true;return [await referenceFile(rawPath)];
  };
  const target='/retained/failed-source-'+runId;
  const exportEvidence=async signal=>{
   assert.ok(controlReceipt?.producerSettled,'interrupted measurement producer must settle before export');
+  assert.equal(lastStateObserved,true,'actual native last-state did not succeed');assert.equal(writerDrainSettled,true,'actual native writer drain did not succeed');
   const before=await engine.remainingOwned(runId);assert.ok(before.containers.some(row=>row.Id===plan.sourceContainerId));assert.ok(run.resources.pending().every(row=>!row.attempted));await save('native-before-diagnostic-export',before);
   await saveJob('diagnostic-source-export',['run','--rm','--no-deps','legacy-coordinator','/opt/contracts/bin/python','/source/host/workers/legacy-live/export-startup-failure.py','--source','/run/robotics','--destination',target,'--run-id',runId],signal);
   const manifest=JSON.parse(await readFile(target+'/export-manifest.json','utf8'));assert.equal(manifest.status,'complete');assert.equal(manifest.runId,runId);assert.ok(manifest.entries.length);
@@ -61,7 +65,7 @@ export async function interruptedMeasurement(mode,{run,finalizer,engine,compose,
  const completion=await run.finish({closeMeasurement,captureLastState,drainRecorders,exportEvidence});await save('completion',completion);
  assert.equal(completion.status,'error');assert.ok(controlReceipt?.producerSettled);
  assert.ok(completion.phases.some(row=>row.phase==='closing-measurement'&&row.status==='error'));
- assert.ok(completion.phases.some(row=>row.phase==='exporting-evidence'&&row.status==='passed'));
+ for(const phase of ['capturing-last-state','draining-recorders','exporting-evidence'])assert.ok(completion.phases.some(row=>row.phase===phase&&row.status==='passed'),'required native stage did not pass: '+phase);
  assert.ok(completion.resourceOutcomes.length&&completion.resourceOutcomes.every(row=>row.attempted&&row.released&&row.evidenceRefs.length&&!row.cleanupError),JSON.stringify(completion));
  const remaining=await engine.remainingOwned(runId);assert.equal(remaining.containers.length,0);assert.equal(remaining.networks.length,0);assert.ok(remaining.volumes.Volumes===null||remaining.volumes.Volumes.length===0);await save('native-empty-after-cleanup',remaining);
  const report={status:'passed',scope:'installed native ROS interrupted measurement; diagnostic export only',mode,runId,engine:identityEngine(engine),readyObserved:true,measurementOpened:true,nativeObserverRunningObserved:true,noSuccessfulMeasurement:true,completionStatus:completion.status,nativeResourcesReleased:true,deadlineScope:mode==='timeout'?'explicit native closeMeasurement deadline signal; RunOwner profile deadline unchanged':undefined};

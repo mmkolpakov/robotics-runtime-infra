@@ -6,6 +6,7 @@ const [root]=process.argv.slice(2);assert.match(root,/^\/retained\/startup-run-[
 const completion=JSON.parse(await readFile(root+'/completion.json','utf8'));
 const report=JSON.parse(await readFile(root+'/negative-report.json','utf8'));
 assert.equal(report.status,'passed');assert.notEqual(completion.status,'passed');
+assert.equal(completion.runId,report.runId);assert.equal(root,'/retained/startup-'+completion.runId);
 if(['cancel','timeout'].includes(report.mode)){assert.equal(report.readyObserved,true);assert.equal(report.measurementOpened,true);assert.equal(report.noSuccessfulMeasurement,true);assert.ok(completion.phases.some(row=>row.phase==='closing-measurement'&&row.status==='error'))}
 else{assert.equal(report.noReadyOrMeasurement,true);assert.ok(!completion.phases.some(row=>['ready','measuring'].includes(row.phase)))}
 const refs=new Map(completion.evidenceRefs.map(ref=>[ref.uri,ref]));

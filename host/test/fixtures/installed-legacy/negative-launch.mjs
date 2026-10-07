@@ -40,7 +40,7 @@ try{
  const result=await compose.run(['run','--rm','--no-deps','--entrypoint','node','installed-host','/app/negative-bootstrap.mjs',mode,'/inputs','/engine.sock','/usr/local/bin/docker-compose',
   runId,identity.sourceVolume,identity.retainedVolume,identity.simulationId,identity.simulationImage,identity.finalizerImage,identity.evidenceImage,'/retained/startup-'+runId,identity.deploymentRevision]);
  await save('installed-negative-job',result);assert.equal(result.ok,true,result.stderr);
- const report=JSON.parse(result.stdout.trim().split('\n').reverse().find(line=>line.startsWith('{')));assert.equal(report.status,'passed');assert.equal(report.mode,mode);assert.equal(report.engine,actualEngine);
+ const report=JSON.parse(result.stdout.trim().split('\n').reverse().find(line=>line.startsWith('{')));assert.equal(report.status,'passed');assert.equal(report.mode,mode);assert.equal(report.engine,actualEngine);assert.equal(report.runId,runId);
  const runtime=await engine.remainingOwned(runId);await save('runtime-after-negative',runtime);assert.equal(runtime.containers.length,0);assert.equal(runtime.networks.length,0);assert.ok(runtime.volumes.Volumes===null||runtime.volumes.Volumes.length===0);
  const hostOwned=await engine.projectOwnership({runId:owner,projectName:project});await save('host-before-source-removal',hostOwned);assert.equal(hostOwned.status,'complete');assert.equal(hostOwned.inventory.containers.length,0);assert.equal(hostOwned.inventory.networks.length,0);
  const down=await compose.run(['down','--remove-orphans']);await save('host-down',down);assert.equal(down.ok,true,down.stderr);

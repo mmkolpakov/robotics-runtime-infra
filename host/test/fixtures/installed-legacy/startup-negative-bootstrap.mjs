@@ -70,6 +70,12 @@ await save('native-producer-settlement',{...producerReceipt,provider:import.meta
 await run.context.get('gazeboRosV1').ready(AbortSignal.timeout(30000)).then(()=>assert.fail('interrupted producer became ready'),()=>{});
 const owner={runId,projectName,networkNamespaceContainerId:acquiredId};
 const before=await engine.projectOwnership(owner);await save('ownership-before-export',before);assert.equal(before.status,'complete',JSON.stringify(before));
+await job('startup-observation-writer-drain',['stop','--timeout','30','otel-collector','evidence-sink']);
+const drained=await engine.remainingOwned(runId);
+for(const row of drained.containers.filter(row=>['otel-collector','evidence-sink'].includes(row.Labels?.['com.docker.compose.service']))){
+ const actual=await native.getContainer(row.Id).inspect();assert.equal(actual.Config.Labels['org.robotics.runtime.run-id'],runId);assert.equal(actual.State.Running,false);
+}
+await save('startup-observation-writers-settled',drained);
 let foreign;
 if(mode==='foreign-cleanup'){
  foreign=await native.createContainer({name:'rr-c18-foreign-'+runId.slice(4,12),Image:identity.nodeBase,Cmd:['node','-e','setInterval(()=>{},1000)'],User:'1000:1000',
@@ -83,6 +89,7 @@ const exportEvidence=async signal=>{
  const manifest=JSON.parse(await readFile(target+'/export-manifest.json','utf8'));assert.equal(manifest.status,'complete');assert.equal(manifest.runId,runId);assert.ok(manifest.entries.length);
  const refs=[await referenceFile(target+'/export-manifest.json')];
  for(const entry of manifest.entries){const ref=await referenceFile(target+'/'+entry.relativePath);assert.equal(ref.sha256,entry.sha256);assert.equal(ref.size_bytes,entry.size_bytes);refs.push(ref)}
+ for(const name of await readdir(output))if(name.endsWith('.json'))refs.push(await referenceFile(output+'/'+name));
  refs.push(await save('host-verified-export',{runId,target,entries:manifest.entries.length,allHashesAndSizesVerified:true}));return refs;
 };
 assert.equal(run.phase,'retained');const completion=await run.retryExport(exportEvidence);await save('completion',completion);assert.notEqual(completion.status,'passed');
