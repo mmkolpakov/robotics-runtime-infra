@@ -37,6 +37,7 @@ DEPLOYMENT = [
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", choices=("podman", "docker"), default="podman")
+    parser.add_argument("--negative-lifecycle", action="store_true")
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--consumer", type=Path, required=True)
     parser.add_argument("--assets", type=Path, required=True)
@@ -163,6 +164,8 @@ def main():
         raise ValueError("Compose executable identity mismatch")
     manifest = json.loads(source("examples/neutral-robot/sim/robot-description.json"))
     paths = set(DEPLOYMENT)
+    if args.negative_lifecycle:
+        paths.add("host/workers/legacy-live/export-startup-failure.py")
     paths.update(
         row["path"]
         for row in (manifest["source"], manifest["description"], *manifest["meshes"])
@@ -224,6 +227,10 @@ def main():
     (consumer / "app/bootstrap.mjs").write_bytes(
         source("host/test/fixtures/installed-legacy/bootstrap.mjs", fixture_revision)
     )
+    if args.negative_lifecycle:
+        for name in ("negative-bootstrap.mjs", "negative-launch.mjs"):
+            destination = consumer / ("app" if name == "negative-bootstrap.mjs" else "") / name
+            destination.write_bytes(source("host/test/fixtures/installed-legacy/" + name, fixture_revision))
     (consumer / "profiles/ros.yml").write_text(
         json.dumps(
             [
