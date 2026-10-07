@@ -163,15 +163,15 @@ export class EngineMetadata {
        !Number.isSafeInteger(limits.deadlineMs)||limits.deadlineMs<1||limits.deadlineMs>120000) throw new Error('invalid finite native log bounds');
     const signal=cancel?AbortSignal.any([cancel,AbortSignal.timeout(limits.deadlineMs)]):AbortSignal.timeout(limits.deadlineMs);
     signal.throwIfAborted();
-    const request=(path:string,isStream=false)=>new Promise<unknown>((resolve,reject)=>this.docker.modem.dial({
-      path,method:'GET',abortSignal:signal,isStream,
+    const request=(path:string,isStream=false,options?:Record<string,unknown>)=>new Promise<unknown>((resolve,reject)=>this.docker.modem.dial({
+      path,method:'GET',abortSignal:signal,isStream,options,
       statusCodes:{200:true,404:'owned container is unavailable',500:'Engine evidence read failed'},
     },(error:unknown,value:unknown)=>error?reject(error):resolve(value)));
     const actual=object(await request('/containers/'+containerId+'/json'));
     const config=object(actual?.Config),labels=object(config?.Labels);
     if(actual?.Id!==containerId||labels?.['org.robotics.runtime.run-id']!==owner.runId||labels?.['com.docker.compose.project']!==owner.projectName) throw new Error('native log read refused foreign container ownership');
     if(typeof config?.Tty!=='boolean') throw new Error('native log transport framing is unavailable');
-    const stream=await request('/containers/'+containerId+'/logs?stdout=1&stderr=1&follow=0&tail='+limits.tailLines,true) as Readable;
+    const stream=await request('/containers/'+containerId+'/logs?',true,{stdout:true,stderr:true,follow:false,tail:limits.tailLines}) as Readable;
     const abort=()=>stream.destroy(signal.reason instanceof Error?signal.reason:new Error('native log read canceled'));
     signal.addEventListener('abort',abort,{once:true});
     try {
@@ -184,7 +184,6 @@ export class EngineMetadata {
         if(length>limits.maxBytes) throw new Error('native log evidence exceeds byte bound');
         chunks.push(chunk);
       }
-      if(!length) throw new Error('owned container returned no retained log bytes');
       return {containerId,clientApi:this.facts.clientApi,tty:config.Tty,bytes:Buffer.concat(chunks,length)};
     } finally {
       signal.removeEventListener('abort',abort);

@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createServer} from 'node:http';
 import type {IncomingMessage,ServerResponse} from 'node:http';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
+import {referenceFile} from '@robotics-runtime/host';
 import {EngineMetadata} from '../src/index.js';
 import type {ContainerRequirement} from '../src/index.js';
 
@@ -123,4 +124,114 @@ test('deployment info uses the selected SDK Unix endpoint and cancels its actual
     await assert.rejects(pending);await new Promise(resolve=>setTimeout(resolve,20));
     assert.equal(closed,true);assert.deepEqual(requests,['/version','/v1.41/info','/v1.41/info']);
   }finally{await api.close()}
+});
+
+test('owned empty native log streams retain actual zero bytes and a zero-byte file reference',async()=>{
+  for(const tty of [false,true]){
+    const requests:string[]=[];
+    const api=await server((request,response)=>{
+      requests.push(request.url!);
+      if(request.url==='/version')json(response,version);
+      else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,Config:{...container.Config,Tty:tty}});
+      else {response.writeHead(200,{'content-type':'application/vnd.docker.raw-stream'});response.end()}
+    });
+    try{
+      const engine=await EngineMetadata.connect(api.endpoint);
+      const observed=await engine.readLogs(id,{runId:'run1',projectName:'owned-1'},{tailLines:17,maxBytes:1024,deadlineMs:1000});
+      assert.equal(observed.containerId,id);assert.equal(observed.clientApi,'1.41');assert.equal(observed.tty,tty);
+      assert.deepEqual(observed.bytes,Buffer.alloc(0));
+      const path=join(dirname(api.endpoint.socketPath),'observer.docker-raw');await writeFile(path,observed.bytes);
+      const ref=await referenceFile(path);assert.equal(ref.size_bytes,0);
+      assert.equal(ref.sha256,'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+      assert.deepEqual(requests,['/version','/v1.41/containers/'+id+'/json','/v1.41/containers/'+id+'/logs?stdout=true&stderr=true&follow=false&tail=17']);
+    }finally{await api.close()}
+  }
+});
+
+test('empty logs cannot bypass native ownership or missing transport framing',async()=>{
+  for(const config of [
+    {...container.Config,Tty:false,Labels:{...container.Config.Labels,'org.robotics.runtime.run-id':'foreign'}},
+    {...container.Config},
+  ]){
+    let logRequests=0;
+    const api=await server((request,response)=>{
+      if(request.url==='/version')json(response,version);
+      else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,Config:config});
+      else {logRequests++;response.end()}
+    });
+    try{
+      const engine=await EngineMetadata.connect(api.endpoint);
+      await assert.rejects(engine.readLogs(id,{runId:'run1',projectName:'owned-1'},{tailLines:1,maxBytes:1024,deadlineMs:1000}),/ownership|framing/);
+      assert.equal(logRequests,0);
+    }finally{await api.close()}
+  }
+});
+
+test('native log HTTP errors never become successful empty streams',async()=>{
+  for(const statusCode of [404,500]){
+    const api=await server((request,response)=>{
+      if(request.url==='/version')json(response,version);
+      else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,Config:{...container.Config,Tty:false}});
+      else {response.statusCode=statusCode;json(response,{message:'native log request failed'})}
+    });
+    try{
+      const engine=await EngineMetadata.connect(api.endpoint);
+      await assert.rejects(engine.readLogs(id,{runId:'run1',projectName:'owned-1'},{tailLines:1,maxBytes:1024,deadlineMs:1000}),
+        (error:unknown)=>typeof error==='object'&&error!==null&&Reflect.get(error,'statusCode')===statusCode);
+    }finally{await api.close()}
+  }
+});
+
+test('native log EOF is required and over-limit streams are refused',async()=>{
+  for(const mode of ['truncated','over-limit']){
+    const api=await server((request,response)=>{
+      if(request.url==='/version')json(response,version);
+      else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,Config:{...container.Config,Tty:false}});
+      else if(mode==='truncated'){
+        response.writeHead(200,{'content-type':'application/vnd.docker.raw-stream','content-length':'100'});
+        response.write(Buffer.from('partial'));setImmediate(()=>response.destroy());
+      }else {response.writeHead(200,{'content-type':'application/vnd.docker.raw-stream'});response.end(Buffer.alloc(33))}
+    });
+    try{
+      const engine=await EngineMetadata.connect(api.endpoint);
+      const pending=engine.readLogs(id,{runId:'run1',projectName:'owned-1'},{tailLines:1,maxBytes:32,deadlineMs:1000});
+      if(mode==='over-limit')await assert.rejects(pending,/byte bound/);else await assert.rejects(pending);
+    }finally{await api.close()}
+  }
+});
+
+test('cancel and deadline abort actual zero-byte native log streams before EOF',async()=>{
+  for(const mode of ['cancel','deadline']){
+    let started!:()=>void;const ready=new Promise<void>(resolve=>{started=resolve});let closed=false;
+    const api=await server((request,response)=>{
+      if(request.url==='/version')json(response,version);
+      else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,Config:{...container.Config,Tty:false}});
+      else {response.writeHead(200,{'content-type':'application/vnd.docker.raw-stream'});response.flushHeaders();response.once('close',()=>{closed=true});started()}
+    });
+    try{
+      const engine=await EngineMetadata.connect(api.endpoint),abort=new AbortController();
+      const pending=engine.readLogs(id,{runId:'run1',projectName:'owned-1'},{tailLines:1,maxBytes:1024,deadlineMs:mode==='deadline'?50:1000},abort.signal);
+      const rejected=assert.rejects(pending);await ready;
+      if(mode==='cancel')abort.abort(new Error('stop native log read'));
+      await rejected;await new Promise(resolve=>setTimeout(resolve,20));assert.equal(closed,true);
+    }finally{await api.close()}
+  }
+});
+
+test('native log reads preserve raw TTY and multiplexed bytes through finite EOF',async()=>{
+  for(const tty of [false,true]){
+    const payload=Buffer.from('native output\n');
+    const header=Buffer.alloc(8);header[0]=1;header.writeUInt32BE(payload.length,4);
+    const bytes=tty?payload:Buffer.concat([header,payload]);
+    const api=await server((request,response)=>{
+      if(request.url==='/version')json(response,version);
+      else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,Config:{...container.Config,Tty:tty}});
+      else {response.writeHead(200,{'content-type':'application/vnd.docker.raw-stream'});response.write(bytes.subarray(0,4));response.end(bytes.subarray(4))}
+    });
+    try{
+      const engine=await EngineMetadata.connect(api.endpoint);
+      const observed=await engine.readLogs(id,{runId:'run1',projectName:'owned-1'},{tailLines:17,maxBytes:1024,deadlineMs:1000});
+      assert.equal(observed.tty,tty);assert.deepEqual(observed.bytes,bytes);
+    }finally{await api.close()}
+  }
 });
