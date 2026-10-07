@@ -12,6 +12,24 @@ from pathlib import Path
 
 from robotics_runtime_contracts import load_mapping
 
+
+def copy_capture_configurations(source, inputs, data):
+    for relative, name in (
+        ("config/recording/qos-overrides.yaml", "qos-overrides.yaml"),
+        (
+            "host/test/fixtures/legacy-live/mcap-writer-small-segment.yaml",
+            "mcap-writer.yaml",
+        ),
+    ):
+        raw = (source / relative).read_bytes()
+        for target in (
+            data / "configuration/capture" / name,
+            inputs / "config/recording" / name,
+        ):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+
+
 p = argparse.ArgumentParser()
 p.add_argument("--source", type=Path, required=True)
 p.add_argument("--input", type=Path, required=True)
@@ -59,13 +77,7 @@ subprocess.run(
     check=True,
     stdout=subprocess.PIPE,
 )
-for name in ("qos-overrides.yaml", "mcap-writer.yaml"):
-    shutil.copyfile(
-        a.source / "config/recording" / name, data / "configuration/capture" / name
-    )
-    target = a.input / "config/recording" / name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(a.source / "config/recording" / name, target)
+copy_capture_configurations(a.source, a.input, data)
 target = a.input / "config/observability/otel-collector.yaml"
 target.parent.mkdir(parents=True, exist_ok=True)
 shutil.copyfile(a.source / "host/test/fixtures/legacy-live/otel-collector.yaml", target)

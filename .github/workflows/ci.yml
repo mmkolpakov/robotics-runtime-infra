@@ -84,6 +84,12 @@ jobs:
           contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
           echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
           echo "ROBOTICS_FOUNDATION_PYTHON=${PWD}/dependencies/robotics-runtime/.venv/bin/python" >> "$GITHUB_ENV"
+      - name: Test installed consumer preparation and native document boundaries
+        run: |
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover \
+            -s host/test/fixtures/installed-webots -p test_prepare.py -v
+          dependencies/robotics-runtime/.venv/bin/python \
+            host/test/fixtures/installed-webots/worker/test_document_checks.py -v
       - name: Test simulation provider evidence
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover

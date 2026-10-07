@@ -8,6 +8,7 @@ setup() {
   FAKE_BIN="${BATS_TEST_TMPDIR}/bin"
   FAKE_DOCKER_STATE="${BATS_TEST_TMPDIR}/docker-state"
   PROJECT=foundation-cleanup-1
+  REAL_JQ="$(command -v jq)"
   mkdir -p "${FIXTURE}/scripts/ci/foundation" "${FAKE_BIN}" \
     "${FAKE_DOCKER_STATE}"/{container,network,volume}
   cp "${LIBRARY}" "${REPOSITORY_ROOT}/scripts/ci/foundation/run-runtime.sh" \
@@ -27,13 +28,17 @@ if [[ "$1" == compose ]]; then
     case "$1" in
       -p) project="$2"; shift 2 ;;
       --profile) shift 2 ;;
-      logs | down | up | exec | run) operation="$1"; shift; break ;;
+      logs | down | up | exec | run | ps) operation="$1"; shift; break ;;
       *) exit 64 ;;
     esac
   done
   [[ -n "${project}" ]] || exit 64
   case "${operation}" in
     logs) printf 'fixture Compose logs\n' ;;
+    ps)
+      [[ "$*" == '--all --quiet runtime-metrics' ]] || exit 64
+      printf '%s\n' "${FAKE_METRICS_CONTAINER:-}"
+      ;;
     up) exit "${FAKE_UP_STATUS:-0}" ;;
     exec) exit 0 ;;
     run) exit "${FAKE_RUN_STATUS:-0}" ;;
@@ -78,6 +83,26 @@ elif [[ "$1" == container || "$1" == network || "$1" == volume ]]; then
       printf '%s\n' "${resource##*/}"
     fi
   done
+elif [[ "$1" == inspect || "$1" == stats || "$1" == exec ]]; then
+  printf '%s\n' "$*" >>"${FAKE_DOCKER_STATE}/metrics-requests"
+  case "$1" in
+    inspect)
+      [[ "$2" == "${FAKE_METRICS_CONTAINER}" && $# == 2 ]] || exit 64
+      cat "${FAKE_DOCKER_STATE}/metrics-inspect.json"
+      ;;
+    stats)
+      [[ "$*" == "stats --no-stream --format {{json .}} ${FAKE_METRICS_CONTAINER}" ]] || exit 64
+      printf '{"CPUPerc":"2.50%%","MemUsage":"18MiB / 1GiB"}\n'
+      ;;
+    exec)
+      [[ "$2" == "${FAKE_METRICS_CONTAINER}" && "$3" == cat && $# == 4 ]] || exit 64
+      case "$4" in
+        /sys/fs/cgroup/cpu.stat) printf 'usage_usec 1234\nnr_throttled 7\nthrottled_usec 300\n' ;;
+        /sys/fs/cgroup/cpu.max) printf '50000 100000\n' ;;
+        *) exit 64 ;;
+      esac
+      ;;
+  esac
 elif [[ "$1" == wait ]]; then
   printf '%s\n' "${FAKE_OBSERVER_STATUS:-0}"
 elif [[ "$1" == logs ]]; then
@@ -132,7 +157,9 @@ EOF
   cat >"${FAKE_BIN}/jq" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-[[ "$1" == . && $# == 2 ]] || exit 64
+if [[ "$1" != . || $# != 2 ]]; then
+  exec "${FAKE_REAL_JQ}" "$@"
+fi
 if [[ "${FAKE_PUBLISH_FAIL:-}" == jq ]]; then
   printf 'fixture publication jq failed\n' >&2
   exit 37
@@ -155,6 +182,26 @@ EOF
     sed -n '/^publish_acceptance_results() {/,/^trap cleanup EXIT/p' \
       "${ACCEPTANCE_SCRIPT}"
     cat <<'EOF'
+if [[ "${FAKE_READONLY_ARTIFACT_DIR:-false}" == true ]]; then
+  chmod 0555 "${artifact_dir}"
+  if mkdir "${artifact_dir}/write-probe" 2>/dev/null; then
+    printf 'fixture artifact directory is writable; IO regression is invalid\n' >&2
+    exit 98
+  fi
+  capture_runtime_metrics_diagnostics before_metrics_stop
+  chmod 0755 "${artifact_dir}"
+fi
+if [[ "${FAKE_READONLY_RUN_DIR:-false}" == true ]]; then
+  chmod 0555 "${run_dir}"
+  if mkdir "${run_dir}/write-probe" 2>/dev/null; then
+    printf 'fixture run directory is writable; permission regression is invalid\n' >&2
+    exit 98
+  fi
+fi
+if [[ "${FAKE_METRICS_BEFORE_STOP:-false}" == true ]] &&
+  declare -F capture_runtime_metrics_diagnostics >/dev/null; then
+  capture_runtime_metrics_diagnostics before_metrics_stop
+fi
 if [[ "${FAKE_PRE_OBSERVER_STATUS:-0}" != 0 ]]; then
   exit "${FAKE_PRE_OBSERVER_STATUS}"
 fi
@@ -173,11 +220,13 @@ EOF
 
   run env "PATH=${FAKE_BIN}:${PATH}" \
     "FAKE_DOCKER_STATE=${FAKE_DOCKER_STATE}" \
+    "FAKE_REAL_JQ=${REAL_JQ}" \
     "FAKE_ACCEPTANCE_PROJECT=${PROJECT}" \
     "FAKE_ACCEPTANCE_ARTIFACT_DIR=${FIXTURE}/artifacts" \
     "FAKE_ACCEPTANCE_RUN_DIR=${FIXTURE}/run" \
     FAKE_OBSERVER_STATUS=17 FAKE_DOWN_STATUS=73 \
     "$@" bash "${lifecycle}"
+  chmod u+w "${FIXTURE}/run" "${FIXTURE}/artifacts"
 }
 
 assert_retained_capture() {
@@ -381,6 +430,13 @@ EOF
     printf 'data_source=recording_playback\nsimulation_container=fixture-playback\n'
     printf 'measurement_complete=%q\n' "${BATS_TEST_TMPDIR}/measurement-complete"
     printf 'compose=(docker compose)\n'
+    printf 'run_dir=%q\nartifact_dir=%q\nproject=%q\n' \
+      "${FIXTURE}/run" "${FIXTURE}/artifacts" "${PROJECT}"
+    awk '
+      /^capture_runtime_metrics_diagnostics\(\) {/ { emit = 1 }
+      emit && /^publish_failure_evidence\(\) {/ { exit }
+      emit { print }
+    ' "${ACCEPTANCE_SCRIPT}"
     # Run the real window boundary after a passing provider probe. A single
     # received message never substitutes for a completed live observer window.
     awk '
@@ -415,4 +471,137 @@ EOF
   [ "${status}" -eq 0 ]
   grep -qx 'compose --profile observability stop runtime-metrics' "${BATS_TEST_TMPDIR}/window-calls"
   grep -qx 'compose --profile playback stop playback' "${BATS_TEST_TMPDIR}/window-calls"
+}
+
+
+write_metrics_inspect() {
+  local container="$1" project="$2" service="$3"
+  jq -n --arg container "${container}" --arg project "${project}" \
+    --arg service "${service}" '[{
+      Id: $container,
+      Image: "sha256:fixture-image",
+      Config: {
+        Labels: {
+          "com.docker.compose.project": $project,
+          "com.docker.compose.service": $service
+        },
+        Env: ["TOKEN=must-not-retain"],
+        Cmd: ["private-argument"]
+      },
+      State: {Status: "running", Running: true, ExitCode: 0},
+      HostConfig: {
+        NanoCpus: 500000000, CpuPeriod: 100000, CpuQuota: 50000,
+        CpuShares: 512, CpusetCpus: "0", CpusetMems: "",
+        Binds: ["private-mount"]
+      }
+    }]' >"${FAKE_DOCKER_STATE}/metrics-inspect.json"
+}
+
+@test "failed acceptance retains actual owned metrics CPU snapshot before stop" {
+  local container snapshot
+  container="$(printf 'a%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+
+  run_acceptance_publication \
+    "FAKE_METRICS_CONTAINER=${container}" FAKE_METRICS_BEFORE_STOP=true
+
+  [ "${status}" -eq 17 ]
+  snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}"
+  jq -e '.phase == "before_metrics_stop" and .state.Running == true and
+    .cpu_limits.CpuQuota == 50000 and .cpu_limits.CpuPeriod == 100000 and
+    .cpu_limits.NanoCpus == 500000000 and .cpu_limits.CpusetCpus == "0" and
+    (has("Config") | not)' "${snapshot}/inspect.json"
+  cmp "${FIXTURE}/artifacts/.runtime-metrics-diagnostics/${container}/cpu.stat" "${snapshot}/cpu.stat"
+  grep -Fx 'nr_throttled 7' "${snapshot}/cpu.stat"
+  grep -Fx '50000 100000' "${snapshot}/cpu.max"
+  jq -e '.CPUPerc == "2.50%"' "${snapshot}/docker-stats.jsonl"
+  [ "$(grep -c '^inspect ' "${FAKE_DOCKER_STATE}/metrics-requests")" -eq 1 ]
+  run grep -RqE 'must-not-retain|private-argument|private-mount' \
+    "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+  [ "${status}" -eq 1 ]
+  assert_retained_capture
+}
+
+@test "metrics CPU snapshot rejects foreign project and wrong service before stats or exec" {
+  local container project service
+  container="$(printf 'b%.0s' {1..64})"
+  for project in another-project "${PROJECT}"; do
+    service=runtime-metrics
+    [[ "${project}" != "${PROJECT}" ]] || service=another-service
+    write_metrics_inspect "${container}" "${project}" "${service}"
+    rm -rf -- "${FIXTURE}/artifacts/.runtime-metrics-diagnostics" \
+      "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+
+    run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}"
+
+    [ "${status}" -eq 17 ]
+    [ ! -e "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}" ]
+    run grep -qE '^(stats|exec) ' "${FAKE_DOCKER_STATE}/metrics-requests"
+    [ "${status}" -eq 1 ]
+    assert_retained_capture
+  done
+}
+
+@test "successful acceptance does not publish the diagnostic snapshot as failure evidence" {
+  local container
+  container="$(printf 'c%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+
+  run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+    FAKE_METRICS_BEFORE_STOP=true FAKE_OBSERVER_STATUS=0 FAKE_DOWN_STATUS=0
+
+  [ "${status}" -eq 0 ]
+  [ -s "${FIXTURE}/artifacts/.runtime-metrics-diagnostics/${container}/inspect.json" ]
+  [ ! -e "${FIXTURE}/artifacts/acceptance-evidence" ]
+}
+
+
+@test "non-writable producer run directory preserves the original failure and owned diagnostics" {
+  local container snapshot
+  container="$(printf 'd%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+
+  run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+    FAKE_READONLY_RUN_DIR=true FAKE_METRICS_BEFORE_STOP=true FAKE_PRE_OBSERVER_STATUS=23
+
+  [ "${status}" -eq 23 ]
+  snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}"
+  jq -e '.phase == "before_metrics_stop" and .state.Running == true and
+    .cpu_limits.CpuQuota == 50000' "${snapshot}/inspect.json"
+  grep -Fx 'nr_throttled 7' "${snapshot}/cpu.stat"
+  [ ! -e "${FIXTURE}/run/runtime-metrics-diagnostics" ]
+  assert_retained_capture
+}
+
+@test "non-writable producer run directory does not fail a successful qualification" {
+  local container
+  container="$(printf 'e%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+
+  run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+    FAKE_READONLY_RUN_DIR=true FAKE_METRICS_BEFORE_STOP=true \
+    FAKE_OBSERVER_STATUS=0 FAKE_DOWN_STATUS=0
+
+  [ "${status}" -eq 0 ]
+  [ -s "${FIXTURE}/artifacts/.runtime-metrics-diagnostics/${container}/inspect.json" ]
+  [ ! -e "${FIXTURE}/artifacts/acceptance-evidence" ]
+  [ ! -e "${FIXTURE}/run/runtime-metrics-diagnostics" ]
+}
+
+
+@test "diagnostic staging IO failure preserves the original status and later available evidence" {
+  local container snapshot
+  container="$(printf 'f%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+
+  run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+    FAKE_READONLY_ARTIFACT_DIR=true FAKE_PRE_OBSERVER_STATUS=23
+
+  [ "${status}" -eq 23 ]
+  [[ "${output}" == *"Permission denied"* ]]
+  snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}"
+  jq -e '.phase == "before_project_cleanup" and .state.Running == true' \
+    "${snapshot}/inspect.json"
+  grep -Fx 'nr_throttled 7' "${snapshot}/cpu.stat"
+  assert_retained_capture
 }

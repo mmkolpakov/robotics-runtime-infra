@@ -231,6 +231,7 @@ PY
 
 prepare_playback_capture_fixture() {
   local execution_sec="${1:-10}" span_ns="${2:-1000000000}" suffix="${3:-}"
+  local recording_mode="${4:-ros}"
   CAPTURE="${BATS_TEST_TMPDIR}/capture${suffix}"
   PREPARED="${BATS_TEST_TMPDIR}/prepared${suffix}"
   mkdir -p "${CAPTURE}/results" "${CAPTURE}/bags/recording" \
@@ -243,7 +244,7 @@ prepare_playback_capture_fixture() {
     "${REPOSITORY_ROOT}/test/qualification/fixtures/single-artifacts.json")
   "${REPOSITORY_ROOT}/scripts/qualification/create-statement" "${args[@]}" \
     --output "${CAPTURE}/results/qualification-statement.json"
-  "${FOUNDATION_PYTHON}" - "${CAPTURE}" "${REPOSITORY_ROOT}" "${execution_sec}" "${span_ns}" <<'PY'
+  "${FOUNDATION_PYTHON}" - "${CAPTURE}" "${REPOSITORY_ROOT}" "${execution_sec}" "${span_ns}" "${recording_mode}" <<'PY'
 import hashlib
 import json
 import shutil
@@ -256,7 +257,10 @@ from robotics_runtime_contracts.recordings import recording_summary_from_mcap
 from robotics_runtime_contracts.writers import write_document
 
 root, repository = map(Path, sys.argv[1:3])
-execution_sec, span_ns = map(int, sys.argv[3:])
+execution_sec, span_ns = map(int, sys.argv[3:5])
+recording_mode = sys.argv[5]
+assert recording_mode in {"ros", "wall"}
+record_start_ns = 1_791_310_000_000_000_000 if recording_mode == "wall" else 10**9
 fixtures = repository / "test/qualification/fixtures"
 scenario = dict(load_mapping(repository / "examples/minimal-consumer/scenario.yaml"))
 scenario["timeouts"]["execution_sec"] = execution_sec
@@ -274,15 +278,28 @@ with recording.open("wb") as stream:
     clock = writer.register_channel("/clock", "cdr", clock_schema)
     # Synthetic typed raw records; native CDR replay belongs to real ROS CI.
     # The short density fixture retains the actual stock's 1 ms / 2 ms groups.
-    stamps = (range(10**9, 10**9 + span_ns + 1, 1_000_000)
-              if span_ns < 10**9 else (10**9, 10**9 + span_ns // 2, 10**9 + span_ns))
+    if recording_mode == "wall":
+        stamps = range(record_start_ns, record_start_ns + span_ns + 1, 50_000_000)
+    else:
+        stamps = (range(10**9, 10**9 + span_ns + 1, 1_000_000)
+                  if span_ns < 10**9 else (10**9, 10**9 + span_ns // 2, 10**9 + span_ns))
     clock_count = message_count = 0
     for index, stamp in enumerate(stamps):
-        writer.add_message(clock, stamp, struct.pack("<Iii", 1, stamp // 10**9, stamp % 10**9), stamp)
+        if recording_mode == "wall":
+            # Native received and publish headers are wall time; Clock payload is ROS time.
+            clock_stamp = 10**9 + (stamp - record_start_ns) * 378_000_000 // span_ns
+            clock_data = b"\x00\x01\x00\x00" + struct.pack("<ii", clock_stamp // 10**9, clock_stamp % 10**9)
+            data = b"\x00\x01\x00\x00" + struct.pack("<Q", index)
+            publish_stamp = stamp - 200_000
+        else:
+            clock_data = struct.pack("<Iii", 1, stamp // 10**9, stamp % 10**9)
+            data = struct.pack("<IQ", 1, index)
+            publish_stamp = stamp
+        writer.add_message(clock, stamp, clock_data, publish_stamp)
         clock_count += 1
-        if span_ns < 10**9 and index == 76:
+        if recording_mode == "ros" and span_ns < 10**9 and index == 76:
             continue
-        writer.add_message(channel, stamp, struct.pack("<IQ", 1, index), stamp)
+        writer.add_message(channel, stamp, data, publish_stamp)
         message_count += 1
     writer.finish()
 summary = recording_summary_from_mcap(recording)
@@ -300,11 +317,15 @@ clock_topic["message_count"] = clock_count
 info.update(
     relative_file_paths=["selected.mcap"], message_count=message_count + clock_count,
     topics_with_message_count=[topic, clock_topic],
-    files=[{"path": "selected.mcap", "starting_time": {"nanoseconds_since_epoch": 10**9},
+    files=[{"path": "selected.mcap", "starting_time": {"nanoseconds_since_epoch": record_start_ns},
             "duration": {"nanoseconds": span_ns}, "message_count": message_count + clock_count}],
     custom_data={"captured_at": "2026-10-03T10:00:00Z", "dataset_license": "NOASSERTION",
                  "data_classification": "public", "retention_class": "pull-request-7d",
                  "capture_clock_policy": "ros-time-no-reset"})
+if recording_mode == "wall":
+    info["starting_time"] = {"nanoseconds_since_epoch": record_start_ns}
+    info["duration"] = {"nanoseconds": span_ns}
+    info["custom_data"].update(capture_clock_policy="system-time", record_timestamp_basis="system_time")
 (root / "bags/recording/metadata.yaml").write_text(json.dumps(metadata))
 digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
 index = dict(load_mapping(fixtures / "evidence-index.json"))
@@ -386,6 +407,197 @@ PY
   [ "${status}" -eq 0 ]
 }
 
+
+@test "playback preparer accepts wall received chronology with separate source Clock bytes" {
+  prepare_playback_capture_fixture 10 36000000000 -wall wall
+  run "${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" "${CAPTURE}" "${PREPARED}" <<'PY'
+import hashlib
+import importlib.util
+import os
+import struct
+import sys
+from pathlib import Path
+from mcap.reader import make_reader
+from robotics_runtime_contracts import load_mapping, validate_document
+
+repository, source, output = map(Path, sys.argv[1:])
+module_path = Path(os.environ.get("FOUNDATION_PLAYBACK_PREPARER", repository / "scripts/ci/integration/prepare-playback-inputs.py"))
+spec = importlib.util.spec_from_file_location("prepare", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+recording = source / "bags/recording/selected.mcap"
+before = recording.read_bytes()
+with recording.open("rb") as stream:
+    rows = list(make_reader(stream, validate_crcs=True).iter_messages())
+data = [message for _, channel, message in rows if channel.topic == "/example/sequence"]
+clocks = [message for _, channel, message in rows if channel.topic == "/clock"]
+clock_bytes = [message.data for message in clocks]
+clock_payloads = [struct.unpack_from("<ii", message.data, 4) for message in clocks]
+assert min(message.log_time for message in data) >= 1_791_310_000_000_000_000
+assert data[-1].log_time - data[0].log_time == 36_000_000_000
+assert all(message.publish_time == message.log_time - 200_000 for message in data + clocks)
+assert clock_payloads[0] == (1, 0) and clock_payloads[-1] == (1, 378_000_000)
+assert load_mapping(source / "runtime-manifest.json")["clock"]["basis"] == "ros_time"
+# Only the ROS SDK transport boundary is replaced; timestamps come from stock MCAP.
+module.scan_recording = lambda path, topic: {
+    "first_ns": data[0].log_time, "last_ns": data[-1].log_time,
+    "message_count": len(data), "clock_samples": len(clocks)}
+module.prepare(source, output, output)
+dataset = load_mapping(output / "dataset-manifest.json")
+scenario = load_mapping(output / "scenario.json")
+parameters = load_mapping(output / "playback-inputs.json")
+validate_document(dataset)
+validate_document(scenario, schema="acceptance-scenario.v1")
+assert dataset["time"]["basis"] == "system_time"
+assert dataset["time"]["start_ns"] == data[0].log_time
+assert dataset["time"]["end_ns"] == data[-1].log_time
+assert parameters["rate"] == scenario["time_policy"]["playback_rate"] == 1.0
+assert parameters["desired_playback_duration_sec"] == 30
+retained = output / "source/bag/selected.mcap"
+assert before == recording.read_bytes() == retained.read_bytes()
+assert dataset["artifact"]["sha256"] == hashlib.sha256(before).hexdigest()
+assert (source / "runtime-manifest.json").read_bytes() == (output / "source/capture/runtime-manifest.json").read_bytes()
+with retained.open("rb") as stream:
+    retained_clocks = [message.data for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages()
+                       if channel.topic == "/clock"]
+assert retained_clocks == clock_bytes
+print("wall received span 36 s; ROS Clock payload span 378 ms; rate 1; source bytes unchanged")
+PY
+  printf '%s\n' "${output}"
+  [ "${status}" -eq 0 ]
+}
+
+
+update_capture_recording_metadata() {
+  "${FOUNDATION_PYTHON}" - "${CAPTURE}" "$1" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping
+from robotics_runtime_contracts.writers import write_document
+
+source = Path(sys.argv[1])
+metadata_path = source / "bags/recording/metadata.yaml"
+metadata = dict(load_mapping(metadata_path))
+for name, value in json.loads(sys.argv[2]).items():
+    if value == "__absent__":
+        metadata["rosbag2_bagfile_information"]["custom_data"].pop(name, None)
+    else:
+        metadata["rosbag2_bagfile_information"]["custom_data"][name] = value
+metadata_path.write_text(json.dumps(metadata))
+statement_path = source / "results/qualification-statement.json"
+statement = dict(load_mapping(statement_path))
+subject = next(item for item in statement["subject"]
+               if item["name"] == "capture/bags/recording/metadata.yaml")
+subject["digest"]["sha256"] = hashlib.sha256(metadata_path.read_bytes()).hexdigest()
+write_document(statement, statement_path, schema="qualification-bundle.v1")
+PY
+}
+
+@test "playback preparer keeps legacy compressed ROS-time chronology and explicit ROS timestamp basis" {
+  local actual
+  for actual in missing ros_time; do
+    prepare_playback_capture_fixture 10 378000000 "-legacy-${actual}"
+    if [[ "${actual}" == ros_time ]]; then
+      update_capture_recording_metadata '{"record_timestamp_basis":"ros_time"}'
+    fi
+    run "${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" "${CAPTURE}" "${PREPARED}" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+from mcap.reader import make_reader
+from robotics_runtime_contracts import load_mapping, validate_document
+
+repository, source, output = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/ci/integration/prepare-playback-inputs.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+recording = source / "bags/recording/selected.mcap"
+before = recording.read_bytes()
+with recording.open("rb") as stream:
+    rows = list(make_reader(stream, validate_crcs=True).iter_messages())
+times = sorted({message.log_time for _, channel, message in rows if channel.topic == "/example/sequence"})
+clock_bytes = [message.data for _, channel, message in rows if channel.topic == "/clock"]
+gaps = [following - previous for previous, following in zip(times, times[1:])]
+assert times[-1] - times[0] == 378_000_000 and max(gaps) == 2_000_000
+module.scan_recording = lambda path, topic: {
+    "first_ns": times[0], "last_ns": times[-1], "message_count": len(times),
+    "clock_samples": len(clock_bytes)}
+module.prepare(source, output, output)
+dataset = load_mapping(output / "dataset-manifest.json")
+parameters = load_mapping(output / "playback-inputs.json")
+validate_document(dataset)
+assert dataset["time"]["basis"] == "ros_time"
+assert parameters["rate"] == 0.0126
+assert max(gaps) / parameters["rate"] > 100_000_000
+assert before == recording.read_bytes() == (output / "source/bag/selected.mcap").read_bytes()
+with (output / "source/bag/selected.mcap").open("rb") as stream:
+    retained = [message.data for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages()
+                if channel.topic == "/clock"]
+assert retained == clock_bytes
+print("legacy ROS span 378 ms retained; rate 0.0126; Clock bytes unchanged")
+PY
+    printf '%s\n' "${output}"
+    [ "${status}" -eq 0 ]
+  done
+}
+
+@test "playback preparer refuses contradictory or unobserved qualification recording metadata" {
+  local mode changes
+  for setting in \
+    'wall|{"record_timestamp_basis":"__absent__"}' \
+    'wall|{"record_timestamp_basis":null}' \
+    'wall|{"record_timestamp_basis":"ros_time"}' \
+    'wall|{"record_timestamp_basis":"0"}' \
+    'wall|{"record_timestamp_basis":false}' \
+    'wall|{"record_timestamp_basis":0}' \
+    'ros|{"record_timestamp_basis":null}' \
+    'ros|{"record_timestamp_basis":"system_time"}' \
+    'ros|{"record_timestamp_basis":"0"}'; do
+    mode="${setting%%|*}"
+    changes="${setting#*|}"
+    prepare_playback_capture_fixture 10 36000000000 "" "${mode}"
+    update_capture_recording_metadata "${changes}"
+    run "${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" "${CAPTURE}" "${PREPARED}" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+from mcap.reader import make_reader
+
+repository, source, output = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/ci/integration/prepare-playback-inputs.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+recording = source / "bags/recording/selected.mcap"
+before = recording.read_bytes()
+with recording.open("rb") as stream:
+    rows = list(make_reader(stream, validate_crcs=True).iter_messages())
+data = [message for _, channel, message in rows if channel.topic == "/example/sequence"]
+clocks = [message for _, channel, message in rows if channel.topic == "/clock"]
+module.scan_recording = lambda path, topic: {
+    "first_ns": data[0].log_time, "last_ns": data[-1].log_time,
+    "message_count": len(data), "clock_samples": len(clocks)}
+try:
+    module.prepare(source, output, output)
+except ValueError as error:
+    print(error)
+else:
+    raise AssertionError("contradictory recording metadata was accepted")
+assert not (output / "dataset-manifest.json").exists()
+assert not (output / "scenario.json").exists()
+assert recording.read_bytes() == before
+retained = output / "source/bag/selected.mcap"
+if retained.exists():
+    assert retained.read_bytes() == before
+PY
+    printf '%s\n' "${output}"
+    [ "${status}" -eq 0 ]
+    # Each case owns a fresh qualified snapshot; do not reuse partial preparation.
+    rm -rf -- "${CAPTURE}" "${PREPARED}"
+  done
+}
+
 @test "playback desired duration follows the inherited window without overstretching stock timestamp groups" {
   source "${REPOSITORY_ROOT}/scripts/ci/lib.sh"
   ci_set_compose_fixture_env
@@ -457,11 +669,13 @@ PY
     unset ROBOTICS_METRICS_EXPORT_INTERVAL_MS
     run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
     [ "${status}" -eq 88 ]
-    [ "$(cat "${FOUNDATION_METRICS_ENV}")" = 200 ]
-    export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=150
-    run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
-    [ "${status}" -eq 88 ]
-    [ "$(cat "${FOUNDATION_METRICS_ENV}")" = 150 ]
+    [ "$(cat "${FOUNDATION_METRICS_ENV}")" = 100 ]
+    for requested in 150 200; do
+      export ROBOTICS_METRICS_EXPORT_INTERVAL_MS="${requested}"
+      run bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
+      [ "${status}" -eq 88 ]
+      [ "$(cat "${FOUNDATION_METRICS_ENV}")" = "${requested}" ]
+    done
     export ROBOTICS_METRICS_EXPORT_INTERVAL_MS=200
   done
 }
@@ -1038,15 +1252,23 @@ set -Eeuo pipefail
 data_source="$1"
 simulation_container=fixture-playback
 trace="$2"
-sealed=0
+sealed_marker="${trace}.sealed"
+run_dir="${trace}.run"
+artifact_dir="${trace}.artifacts"
+project=fixture-seal
+mkdir -p "${run_dir}" "${artifact_dir}"
+export trace sealed_marker
 compose_leaf() {
+  if [[ "$*" == 'ps --all --quiet runtime-metrics' ]]; then
+    return 0
+  fi
   [[ " $* " == *' stop '* ]]
   if [[ "${@: -1}" == recorder ]]; then
     printf 'recorder\n' >>"${trace}"
     [[ "${SEAL_FAILURE:-0}" != 1 ]] || return 31
-    sealed=1
+    touch "${sealed_marker}"
   else
-    [[ "${sealed}" == 1 ]] || return 87
+    [[ -f "${sealed_marker}" ]] || return 87
     printf '%s\n' "${@: -1}" >>"${trace}"
   fi
 }
@@ -1054,8 +1276,16 @@ docker() {
   [[ "$1" == inspect ]]
   printf '%s\n' "${PLAYBACK_RUNNING:-true}"
 }
-compose=(compose_leaf)
+export -f compose_leaf
+compose=(bash -c 'compose_leaf "$@"' compose_leaf)
 SH
+    # Reuse the production helper; its bounded read runs the fixture CLI with
+    # no metrics containers. Native closure and rollover remain separate gates.
+    awk '
+      /^capture_runtime_metrics_diagnostics\(\) {/ { emit = 1 }
+      emit && /^publish_failure_evidence\(\) {/ { exit }
+      emit { print }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
     # Exercise production ordering; native closure and rollover are separate gates.
     awk '
       /^# Seal native capture while observed publishers remain active\./ { emit = 1 }

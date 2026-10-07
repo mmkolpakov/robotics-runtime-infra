@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 import rclpy
@@ -15,6 +16,8 @@ from opentelemetry.sdk.metrics.export import (
 from opentelemetry.sdk.resources import Resource
 from rosgraph_msgs.msg import Clock
 from std_msgs.msg import UInt64
+
+from robotics_observability import runtime_metrics as runtime_metrics_module
 
 from robotics_observability.runtime_metrics import (
     LATENCY_BUCKETS_MS,
@@ -352,3 +355,190 @@ def test_runtime_metrics_rejects_multi_publisher_loss_inference(
     )
     assert "robotics.message.received" not in metrics
     assert "robotics.message.lost" not in metrics
+
+
+def _diagnostic_points(
+    metrics_data: MetricsData,
+    metric_name: str,
+) -> dict[str, object]:
+    metric = next(
+        metric
+        for resource in metrics_data.resource_metrics
+        for scope in resource.scope_metrics
+        for metric in scope.metrics
+        if metric.name == metric_name
+    )
+    assert metric.unit == "ms"
+    assert isinstance(metric.data, Histogram)
+    points = {}
+    for point in metric.data.data_points:
+        attributes = _attributes(point)
+        channel = attributes["channel"]
+        assert attributes == {
+            "run.id": "run-test",
+            "domain.id": "primary",
+            "channel": channel,
+        }
+        points[channel] = point
+    return points
+
+
+def _callback_test_clock(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    clock = SimpleNamespace(wall_ns=1_030_000_000, perf_ns=100_000_000)
+    monkeypatch.setattr(
+        runtime_metrics_module,
+        "time",
+        SimpleNamespace(
+            time_ns=lambda: clock.wall_ns,
+            perf_counter_ns=lambda: clock.perf_ns,
+        ),
+        raising=False,
+    )
+    return clock
+
+
+def test_callback_timing_separates_entry_lag_from_graph_query_delay(
+    runtime_metrics: tuple[RuntimeMetrics, MeterProvider, InMemoryMetricReader],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node, _provider, reader = runtime_metrics
+    clock = _callback_test_clock(monkeypatch)
+    legacy_order = []
+
+    def publisher_count() -> int:
+        legacy_order.append("publisher_count")
+        clock.perf_ns += 25_000_000
+        clock.wall_ns += 25_000_000
+        return 1
+
+    node._publisher_count = publisher_count
+    for instrument, method, name in (
+        (node._message_age, "record", "age"),
+        (node._sequence_errors, "add", "sequence"),
+        (node._messages_received, "add", "received"),
+        (node._messages_lost, "add", "lost"),
+    ):
+        original = getattr(instrument, method)
+
+        def traced(*args, original=original, name=name, **kwargs):
+            legacy_order.append(name)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(instrument, method, traced)
+
+    node._observe_data(
+        UInt64(data=1),
+        {
+            "source_timestamp": 1_007_000_000,
+            "received_timestamp": 1_010_000_000,
+            "publication_sequence_number": 1,
+        },
+    )
+    node._observe_clock(
+        Clock(),
+        {"source_timestamp": 1_038_000_000, "received_timestamp": 1_040_000_000},
+    )
+    metrics_data = reader.get_metrics_data()
+    assert metrics_data is not None
+    lag = _diagnostic_points(metrics_data, "robotics.observation.callback_lag")
+    duration = _diagnostic_points(
+        metrics_data, "robotics.observation.callback_duration"
+    )
+    query = _diagnostic_points(
+        metrics_data, "robotics.observation.publisher_count_duration"
+    )
+    data_channel = "/robotics/runtime_probe"
+    assert lag[data_channel].count == 1 and lag[data_channel].sum == 20
+    assert lag["/clock"].count == 1 and lag["/clock"].sum == 15
+    assert duration[data_channel].count == 1 and duration[data_channel].sum == 25
+    assert duration["/clock"].count == 1 and duration["/clock"].sum == 0
+    assert set(query) == {data_channel}
+    assert query[data_channel].count == 1 and query[data_channel].sum == 25
+    assert legacy_order == ["publisher_count", "age", "sequence", "received", "lost"]
+    metrics = _metrics_by_name(metrics_data)
+    assert metrics["robotics.message.age"].data_points[0].sum == 3
+    assert metrics["robotics.time_authority.delivery_latency"].data_points[0].sum == 2
+    assert metrics["robotics.message.received"].data_points[0].value == 1
+    assert metrics["robotics.message.lost"].data_points[0].value == 0
+    assert metrics["robotics.message.sequence_error"].data_points[0].value == 0
+
+
+@pytest.mark.parametrize("channel", ["/clock", "/robotics/runtime_probe"])
+@pytest.mark.parametrize(
+    "received",
+    ["missing", None, True, False, 1.0, 0, -1, 1_030_000_001],
+)
+def test_invalid_callback_received_time_never_fabricates_lag(
+    runtime_metrics: tuple[RuntimeMetrics, MeterProvider, InMemoryMetricReader],
+    monkeypatch: pytest.MonkeyPatch,
+    channel: str,
+    received: object,
+) -> None:
+    node, _provider, reader = runtime_metrics
+    _callback_test_clock(monkeypatch)
+    metadata = {
+        "source_timestamp": 1_000_000_000,
+        "publication_sequence_number": 1,
+    }
+    if received != "missing":
+        metadata["received_timestamp"] = received
+    callback, message = (
+        (node._observe_clock, Clock())
+        if channel == "/clock"
+        else (node._observe_data, UInt64(data=1))
+    )
+    callback(message, metadata)
+    metrics_data = reader.get_metrics_data()
+    assert metrics_data is not None
+    metrics = _metrics_by_name(metrics_data)
+    assert "robotics.observation.callback_lag" not in metrics
+    duration = _diagnostic_points(
+        metrics_data, "robotics.observation.callback_duration"
+    )
+    assert duration[channel].count == 1 and duration[channel].sum == 0
+
+
+def test_graph_query_exception_propagates_with_both_duration_observations(
+    runtime_metrics: tuple[RuntimeMetrics, MeterProvider, InMemoryMetricReader],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node, _provider, reader = runtime_metrics
+    clock = _callback_test_clock(monkeypatch)
+    failure = RuntimeError("controlled publisher graph failure")
+
+    def publisher_count() -> int:
+        clock.perf_ns += 13_000_000
+        clock.wall_ns += 13_000_000
+        raise failure
+
+    node._publisher_count = publisher_count
+    with pytest.raises(RuntimeError) as raised:
+        node._observe_data(
+            UInt64(data=1),
+            {
+                "source_timestamp": 1_007_000_000,
+                "received_timestamp": 1_010_000_000,
+                "publication_sequence_number": 1,
+            },
+        )
+    assert raised.value is failure
+    metrics_data = reader.get_metrics_data()
+    assert metrics_data is not None
+    channel = "/robotics/runtime_probe"
+    for metric_name in (
+        "robotics.observation.callback_duration",
+        "robotics.observation.publisher_count_duration",
+    ):
+        point = _diagnostic_points(metrics_data, metric_name)[channel]
+        assert point.count == 1 and point.sum == 13
+    assert (
+        _diagnostic_points(metrics_data, "robotics.observation.callback_lag")[
+            channel
+        ].sum
+        == 20
+    )
+    metrics = _metrics_by_name(metrics_data)
+    assert "robotics.message.age" not in metrics
+    assert "robotics.message.received" not in metrics
+    assert "robotics.message.lost" not in metrics
+    assert "robotics.message.sequence_error" not in metrics

@@ -1,29 +1,100 @@
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile,readdir,copyFile,chmod,stat,access} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join,isAbsolute} from 'node:path';
 import {constants,createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {pathToFileURL,fileURLToPath} from 'node:url';
-import Docker from 'dockerode';
-import {Context,Jobs,Admission,RunOwner,referenceFile} from '@robotics-runtime/host';
-import {ComposeExecution,EngineMetadata,isNativeFiberDisposed} from '../dist/src/index.js';
-import LegacyInputs from '../dist/src/plugins/gazebo-ros-v1/inputs.js';
-import FinalInputs from '../dist/src/plugins/legacy-finalization/inputs.js';
-const [root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision]=process.argv.slice(2);
+export function legacyLiveParameters(argv){
+ assert.equal(argv.length,12,'legacy live source CLI requires its twelve positional arguments');
+ const [root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision]=argv;
+ assert.match(simulationImage,/^(?:sha256:)?[a-f0-9]{64}$/);
+ return {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage:simulationImage.startsWith('sha256:')?simulationImage:'sha256:'+simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision};
+}
+export function validateLegacyLiveFixture(parameters,fixture={}){
+ const {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision}=parameters;
+ assert.ok([root,socket,executable,output].every(value=>typeof value==='string'&&isAbsolute(value)),'absolute legacy live paths required');
+ assert.match(runId,/^run-[a-f0-9-]{36}$/);
+ assert.match(sourceRevision,/^[a-f0-9]{40}$/);
+ assert.ok(sourceVolume!==retainedVolume,'separate source and retained volumes required');
+ assert.ok([sourceVolume,retainedVolume].every(value=>typeof value==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(value)),'explicit storage identities required');
+ assert.match(simulationImage,/^(?:sha256:)?[a-f0-9]{64}$/);
+ assert.match(simulationReference,/^[^\s@]+@sha256:[a-f0-9]{64}$/);
+ assert.ok([coordinatorImage,evidenceImage].every(value=>typeof value==='string'&&/^(?:(?:sha256:)?[a-f0-9]{64}|[^\s@]+@sha256:[a-f0-9]{64})$/.test(value)),'immutable helper image bindings required');
+ const copy=structuredClone(fixture);
+ if(copy.composeEnvironment!==undefined){
+  const env=copy.composeEnvironment;
+  assert.ok(env&&typeof env==='object'&&!Array.isArray(env),'fixture Compose environment must be an object');
+  assert.ok(Object.keys(env).every(key=>key==='COMPOSE_PARALLEL_LIMIT'),'fixture Compose environment cannot override reserved bindings');
+  if(env.COMPOSE_PARALLEL_LIMIT!==undefined)assert.ok(typeof env.COMPOSE_PARALLEL_LIMIT==='string'&&/^[1-9][0-9]*$/.test(env.COMPOSE_PARALLEL_LIMIT)&&Number.isSafeInteger(Number(env.COMPOSE_PARALLEL_LIMIT)),'fixture Compose concurrency limit must be a positive integer');
+ }
+ if(copy.profile){
+  const profile=copy.profile;
+  assert.ok(typeof profile.id==='string'&&profile.id.length>0&&isAbsolute(profile.profilePath),'explicit immutable profile required');
+  assert.ok(Array.isArray(profile.files)&&profile.files.length>0&&profile.files.every(file=>isAbsolute(file.path)&&/^[a-f0-9]{64}$/.test(file.sha256)),'immutable profile file identities required');
+  assert.ok(profile.files.some(file=>file.path===profile.profilePath),'immutable profile must bind its Include file');
+  assert.equal(copy.finalizerPlugin,'@robotics-runtime/infra-host/plugins/legacy-finalization','installed fixture must select the existing public finalizer');
+ }
+ if(copy.hostRequirement){
+  assert.ok(copy.profile,'installed host binding requires an immutable profile');
+  const host=copy.hostRequirement;
+  assert.ok(typeof host.runId==='string'&&host.runId.length>0&&typeof host.projectName==='string'&&host.projectName.length>0&&copy.hostService==='installed-host','explicit installed host ownership required');
+  assert.match(host.imageDigest,/^[^\s@]+@sha256:[a-f0-9]{64}$/,'installed host requires its observed full RepoDigest');
+  assert.equal(host.user,'1000:1000');
+  for(const [destination,name] of [['/run/robotics',sourceVolume],['/retained',retainedVolume]]){
+   const mount=host.mounts?.find(row=>row.destination===destination);
+   assert.equal(mount?.volumeName,name,'installed host storage binding mismatch');assert.equal(mount?.readOnly,false);
+  }
+  assert.ok(copy.imageBindings,'observed helper image bindings required');
+  assert.equal(copy.imageBindings.simulation.imageId.replace(/^sha256:/,''),simulationImage.replace(/^sha256:/,''),'simulation image binding mismatch');
+  assert.equal(copy.imageBindings.simulation.reference,simulationReference,'simulation reference binding mismatch');
+  assert.equal(copy.imageBindings.finalizer.reference,coordinatorImage,'finalizer image binding mismatch');
+  assert.equal(copy.imageBindings.evidence.reference,evidenceImage,'evidence image binding mismatch');
+ }
+ for(const key of ['sourceHostRoot','postprocessRoot'])if(copy[key]!==undefined)assert.ok(isAbsolute(copy[key]),'absolute fixture deployment roots required');
+ if(copy.deferQualification!==undefined)assert.equal(typeof copy.deferQualification,'boolean');
+ return copy;
+}
+export async function retainHomeComposeQualification(compose,save,environment){
+ const versionProbe=await compose.requireVersion();
+ await save('home-compose-qualification',{version:versionProbe.stdout.trim(),versionProbe,environment,scope:'HOME source qualification only'});
+}
+export async function qualifyLegacyLive(argv,fixture={}){
+ const parameters=legacyLiveParameters(argv);
+ fixture=validateLegacyLiveFixture(parameters,fixture);
+ const {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision}=parameters;
+ const {Context,Jobs,Admission,RunOwner,referenceFile,isDisposed}=await import('@robotics-runtime/host');
+ const {ComposeExecution,EngineMetadata}=await import('@robotics-runtime/infra-host');
+ const {default:LegacyInputs}=await import('@robotics-runtime/infra-host/plugins/legacy-inputs');
+ const {default:FinalInputs}=await import('@robotics-runtime/infra-host/plugins/legacy-finalization-inputs');
+ const ctx=new Context();
+ if(fixture.profile){
+  await ctx.plugin(Admission,{profiles:[fixture.profile]}).await();
+  await ctx.get('admission').admit(fixture.profile.id);
+ }
 assert.match(runId,/^run-[a-f0-9-]{36}$/);
 const projectName='rr-joint-'+runId.slice(4,20);
-const ctx=new Context();await ctx.plugin(Jobs,{timeoutMs:240000,maxBufferBytes:4194304}).await();
+await ctx.plugin(Jobs,{timeoutMs:240000,maxBufferBytes:4194304}).await();
 await ctx.plugin(LegacyInputs).await();await ctx.plugin(FinalInputs).await();
 await mkdir(output,{recursive:true});
 const save=async(name,value)=>{const path=join(output,name+'.json');await writeFile(path,JSON.stringify(value,null,2)+'\n');return referenceFile(path)};
-const env={ROBOTICS_RUN_ID:runId,LEGACY_SOURCE_ROOT:root,LEGACY_SOURCE_REVISION:sourceRevision,
+const env={ROBOTICS_RUN_ID:runId,LEGACY_SOURCE_ROOT:fixture.sourceHostRoot??root,LEGACY_SOURCE_REVISION:sourceRevision,
  LEGACY_SIMULATION_IMAGE:simulationImage,LEGACY_SIMULATION_REFERENCE:simulationReference,LEGACY_SIMULATION_DIGEST:simulationReference.split('@')[1],
  LEGACY_COORDINATOR_IMAGE:coordinatorImage,LEGACY_EVIDENCE_IMAGE:evidenceImage,LEGACY_SHARED_VOLUME:sourceVolume,ROBOTICS_RETAINED_VOLUME:retainedVolume,
- ROS_DOMAIN_ID:'181',GZ_PARTITION:projectName};
+ ROS_DOMAIN_ID:'181',GZ_PARTITION:projectName,...fixture.composeEnvironment};
 const options={executable,socketPath:socket,projectName,cwd:root,
  files:[root+'/host/test/fixtures/legacy-live/compose.yaml',root+'/host/test/fixtures/legacy-live/evidence.yaml'],env,timeoutMs:240000,maxBufferBytes:4194304};
 const compose=new ComposeExecution(ctx.jobs,options);
 const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'});
+if(fixture.hostRequirement){
+ const inventory=await engine.remainingOwned(fixture.hostRequirement.runId);
+ const host=inventory.containers.find(row=>row.Labels?.['com.docker.compose.service']===fixture.hostService);assert.ok(host,'installed host ownership not observed');
+ const observed=await engine.inspect(host.Id,fixture.hostRequirement);
+ assert.equal(observed.status,'complete',JSON.stringify(observed));await save('installed-host-native-metadata',observed);
+ const origins=Object.fromEntries(['@robotics-runtime/host','@robotics-runtime/infra-host','@robotics-runtime/infra-host/plugins/gazebo-ros-v1'].map(name=>[name,import.meta.resolve(name)]));
+ assert.ok(Object.values(origins).every(value=>value.startsWith('file:///app/node_modules/')));await save('installed-origins',origins);
+ await retainHomeComposeQualification(compose,save,fixture.composeEnvironment);
+}else{
+ const {default:Docker}=await import('dockerode');
 const native=new Docker({socketPath:socket,version:'v'+engine.facts.clientApi});
 for(const name of [sourceVolume,retainedVolume]){
  const actual=await native.getVolume(name).inspect();await save('host-volume-'+name,actual);
@@ -37,6 +108,7 @@ for(const [destination,name] of [['/run/robotics',sourceVolume],['/retained',ret
  await access(destination,constants.R_OK|constants.W_OK);const facts=await stat(destination);await save('host-permissions-'+name,{uid:facts.uid,gid:facts.gid,mode:facts.mode & 0o7777});
 }
 assert.ok(!host.Mounts.some(m=>m.Name===runId+'-input'));await save('host-native-before-producers',host);
+}
 const finite=async(name,args,signal)=>{const result=await compose.run(args,signal);await save(name,result);assert.equal(result.ok,true,result.diagnostic??result.stderr);return result};
 let run,finalizer,completion,status='failed',error;
 try{
@@ -50,13 +122,17 @@ try{
  {id:'native-provider-capture',args:['exec','-T','simulation','robotics-entrypoint','python3','/run/robotics/input/helpers/capture-provider.py','--output','/run/robotics/provider','--image-id',simulationImage]},
  {id:'provider-manifest',args:['run','--rm','--no-deps','legacy-coordinator','/opt/contracts/bin/python','/source/host/workers/legacy-live/prepare-runtime.py','--source','/source','--data','/run/robotics','--native-metadata',output,'--run-id',runId,'--project',projectName,'--subject-digest',env.LEGACY_SIMULATION_DIGEST]},
  ]});
+ let profile=fixture.profile,finalizerPlugin=fixture.finalizerPlugin;
+ if(!profile){
  const profileRoot=join(root,'host/.tools/joint-profiles',runId),closure=join(profileRoot,'infra'),files=[];
  const copy=async(from,to)=>{await mkdir(to,{recursive:true});for(const entry of await readdir(from,{withFileTypes:true})){if(entry.isDirectory())await copy(join(from,entry.name),join(to,entry.name));else if(entry.name.endsWith('.js')){const path=join(to,entry.name);await copyFile(join(from,entry.name),path);await chmod(path,0o444);files.push({path,sha256:createHash('sha256').update(await readFile(path)).digest('hex')})}}};
  await copy(root+'/host/dist/src',closure);
  const profilePath=profileRoot+'/cordis.yml';await writeFile(profilePath,JSON.stringify([{id:'gazebo',name:pathToFileURL(closure+'/plugins/gazebo-ros-v1/index.js').href}],null,2));await chmod(profilePath,0o444);
  files.push({path:profilePath,sha256:createHash('sha256').update(await readFile(profilePath)).digest('hex')});
- const profile={id:'joint-live-source',profilePath,files,requiredBindings:[{entryId:'gazebo',service:'gazeboRosV1'}],isolatedServices:['gazeboRosV1','legacyFinalization'],deadlineMs:240000};
- await save('immutable-profile',profile);await ctx.plugin(Admission,{profiles:[profile]}).await();await ctx.plugin(RunOwner).await();
+ profile={id:'joint-live-source',profilePath,files,requiredBindings:[{entryId:'gazebo',service:'gazeboRosV1'}],isolatedServices:['gazeboRosV1','legacyFinalization'],deadlineMs:240000};
+ finalizerPlugin=pathToFileURL(closure+'/plugins/legacy-finalization/index.js').href;
+ }
+ await save('immutable-profile',profile);if(!fixture.profile)await ctx.plugin(Admission,{profiles:[profile]}).await();await ctx.plugin(RunOwner).await();
  run=await ctx.get('runOwner').start(profile.id,runId);
  const snapshot=run.context.get('gazeboRosV1').snapshot();await save('readiness-snapshot',snapshot);
  assert.equal(run.phase,'ready');
@@ -80,27 +156,45 @@ try{
  const productAndReadinessBindings=admission.files.map(f=>({flag:'--artifact',subject:'other_evidence:products/robot-description/'+f.path,source:'input/product/'+f.path}));
  const inventory={sourceRoot:'/run/robotics',destinationRoot:retained,runId,maximumBytes:67108864,bindings,productAndReadinessBindings,dataSource:'simulator',bagsDirectory:'evidence/bags',summariesDirectory:'evidence/summaries'};
  await writeFile(control+'/inventory.json',JSON.stringify(inventory,null,2));
- const postOptions={...options,projectName:projectName+'-post',files:[root+'/compose.legacy-retained.yaml',root+'/compose.legacy-finalization.podman.yaml'],
+ const postOptions={...options,projectName:projectName+'-post',cwd:fixture.postprocessRoot??root,files:[(fixture.postprocessRoot??root)+'/compose.legacy-retained.yaml',(fixture.postprocessRoot??root)+'/compose.legacy-finalization.podman.yaml'],
  env:{LEGACY_FINALIZER_IMAGE:coordinatorImage,ROBOTICS_RUN_ID:runId,ROBOTICS_RETAINED_VOLUME:retainedVolume}};
- ctx.get('legacyFinalizationInputs').issue({runId,compose:options,postprocessCompose:postOptions,artifactDirectory:control+'/phases',retainedDirectory:retained,measurementCompletePath:'/run/robotics/measurement-complete',startupRefs:snapshot.readyRefs,requirements,sourceContainerId:snapshot.simulationContainerId,
+ const plan={runId,compose:options,postprocessCompose:postOptions,artifactDirectory:control+'/phases',retainedDirectory:retained,measurementCompletePath:'/run/robotics/measurement-complete',startupRefs:snapshot.readyRefs,requirements,sourceContainerId:snapshot.simulationContainerId,
  observerService:'acceptance-observer',instrumentServices:['runtime-probe-publisher','runtime-metrics'],recorderServices:['recorder'],collectorService:'otel-collector',stepperService:'simulation-stepper',simulationService:'simulation',coordinatorService:'legacy-coordinator',exportCoordinatorService:'legacy-export',
  lastStateWorkerPath:'/run/robotics/input/helpers/capture-last-state.py',exportWorkerPath:'/opt/robotics/finalizer/workers/export_retained.py',inventoryWorkerPath:'/opt/robotics/finalizer/workers/collect_inventory.py',inventoryPlanPath:control+'/inventory.json',exportPlanPath:control+'/export.json',qualificationInputsWorkerPath:control+'/args.json',qualificationInputsHostPath:control+'/args.json',
  helperRoot:'/opt/robotics/finalizer',retainedWorkerRoot:retained,contractPythonPath:'/opt/contracts/bin/python',
  scenarioPath:retained+'/payloads/scenario.yaml',runContextPath:retained+'/payloads/acceptance-run.json',resultPath:retained+'/payloads/results/acceptance-result.json',aggregatePath:retained+'/acceptance-aggregate.json',evidenceRoot:'/run/robotics/evidence',
- foundationLogPath:'/run/robotics/logs/foundation.log',observerLogPath:'/run/robotics/logs/observer.log',timeoutMs:240000});
- const Module=await import(pathToFileURL(closure+'/plugins/legacy-finalization/index.js').href);const fiber=run.context.plugin(Module.default);await fiber.await();finalizer=run.context.get('legacyFinalization');
+ foundationLogPath:'/run/robotics/logs/foundation.log',observerLogPath:'/run/robotics/logs/observer.log',timeoutMs:240000};ctx.get('legacyFinalizationInputs').issue(plan);
+ const Module=await import(finalizerPlugin);const fiber=run.context.plugin(Module.default);await fiber.await();finalizer=run.context.get('legacyFinalization');
  run.beginMeasurement();await save('measurement-open',{afterReadiness:true,phase:run.phase});
  await finalizer.beginMeasurement(AbortSignal.timeout(240000));
  completion=await run.finish(finalizer.hooks);await save('completion',completion);
- assert.equal(completion.status,'passed',JSON.stringify(completion.errors));assert.ok(isNativeFiberDisposed(run.fiber));
+ assert.equal(completion.status,'passed',JSON.stringify(completion.errors));assert.ok(isDisposed(run.fiber));
  const retainedRefs=new Map(completion.evidenceRefs.map(ref=>[ref.uri,ref]));
  for(const outcome of completion.resourceOutcomes)for(const ref of outcome.evidenceRefs??[])retainedRefs.set(ref.uri,ref);
  for(const ref of retainedRefs.values()){const path=fileURLToPath(ref.uri);assert.ok(path.startsWith('/retained/'),'completion ref outside retained lifetime: '+path);const digest=createHash('sha256');for await(const chunk of createReadStream(path))digest.update(chunk);assert.equal(digest.digest('hex'),ref.sha256);assert.equal((await stat(path)).size,ref.size_bytes)}
  await save('completion-retention-audit',{uniqueRefs:retainedRefs.size,allRefsInsideRetained:true,allHashesAndSizesVerified:true});
+ if(fixture.deferQualification){
+  const result=JSON.parse(await readFile(retained+'/payloads/results/acceptance-result.json','utf8'));assert.equal(result.status,'passed');assert.equal(result.evaluation_mode,'live');
+  await writeFile(control+'/live-completion.json',JSON.stringify(completion,null,2)+'\n');
+  await writeFile(control+'/finalization-plan.json',JSON.stringify(plan,null,2)+'\n');
+  await save('finalization-plan',plan);
+  const before={};
+  for(const path of await retainedFiles('/retained')){const digest=createHash('sha256');for await(const chunk of createReadStream(path))digest.update(chunk);before[path]={sha256:digest.digest('hex'),size_bytes:(await stat(path)).size}}
+  await writeFile(control+'/before-source-teardown.json',JSON.stringify(before,null,2)+'\n');
+ }else{
  const qualified=await finalizer.qualifyAfterCleanup(completion,AbortSignal.timeout(240000));await save('qualified-references',qualified);
  const result=JSON.parse(await readFile(retained+'/payloads/results/acceptance-result.json','utf8'));assert.equal(result.status,'passed');assert.equal(result.evaluation_mode,'live');
  const aggregate=JSON.parse(await readFile(retained+'/acceptance-aggregate.json','utf8'));assert.equal(aggregate.per_domain_aggregate,'passed');assert.equal(aggregate.cross_domain_e2e.status,'unevaluated');
+ }
  status='passed';
 }catch(failure){run=failure.run??run;error=String(failure);await save('failure',{error,phase:run?.phase});if(run&&!completion&&finalizer){completion=await run.finish(finalizer.hooks);await save('completion',completion)}}
-await save('joint-result',{status,error,runId,sourceVolume,retainedVolume,scope:'live neutral source profile; released readiness/equivalence gate remains separate'});
-console.log(JSON.stringify({status,error,runId}));if(status!=='passed')process.exitCode=1;
+await save('joint-result',{status,error,runId,sourceVolume,retainedVolume,scope:fixture.deferQualification?'installed ROS live/export/cleanup; aggregate and portable qualification remain pending actual host-source teardown':'live neutral source profile; released readiness/equivalence gate remains separate'});
+return {status,error,runId};
+}
+
+async function retainedFiles(root){
+ const files=[];for(const row of await readdir(root,{withFileTypes:true})){const path=join(root,row.name);if(row.isDirectory())files.push(...await retainedFiles(path));else if(row.isFile())files.push(path)}return files;
+}
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+ const result=await qualifyLegacyLive(process.argv.slice(2));console.log(JSON.stringify(result));if(result.status!=='passed')process.exitCode=1;
+}
