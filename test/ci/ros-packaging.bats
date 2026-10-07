@@ -126,6 +126,36 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
+@test "UDP Clock publication changes only its ROS-topic writer boundary" {
+  run python3 - config/fastdds/udp-only.xml <<'PYTHON'
+import xml.etree.ElementTree as ET
+import sys
+
+ns = {"dds": "http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles"}
+profiles = ET.parse(sys.argv[1]).getroot().find("dds:profiles", ns)
+assert profiles is not None
+participant = profiles.find("dds:participant[@is_default_profile='true']", ns)
+assert participant.findtext("dds:rtps/dds:useBuiltinTransports", namespaces=ns) == "false"
+assert [node.text for node in participant.findall("dds:rtps/dds:userTransports/dds:transport_id", ns)] == ["robotics_udp_v4"]
+assert [node.text for node in profiles.findall("dds:transport_descriptors/dds:transport_descriptor/dds:type", ns)] == ["UDPv4"]
+writers = profiles.findall("dds:data_writer", ns)
+assert len(writers) == 2
+assert sorted(node.get("profile_name") for node in writers) == ["/clock", "robotics_udp_writer"]
+for writer in writers:
+    expected = "ASYNCHRONOUS" if writer.get("profile_name") == "/clock" else "SYNCHRONOUS"
+    assert writer.findtext("dds:qos/dds:publishMode/dds:kind", namespaces=ns) == expected
+    assert writer.findtext("dds:qos/dds:data_sharing/dds:kind", namespaces=ns) == "OFF"
+    assert writer.findtext("dds:historyMemoryPolicy", namespaces=ns) == "PREALLOCATED_WITH_REALLOC"
+    assert writer.get("is_default_profile") == ("true" if expected == "SYNCHRONOUS" else None)
+reader = profiles.find("dds:data_reader[@profile_name='/clock']", ns)
+assert reader.findtext("dds:topic/dds:historyQos/dds:kind", namespaces=ns) == "KEEP_ALL"
+assert reader.findtext("dds:topic/dds:resourceLimitsQos/dds:max_samples", namespaces=ns) == "1000"
+assert reader.findtext("dds:qos/dds:reliability/dds:kind", namespaces=ns) == "RELIABLE"
+assert reader.findtext("dds:qos/dds:durability/dds:kind", namespaces=ns) == "VOLATILE"
+PYTHON
+  [ "${status}" -eq 0 ]
+}
+
 @test "launch tests use distinct ROS domains" {
   cmake=ros_ws/src/robotics_runtime_infra/CMakeLists.txt
 
