@@ -39,6 +39,8 @@ mkdir -p "${output}"
 work="$(mktemp -d "${RUNNER_TEMP:?CI temporary directory required}/installed-ros.${scope}.XXXXXXXX")"
 registry_id=
 copy_id=
+builder=
+builder_created=0
 capture_failure() {
   local record run owner volume role meta snapshot_id native_owner expected_project
   if [[ -d "${work}/consumer" ]]; then
@@ -85,6 +87,7 @@ cleanup() {
   set +e
   if [[ "${gate_status}" != 0 ]]; then capture_failure; fi
   if [[ -n "${copy_id}" ]]; then docker rm "${copy_id}" >/dev/null || cleanup_failed=1; fi
+  if [[ "${builder_created}" == 1 ]]; then docker buildx rm "${builder}" >/dev/null || cleanup_failed=1; fi
   if [[ -n "${registry_id}" ]]; then
     docker logs "${registry_id}" >"${output}/registry.log" 2>&1 || true
     if [[ "$(docker inspect --format '{{index .Config.Labels "org.robotics.runtime.run-id"}}' "${registry_id}")" == "${scope}" ]]; then
@@ -102,8 +105,6 @@ cleanup() {
 }
 trap cleanup EXIT
 docker version >"${output}/docker-version.txt"
-docker buildx inspect default >"${output}/docker-builder.txt"
-grep -Eq '^Driver:[[:space:]]+docker$' "${output}/docker-builder.txt"
 bash scripts/ci/host/build-assets.sh
 asset="${root}/host/.tools/host-asset"
 cp "${asset}/source-identity.json" "${output}/host-source-identity.json"
@@ -116,6 +117,22 @@ port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5000/tc
 registry="127.0.0.1:${port}"
 curl --fail --silent --show-error --max-time 3 --retry 10 --retry-connrefused --retry-delay 1 \
   "http://${registry}/v2/" >"${output}/registry-ready.json"
+# Reuse the project image pin; configure only this owned BuildKit instance.
+buildkit_image="$(python3 -c 'import re,sys; from pathlib import Path; values=re.findall(r"^\s*image=(moby/buildkit:[^\s]+@sha256:[a-f0-9]{64})\s*$",Path(sys.argv[1]).read_text(),re.M); assert len(values)==1; print(values[0])' \
+  .github/actions/setup-buildx/action.yml)"
+printf '[registry."%s"]\n  http = true\n' "${registry}" >"${work}/buildkitd.toml"
+cp "${work}/buildkitd.toml" "${output}/buildkitd.toml"
+builder="${scope}-builder"
+docker buildx create --name "${builder}" --driver docker-container \
+  --driver-opt "image=${buildkit_image}" --driver-opt network=host \
+  --buildkitd-config "${work}/buildkitd.toml" >"${output}/builder-create.txt"
+builder_created=1
+docker buildx inspect "${builder}" --bootstrap >"${output}/docker-builder.txt"
+grep -Eq '^Driver:[[:space:]]+docker-container$' "${output}/docker-builder.txt"
+expected_buildkit_version="${buildkit_image#*:}"
+expected_buildkit_version="${expected_buildkit_version%%@*}"
+actual_buildkit_version="$(awk '$1 == "BuildKit" && $2 == "version:" {print $3}' "${output}/docker-builder.txt")"
+[[ "${actual_buildkit_version}" == "${expected_buildkit_version}" ]] || exit 65
 share_image() {
   local image="$1" role="$2" repository="${registry}/installed-ros/$2" before reference
   before="$(docker image inspect --format '{{.Id}}' "${image}")"
@@ -131,25 +148,25 @@ share_image() {
 }
 base="$(share_image "${SIMULATION_IMAGE:?foundation simulation image required}" simulation-base)"
 wheels_tag="${registry}/installed-ros/foundation-wheels:${scope}"
-docker buildx bake --builder default --file docker-bake.hcl --load \
+docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
   --set 'simulation.platform=linux/amd64' --set 'simulation.target=foundation-wheels' \
   --set "simulation.tags=${wheels_tag}" simulation
 wheels="$(share_image "${wheels_tag}" foundation-wheels)"
 coordinator_tag="${registry}/installed-ros/coordinator:${scope}"
-docker buildx build --builder default --platform linux/amd64 --load --file docker/foundation-coordinator.Dockerfile \
+docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/foundation-coordinator.Dockerfile \
   --build-arg "FOUNDATION_WHEELS_IMAGE=${wheels}" --build-arg "LEGACY_BASE_IMAGE=${base}" \
   --tag "${coordinator_tag}" .
 simulation="$(share_image "${coordinator_tag}" coordinator)"
-docker buildx bake --builder default --file docker-bake.hcl \
+docker buildx bake --builder "${builder}" --file docker-bake.hcl \
   --set 'policy-tooling.platform=linux/amd64' --set 'policy-tooling.target=cosign-license' \
   --set "policy-tooling.output=type=local,dest=${work}/cosign-license" policy-tooling
 finalizer_tag="${registry}/installed-ros/finalizer:${scope}"
-docker buildx build --builder default --platform linux/amd64 --load --file docker/legacy-finalizer.Dockerfile \
+docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/legacy-finalizer.Dockerfile \
   --build-context "cosign-license=${work}/cosign-license" --build-arg "COORDINATOR_IMAGE=${simulation}" \
   --tag "${finalizer_tag}" .
 finalizer="$(share_image "${finalizer_tag}" finalizer)"
 evidence_tag="${registry}/installed-ros/evidence:${scope}"
-docker buildx build --builder default --platform linux/amd64 --load --file docker/evidence-source.Dockerfile \
+docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/evidence-source.Dockerfile \
   --build-arg "EVIDENCE_BASE_IMAGE=${simulation}" --tag "${evidence_tag}" .
 evidence="$(share_image "${evidence_tag}" evidence)"
 simulation_id="$(docker image inspect --format '{{.Id}}' "${simulation}")"
@@ -168,7 +185,7 @@ docker run --rm --user "$(id -u):$(id -g)" --env NPM_CONFIG_CACHE=/tmp/npm-cache
   --mount "type=bind,source=${consumer},target=${consumer}" --workdir "${consumer}" "${node_image}" \
   npm ci --ignore-scripts --no-audit --no-fund
 node_tag="${registry}/installed-ros/host:${scope}"
-docker buildx build --builder default --platform linux/amd64 --load --tag "${node_tag}" "${consumer}"
+docker buildx build --builder "${builder}" --platform linux/amd64 --load --tag "${node_tag}" "${consumer}"
 host_image="$(share_image "${node_tag}" host)"
 docker run --rm --user "$(id -u):$(id -g)" --group-add "${socket_gid}" \
   --mount "type=bind,source=${consumer},target=${consumer}" \

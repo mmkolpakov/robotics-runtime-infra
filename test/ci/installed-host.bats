@@ -4,8 +4,9 @@ setup() {
   REPOSITORY_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd -P)"
   FIXTURE="${BATS_TEST_TMPDIR}/fixture"
   MOCK_BIN="${BATS_TEST_TMPDIR}/bin"
-  mkdir -p "${FIXTURE}/scripts/ci/host" "${MOCK_BIN}" "${BATS_TEST_TMPDIR}/work"
+  mkdir -p "${FIXTURE}/scripts/ci/host" "${FIXTURE}/.github/actions/setup-buildx" "${MOCK_BIN}" "${BATS_TEST_TMPDIR}/work"
   cp "${REPOSITORY_ROOT}/scripts/ci/host/run-installed-legacy.sh" "${FIXTURE}/scripts/ci/host/"
+  cp "${REPOSITORY_ROOT}/.github/actions/setup-buildx/action.yml" "${FIXTURE}/.github/actions/setup-buildx/"
   export MOCK_FIXTURE="${FIXTURE}" MOCK_CALLS="${BATS_TEST_TMPDIR}/calls.jsonl"
   REAL_PYTHON="$(command -v python3)"
   export REAL_PYTHON
@@ -28,8 +29,13 @@ owner = "installed-ros-host-12345678"
 scope = "installed-ros-101-1"
 if a[:1] == ["version"]:
     print("linux/amd64" if "--format" in a else "mock Docker")
+elif a[:2] == ["buildx", "create"]:
+    if os.environ.get("MOCK_BUILDER_CREATE_FAILURE"):
+        sys.exit(31)
 elif a[:2] == ["buildx", "inspect"]:
-    print("Driver: docker")
+    if os.environ.get("MOCK_BUILDER_BOOT_FAILURE"):
+        sys.exit(32)
+    print("Name: " + a[2] + "\nDriver: docker-container\nBuildKit version: v0.31.1")
 elif a[:2] == ["image", "inspect"]:
     if "--format" in a:
         print("sha256:" + "a" * 64)
@@ -152,4 +158,64 @@ PY
   run_failed_fixture
   assert_incomplete_and_inputs_preserved
   grep -q 'owned snapshot copy failed' "${OUTPUT_DIRECTORY}/diagnostic-errors.log"
+}
+
+@test "installed builds bind the project pinned container builder to only the loopback registry" {
+  run_failed_fixture
+  assert_incomplete_and_inputs_preserved
+  "${REAL_PYTHON}" - "${MOCK_CALLS}" "${OUTPUT_DIRECTORY}" <<'PY'
+import json, re, sys
+from pathlib import Path
+calls = [json.loads(v) for v in open(sys.argv[1])]
+root = Path(sys.argv[2])
+create = [v for v in calls if v[:2] == ["buildx", "create"]]
+assert len(create) == 1
+args = create[0]
+name = args[args.index("--name") + 1]
+assert name == "installed-ros-101-1-builder"
+assert args[args.index("--driver") + 1] == "docker-container"
+assert "network=host" in args
+assert any(v == "image=moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a" for v in args)
+builds = [v for v in calls if v[:2] in (["buildx", "bake"], ["buildx", "build"])]
+assert len(builds) == 6
+assert all(v[v.index("--builder") + 1] == name for v in builds)
+config = (root / "buildkitd.toml").read_text()
+assert config == '[registry."127.0.0.1:5000"]\n  http = true\n'
+assert not re.search(r'\[registry\."(?!127\.0\.0\.1:)', config)
+assert ["buildx", "rm", name] in calls
+assert not any(v[:3] == ["buildx", "rm", "default"] for v in calls)
+PY
+}
+
+@test "failed builder creation cannot remove a builder it did not acquire" {
+  export MOCK_BUILDER_CREATE_FAILURE=1
+  run_failed_fixture
+  [ "${status}" -eq 31 ]
+  "${REAL_PYTHON}" - "${MOCK_CALLS}" "${OUTPUT_DIRECTORY}" <<'PY'
+import json, sys
+from pathlib import Path
+calls = [json.loads(v) for v in open(sys.argv[1])]
+assert not any(v[:2] == ["buildx", "rm"] for v in calls)
+marker = json.loads((Path(sys.argv[2]) / "failure-snapshot.json").read_bytes())
+assert marker["original_exit_code"] == 31
+assert marker["status"] == "incomplete"
+assert Path(marker["preserved_work"]).is_dir()
+PY
+}
+
+@test "failed owned builder bootstrap removes only its acquired builder and retains original exit" {
+  export MOCK_BUILDER_BOOT_FAILURE=1
+  run_failed_fixture
+  [ "${status}" -eq 32 ]
+  "${REAL_PYTHON}" - "${MOCK_CALLS}" "${OUTPUT_DIRECTORY}" <<'PY'
+import json, sys
+from pathlib import Path
+calls = [json.loads(v) for v in open(sys.argv[1])]
+removed = [v for v in calls if v[:2] == ["buildx", "rm"]]
+assert removed == [["buildx", "rm", "installed-ros-101-1-builder"]]
+marker = json.loads((Path(sys.argv[2]) / "failure-snapshot.json").read_bytes())
+assert marker["original_exit_code"] == 32
+assert marker["status"] == "incomplete"
+assert Path(marker["preserved_work"]).is_dir()
+PY
 }
