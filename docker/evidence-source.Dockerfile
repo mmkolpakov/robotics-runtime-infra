@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.14
 # Source-only native cohort, using installed public workers and unchanged retention helpers.
+ARG EVIDENCE_BASE_IMAGE
 FROM docker.io/rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5 AS rclone
 FROM docker.io/amazon/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485 AS aws
 FROM ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa AS uv
-ARG EVIDENCE_BASE_IMAGE
 FROM ${EVIDENCE_BASE_IMAGE}
 USER 0:0
 COPY --from=uv /uv /usr/local/bin/uv

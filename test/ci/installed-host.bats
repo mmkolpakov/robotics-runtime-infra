@@ -179,13 +179,16 @@ assert any(v == "image=moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7f
 builds = [v for v in calls if v[:2] in (["buildx", "bake"], ["buildx", "build"])]
 assert len(builds) == 6
 assert all(v[v.index("--builder") + 1] == name for v in builds)
-exports = [v for v in builds if "policy-tooling.target=cosign-license" in v]
+exports = [v for v in builds if "evidence-sink.target=cosign-license" in v]
 assert len(exports) == 1
 marker = json.loads((root / "failure-snapshot.json").read_bytes())
 allowed = exports[0][exports[0].index("--allow") + 1]
 assert allowed == "fs.write=" + marker["preserved_work"]
 assert "*" not in allowed
 assert sum("--allow" in v for v in builds) == 1
+evidence_build = [v for v in builds if "docker/evidence-source.Dockerfile" in v]
+assert len(evidence_build) == 1
+assert "EVIDENCE_BASE_IMAGE=127.0.0.1:5000/installed-ros/finalizer@sha256:" + "b" * 64 in evidence_build[0]
 config = (root / "buildkitd.toml").read_text()
 assert config == '[registry."127.0.0.1:5000"]\n  http = true\n'
 assert not re.search(r'\[registry\."(?!127\.0\.0\.1:)', config)

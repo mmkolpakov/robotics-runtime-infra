@@ -157,9 +157,10 @@ docker buildx build --builder "${builder}" --platform linux/amd64 --load --file 
   --build-arg "FOUNDATION_WHEELS_IMAGE=${wheels}" --build-arg "LEGACY_BASE_IMAGE=${base}" \
   --tag "${coordinator_tag}" .
 simulation="$(share_image "${coordinator_tag}" coordinator)"
+# This target carries the central Cosign version argument into the license stage.
 docker buildx bake --builder "${builder}" --file docker-bake.hcl --allow "fs.write=${work}" \
-  --set 'policy-tooling.platform=linux/amd64' --set 'policy-tooling.target=cosign-license' \
-  --set "policy-tooling.output=type=local,dest=${work}/cosign-license" policy-tooling
+  --set 'evidence-sink.platform=linux/amd64' --set 'evidence-sink.target=cosign-license' \
+  --set "evidence-sink.output=type=local,dest=${work}/cosign-license" evidence-sink
 finalizer_tag="${registry}/installed-ros/finalizer:${scope}"
 docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/legacy-finalizer.Dockerfile \
   --build-context "cosign-license=${work}/cosign-license" --build-arg "COORDINATOR_IMAGE=${simulation}" \
@@ -167,7 +168,7 @@ docker buildx build --builder "${builder}" --platform linux/amd64 --load --file 
 finalizer="$(share_image "${finalizer_tag}" finalizer)"
 evidence_tag="${registry}/installed-ros/evidence:${scope}"
 docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/evidence-source.Dockerfile \
-  --build-arg "EVIDENCE_BASE_IMAGE=${simulation}" --tag "${evidence_tag}" .
+  --build-arg "EVIDENCE_BASE_IMAGE=${finalizer}" --tag "${evidence_tag}" .
 evidence="$(share_image "${evidence_tag}" evidence)"
 simulation_id="$(docker image inspect --format '{{.Id}}' "${simulation}")"
 consumer="${work}/consumer"
