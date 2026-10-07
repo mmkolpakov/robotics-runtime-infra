@@ -9,9 +9,17 @@ satisfy this legacy profile.
 
 ## Distinct identities and claims
 
-The current source line pins contracts 0.18.3 and harness 0.19.2;
+The current source line pins published contracts 0.19.0 and harness 0.20.0;
 `config/foundation-lock.json` records the exact runtime workspace and package
-trees. The published R9 release,
+trees. Its images use source-built wheels from those released package trees.
+The package payloads and distribution metadata match the published wheels;
+the contracts wheel archive has a different reproducible ZIP timestamp.
+The current dataset role is `dataset-manifest.v2`: one complete native bag
+with retained metadata and ordered MCAP/summary references, for one or more
+members. Full live playback qualification requires a passing attempt for this
+cohort.
+
+The published R9 release,
 `v0.9.0-rc.1`, passed its stock UInt64 simulation and independent consumer gates
 with contracts 0.18.1 / harness 0.19.0. This result is scoped to that profile.
 
