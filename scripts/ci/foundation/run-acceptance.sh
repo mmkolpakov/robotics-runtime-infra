@@ -378,13 +378,13 @@ publish_acceptance_results() {
 }
 capture_runtime_metrics_diagnostics() {
   local phase="$1"
-  local destination="${run_dir}/runtime-metrics-diagnostics"
+  local destination="${artifact_dir}/.runtime-metrics-diagnostics"
   local containers container inspection
 
   # A single snapshot preserves the available state before owned cleanup.
   [[ ! -d "${destination}" ]] || return 0
   containers="$(timeout 10 "${compose[@]}" ps --all --quiet runtime-metrics)" || return 0
-  mkdir -p "${destination}"
+  mkdir -p "${destination}" || return 0
   while IFS= read -r container; do
     [[ "${container}" =~ ^[a-f0-9]{64}$ ]] || continue
     # Inspect only this exact project's service; never retain Env or mounts.
@@ -410,8 +410,8 @@ capture_runtime_metrics_diagnostics() {
       ' 2>>"${destination}/capture-errors.log")"; then
       continue
     fi
-    mkdir -p "${destination}/${container}"
-    printf '%s\n' "${inspection}" >"${destination}/${container}/inspect.json"
+    mkdir -p "${destination}/${container}" || continue
+    printf '%s\n' "${inspection}" >"${destination}/${container}/inspect.json" || continue
     timeout 10 docker stats --no-stream --format '{{json .}}' "${container}" \
       >"${destination}/${container}/docker-stats.jsonl" \
       2>>"${destination}/capture-errors.log" || true
@@ -422,9 +422,11 @@ capture_runtime_metrics_diagnostics() {
       >"${destination}/${container}/cpu.max" \
       2>>"${destination}/capture-errors.log" || true
   done <<<"${containers}"
+  return 0
 }
 publish_failure_evidence() {
   local destination="${artifact_dir}/acceptance-evidence"
+  local diagnostics="${artifact_dir}/.runtime-metrics-diagnostics"
   local source
   capture_runtime_metrics_diagnostics before_project_cleanup
   mkdir -p "${destination}"
@@ -433,12 +435,14 @@ publish_failure_evidence() {
     "${run_dir}/evidence/evidence-index.json" \
     "${run_dir}/evidence/summaries" \
     "${run_dir}/bags" \
-    "${run_dir}/scenario.yaml" \
-    "${run_dir}/runtime-metrics-diagnostics"; do
+    "${run_dir}/scenario.yaml"; do
     if [[ -e "${source}" ]]; then
       sudo cp -a "${source}" "${destination}/"
     fi
   done
+  if [[ -d "${diagnostics}" ]]; then
+    sudo cp -a "${diagnostics}" "${destination}/runtime-metrics-diagnostics"
+  fi
   sudo chown -R "$(id -u):$(id -g)" "${destination}"
 }
 cleanup() {
@@ -737,7 +741,7 @@ if [[ "${data_source}" == recording_playback ]]; then
   }
 fi
 "${compose[@]}" --profile record stop recorder
-capture_runtime_metrics_diagnostics before_metrics_stop
+capture_runtime_metrics_diagnostics before_metrics_stop || true
 if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile observability stop runtime-metrics
   "${compose[@]}" --profile playback stop playback

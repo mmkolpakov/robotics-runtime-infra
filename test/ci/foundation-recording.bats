@@ -1253,9 +1253,10 @@ data_source="$1"
 simulation_container=fixture-playback
 trace="$2"
 sealed_marker="${trace}.sealed"
-run_dir="${trace}.diagnostics"
+run_dir="${trace}.run"
+artifact_dir="${trace}.artifacts"
 project=fixture-seal
-mkdir -p "${run_dir}"
+mkdir -p "${run_dir}" "${artifact_dir}"
 export trace sealed_marker
 compose_leaf() {
   if [[ "$*" == 'ps --all --quiet runtime-metrics' ]]; then
