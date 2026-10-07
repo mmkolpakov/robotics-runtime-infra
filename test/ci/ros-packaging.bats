@@ -126,7 +126,7 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "UDP Clock publication changes only its ROS-topic writer boundary" {
+@test "UDP publication changes only the Clock and reference-topic writer boundaries" {
   run python3 - config/fastdds/udp-only.xml <<'PYTHON'
 import xml.etree.ElementTree as ET
 import sys
@@ -139,10 +139,10 @@ assert participant.findtext("dds:rtps/dds:useBuiltinTransports", namespaces=ns) 
 assert [node.text for node in participant.findall("dds:rtps/dds:userTransports/dds:transport_id", ns)] == ["robotics_udp_v4"]
 assert [node.text for node in profiles.findall("dds:transport_descriptors/dds:transport_descriptor/dds:type", ns)] == ["UDPv4"]
 writers = profiles.findall("dds:data_writer", ns)
-assert len(writers) == 2
-assert sorted(node.get("profile_name") for node in writers) == ["/clock", "robotics_udp_writer"]
+assert len(writers) == 3
+assert sorted(node.get("profile_name") for node in writers) == ["/clock", "/example/sequence", "robotics_udp_writer"]
 for writer in writers:
-    expected = "ASYNCHRONOUS" if writer.get("profile_name") == "/clock" else "SYNCHRONOUS"
+    expected = "ASYNCHRONOUS" if writer.get("profile_name") in {"/clock", "/example/sequence"} else "SYNCHRONOUS"
     assert writer.findtext("dds:qos/dds:publishMode/dds:kind", namespaces=ns) == expected
     assert writer.findtext("dds:qos/dds:data_sharing/dds:kind", namespaces=ns) == "OFF"
     assert writer.findtext("dds:historyMemoryPolicy", namespaces=ns) == "PREALLOCATED_WITH_REALLOC"

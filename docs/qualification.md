@@ -95,6 +95,15 @@ every ROS participant through `compose.foundation.yaml`, and
 therefore binds the acceptance result to both the runtime manifest and the DDS
 profile bytes that the runtime loaded.
 
+The UDP profile selects asynchronous publication for `/clock` and the neutral
+example's `/example/sequence` reference producer. The stock ROS 2 CLI publishes
+the reference messages from a 20 Hz timer; the named writer uses
+[Fast DDS asynchronous publication](https://fast-dds.docs.eprosima.com/en/2.14.x/fastdds/ros2/ros2_configure.html)
+to move routine DDS sends off that callback. Other topics retain the synchronous
+default writer. Reliable delivery, reader history and transport settings remain
+unchanged. This publication mode provides no latency guarantee, including for the
+reference producer; every consumer must pass its measurement and coverage limits.
+
 Before starting the periodic stepper, the foundation runner executes the standard
 `simulation_interfaces` pause, exact-step and resume probe in the running simulator.
 The simulator's `world_sdf_file` parameter identifies the retained SDF; its declared
