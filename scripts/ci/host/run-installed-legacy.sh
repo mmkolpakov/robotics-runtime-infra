@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Positive installed ROS gate on the existing Linux/amd64 Docker runner.
+# Installed ROS lifecycle gates on the existing Linux/amd64 Docker runner.
 set -Eeuo pipefail
 shopt -s inherit_errexit
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
@@ -41,18 +41,21 @@ registry_id=
 copy_id=
 builder=
 builder_created=0
+host_prefix=installed-ros-host-
+project_prefix=rr-installed-ros-host-
 capture_failure() {
   local record run owner volume role meta snapshot_id native_owner expected_project
-  if [[ -d "${work}/consumer" ]]; then
-    cp --archive "${work}/consumer" "${output}/generated-inputs" || \
+  if [[ -d "${consumer:-${work}/consumer}" ]]; then
+    cp --archive "${consumer:-${work}/consumer}" "${output}/generated-inputs" || \
       printf 'generated inputs copy failed\n' >>"${output}/diagnostic-errors.log"
   fi
   record="${output}/launcher/failure.json"
   if [[ ! -r "${record}" ]]; then record="${output}/launcher/installed-ros-public-report.json"; fi
+  if [[ ! -r "${record}" ]]; then record="${output}/launcher/installed-negative-report.json"; fi
   if [[ -r "${record}" ]]; then
-    run="$(python3 -c 'import json,re,sys; d=json.load(open(sys.argv[1])); r=d["runId"]; assert re.fullmatch(r"run-[a-f0-9-]{36}",r); assert d["project"]=="rr-installed-ros-host-"+r[4:12]; print(r)' "${record}")" || run=
+    run="$(python3 -c 'import json,re,sys; d=json.load(open(sys.argv[1])); r=d["runId"]; assert re.fullmatch(r"run-[a-f0-9-]{36}",r); assert d["project"]==sys.argv[2]+r[4:12]; print(r)' "${record}" "${project_prefix}")" || run=
     if [[ -n "${run}" ]]; then
-      owner="installed-ros-host-${run:4:8}"
+      owner="${host_prefix}${run:4:8}"
       for role in runtime host; do
         if [[ "${role}" == runtime ]]; then native_owner="${run}"; else native_owner="${owner}"; fi
         docker ps --all --no-trunc --filter "label=org.robotics.runtime.run-id=${native_owner}" \
@@ -64,7 +67,7 @@ capture_failure() {
         meta="${output}/failed-${role}-volume.json"
         if ! docker volume inspect "${volume}" >"${meta}" 2>>"${output}/diagnostic-errors.log"; then continue; fi
         expected_project=
-        if [[ "${role}" == source ]]; then expected_project="rr-installed-ros-host-${run:4:8}"; fi
+        if [[ "${role}" == source ]]; then expected_project="${project_prefix}${run:4:8}"; fi
         if ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert len(d)==1; v=d[0]; assert v["Name"]==sys.argv[2]; assert v["Labels"]["org.robotics.runtime.run-id"]==sys.argv[3]; assert v["Labels"]["org.robotics.runtime.storage-owner"]==sys.argv[3]; assert not sys.argv[4] or v["Labels"]["com.docker.compose.project"]==sys.argv[4]' \
           "${meta}" "${volume}" "${owner}" "${expected_project}" 2>>"${output}/diagnostic-errors.log"; then continue; fi
         snapshot_id="$(docker create --label "org.robotics.runtime.run-id=${scope}" --network none --read-only \
@@ -207,3 +210,49 @@ docker cp "${copy_id}:/retained/." "${output}/retained"
 docker rm "${copy_id}" >/dev/null
 copy_id=
 printf 'Installed ROS positive gate completed: %s\n' "${output}"
+
+# Reuse the observed Docker cohort for actual installed lifecycle negatives.
+positive_output="${output}"
+host_prefix=installed-ros-negative-
+project_prefix=rr-installed-ros-negative-
+for negative_mode in startup-cancel foreign-cleanup cancel timeout; do
+  output="${positive_output}/negative-${negative_mode}"
+  mkdir "${output}"
+  consumer="${work}/consumer-negative-${negative_mode}"
+  source_volume="rr-${scope}-${negative_mode}-source"
+  retained_volume="rr-${scope}-${negative_mode}-retained"
+  python3 host/test/fixtures/installed-legacy/prepare.py --engine docker --negative-lifecycle \
+    --repo "${root}" --consumer "${consumer}" --assets "${asset}" --deployment-revision "$(git rev-parse HEAD)" \
+    --compose "${compose}" --simulation-image "${simulation}" --simulation-id "${simulation_id}" \
+    --finalizer-image "${finalizer}" --evidence-image "${evidence}" \
+    --source-volume "${source_volume}" --retained-volume "${retained_volume}" >"${output}/consumer-identity.json"
+  docker run --rm --user "$(id -u):$(id -g)" --env NPM_CONFIG_CACHE=/tmp/npm-cache \
+    --mount "type=bind,source=${consumer},target=${consumer}" --workdir "${consumer}" "${node_image}" \
+    npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+  docker run --rm --user "$(id -u):$(id -g)" --env NPM_CONFIG_CACHE=/tmp/npm-cache \
+    --mount "type=bind,source=${consumer},target=${consumer}" --workdir "${consumer}" "${node_image}" \
+    npm ci --ignore-scripts --no-audit --no-fund
+  negative_tag="${registry}/installed-ros/host-${negative_mode}:${scope}"
+  docker buildx build --builder "${builder}" --platform linux/amd64 --load --tag "${negative_tag}" "${consumer}"
+  negative_image="$(share_image "${negative_tag}" "host-${negative_mode}")"
+  docker run --rm --user "$(id -u):$(id -g)" --group-add "${socket_gid}" \
+    --mount "type=bind,source=${consumer},target=${consumer}" \
+    --mount "type=bind,source=${socket},target=${socket},readonly" \
+    --mount "type=bind,source=${docker_cli},target=/usr/bin/docker,readonly" \
+    --mount "type=bind,source=${output},target=${output}" --workdir "${consumer}" "${node_image}" \
+    node "${consumer}/negative-launch.mjs" "${consumer}" "${socket}" "${negative_image}" "${output}/launcher" "${negative_mode}" \
+    >"${output}/installed-launch.log" 2>&1
+  owner="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["status"]=="passed"; assert d["sourceVolumeRemoved"] is True; assert d["mode"]==sys.argv[2]; print("installed-ros-negative-"+d["runId"][4:12])' \
+    "${output}/launcher/installed-negative-report.json" "${negative_mode}")"
+  docker volume inspect "${retained_volume}" >"${output}/retained-volume.json"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert len(d)==1; v=d[0]; assert v["Name"]==sys.argv[2]; assert v["Labels"]["org.robotics.runtime.run-id"]==sys.argv[3]; assert v["Labels"]["org.robotics.runtime.storage-owner"]==sys.argv[3]' \
+    "${output}/retained-volume.json" "${retained_volume}" "${owner}"
+  copy_id="$(docker create --label "org.robotics.runtime.run-id=${scope}" --network none --read-only \
+    --mount "type=volume,source=${retained_volume},target=/retained,readonly" "${node_image}")"
+  mkdir "${output}/retained"
+  docker cp "${copy_id}:/retained/." "${output}/retained"
+  docker rm "${copy_id}" >/dev/null
+  copy_id=
+done
+output="${positive_output}"
+printf 'Installed ROS lifecycle negative gates completed: %s\n' "${output}"

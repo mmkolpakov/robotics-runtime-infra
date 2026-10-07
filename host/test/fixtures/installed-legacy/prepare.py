@@ -224,13 +224,29 @@ def main():
     (consumer / "app/qualify-legacy-live.mjs").write_bytes(
         source("host/tools/qualify-legacy-live.mjs", fixture_revision)
     )
+    (consumer / "app/installed-fixture.mjs").write_bytes(
+        source(
+            "host/test/fixtures/installed-legacy/installed-fixture.mjs",
+            fixture_revision,
+        )
+    )
     (consumer / "app/bootstrap.mjs").write_bytes(
         source("host/test/fixtures/installed-legacy/bootstrap.mjs", fixture_revision)
     )
     if args.negative_lifecycle:
-        for name in ("negative-bootstrap.mjs", "negative-launch.mjs"):
-            destination = consumer / ("app" if name == "negative-bootstrap.mjs" else "") / name
-            destination.write_bytes(source("host/test/fixtures/installed-legacy/" + name, fixture_revision))
+        for name in (
+            "negative-bootstrap.mjs",
+            "startup-negative-bootstrap.mjs",
+            "negative-launch.mjs",
+            "negative-retention.mjs",
+            "measurement-negative.mjs",
+        ):
+            destination = (
+                consumer / ("" if name == "negative-launch.mjs" else "app") / name
+            )
+            destination.write_bytes(
+                source("host/test/fixtures/installed-legacy/" + name, fixture_revision)
+            )
     (consumer / "profiles/ros.yml").write_text(
         json.dumps(
             [

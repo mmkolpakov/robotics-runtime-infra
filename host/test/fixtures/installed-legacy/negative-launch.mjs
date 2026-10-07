@@ -6,7 +6,7 @@ import Docker from 'dockerode';
 import {ComposeExecution,EngineMetadata} from '@robotics-runtime/infra-host';
 import {legacyLiveComposeOptions,prefetchLegacyImages} from './app/qualify-legacy-live.mjs';
 const [root,socket,image,artifacts,mode]=process.argv.slice(2);
-assert.ok(['cancel','timeout','foreign-cleanup'].includes(mode));
+assert.ok(['startup-cancel','cancel','timeout','foreign-cleanup'].includes(mode));
 assert.match(image,/^[^\s@]+@sha256:[a-f0-9]{64}$/);
 assert.ok(import.meta.resolve('@robotics-runtime/infra-host').startsWith('file://'+root+'/node_modules/'));
 const identity=JSON.parse(await readFile(root+'/identity.json','utf8')),engineProfile=identity.engineProfile;
@@ -46,8 +46,10 @@ try{
  const down=await compose.run(['down','--remove-orphans']);await save('host-down',down);assert.equal(down.ok,true,down.stderr);
  const volume=(await native.getVolume(identity.sourceVolume).inspect());await save('source-volume-before-removal',volume);assert.equal(volume.Labels['org.robotics.runtime.run-id'],owner);assert.equal(volume.Labels['org.robotics.runtime.storage-owner'],owner);
  await job('remove-only-owned-source-volume',['volume','rm',identity.sourceVolume]);await absentVolume(identity.sourceVolume);
+ const portable=await job('retained-only-verification',['run','--rm','--network','none','--read-only','--user','1000:1000',...(actualEngine==='podman'?['--userns','keep-id:uid=1000,gid=1000']:[]),'--mount','type=volume,source='+identity.retainedVolume+',target=/retained,readonly','--entrypoint','node',image,'/app/negative-retention.mjs','/retained/startup-'+runId]);
+ assert.equal(JSON.parse(portable.stdout).status,'passed');
  const after=ids((await job('pre-existing-containers-after',['ps','--all','--quiet','--no-trunc'])).stdout);assert.ok(before.every(id=>after.includes(id)),'a pre-existing container disappeared');
  const retained=await native.getVolume(identity.retainedVolume).inspect();assert.equal(retained.Labels['org.robotics.runtime.run-id'],owner);
- await save('installed-negative-report',{...report,identity,sourceVolumeRemoved:true,retainedVolume:identity.retainedVolume,preExistingContainerIdsPreserved:before});
+ await save('installed-negative-report',{...report,identity,project,sourceVolumeRemoved:true,retainedVolume:identity.retainedVolume,preExistingContainerIdsPreserved:before});
  console.log(JSON.stringify({...report,sourceVolumeRemoved:true,retainedVolume:identity.retainedVolume}));
 }catch(error){await save('failure',{status:'failed',diagnostic:String(error),identity,mode,runId,project});throw error}finally{await ctx.fiber.dispose()}
