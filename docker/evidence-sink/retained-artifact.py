@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a retained S3 recording against an independently supplied public key."""
+"""Verify retained S3 artifact bytes against an independently supplied public key."""
 
 from __future__ import annotations
 
@@ -17,7 +17,14 @@ from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 from uuid import UUID
 
-from robotics_runtime_contracts import dumps_canonical, loads_mapping, validate_document
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
+from robotics_runtime_contracts import (
+    dumps_canonical,
+    load_schema,
+    loads_mapping,
+    validate_document,
+)
 from robotics_runtime_contracts.serialization import read_document_bytes
 from robotics_runtime_contracts.writers import write_document
 
@@ -52,15 +59,24 @@ def registration_descriptor(
     if parsed_run.version != 4 or run_id != f"run-{parsed_run}":
         raise ValueError("registration run ID must have canonical UUID4 form")
     size = document.get("size_bytes")
-    if type(size) is not int or not 0 < size <= maximum_size:
+    if type(size) is not int or not 0 <= size <= maximum_size:
+        raise ValueError(
+            "artifact size must be nonnegative and within the download limit"
+        )
+    media_type = document.get("media_type")
+    try:
+        Draft202012Validator(load_schema("common.v1")["$defs"]["mediaType"]).validate(
+            media_type
+        )
+    except ValidationError as error:
+        raise ValueError("registration media type is invalid") from error
+    if media_type == "application/mcap" and size == 0:
         raise ValueError(
             "recording size must be positive and within the download limit"
         )
     digest = document.get("sha256")
     if not isinstance(digest, str) or re.fullmatch("[0-9a-f]{64}", digest) is None:
         raise ValueError("registration SHA-256 is invalid")
-    if document.get("media_type") != "application/mcap":
-        raise ValueError("the S3 recording verifier requires application/mcap")
     revision = document.get("version_id")
     if not isinstance(revision, str) or not revision or revision == "null":
         raise ValueError("S3 requires a non-null immutable object version")
@@ -82,16 +98,27 @@ def registration_descriptor(
         "uri": uri,
         "sha256": digest,
         "size_bytes": size,
-        "media_type": "application/mcap",
+        "media_type": media_type,
         "immutable_revision": revision,
     }
     return descriptor, run_id, location.netloc, key
 
 
+def artifact_byte_limit(value: int) -> int:
+    if type(value) is not int or not 0 < value <= MAX_ARTIFACT_BYTES:
+        raise ValueError(
+            "artifact byte limit must be positive and no greater than 1073741824"
+        )
+    return value
+
+
 def retention_predicate(registration: Path, source: Path) -> dict[str, Any]:
     document = mapping(read_document_bytes(registration), str(registration))
     descriptor, run_id, _, _ = registration_descriptor(
-        document, maximum_size=MAX_ARTIFACT_BYTES
+        document,
+        maximum_size=artifact_byte_limit(
+            int(os.environ.get("EVIDENCE_MAX_ARTIFACT_BYTES", MAX_ARTIFACT_BYTES))
+        ),
     )
     digest, size = file_facts(source)
     if (digest, size) != (descriptor["sha256"], descriptor["size_bytes"]):
@@ -132,34 +159,46 @@ def cosign_version(executable: str) -> str:
     return str(version)
 
 
-def download_version(
-    executable: str, descriptor: dict[str, Any], bucket: str, key: str, output: Path
-) -> bytes:
-    # One extra byte detects a larger object without downloading an unbounded body.
-    response = execute(
-        [
-            executable,
-            "s3api",
-            "get-object",
-            f"--bucket={bucket}",
-            f"--key={key}",
-            f"--version-id={descriptor['immutable_revision']}",
-            f"--range=bytes=0-{descriptor['size_bytes']}",
-            "--output=json",
-            "--no-cli-pager",
-            str(output),
-        ]
-    )
-    metadata = mapping(response, "s3-get-object.json")
-    size = descriptor["size_bytes"]
+def require_object_version(
+    metadata: dict[str, Any], descriptor: dict[str, Any]
+) -> None:
     if (
         metadata.get("VersionId") != descriptor["immutable_revision"]
         or metadata.get("ContentType") != descriptor["media_type"]
         or type(metadata.get("ContentLength")) is not int
-        or metadata["ContentLength"] != size
-        or metadata.get("ContentRange") != f"bytes 0-{size - 1}/{size}"
+        or metadata["ContentLength"] != descriptor["size_bytes"]
         or metadata.get("DeleteMarker", False) is not False
     ):
+        raise ValueError(
+            "S3 response does not describe the complete requested object version"
+        )
+
+
+def download_version(
+    executable: str, descriptor: dict[str, Any], bucket: str, key: str, output: Path
+) -> bytes:
+    identity = [
+        f"--bucket={bucket}",
+        f"--key={key}",
+        f"--version-id={descriptor['immutable_revision']}",
+        "--output=json",
+        "--no-cli-pager",
+    ]
+    size = descriptor["size_bytes"]
+    if size == 0:
+        # A range on an empty object can fail with 416. Confirm this exact
+        # immutable version's zero length before a successful full empty GET.
+        head = execute([executable, "s3api", "head-object", *identity])
+        require_object_version(mapping(head, "s3-head-object.json"), descriptor)
+    # One extra byte detects a larger nonempty object without an unbounded GET.
+    range_arguments = [f"--range=bytes=0-{size}"] if size else []
+    response = execute(
+        [executable, "s3api", "get-object", *identity, *range_arguments, str(output)]
+    )
+    metadata = mapping(response, "s3-get-object.json")
+    require_object_version(metadata, descriptor)
+    expected_range = f"bytes 0-{size - 1}/{size}" if size else None
+    if metadata.get("ContentRange") != expected_range:
         raise ValueError(
             "S3 response does not describe the complete requested object version"
         )
@@ -227,13 +266,12 @@ def verify(arguments: argparse.Namespace) -> Path:
     output = arguments.output.expanduser().absolute()
     if output.exists():
         raise ValueError("verification output directory must not already exist")
-    if arguments.max_artifact_bytes < 1:
-        raise ValueError("download limit must be positive")
+    maximum_size = artifact_byte_limit(arguments.max_artifact_bytes)
     registration = mapping(
         read_document_bytes(arguments.registration), str(arguments.registration)
     )
     descriptor, run_id, bucket, key = registration_descriptor(
-        registration, maximum_size=arguments.max_artifact_bytes
+        registration, maximum_size=maximum_size
     )
     bundle_raw = read_document_bytes(arguments.bundle)
     policy_raw = read_document_bytes(arguments.key)
@@ -245,7 +283,7 @@ def verify(arguments: argparse.Namespace) -> Path:
         work = Path(directory)
         bundle = work / "verification-evidence.sigstore.json"
         policy = work / "trust-policy.pem"
-        source = work / "downloaded.mcap"
+        source = work / "downloaded.artifact"
         bundle.write_bytes(bundle_raw)
         policy.write_bytes(policy_raw)
         response = download_version(arguments.aws, descriptor, bucket, key, source)
@@ -315,7 +353,11 @@ def main() -> int:
         verifier.add_argument(f"--{name}", type=Path, required=True)
     verifier.add_argument("--cosign", default="cosign")
     verifier.add_argument("--aws", default="aws")
-    verifier.add_argument("--max-artifact-bytes", type=int, default=MAX_ARTIFACT_BYTES)
+    verifier.add_argument(
+        "--max-artifact-bytes",
+        type=int,
+        default=os.environ.get("EVIDENCE_MAX_ARTIFACT_BYTES", MAX_ARTIFACT_BYTES),
+    )
     arguments = parser.parse_args()
     try:
         if arguments.command == "predicate":

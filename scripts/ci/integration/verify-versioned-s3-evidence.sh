@@ -8,7 +8,10 @@ evidence_dir="${PWD}/artifacts/evidence-s3"
 project="evidence-s3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 mkdir -p "${evidence_dir}"
 printf 'opaque controller evidence\n' >"${evidence_dir}/controller.log"
-export EVIDENCE_ARTIFACT_MEDIA_TYPES='application/json,application/x-ndjson,application/junit+xml,text/plain,application/vnd.in-toto+json,application/vnd.example.controller-log'
+printf '{"event":"opaque attachment"}\n' >"${evidence_dir}/emissions.jsonl"
+printf '\211PNG\r\n\032\nopaque fixture' >"${evidence_dir}/attachment.png"
+: >"${evidence_dir}/empty.log"
+export EVIDENCE_ARTIFACT_MEDIA_TYPES='application/json,application/x-ndjson,application/junit+xml,text/plain,application/vnd.in-toto+json,application/vnd.example.controller-log,image/png'
 export ROBOTICS_BAG_DIR="${PWD}/test/fixtures/playback/golden"
 export ROBOTICS_EVIDENCE_DIR="${evidence_dir}"
 export ROBOTICS_RUN_ID=run-00000000-0000-4000-8000-000000000001
@@ -36,6 +39,12 @@ sudo chown -R 10001:10001 "${evidence_dir}"
 "${compose[@]}" --profile test --profile evidence \
   run --rm evidence-finalize artifact \
   /evidence/controller.log application/vnd.example.controller-log 900001
+for binding in 'emissions.jsonl application/x-ndjson 900002' \
+  'attachment.png image/png 900003' 'empty.log text/plain 900004'; do
+  read -r file media index <<<"$binding"
+  "${compose[@]}" --profile test --profile evidence \
+    run --rm evidence-finalize artifact "/evidence/$file" "$media" "$index"
+done
 "${compose[@]}" --profile test --profile evidence \
   run --rm -T --entrypoint /bin/bash evidence-finalize -s <<'SHELL'
 set -Eeuo pipefail
@@ -142,6 +151,29 @@ evidence-sink receipt "$source" 0 \
   --dependency /evidence/provenance/recording-0/statement.json \
   --dependency /evidence/provenance/recording-0/trust-policy.pem \
   --dependency /evidence/provenance/recording-0/verification-evidence.sigstore.json
+# Every confirmed generic upload follows the same signature, exact-version
+# verifier, and receipt writer before the index can be finalized.
+for registration in /evidence/state/registrations/*.json; do
+  index="$(jq -er '.segment_index' "$registration")"
+  [[ "$index" != 0 ]] || continue
+  source="$(jq -er '.local_path' "$registration")"
+  provenance="/evidence/provenance/attachment-$index"
+  retained-artifact predicate --registration "$registration" --source "$source" \
+    >"$work/predicate-$index.json"
+  cosign attest-blob --yes --key "$work/signer.key" \
+    --signing-config "$work/signing.json" --trusted-root "$work/root.json" \
+    --predicate "$work/predicate-$index.json" \
+    --type https://robotics-runtime.dev/attestations/artifact-retention/v1 \
+    --bundle "$work/retention-$index.sigstore.json" "$source"
+  retained-artifact verify --registration "$registration" \
+    --bundle "$work/retention-$index.sigstore.json" --key "$work/signer.pub" \
+    --output "$provenance"
+  evidence-sink receipt "$source" "$index" \
+    --verification "$provenance/artifact-verification.json" \
+    --dependency "$provenance/statement.json" \
+    --dependency "$provenance/trust-policy.pem" \
+    --dependency "$provenance/verification-evidence.sigstore.json"
+done
 evidence-sink finalize
 SHELL
 jq -e '
@@ -149,7 +181,7 @@ jq -e '
   .finalized == true and
   .policy_observation.upload_mode == "closed_segments_during_run" and
   .policy_observation.remote_sink_used == true and
-  (.artifacts | length) == 2 and
+  (.artifacts | length) == 5 and
   ([.artifacts[] | select(
     .media_type == "application/mcap" and
     .storage_state == "retained" and
@@ -158,9 +190,12 @@ jq -e '
     (.receipt_sha256 | length) == 64
   )] | length) == 1 and
   ([.artifacts[] | select(
-    .media_type == "application/vnd.example.controller-log" and
-    .storage_state == "local"
-  )] | length) == 1
+    .media_type != "application/mcap" and .storage_state == "retained" and
+    (.immutable_revision | length) > 0 and (.receipt_sha256 | length) == 64
+  )] | length) == 4 and
+  ([.artifacts[] | select(.media_type == "text/plain" and .size_bytes == 0)] | length) == 1 and
+  ([.artifacts[] | select(.media_type == "image/png")] | length) == 1 and
+  ([.artifacts[] | select(.media_type == "application/x-ndjson")] | length) == 1
 ' "${evidence_dir}/evidence-index.json"
 
 docker run --rm -i --network none --read-only --cap-drop ALL \
@@ -175,8 +210,8 @@ evidence = load_evidence_index(
     "/evidence/evidence-index.json",
     receipt_paths=ReceiptInventory("/evidence/receipt-inventory.json"),
 )
-assert len(evidence.receipts) == 1
+assert len(evidence.receipts) == 5
 assert len(evidence.recording_summaries) == 1
-assert len(evidence.links) == 2
-print("installed harness accepted the verified immutable S3 recording and local log")
+assert len(evidence.links) == 5
+print("installed harness accepted exact-version S3 recording and opaque JSONL/PNG/zero-byte attachments")
 PY

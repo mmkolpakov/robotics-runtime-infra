@@ -160,3 +160,125 @@ setup() {
   [[ "$output" == *'version ID must be a non-null string'* ]]
   [ ! -e "${EVIDENCE_REGISTRATION_DIR}/0-${DIGEST}.json" ]
 }
+
+generic_source() {
+  local media="$1" name="$2" content="$3"
+  SOURCE="${EVIDENCE_SPOOL_DIR}/${name}"
+  printf '%s' "$content" >"$SOURCE"
+  DIGEST="$(sha256sum "$SOURCE" | cut -d' ' -f1)"
+  export SOURCE DIGEST
+  jq -n --arg digest "$DIGEST" --arg media "$media" \
+    --argjson size "$(stat -c '%s' "$SOURCE")" '
+    {VersionId: "retained-1", ContentLength: $size,
+      ContentType: $media, Metadata: {sha256: $digest}}
+  ' >"$UPLOAD_METADATA"
+}
+
+@test "JSONL and PNG generic artifacts use the current immutable S3 upload path" {
+  for media in application/x-ndjson image/png; do
+    generic_source "$media" attachment '{"data":"opaque"}'
+    # A separate registration scope models a new run attempt; previous bytes stay untouched.
+    export EVIDENCE_REGISTRATION_DIR="${BATS_TEST_TMPDIR}/${media##*/}"
+    run bash "$SINK" artifact "$SOURCE" "$media" 0
+    [ "$status" -eq 0 ]
+    run jq -e --arg media "$media" --arg sha "$DIGEST" '
+      .upload_status == "confirmed" and .media_type == $media and .sha256 == $sha and
+      .version_id == "retained-1" and (.uri | startswith("s3://fixture-bucket/"))
+    ' "${EVIDENCE_REGISTRATION_DIR}/0-${DIGEST}.json"
+    [ "$status" -eq 0 ]
+  done
+}
+
+@test "a zero-byte opaque artifact retains original hash size and media remotely" {
+  generic_source text/plain empty.log ''
+  run bash "$SINK" artifact "$SOURCE" text/plain 0
+  [ "$status" -eq 0 ]
+  run jq -e --arg sha "$DIGEST" '
+    .upload_status == "confirmed" and .size_bytes == 0 and .sha256 == $sha and
+    .media_type == "text/plain" and .version_id == "retained-1"
+  ' "${EVIDENCE_REGISTRATION_DIR}/0-${DIGEST}.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "matching current generic registration is reused without another upload" {
+  generic_source text/plain repeat.log opaque
+  run bash "$SINK" artifact "$SOURCE" text/plain 0
+  [ "$status" -eq 0 ]
+  run bash "$SINK" artifact "$SOURCE" text/plain 0
+  [ "$status" -eq 0 ]
+  [ "$(cat "$UPLOAD_CALLS")" = $'copy\ncheck' ]
+}
+
+@test "a local registration cannot silently satisfy a selected S3 request" {
+  generic_source text/plain empty.log ''
+  EVIDENCE_MODE=local run bash "$SINK" artifact "$SOURCE" text/plain 0
+  [ "$status" -eq 0 ]
+  run bash "$SINK" artifact "$SOURCE" text/plain 0
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'registration differs from selected identity or mode'* ]]
+  [ ! -e "$UPLOAD_CALLS" ]
+  run jq -e '.upload_status == "local"' "${EVIDENCE_REGISTRATION_DIR}/0-${DIGEST}.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "same empty-byte SHA and index cannot reuse another declared media" {
+  generic_source text/plain empty.log ''
+  run bash "$SINK" artifact "$SOURCE" text/plain 0
+  [ "$status" -eq 0 ]
+  run bash "$SINK" artifact "$SOURCE" image/png 0
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'registration differs from selected identity or mode'* ]]
+  run jq -e '.media_type == "text/plain"' "${EVIDENCE_REGISTRATION_DIR}/0-${DIGEST}.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "generic artifact entry cannot bypass the current MCAP validator" {
+  export EVIDENCE_ARTIFACT_MEDIA_TYPES='application/mcap'
+  run bash "$SINK" artifact "$SOURCE" application/mcap 0
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'MCAP recordings require segment registration'* ]]
+  [ ! -e "$UPLOAD_CALLS" ]
+}
+
+@test "a sparse generic source beyond verifier admission is refused before hash or network" {
+  SOURCE="${EVIDENCE_SPOOL_DIR}/oversized.log"
+  truncate -s 1073741825 "$SOURCE"
+  export SOURCE
+  before="$(stat -c '%i:%s:%Y:%Z' "$SOURCE")"
+  sha256sum() { printf called >"${BATS_TEST_TMPDIR}/hash-called"; return 1; }
+  export -f sha256sum
+  run bash "$SINK" artifact "$SOURCE" text/plain 0
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'EVIDENCE_MAX_ARTIFACT_BYTES budget'* ]]
+  [ ! -e "${BATS_TEST_TMPDIR}/hash-called" ]
+  [ ! -e "$UPLOAD_CALLS" ]
+  [ ! -e "$UPLOAD_AWS_CALLS" ]
+  [ ! -d "$EVIDENCE_REGISTRATION_DIR" ]
+  [ "$(stat -c '%i:%s:%Y:%Z' "$SOURCE")" = "$before" ]
+}
+
+@test "invalid generic artifact budget cannot reach hashing or remote effects" {
+  for limit in 0 -1 invalid 1073741825 999999999999999999999999999; do
+    generic_source text/plain bounded.log opaque
+    EVIDENCE_MAX_ARTIFACT_BYTES="$limit" run bash "$SINK" artifact "$SOURCE" text/plain 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'EVIDENCE_MAX_ARTIFACT_BYTES must be positive'* ]]
+    [ ! -e "$UPLOAD_CALLS" ]
+    [ ! -e "$UPLOAD_AWS_CALLS" ]
+  done
+}
+
+@test "selected verifier byte budget also admits MCAP before hashing or upload" {
+  before="$(stat -c '%i:%s:%Y:%Z' "$SOURCE")"
+  export EVIDENCE_MAX_ARTIFACT_BYTES=1
+  sha256sum() { printf called >"${BATS_TEST_TMPDIR}/hash-called"; return 1; }
+  export -f sha256sum
+  run bash "$SINK" segment "$SOURCE"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'EVIDENCE_MAX_ARTIFACT_BYTES budget'* ]]
+  [ ! -e "${BATS_TEST_TMPDIR}/hash-called" ]
+  [ ! -e "$UPLOAD_CALLS" ]
+  [ ! -e "$UPLOAD_AWS_CALLS" ]
+  [ ! -d "$EVIDENCE_REGISTRATION_DIR" ]
+  [ "$(stat -c '%i:%s:%Y:%Z' "$SOURCE")" = "$before" ]
+}

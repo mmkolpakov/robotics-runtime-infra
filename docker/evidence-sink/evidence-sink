@@ -17,8 +17,9 @@ readonly retention_class="${ROBOTICS_RETENTION_CLASS:-pull-request-7d}"
 readonly evidence_mode="${EVIDENCE_MODE:-local}"
 readonly recording_mode="${ROBOTICS_RECORDING_MODE:-bounded}"
 readonly compression="${ROBOTICS_COMPRESSION:-zstd}"
-readonly default_artifact_media_types='application/json,application/x-ndjson,application/junit+xml,text/plain,application/vnd.in-toto+json'
+readonly default_artifact_media_types='application/json,application/x-ndjson,application/junit+xml,text/plain,image/png,application/vnd.in-toto+json'
 readonly artifact_media_types="${EVIDENCE_ARTIFACT_MEDIA_TYPES:-${default_artifact_media_types}}"
+readonly max_artifact_bytes="${EVIDENCE_MAX_ARTIFACT_BYTES:-1073741824}"
 
 fail() {
   printf 'evidence-sink: %s\n' "$*" >&2
@@ -47,6 +48,15 @@ aws_cli() {
   fi
 }
 
+check_artifact_byte_admission() {
+  if [[ ! "$max_artifact_bytes" =~ ^[1-9][0-9]{0,9}$ ]] ||
+    (( max_artifact_bytes > 1073741824 )); then
+    fail 'EVIDENCE_MAX_ARTIFACT_BYTES must be positive and no greater than 1073741824'
+  fi
+  (( $1 <= max_artifact_bytes )) ||
+    fail 'artifact exceeds the selected EVIDENCE_MAX_ARTIFACT_BYTES budget'
+}
+
 segment_index() {
   local stem index
   stem="$(basename "$1" .mcap)"
@@ -67,6 +77,32 @@ registration_exists() {
   [[ -e "$target" ]] || return 1
   jq -e --arg run_id "$run_id" '.run_id == $run_id' "$target" >/dev/null || \
     fail 'artifact registration belongs to another run or is invalid'
+}
+
+registration_matches_selected() {
+  local index="$1" digest="$2" file="$3" media_type="$4" size_bytes="$5"
+  local target="${registration_dir}/${index}-${digest}.json" status uri key
+  registration_exists "$index" "$digest" || return 1
+  if [[ "$evidence_mode" == local ]]; then
+    status=local
+    uri="file://${file}"
+  elif [[ "$evidence_mode" == s3 ]]; then
+    status=confirmed
+    key="${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${digest}/${file##*/}"
+    uri="s3://${EVIDENCE_BUCKET}/$(jq -rn --arg key "$key" '$key | split("/") | map(@uri) | join("/")')"
+  else
+    fail "unsupported EVIDENCE_MODE: $evidence_mode"
+  fi
+  jq -e --arg run_id "$run_id" --arg digest "$digest" --arg file "$file" \
+    --arg media "$media_type" --arg status "$status" --arg uri "$uri" \
+    --argjson size "$size_bytes" '
+      .run_id == $run_id and .sha256 == $digest and .size_bytes == $size and
+      .local_path == $file and .media_type == $media and .upload_status == $status and
+      .uri == $uri and .checksum_verified == true and
+      (if $status == "confirmed" then
+        (.version_id | type == "string" and length > 0 and . != "null")
+       else (has("version_id") | not) end)
+    ' "$target" >/dev/null || fail 'existing artifact registration differs from selected identity or mode'
 }
 
 update_max_state() {
@@ -108,7 +144,7 @@ write_registration() (
   local target temporary
 
   target="${registration_dir}/${index}-${sha256}.json"
-  if registration_exists "$index" "$sha256"; then
+  if registration_matches_selected "$index" "$sha256" "$file" "$media_type" "$size_bytes"; then
     return 0
   fi
   if compgen -G "${registration_dir}/${index}-*.json" >/dev/null; then
@@ -171,14 +207,19 @@ verify_remote_versioning() {
   [[ "$status" == Enabled ]] || fail "bucket versioning is not enabled"
 }
 
-upload_segment() (
-  local file="$1" index="$2" sha256="$3" size_bytes="$4"
-  local summary_path="$5" summary_sha256="$6" summary_size_bytes="$7"
+upload_artifact() (
+  local file="$1" index="$2" sha256="$3" size_bytes="$4" media_type="$5"
+  local summary_path="${6:-}" summary_sha256="${7:-}" summary_size_bytes="${8:-0}"
   local key encoded_key remote_dir file_name check_list
   local head_json remote_size remote_sha content_type version_id
 
   require_command rclone
   require_command aws
+  case "$file" in
+    *$'\n'*|*$'\r'*) fail 'S3 artifact path cannot contain line breaks' ;;
+  esac
+  [[ "${file##*/}" =~ ^[a-zA-Z0-9._\ %#()+@,=-]+$ ]] ||
+    fail 'S3 artifact filename must use portable ASCII letters, digits, spaces or ._%#()+@,=-'
   verify_remote_versioning
   file_name="$(basename "$file")"
   remote_dir="${RCLONE_REMOTE:-evidence}:${EVIDENCE_BUCKET}/${EVIDENCE_PREFIX:-${retention_class}}/${run_id}/${index}-${sha256}/"
@@ -194,7 +235,7 @@ upload_segment() (
     --immutable \
     --checksum \
     --metadata \
-    --metadata-set content-type=application/mcap \
+    --metadata-set "content-type=${media_type}" \
     --metadata-set "sha256=${sha256}" \
     --metadata-set "run-id=${run_id}" \
     --metadata-set "segment-index=${index}" || fail "rclone upload failed for $key"
@@ -216,12 +257,12 @@ upload_segment() (
 
   [[ "$remote_size" == "$size_bytes" ]] || fail "remote size differs for $key"
   [[ "$remote_sha" == "$sha256" ]] || fail "remote SHA-256 differs for $key"
-  [[ "$content_type" == application/mcap ]] || fail "remote media type differs for $key"
+  [[ "$content_type" == "$media_type" ]] || fail "remote media type differs for $key"
 
   encoded_key="$(jq -rn --arg key "$key" '$key | split("/") | map(@uri) | join("/")')" || \
     fail 'cannot encode the remote object URI'
   write_registration "$file" "$index" "$sha256" "$size_bytes" \
-    "s3://${EVIDENCE_BUCKET}/${encoded_key}" confirmed "$version_id" application/mcap \
+    "s3://${EVIDENCE_BUCKET}/${encoded_key}" confirmed "$version_id" "$media_type" \
     "$summary_path" "$summary_sha256" "$summary_size_bytes"
 
   # Keep original bytes until the public writer has rechecked every source at
@@ -253,12 +294,13 @@ process_segment() {
     return 75
   fi
   index="$(segment_index "$file")" || fail "cannot derive segment index for $file"
-  sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
   size_bytes="$(stat -c '%s' "$file")" || fail "cannot stat $file"
+  check_artifact_byte_admission "$size_bytes"
 
   if (( size_bytes > ${EVIDENCE_MAX_SEGMENT_SIZE_BYTES:-1073741824} )); then
     fail "segment exceeds EVIDENCE_MAX_SEGMENT_SIZE_BYTES: $file"
   fi
+  sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
 
   mkdir -p "$registration_dir" "$summary_dir" || fail 'cannot create evidence directories'
   summary_path="${summary_dir}/${index}-${sha256}.recording-summary.json"
@@ -281,7 +323,7 @@ process_segment() {
     fail "segment exceeds EVIDENCE_MAX_SEGMENT_DURATION_SEC: $file"
   fi
 
-  if registration_exists "$index" "$sha256"; then
+  if registration_matches_selected "$index" "$sha256" "$file" application/mcap "$size_bytes"; then
     return 0
   fi
   if [[ "$evidence_mode" == local ]]; then
@@ -289,7 +331,7 @@ process_segment() {
       "file://${file}" local "" application/mcap \
       "$summary_path" "$summary_sha256" "$summary_size_bytes"
   elif [[ "$evidence_mode" == s3 ]]; then
-    upload_segment "$file" "$index" "$sha256" "$size_bytes" \
+    upload_artifact "$file" "$index" "$sha256" "$size_bytes" application/mcap \
       "$summary_path" "$summary_sha256" "$summary_size_bytes"
   else
     fail "unsupported EVIDENCE_MODE: $evidence_mode"
@@ -303,13 +345,28 @@ register_artifact() {
   index="$(normalize_index "$index")" || fail 'invalid artifact index'
   [[ "$media_type" =~ ^(application|audio|image|text|video)/[A-Za-z0-9.+-]+$ ]] || \
     fail "invalid artifact media type: $media_type"
+  [[ "$media_type" != application/mcap ]] || fail 'MCAP recordings require segment registration'
   artifact_media_type_allowed "$media_type" || \
     fail "artifact media type is not allowed: $media_type"
-  sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
+  case "$file" in
+    *$'\n'*|*$'\r'*) fail 'artifact path cannot contain line breaks' ;;
+  esac
+  IFS= read -r -d '' file < <(realpath -ez -- "$file") || fail 'cannot resolve artifact path'
   size_bytes="$(stat -c '%s' "$file")" || fail "cannot stat $file"
+  check_artifact_byte_admission "$size_bytes"
+  sha256="$(sha256sum "$file" | cut -d' ' -f1)" || fail "cannot hash $file"
   mkdir -p "$registration_dir" || fail 'cannot create receipt directory'
-  write_registration "$file" "$index" "$sha256" "$size_bytes" \
-    "file://${file}" local "" "$media_type"
+  if [[ "$evidence_mode" == local ]]; then
+    write_registration "$file" "$index" "$sha256" "$size_bytes" \
+      "file://${file}" local "" "$media_type"
+  elif [[ "$evidence_mode" == s3 ]]; then
+    if registration_matches_selected "$index" "$sha256" "$file" "$media_type" "$size_bytes"; then
+      return 0
+    fi
+    upload_artifact "$file" "$index" "$sha256" "$size_bytes" "$media_type"
+  else
+    fail "unsupported EVIDENCE_MODE: $evidence_mode"
+  fi
 }
 
 scan_segments() {
