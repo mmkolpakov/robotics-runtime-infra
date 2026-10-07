@@ -847,11 +847,16 @@ append_playback_raw() {
 if [[ "${data_source}" == simulator ]]; then
   qualification_inputs+=(--artifact "other_evidence:providers/world.sdf=${artifact_dir}/provider/world.sdf")
 else
-  input_digest="$(jq -er '.artifact.sha256' "${run_dir}/dataset-manifest.json")"
+  mapfile -t input_digests < <(
+    jq -er '.bag.members[].recording.sha256' "${run_dir}/dataset-manifest.json"
+  )
+  test "${#input_digests[@]}" -ge 1
   for path in "${mcap_files[@]}"; do
-    [[ "$(sha256sum "${path}" | cut -d' ' -f1)" != "${input_digest}" ]] || {
-      printf 'new playback observation cannot reuse its source recording bytes\n' >&2; exit 65;
-    }
+    for input_digest in "${input_digests[@]}"; do
+      [[ "$(sha256sum "${path}" | cut -d' ' -f1)" != "${input_digest}" ]] || {
+        printf 'new playback observation cannot reuse its source recording bytes\n' >&2; exit 65;
+      }
+    done
   done
   qualification_inputs+=(--artifact "dataset_manifest:dataset-manifest.json=${run_dir}/dataset-manifest.json")
   while IFS= read -r -d '' path; do
@@ -860,6 +865,14 @@ else
     [[ "${path}" == *.mcap ]] && kind=recording
     append_playback_raw "${kind}" "${relative}" "${path}"
   done < <(find "${run_dir}/source" -type f -print0 | sort -z)
+  mapfile -t source_summaries < <(
+    find "${run_dir}/source/capture/summaries" -maxdepth 1 -type f \
+      -name '*.recording-summary.json' -print | LC_ALL=C sort
+  )
+  test "${#source_summaries[@]}" -eq "${#input_digests[@]}"
+  for index in "${!source_summaries[@]}"; do
+    qualification_inputs+=(--recording-summary "source-${index}=${source_summaries[$index]}")
+  done
   for relative in profile.json conformance-result.json observation.json \
     configuration/provider.json configuration/rosbag2-version.txt configuration/playback-inputs.json \
     logs/playback-gate.log logs/playback-probe.log playback-image.json probe-image.json compose-original.json compose.json; do

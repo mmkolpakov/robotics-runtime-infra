@@ -64,6 +64,11 @@ cp -a "${artifact_a}/." "${root}/artifacts/"
 if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 ]]; then
   source_run="${root}/runs/${project_a}"
   prepared="${root}/runs/${project_a}-playback-inputs"
+  # Exercise the current bag contract with the same packaged coordinator and codecs.
+  ROBOTICS_RUN_DIR="${source_run}" docker compose \
+    -f "${root}/compose.yaml" --profile acceptance run --rm --no-deps --pull never \
+    --user "$(id -u):$(id -g)" --volume "${root}:/tooling:ro" \
+    runtime-manifest /opt/contracts/bin/python /tooling/test/ci/prepare-playback-inputs.test.py
   # Prepare from the genuine finalized first stock phase, without rewriting it.
   ROBOTICS_RUN_DIR="${source_run}" docker compose \
     -f "${root}/compose.yaml" --profile acceptance run --rm --no-deps --pull never \
