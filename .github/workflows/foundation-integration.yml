@@ -80,7 +80,7 @@ jobs:
         run: bash scripts/ci/integration/verify-versioned-s3-evidence.sh
       - name: Run scenario against the real ROS graph
         run: bash scripts/ci/foundation/run-runtime.sh
-      - name: Run two isolated three-repository acceptance paths
+      - name: Run two isolated workspace acceptance paths
         env:
           ROBOTICS_STEP_INTERVAL_SEC: "0.01"
           # Qualify the native received chronology independently of Clock payloads.

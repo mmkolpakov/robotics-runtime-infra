@@ -11,9 +11,10 @@ certificate verification remain delegated to Cosign.
 - jq 1.6 or newer
 - The exact contracts workspace revision in `foundation.repos` (Python 3.12+)
 
-The current foundation uses the v1 generation and the contracts 0.18.2 statement
-writer and matcher with harness 0.19.1. Install the pinned workspace or exact
-published pair; the earlier 0.15.4 / 0.17.1 foundation cannot read these artifacts.
+The current foundation uses the contracts 0.19.0 statement writer and matcher
+with harness 0.20.0, including the canonical dataset-manifest v2 bag model. Install
+the pinned workspace or exact published pair; the earlier 0.15.4 / 0.17.1 foundation
+cannot read these artifacts.
 Source qualification, an OCI release, and external consumer qualification are
 [separate gates](compatibility.md#foundation-generations).
 

@@ -28,7 +28,7 @@ The legacy 0.8 source line used contracts 0.15.4 and harness 0.17.1 with
 `acceptance-scenario.v4`, emitted `runtime-manifest.v2`, `evidence-index.v3`, and
 `qualification-bundle.v2`. It remains a distinct generation.
 
-The current source foundation builds contracts 0.18.2 and harness 0.19.1 from
+The current source foundation builds contracts 0.19.0 and harness 0.20.0 from
 the single workspace commit in
 [the generated foundation lock](foundation-compatibility.md). Both packages
 are published. The release-bound pin checks that the harness tag matches the

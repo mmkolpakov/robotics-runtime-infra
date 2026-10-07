@@ -64,14 +64,23 @@ cp -a "${artifact_a}/." "${root}/artifacts/"
 if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 ]]; then
   source_run="${root}/runs/${project_a}"
   prepared="${root}/runs/${project_a}-playback-inputs"
-  # Exercise the current bag contract with the same packaged coordinator and codecs.
-  ROBOTICS_RUN_DIR="${source_run}" docker compose \
+  # Reuse the exact coordinator built and observed by this job's installed ROS gate.
+  coordinator_record="${root}/artifacts/installed-ros/installed-ros-${GITHUB_RUN_ID:?same-job coordinator required}-${GITHUB_RUN_ATTEMPT:?same-job attempt required}/coordinator-images.json"
+  coordinator_image="$(jq -er '
+    map(.Id) | unique | select(length == 1) | .[0]
+    | select(test("^sha256:[a-f0-9]{64}$"))
+  ' "${coordinator_record}")"
+  [[ "$(docker image inspect --format '{{.Id}}' "${coordinator_image}")" == "${coordinator_image}" ]]
+  # Select that image only for these finite jobs, preserving the stock ROS entrypoint.
+  SIMULATION_IMAGE="${coordinator_image}" ROBOTICS_RUN_DIR="${source_run}" docker compose \
     -f "${root}/compose.yaml" --profile acceptance run --rm --no-deps --pull never \
+    --entrypoint /usr/local/bin/robotics-entrypoint \
     --user "$(id -u):$(id -g)" --volume "${root}:/tooling:ro" \
     runtime-manifest /opt/contracts/bin/python /tooling/test/ci/prepare-playback-inputs.test.py
   # Prepare from the genuine finalized first stock phase, without rewriting it.
-  ROBOTICS_RUN_DIR="${source_run}" docker compose \
+  SIMULATION_IMAGE="${coordinator_image}" ROBOTICS_RUN_DIR="${source_run}" docker compose \
     -f "${root}/compose.yaml" --profile acceptance run --rm --no-deps --pull never \
+    --entrypoint /usr/local/bin/robotics-entrypoint \
     --user "$(id -u):$(id -g)" \
     --volume "${source_run}:/source:ro" \
     --volume "${source_run}:/run/robotics:ro" \
