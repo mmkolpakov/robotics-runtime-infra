@@ -1252,15 +1252,22 @@ set -Eeuo pipefail
 data_source="$1"
 simulation_container=fixture-playback
 trace="$2"
-sealed=0
+sealed_marker="${trace}.sealed"
+run_dir="${trace}.diagnostics"
+project=fixture-seal
+mkdir -p "${run_dir}"
+export trace sealed_marker
 compose_leaf() {
+  if [[ "$*" == 'ps --all --quiet runtime-metrics' ]]; then
+    return 0
+  fi
   [[ " $* " == *' stop '* ]]
   if [[ "${@: -1}" == recorder ]]; then
     printf 'recorder\n' >>"${trace}"
     [[ "${SEAL_FAILURE:-0}" != 1 ]] || return 31
-    sealed=1
+    touch "${sealed_marker}"
   else
-    [[ "${sealed}" == 1 ]] || return 87
+    [[ -f "${sealed_marker}" ]] || return 87
     printf '%s\n' "${@: -1}" >>"${trace}"
   fi
 }
@@ -1268,8 +1275,16 @@ docker() {
   [[ "$1" == inspect ]]
   printf '%s\n' "${PLAYBACK_RUNNING:-true}"
 }
-compose=(compose_leaf)
+export -f compose_leaf
+compose=(bash -c 'compose_leaf "$@"' compose_leaf)
 SH
+    # Reuse the production helper; its bounded read runs the fixture CLI with
+    # no metrics containers. Native closure and rollover remain separate gates.
+    awk '
+      /^capture_runtime_metrics_diagnostics\(\) {/ { emit = 1 }
+      emit && /^publish_failure_evidence\(\) {/ { exit }
+      emit { print }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
     # Exercise production ordering; native closure and rollover are separate gates.
     awk '
       /^# Seal native capture while observed publishers remain active\./ { emit = 1 }
