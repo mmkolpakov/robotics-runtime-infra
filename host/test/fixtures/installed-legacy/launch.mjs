@@ -4,6 +4,7 @@ import {mkdir, readFile, writeFile, stat} from 'node:fs/promises';
 import {Context, Jobs} from '@robotics-runtime/host';
 import Docker from 'dockerode';
 import {ComposeExecution, EngineMetadata} from '@robotics-runtime/infra-host';
+import {legacyLiveComposeOptions, prefetchLegacyImages} from './app/qualify-legacy-live.mjs';
 
 const [root, socket, image, artifacts] = process.argv.slice(2);
 assert.match(image, /^[^\s@]+@sha256:[a-f0-9]{64}$/, 'observed full Node RepoDigest required');
@@ -66,6 +67,17 @@ try {
   for (const volume of [identity.sourceVolume, identity.retainedVolume]) await absentVolume(volume);
   await job('create-retained-volume', ['volume', 'create', '--label', 'org.robotics.runtime.storage-owner=' + owner, '--label', 'org.robotics.runtime.run-id=' + owner, identity.retainedVolume]);
   await compose.requireVersion();
+  if (engineProfile.engine === 'docker') {
+    const runtimeOptions = legacyLiveComposeOptions({
+      root: root + '/deployment', socket, executable: root + '/tools/docker-compose', runId,
+      sourceVolume: identity.sourceVolume, retainedVolume: identity.retainedVolume,
+      simulationImage: identity.simulationId, simulationReference: identity.simulationImage,
+      coordinatorImage: identity.finalizerImage, evidenceImage: identity.evidenceImage,
+      sourceRevision: identity.deploymentRevision,
+    }, {engineProfile, sourceHostRoot: root + '/deployment', composeEnvironment: {COMPOSE_PARALLEL_LIMIT: '1'}});
+    await prefetchLegacyImages(new ComposeExecution(ctx.jobs, runtimeOptions),
+      [identity.simulationId, identity.finalizerImage, identity.evidenceImage], job, save);
+  }
   const init = await compose.run(['run', '--rm', '--no-deps', 'storage-init']);
   await save('storage-init', init);
   assert.equal(init.ok, true, init.stderr);

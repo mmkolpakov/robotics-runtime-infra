@@ -63,6 +63,33 @@ export function validateLegacyLiveFixture(parameters,fixture={}){
  if(copy.deferQualification!==undefined)assert.equal(typeof copy.deferQualification,'boolean');
  return copy;
 }
+export function legacyLiveComposeOptions(parameters,fixture={}) {
+ const {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,sourceRevision}=parameters;
+ const projectName='rr-joint-'+runId.slice(4,20);
+ const env={ROBOTICS_RUN_ID:runId,LEGACY_SOURCE_ROOT:fixture.sourceHostRoot??root,LEGACY_SOURCE_REVISION:sourceRevision,
+ LEGACY_SIMULATION_IMAGE:simulationImage,LEGACY_SIMULATION_REFERENCE:simulationReference,LEGACY_SIMULATION_DIGEST:simulationReference.split('@')[1],
+ LEGACY_COORDINATOR_IMAGE:coordinatorImage,LEGACY_EVIDENCE_IMAGE:evidenceImage,LEGACY_SHARED_VOLUME:sourceVolume,ROBOTICS_RETAINED_VOLUME:retainedVolume,
+ ROS_DOMAIN_ID:'181',GZ_PARTITION:projectName,...fixture.composeEnvironment};
+ const selectedEngine=fixture.engineProfile?.engine??'podman';
+ const options={executable,socketPath:socket,projectName,cwd:root,
+ files:[root+'/host/test/fixtures/legacy-live/compose.yaml',root+'/host/test/fixtures/legacy-live/evidence.yaml',...(selectedEngine==='podman'?[root+'/host/test/fixtures/legacy-live/compose.podman.yaml']:[])],env,timeoutMs:240000,maxBufferBytes:4194304};
+ return options;
+}
+export async function prefetchLegacyImages(compose,ownedImages,job,save) {
+ const result=await compose.run(['config','--images']);
+ await save('runtime-image-closure',result);
+ assert.equal(result.ok,true,result.diagnostic??result.stderr);
+ const images=[...new Set(result.stdout.trim().split(/\s+/).filter(Boolean))];
+ assert.ok(images.length,'selected runtime image closure is empty');
+ const auxiliary=images.filter(image=>!ownedImages.includes(image));
+ for(const image of auxiliary)assert.match(image,/^[^\s@]+@sha256:[a-f0-9]{64}$/,'auxiliary runtime image must retain its declared digest');
+ await save('runtime-auxiliary-images',{ownedImages,images,auxiliary});
+ for(const [index,image] of auxiliary.entries()) {
+  await job('pull-runtime-auxiliary-'+index,['pull',image]);
+  await job('inspect-runtime-auxiliary-'+index,['image','inspect',image]);
+ }
+ return auxiliary;
+}
 export async function retainHomeComposeQualification(compose,save,environment){
  const versionProbe=await compose.requireVersion();
  await save('home-compose-qualification',{version:versionProbe.stdout.trim(),versionProbe,environment,scope:'HOME source qualification only'});
@@ -86,14 +113,9 @@ await ctx.plugin(Jobs,{timeoutMs:240000,maxBufferBytes:4194304}).await();
 await ctx.plugin(LegacyInputs).await();await ctx.plugin(FinalInputs).await();
 await mkdir(output,{recursive:true});
 const save=async(name,value)=>{const path=join(output,name+'.json');await writeFile(path,JSON.stringify(value,null,2)+'\n');return referenceFile(path)};
-const env={ROBOTICS_RUN_ID:runId,LEGACY_SOURCE_ROOT:fixture.sourceHostRoot??root,LEGACY_SOURCE_REVISION:sourceRevision,
- LEGACY_SIMULATION_IMAGE:simulationImage,LEGACY_SIMULATION_REFERENCE:simulationReference,LEGACY_SIMULATION_DIGEST:simulationReference.split('@')[1],
- LEGACY_COORDINATOR_IMAGE:coordinatorImage,LEGACY_EVIDENCE_IMAGE:evidenceImage,LEGACY_SHARED_VOLUME:sourceVolume,ROBOTICS_RETAINED_VOLUME:retainedVolume,
- ROS_DOMAIN_ID:'181',GZ_PARTITION:projectName,...fixture.composeEnvironment};
 const selectedEngine=fixture.engineProfile?.engine??'podman';
 const expectedUsernsMode=fixture.engineProfile?.expectedUsernsMode??'private';
-const options={executable,socketPath:socket,projectName,cwd:root,
- files:[root+'/host/test/fixtures/legacy-live/compose.yaml',root+'/host/test/fixtures/legacy-live/evidence.yaml',...(selectedEngine==='podman'?[root+'/host/test/fixtures/legacy-live/compose.podman.yaml']:[])],env,timeoutMs:240000,maxBufferBytes:4194304};
+const options=legacyLiveComposeOptions(parameters,fixture),env=options.env;
 const compose=new ComposeExecution(ctx.jobs,options);
 const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'});
 if(fixture.hostRequirement){
