@@ -129,35 +129,42 @@ export class LegacyFinalization extends Service {
       await this.require('metrics',['run','--rm','--no-deps','evidence-sink','artifact',this.plan.evidenceRoot+'/metrics.otlp.jsonl','application/x-ndjson','900000'],signal);
       await this.require('finalize',['run','--rm','--no-deps','evidence-finalize'],signal);
       if(!this.observerId) throw new Error('observer ID absent');
+      let verificationError:Error|undefined;
       const deadline=performance.now()+this.plan.timeoutMs;
       for(;;){
         const observer=await this.facts(this.plan.observerService,signal,this.observerId);
-        if(observer.Running===false){if(observer.ExitCode!==0) throw new Error('public live observer verification failed');break}
+        if(observer.Running===false){if(observer.ExitCode!==0) verificationError=new Error('public live observer verification failed');break}
         if(performance.now()>=deadline) throw new Error('public live observer did not finish after evidence finalization');
         await pause(100,undefined,{signal});
       }
-      const foundation=await this.require('final-logs',['logs','--no-color'],signal);
-      await mkdir(dirname(this.plan.foundationLogPath),{recursive:true});
-      await writeFile(this.plan.foundationLogPath,foundation.stdout,{flag:'wx'});
-      const retainedFoundation=join(this.plan.artifactDirectory,'foundation.log');
-      await copyFile(this.plan.foundationLogPath,retainedFoundation);
-      this.refs.push(await referenceFile(retainedFoundation));
-      if(!this.engine) throw new Error('native observer evidence endpoint absent');
-      const logs=await this.engine.readLogs(this.observerId,{runId:this.plan.runId,projectName:this.plan.compose.projectName},{tailLines:10000,maxBytes:1048576,deadlineMs:Math.min(this.plan.timeoutMs,120000)},signal);
-      await mkdir(dirname(this.plan.observerLogPath),{recursive:true});
-      const rawPath=join(this.plan.artifactDirectory,'observer.docker-raw');
-      await writeFile(rawPath,logs.bytes,{flag:'wx'});
-      this.refs.push(await referenceFile(rawPath));
-      const chunks:Buffer[]=[];
-      const capture=()=>new Writable({write(chunk,_encoding,callback){chunks.push(Buffer.from(chunk));callback()}});
-      const source=Readable.from([logs.bytes]);
-      if(logs.tty) source.on('data',chunk=>chunks.push(Buffer.from(chunk)));
-      else new Docker({socketPath:this.plan.compose.socketPath,version:'v'+this.engine.facts.clientApi}).modem.demuxStream(source,capture(),capture());
-      await finished(source);
-      await writeFile(this.plan.observerLogPath,Buffer.concat(chunks),{flag:'wx'});
-      const retainedObserver=join(this.plan.artifactDirectory,'observer.log');
-      await copyFile(this.plan.observerLogPath,retainedObserver);
-      this.refs.push(await referenceFile(retainedObserver));
+      try {
+        const foundation=await this.require('final-logs',['logs','--no-color'],signal);
+        await mkdir(dirname(this.plan.foundationLogPath),{recursive:true});
+        await writeFile(this.plan.foundationLogPath,foundation.stdout,{flag:'wx'});
+        const retainedFoundation=join(this.plan.artifactDirectory,'foundation.log');
+        await copyFile(this.plan.foundationLogPath,retainedFoundation);
+        this.refs.push(await referenceFile(retainedFoundation));
+        if(!this.engine) throw new Error('native observer evidence endpoint absent');
+        const logs=await this.engine.readLogs(this.observerId,{runId:this.plan.runId,projectName:this.plan.compose.projectName},{tailLines:10000,maxBytes:1048576,deadlineMs:Math.min(this.plan.timeoutMs,120000)},signal);
+        await mkdir(dirname(this.plan.observerLogPath),{recursive:true});
+        const rawPath=join(this.plan.artifactDirectory,'observer.docker-raw');
+        await writeFile(rawPath,logs.bytes,{flag:'wx'});
+        this.refs.push(await referenceFile(rawPath));
+        const chunks:Buffer[]=[];
+        const capture=()=>new Writable({write(chunk,_encoding,callback){chunks.push(Buffer.from(chunk));callback()}});
+        const source=Readable.from([logs.bytes]);
+        if(logs.tty) source.on('data',chunk=>chunks.push(Buffer.from(chunk)));
+        else new Docker({socketPath:this.plan.compose.socketPath,version:'v'+this.engine.facts.clientApi}).modem.demuxStream(source,capture(),capture());
+        await finished(source);
+        await writeFile(this.plan.observerLogPath,Buffer.concat(chunks),{flag:'wx'});
+        const retainedObserver=join(this.plan.artifactDirectory,'observer.log');
+        await copyFile(this.plan.observerLogPath,retainedObserver);
+        this.refs.push(await referenceFile(retainedObserver));
+      } catch(captureError) {
+        if(verificationError) throw new AggregateError([verificationError,captureError],verificationError.message+'; native diagnostic log capture failed: '+String(captureError));
+        throw captureError;
+      }
+      if(verificationError) throw verificationError;
       return [...this.refs];
     }),
     exportEvidence:signal=>this.performExport(this.plan,signal),
