@@ -176,9 +176,20 @@ class TestClockReaderQueue(unittest.TestCase):
         namespace = {"dds": "http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles"}
         profiles = tree.find("dds:profiles", namespace)
         self.assertIsNotNone(profiles)
-        for reader in list(profiles):
+        for reader in profiles.findall("dds:data_reader", namespace):
             if reader.attrib.get("profile_name") == "/clock":
                 profiles.remove(reader)
+        # Keep the same writer boundary while changing only the reader history.
+        clock_writer = profiles.find(
+            "dds:data_writer[@profile_name='/clock']", namespace
+        )
+        self.assertIsNotNone(clock_writer)
+        self.assertEqual(
+            clock_writer.findtext(
+                "dds:qos/dds:publishMode/dds:kind", namespaces=namespace
+            ),
+            "ASYNCHRONOUS",
+        )
         # Existing default-reader policies give the native counterexample.
         with tempfile.TemporaryDirectory() as directory:
             baseline = Path(directory) / "baseline.xml"
