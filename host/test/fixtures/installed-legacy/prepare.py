@@ -30,6 +30,7 @@ DEPLOYMENT = [
     "host/workers/legacy/capture-last-state.py",
     "host/workers/legacy-live/prepare-live.py",
     "host/workers/legacy-live/capture-provider.py",
+    "host/workers/legacy-live/export-startup-failure.py",
     "host/workers/legacy-live/prepare-runtime.py",
 ]
 
@@ -164,8 +165,6 @@ def main():
         raise ValueError("Compose executable identity mismatch")
     manifest = json.loads(source("examples/neutral-robot/sim/robot-description.json"))
     paths = set(DEPLOYMENT)
-    if args.negative_lifecycle:
-        paths.add("host/workers/legacy-live/export-startup-failure.py")
     paths.update(
         row["path"]
         for row in (manifest["source"], manifest["description"], *manifest["meshes"])

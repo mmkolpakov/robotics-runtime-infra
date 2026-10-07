@@ -136,6 +136,28 @@ class InstalledPreparation(unittest.TestCase):
     @unittest.skipUnless(
         COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
     )
+    def test_positive_consumer_retains_admission_helper_closure(self):
+        identity = self.prepare("docker")
+        deployment = self.directory / "consumer/deployment"
+        for worker in (
+            "host/workers/legacy/prepare-source.py",
+            "host/workers/legacy-live/capture-provider.py",
+            "host/workers/legacy-live/export-startup-failure.py",
+        ):
+            with self.subTest(worker=worker):
+                raw = (deployment / worker).read_bytes()
+                self.assertEqual(raw, (ROOT / worker).read_bytes())
+                self.assertEqual(
+                    identity["deployment"][worker],
+                    {
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                        "size_bytes": len(raw),
+                    },
+                )
+
+    @unittest.skipUnless(
+        COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
+    )
     def test_negative_consumer_retains_exact_worker_and_installed_entrypoints(self):
         identity = self.prepare("docker", negative=True)
         consumer = self.directory / "consumer"
