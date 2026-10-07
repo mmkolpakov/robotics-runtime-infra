@@ -35,3 +35,6 @@ ENV PATH="/opt/contracts/bin:${PATH}" HOME=/home/evidence PYTHONDONTWRITEBYTECOD
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/evidence-sink"]
 CMD ["watch"]
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD ["/usr/local/bin/evidence-sink", "versions"]
