@@ -21,6 +21,15 @@ export function validateLegacyLiveFixture(parameters,fixture={}){
  assert.match(simulationReference,/^[^\s@]+@sha256:[a-f0-9]{64}$/);
  assert.ok([coordinatorImage,evidenceImage].every(value=>typeof value==='string'&&/^(?:(?:sha256:)?[a-f0-9]{64}|[^\s@]+@sha256:[a-f0-9]{64})$/.test(value)),'immutable helper image bindings required');
  const copy=structuredClone(fixture);
+ if(copy.engineProfile!==undefined){
+  const selected=copy.engineProfile;
+  assert.ok(selected&&typeof selected==='object'&&!Array.isArray(selected)&&Object.keys(selected).length===2&&Object.keys(selected).every(key=>['engine','expectedUsernsMode'].includes(key)),'explicit fixture engine profile required');
+  assert.ok(['podman','docker'].includes(selected.engine),'unsupported fixture engine profile');
+  assert.equal(selected.expectedUsernsMode,selected.engine==='docker'?'':'private','fixture engine namespace expectation differs');
+  assert.ok(copy.profile&&copy.hostRequirement,'engine profile requires installed host admission');
+  assert.equal(copy.hostRequirement.hostConfig?.UsernsMode,selected.expectedUsernsMode,'installed host namespace expectation differs');
+  if(selected.engine==='docker')assert.ok(Number.isSafeInteger(copy.socketGid)&&copy.socketGid>=0,'actual Docker socket group required');
+ }
  if(copy.composeEnvironment!==undefined){
   const env=copy.composeEnvironment;
   assert.ok(env&&typeof env==='object'&&!Array.isArray(env),'fixture Compose environment must be an object');
@@ -54,6 +63,33 @@ export function validateLegacyLiveFixture(parameters,fixture={}){
  if(copy.deferQualification!==undefined)assert.equal(typeof copy.deferQualification,'boolean');
  return copy;
 }
+export function legacyLiveComposeOptions(parameters,fixture={}) {
+ const {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,sourceRevision}=parameters;
+ const projectName='rr-joint-'+runId.slice(4,20);
+ const env={ROBOTICS_RUN_ID:runId,LEGACY_SOURCE_ROOT:fixture.sourceHostRoot??root,LEGACY_SOURCE_REVISION:sourceRevision,
+ LEGACY_SIMULATION_IMAGE:simulationImage,LEGACY_SIMULATION_REFERENCE:simulationReference,LEGACY_SIMULATION_DIGEST:simulationReference.split('@')[1],
+ LEGACY_COORDINATOR_IMAGE:coordinatorImage,LEGACY_EVIDENCE_IMAGE:evidenceImage,LEGACY_SHARED_VOLUME:sourceVolume,ROBOTICS_RETAINED_VOLUME:retainedVolume,
+ ROS_DOMAIN_ID:'181',GZ_PARTITION:projectName,...fixture.composeEnvironment};
+ const selectedEngine=fixture.engineProfile?.engine??'podman';
+ const options={executable,socketPath:socket,projectName,cwd:root,
+ files:[root+'/host/test/fixtures/legacy-live/compose.yaml',root+'/host/test/fixtures/legacy-live/evidence.yaml',...(selectedEngine==='podman'?[root+'/host/test/fixtures/legacy-live/compose.podman.yaml']:[])],env,timeoutMs:240000,maxBufferBytes:4194304};
+ return options;
+}
+export async function prefetchLegacyImages(compose,ownedImages,job,save) {
+ const result=await compose.run(['config','--images']);
+ await save('runtime-image-closure',result);
+ assert.equal(result.ok,true,result.diagnostic??result.stderr);
+ const images=[...new Set(result.stdout.trim().split(/\s+/).filter(Boolean))];
+ assert.ok(images.length,'selected runtime image closure is empty');
+ const auxiliary=images.filter(image=>!ownedImages.includes(image));
+ for(const image of auxiliary)assert.match(image,/^[^\s@]+@sha256:[a-f0-9]{64}$/,'auxiliary runtime image must retain its declared digest');
+ await save('runtime-auxiliary-images',{ownedImages,images,auxiliary});
+ for(const [index,image] of auxiliary.entries()) {
+  await job('pull-runtime-auxiliary-'+index,['pull',image]);
+  await job('inspect-runtime-auxiliary-'+index,['image','inspect',image]);
+ }
+ return auxiliary;
+}
 export async function retainHomeComposeQualification(compose,save,environment){
  const versionProbe=await compose.requireVersion();
  await save('home-compose-qualification',{version:versionProbe.stdout.trim(),versionProbe,environment,scope:'HOME source qualification only'});
@@ -77,22 +113,32 @@ await ctx.plugin(Jobs,{timeoutMs:240000,maxBufferBytes:4194304}).await();
 await ctx.plugin(LegacyInputs).await();await ctx.plugin(FinalInputs).await();
 await mkdir(output,{recursive:true});
 const save=async(name,value)=>{const path=join(output,name+'.json');await writeFile(path,JSON.stringify(value,null,2)+'\n');return referenceFile(path)};
-const env={ROBOTICS_RUN_ID:runId,LEGACY_SOURCE_ROOT:fixture.sourceHostRoot??root,LEGACY_SOURCE_REVISION:sourceRevision,
- LEGACY_SIMULATION_IMAGE:simulationImage,LEGACY_SIMULATION_REFERENCE:simulationReference,LEGACY_SIMULATION_DIGEST:simulationReference.split('@')[1],
- LEGACY_COORDINATOR_IMAGE:coordinatorImage,LEGACY_EVIDENCE_IMAGE:evidenceImage,LEGACY_SHARED_VOLUME:sourceVolume,ROBOTICS_RETAINED_VOLUME:retainedVolume,
- ROS_DOMAIN_ID:'181',GZ_PARTITION:projectName,...fixture.composeEnvironment};
-const options={executable,socketPath:socket,projectName,cwd:root,
- files:[root+'/host/test/fixtures/legacy-live/compose.yaml',root+'/host/test/fixtures/legacy-live/evidence.yaml'],env,timeoutMs:240000,maxBufferBytes:4194304};
+const selectedEngine=fixture.engineProfile?.engine??'podman';
+const expectedUsernsMode=fixture.engineProfile?.expectedUsernsMode??'private';
+const options=legacyLiveComposeOptions(parameters,fixture),env=options.env;
 const compose=new ComposeExecution(ctx.jobs,options);
 const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'});
 if(fixture.hostRequirement){
+ if(fixture.engineProfile){
+  const components=engine.facts.versionResponse.Components;
+  const actualEngine=Array.isArray(components)&&components.some(row=>row?.Name==='Podman Engine')?'podman':
+   Array.isArray(components)&&components.some(row=>row?.Name==='Engine')?'docker':undefined;
+  assert.equal(actualEngine,selectedEngine,'selected fixture engine differs from actual native version metadata');
+  await save('installed-engine-profile',{profile:fixture.engineProfile,engine:engine.facts});
+ }
  const inventory=await engine.remainingOwned(fixture.hostRequirement.runId);
  const host=inventory.containers.find(row=>row.Labels?.['com.docker.compose.service']===fixture.hostService);assert.ok(host,'installed host ownership not observed');
  const observed=await engine.inspect(host.Id,fixture.hostRequirement);
- assert.equal(observed.status,'complete',JSON.stringify(observed));await save('installed-host-native-metadata',observed);
+ assert.equal(observed.status,'complete',JSON.stringify(observed));
+ if(selectedEngine==='docker')assert.deepEqual(observed.container.HostConfig?.GroupAdd,[String(fixture.socketGid)],'installed host supplemental group differs from actual socket group');
+ await save('installed-host-native-metadata',observed);
  const origins=Object.fromEntries(['@robotics-runtime/host','@robotics-runtime/infra-host','@robotics-runtime/infra-host/plugins/gazebo-ros-v1'].map(name=>[name,import.meta.resolve(name)]));
  assert.ok(Object.values(origins).every(value=>value.startsWith('file:///app/node_modules/')));await save('installed-origins',origins);
- await retainHomeComposeQualification(compose,save,fixture.composeEnvironment);
+ if(selectedEngine==='podman')await retainHomeComposeQualification(compose,save,fixture.composeEnvironment);
+ else {
+  const versionProbe=await compose.requireVersion();
+  await save('docker-compose-qualification',{version:versionProbe.stdout.trim(),versionProbe,environment:fixture.composeEnvironment,scope:'Docker CI source qualification only'});
+ }
 }else{
  const {default:Docker}=await import('dockerode');
 const native=new Docker({socketPath:socket,version:'v'+engine.facts.clientApi});
@@ -113,7 +159,7 @@ const finite=async(name,args,signal)=>{const result=await compose.run(args,signa
 let run,finalizer,completion,status='failed',error;
 try{
  await finite('admission',['run','--rm','--no-deps','admission']);
- const sourceRequirement={runId,projectName,imageId:simulationImage,user:'1000:1000',mounts:[{destination:'/run/robotics',readOnly:false,volumeName:sourceVolume},{destination:'/run/robotics/input',readOnly:true,volumeName:runId+'-input'}],hostConfig:{Memory:536870912,ReadonlyRootfs:false,Privileged:false,Init:true,UsernsMode:'private'}};
+ const sourceRequirement={runId,projectName,imageId:simulationImage,user:'1000:1000',mounts:[{destination:'/run/robotics',readOnly:false,volumeName:sourceVolume},{destination:'/run/robotics/input',readOnly:true,volumeName:runId+'-input'}],hostConfig:{Memory:536870912,ReadonlyRootfs:false,Privileged:false,Init:true,UsernsMode:expectedUsernsMode}};
  ctx.get('legacyInputs').issue({runId,compose:options,artifactDirectory:output,observationServices:['otel-collector','evidence-sink'],
  simulationRequirement:{...sourceRequirement,hostConfig:{...sourceRequirement.hostConfig,IpcMode:'shareable'}},stepperRequirement:sourceRequirement,
  admittedDescriptionPath:'/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf',
@@ -139,7 +185,7 @@ try{
  const sharedRequirement={...sourceRequirement,networkNamespaceContainerId:snapshot.simulationContainerId};
  const requirements={simulation:sourceRequirement,'simulation-stepper':sharedRequirement,'acceptance-observer':sharedRequirement,
  'runtime-probe-publisher':sharedRequirement,'runtime-metrics':sharedRequirement,recorder:sharedRequirement,
- 'otel-collector':{...sharedRequirement,imageId:'sha256:971344cab87ed2f0cafc2db1d081e5534cc6ba21b33e8d931be3c87dd84fafef',hostConfig:{Memory:268435456,ReadonlyRootfs:true,Privileged:false,UsernsMode:'private'}}};
+ 'otel-collector':{...sharedRequirement,imageId:'sha256:971344cab87ed2f0cafc2db1d081e5534cc6ba21b33e8d931be3c87dd84fafef',hostConfig:{Memory:268435456,ReadonlyRootfs:true,Privileged:false,UsernsMode:expectedUsernsMode}}};
  const retained='/retained/raw-'+runId,control='/retained/control-'+runId;
  await mkdir(control,{recursive:true});
  const bindings=[
@@ -156,7 +202,7 @@ try{
  const productAndReadinessBindings=admission.files.map(f=>({flag:'--artifact',subject:'other_evidence:products/robot-description/'+f.path,source:'input/product/'+f.path}));
  const inventory={sourceRoot:'/run/robotics',destinationRoot:retained,runId,maximumBytes:67108864,bindings,productAndReadinessBindings,dataSource:'simulator',bagsDirectory:'evidence/bags',summariesDirectory:'evidence/summaries'};
  await writeFile(control+'/inventory.json',JSON.stringify(inventory,null,2));
- const postOptions={...options,projectName:projectName+'-post',cwd:fixture.postprocessRoot??root,files:[(fixture.postprocessRoot??root)+'/compose.legacy-retained.yaml',(fixture.postprocessRoot??root)+'/compose.legacy-finalization.podman.yaml'],
+ const postOptions={...options,projectName:projectName+'-post',cwd:fixture.postprocessRoot??root,files:[(fixture.postprocessRoot??root)+'/compose.legacy-retained.yaml',...(selectedEngine==='podman'?[(fixture.postprocessRoot??root)+'/compose.legacy-finalization.podman.yaml']:[])],
  env:{LEGACY_FINALIZER_IMAGE:coordinatorImage,ROBOTICS_RUN_ID:runId,ROBOTICS_RETAINED_VOLUME:retainedVolume}};
  const plan={runId,compose:options,postprocessCompose:postOptions,artifactDirectory:control+'/phases',retainedDirectory:retained,measurementCompletePath:'/run/robotics/measurement-complete',startupRefs:snapshot.readyRefs,requirements,sourceContainerId:snapshot.simulationContainerId,
  observerService:'acceptance-observer',instrumentServices:['runtime-probe-publisher','runtime-metrics'],recorderServices:['recorder'],collectorService:'otel-collector',stepperService:'simulation-stepper',simulationService:'simulation',coordinatorService:'legacy-coordinator',exportCoordinatorService:'legacy-export',

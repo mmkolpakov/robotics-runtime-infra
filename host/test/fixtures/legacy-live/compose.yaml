@@ -4,7 +4,6 @@ x-ros: &ros
   pull_policy: never
   user: "1000:1000"
   init: true
-  userns_mode: keep-id:uid=1000,gid=1000
   mem_limit: 512m
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
@@ -27,7 +26,6 @@ services:
     image: "${LEGACY_COORDINATOR_IMAGE:?immutable coordinator required}"
     pull_policy: never
     user: "0:0"
-    userns_mode: keep-id:uid=1000,gid=1000
     network_mode: none
     entrypoint: [/opt/contracts/bin/python]
     command:
@@ -173,7 +171,6 @@ services:
     image: "docker.io/otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa"
     pull_policy: never
     user: "1000:1000"
-    userns_mode: keep-id:uid=1000,gid=1000
     network_mode: service:simulation
     read_only: true
     mem_limit: 256m
@@ -218,7 +215,6 @@ services:
     pull_policy: never
     user: "1000:1000"
     init: true
-    userns_mode: keep-id:uid=1000,gid=1000
     network_mode: service:simulation
     ipc: service:simulation
     mem_limit: 512m

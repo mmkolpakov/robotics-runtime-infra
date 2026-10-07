@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile, stat} from 'node:fs/promises';
 import {Context, Jobs} from '@robotics-runtime/host';
+import Docker from 'dockerode';
 import {ComposeExecution, EngineMetadata} from '@robotics-runtime/infra-host';
+import {legacyLiveComposeOptions, prefetchLegacyImages} from './app/qualify-legacy-live.mjs';
 
 const [root, socket, image, artifacts] = process.argv.slice(2);
 assert.match(image, /^[^\s@]+@sha256:[a-f0-9]{64}$/, 'observed full Node RepoDigest required');
 assert.ok(import.meta.resolve('@robotics-runtime/infra-host').startsWith('file://' + root + '/node_modules/'));
 const identity = JSON.parse(await readFile(root + '/identity.json', 'utf8'));
+const engineProfile = identity.engineProfile ?? {engine: 'podman', expectedUsernsMode: 'private'};
+assert.ok(engineProfile && typeof engineProfile === 'object' && !Array.isArray(engineProfile) && Object.keys(engineProfile).length === 2 && Object.keys(engineProfile).every(key => ['engine', 'expectedUsernsMode'].includes(key)), 'explicit fixture engine profile required');
+assert.ok(['podman', 'docker'].includes(engineProfile.engine));
+assert.equal(engineProfile.expectedUsernsMode, engineProfile.engine === 'docker' ? '' : 'private');
+const engineFiles = base => [base, base.replace('.yaml', '.' + engineProfile.engine + '.yaml')];
 const runId = 'run-' + randomUUID(), project = 'rr-installed-ros-host-' + runId.slice(4, 12);
 const owner = 'installed-ros-host-' + runId.slice(4, 12);
 for (const name of [identity.sourceVolume, identity.retainedVolume]) assert.match(name, /^rr-[a-z0-9][a-z0-9-]{1,120}$/);
@@ -17,30 +24,60 @@ const save = async (name, value) => writeFile(artifacts + '/' + name + '.json', 
 const ctx = new Context();
 await ctx.plugin(Jobs, {timeoutMs: 600000, maxBufferBytes: 4194304}).await();
 const engine = await EngineMetadata.connect({socketPath: socket, operationMinApi: '1.24', operationMaxApi: '1.53'});
+const native = new Docker({socketPath: socket, version: 'v' + engine.facts.clientApi});
+const components = engine.facts.versionResponse.Components;
+const actualEngine = Array.isArray(components) && components.some(row => row?.Name === 'Podman Engine') ? 'podman' :
+  Array.isArray(components) && components.some(row => row?.Name === 'Engine') ? 'docker' : undefined;
+assert.equal(actualEngine, engineProfile.engine, 'selected fixture engine differs from actual native version metadata');
+await save('installed-engine-profile', {profile: engineProfile, engine: engine.facts});
+const socketGid = (await stat(socket)).gid;
+await save('native-socket-group', {socket, gid: socketGid});
+const absentVolume = async name => {
+  try {await native.getVolume(name).inspect({abortSignal: AbortSignal.timeout(10000)});}
+  catch (error) {
+    assert.equal(error.statusCode, 404, 'volume inspection failed without proving absence');
+    await save('absent-volume-' + name, {name, statusCode: error.statusCode});
+    return;
+  }
+  assert.fail('qualification volume must be absent: ' + name);
+};
 const job = async (name, args) => {
-  const result = await ctx.jobs.run({executable: '/usr/bin/podman', args, extendEnv: true, timeoutMs: 30000, maxBufferBytes: 4194304});
+  const result = await ctx.jobs.run({executable: '/usr/bin/' + engineProfile.engine, args, env: engineProfile.engine === 'docker' ? {DOCKER_HOST: 'unix://' + socket, DOCKER_CONTEXT: ''} : {}, extendEnv: true, timeoutMs: 30000, maxBufferBytes: 4194304});
   await save(name, result);
   assert.equal(result.ok, true, result.stderr);
   return result;
 };
 const env = {
-  C18_NODE_IMAGE: image, C18_SOCKET: socket, C18_HOST_OWNER: owner, C18_HOST_PROJECT: project,
+  C18_NODE_IMAGE: image, C18_SOCKET: socket, C18_SOCKET_GID: String(socketGid), C18_HOST_OWNER: owner, C18_HOST_PROJECT: project,
   C18_SOURCE_VOLUME: identity.sourceVolume, C18_RETAINED_VOLUME: identity.retainedVolume,
   C18_DEPLOYMENT_HOST_ROOT: root + '/deployment',
 };
 const compose = new ComposeExecution(ctx.jobs, {
   executable: root + '/tools/docker-compose', socketPath: socket, projectName: project,
-  files: [root + '/compose.host.yaml'], cwd: root, env, timeoutMs: 600000, maxBufferBytes: 4194304,
+  files: engineFiles(root + '/compose.host.yaml'), cwd: root, env, timeoutMs: 600000, maxBufferBytes: 4194304,
 });
 const lastJson = text => JSON.parse(text.trim().split('\n').reverse().find(line => line.startsWith('{')));
 try {
-  const before = JSON.parse((await job('pre-existing-containers-before', ['ps', '--all', '--format', 'json'])).stdout);
-  for (const volume of [identity.sourceVolume, identity.retainedVolume]) {
-    const exists = await ctx.jobs.run({executable: '/usr/bin/podman', args: ['volume', 'exists', volume], extendEnv: true, timeoutMs: 10000});
-    assert.equal(exists.exitCode, 1, 'qualification volumes must be new');
-  }
+  const containerIds = text => {
+    const values = text.trim() ? text.trim().split(/\s+/) : [];
+    for (const id of values) assert.match(id, /^[a-f0-9]{64}$/);
+    return values;
+  };
+  const before = containerIds((await job('pre-existing-containers-before', ['ps', '--all', '--quiet', '--no-trunc'])).stdout);
+  for (const volume of [identity.sourceVolume, identity.retainedVolume]) await absentVolume(volume);
   await job('create-retained-volume', ['volume', 'create', '--label', 'org.robotics.runtime.storage-owner=' + owner, '--label', 'org.robotics.runtime.run-id=' + owner, identity.retainedVolume]);
   await compose.requireVersion();
+  if (engineProfile.engine === 'docker') {
+    const runtimeOptions = legacyLiveComposeOptions({
+      root: root + '/deployment', socket, executable: root + '/tools/docker-compose', runId,
+      sourceVolume: identity.sourceVolume, retainedVolume: identity.retainedVolume,
+      simulationImage: identity.simulationId, simulationReference: identity.simulationImage,
+      coordinatorImage: identity.finalizerImage, evidenceImage: identity.evidenceImage,
+      sourceRevision: identity.deploymentRevision,
+    }, {engineProfile, sourceHostRoot: root + '/deployment', composeEnvironment: {COMPOSE_PARALLEL_LIMIT: '1'}});
+    await prefetchLegacyImages(new ComposeExecution(ctx.jobs, runtimeOptions),
+      [identity.simulationId, identity.finalizerImage, identity.evidenceImage], job, save);
+  }
   const init = await compose.run(['run', '--rm', '--no-deps', 'storage-init']);
   await save('storage-init', init);
   assert.equal(init.ok, true, init.stderr);
@@ -73,13 +110,12 @@ try {
   await save('host-down', down);
   assert.equal(down.ok, true, down.stderr);
   await job('remove-only-owned-source-volume', ['volume', 'rm', identity.sourceVolume]);
-  const absent = await ctx.jobs.run({executable: '/usr/bin/podman', args: ['volume', 'exists', identity.sourceVolume], extendEnv: true, timeoutMs: 10000});
-  await save('source-volume-absence', absent);
-  assert.equal(absent.exitCode, 1);
+  await absentVolume(identity.sourceVolume);
+  await save('source-volume-absence', {name: identity.sourceVolume, statusCode: 404});
   const postProject = project + '-retained';
   const postprocess = new ComposeExecution(ctx.jobs, {
     executable: root + '/tools/docker-compose', socketPath: socket, projectName: postProject,
-    files: [root + '/compose.post.yaml'], cwd: root, env: {...env, C18_HOST_PROJECT: postProject},
+    files: engineFiles(root + '/compose.post.yaml'), cwd: root, env: {...env, C18_HOST_PROJECT: postProject},
     timeoutMs: 600000, maxBufferBytes: 4194304,
   });
   const qualified = await postprocess.run(['run', '--rm', '--no-deps', 'installed-postprocessor', '/retained/control-' + runId]);
@@ -98,13 +134,13 @@ try {
   assert.equal(runtimeAfter.containers.length, 0);
   assert.equal(runtimeAfter.networks.length, 0);
   assert.ok(runtimeAfter.volumes.Volumes === null || runtimeAfter.volumes.Volumes.length === 0);
-  const after = JSON.parse((await job('pre-existing-containers-after', ['ps', '--all', '--format', 'json'])).stdout);
-  const ids = new Set(after.map(row => row.Id));
-  assert.ok(before.every(row => ids.has(row.Id)), 'a pre-existing container disappeared');
+  const after = containerIds((await job('pre-existing-containers-after', ['ps', '--all', '--quiet', '--no-trunc'])).stdout);
+  const ids = new Set(after);
+  assert.ok(before.every(id => ids.has(id)), 'a pre-existing container disappeared');
   const report = {
     status: 'passed', scope: 'ordinary installed two-TGZ ROS/Gazebo live + public aggregate and portable qualification',
     identity, runId, project, sourceVolumeRemoved: true, retainedVolume: identity.retainedVolume,
-    engine: engine.facts, verification: verified, preExistingContainerIdsPreserved: before.map(row => row.Id).sort(),
+    engine: engine.facts, verification: verified, preExistingContainerIdsPreserved: before.sort(),
   };
   await save('installed-ros-public-report', report);
   console.log(JSON.stringify(report));

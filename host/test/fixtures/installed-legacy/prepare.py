@@ -36,6 +36,7 @@ DEPLOYMENT = [
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--engine", choices=("podman", "docker"), default="podman")
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--consumer", type=Path, required=True)
     parser.add_argument("--assets", type=Path, required=True)
@@ -48,6 +49,10 @@ def main():
     parser.add_argument("--source-volume", required=True)
     parser.add_argument("--retained-volume", required=True)
     args = parser.parse_args()
+    engine_profile = {
+        "engine": args.engine,
+        "expectedUsernsMode": "" if args.engine == "docker" else "private",
+    }
     root = args.repo.resolve(strict=True)
     consumer = args.consumer.resolve()
     if root == consumer or root in consumer.parents or consumer.exists():
@@ -94,7 +99,7 @@ def main():
         ("evidence", args.evidence_image),
     ):
         rows = json.loads(
-            subprocess.check_output(["podman", "image", "inspect", reference])
+            subprocess.check_output([args.engine, "image", "inspect", reference])
         )
         if len(rows) != 1 or reference not in rows[0].get("RepoDigests", []):
             raise ValueError(
@@ -108,7 +113,7 @@ def main():
         probe = json.loads(
             subprocess.check_output(
                 [
-                    "podman",
+                    args.engine,
                     "run",
                     "--rm",
                     "--network",
@@ -177,6 +182,17 @@ def main():
             "sha256": hashlib.sha256(raw).hexdigest(),
             "size_bytes": len(raw),
         }
+    overlay = "host/test/fixtures/legacy-live/compose.podman.yaml"
+    raw = source(overlay, fixture_revision)
+    target = consumer / "deployment" / overlay
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(raw)
+    target.chmod(0o444)
+    exported[overlay] = {
+        "revision": fixture_revision,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "size_bytes": len(raw),
+    }
     for name in (
         "compose.legacy-retained.yaml",
         "compose.legacy-finalization.podman.yaml",
@@ -186,7 +202,11 @@ def main():
         "postprocess.mjs",
         "launch.mjs",
         "compose.host.yaml",
+        "compose.host.podman.yaml",
+        "compose.host.docker.yaml",
         "compose.post.yaml",
+        "compose.post.podman.yaml",
+        "compose.post.docker.yaml",
         "Node.Dockerfile",
     ):
         destination = consumer / ("Dockerfile" if name == "Node.Dockerfile" else name)
@@ -217,6 +237,7 @@ def main():
     )
     identity = {
         "fixtureSource": fixture_revision,
+        "engineProfile": engine_profile,
         "assetSourceIdentity": identities,
         "deploymentRevision": revision,
         "deployment": exported,
@@ -233,10 +254,14 @@ def main():
             name: package["version"]
             for name, package in expected_lock["packages"].items()
         },
-        "homeComposeQualification": {
+        "homeComposeQualification"
+        if args.engine == "podman"
+        else "composeQualification": {
             "version": "5.3.1",
             "environment": {"COMPOSE_PARALLEL_LIMIT": "1"},
-            "scope": "HOME source qualification only",
+            "scope": "HOME source qualification only"
+            if args.engine == "podman"
+            else "Docker CI source qualification only",
         },
     }
     (consumer / "identity.json").write_text(json.dumps(identity, indent=2) + "\n")

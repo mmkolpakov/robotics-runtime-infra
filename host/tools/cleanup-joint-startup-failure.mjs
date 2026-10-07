@@ -16,7 +16,7 @@ const env={ROBOTICS_RUN_ID:runId,LEGACY_SOURCE_ROOT:root,LEGACY_SOURCE_REVISION:
  LEGACY_EVIDENCE_IMAGE:'localhost/rr-c-evidence@sha256:4251a2c5de08772bd8194fac87473387f9fe1c66295b728622e18ddb1fefa148',
  LEGACY_SHARED_VOLUME:sourceVolume,ROBOTICS_RETAINED_VOLUME:retainedVolume,ROS_DOMAIN_ID:'181',GZ_PARTITION:projectName};
 const compose=new ComposeExecution(ctx.jobs,{executable,socketPath:socket,projectName,cwd:root,
- files:[root+'/host/test/fixtures/legacy-live/compose.yaml',root+'/host/test/fixtures/legacy-live/evidence.yaml'],env,timeoutMs:240000,maxBufferBytes:4194304});
+ files:[root+'/host/test/fixtures/legacy-live/compose.yaml',root+'/host/test/fixtures/legacy-live/evidence.yaml',root+'/host/test/fixtures/legacy-live/compose.podman.yaml'],env,timeoutMs:240000,maxBufferBytes:4194304});
 await mkdir(output,{recursive:true});
 const job=async(name,args)=>{const result=await compose.run(args);await writeFile(output+'/'+name+'.json',JSON.stringify(result,null,2));assert.ok(result.ok,result.diagnostic??result.stderr);return result};
 const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'});
