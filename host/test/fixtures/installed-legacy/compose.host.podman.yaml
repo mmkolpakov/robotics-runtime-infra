@@ -1,0 +1,6 @@
+---
+services:
+  storage-init:
+    userns_mode: keep-id:uid=1000,gid=1000
+  installed-host:
+    userns_mode: keep-id:uid=1000,gid=1000

@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {legacyLiveParameters,validateLegacyLiveFixture,retainHomeComposeQualification,qualifyLegacyLive} from './qualify-legacy-live.mjs';
+import {legacyLiveParameters,validateLegacyLiveFixture,legacyLiveComposeOptions,prefetchLegacyImages,retainHomeComposeQualification,qualifyLegacyLive} from './qualify-legacy-live.mjs';
 
 const image='sha256:'+'a'.repeat(64),reference='localhost/fixture@sha256:'+'b'.repeat(64);
 const argv=output=>['/source','/engine.sock','/tools/docker-compose','run-12345678-1234-1234-1234-123456789abc','rr-source-fixture','rr-retained-fixture',image,reference,reference,reference,output,'c'.repeat(40)];
@@ -122,4 +122,101 @@ test('HOME Compose receipt cannot precede actual failed or incompatible version 
   await assert.rejects(retainHomeComposeQualification(compose,async(name,value)=>saved.push({name,value}),{}),/Compose 5.3.1 required/);
   assert.deepEqual(saved,[]);
  }
+});
+
+test('explicit Docker profile retains the exact default namespace and snapshots its identity',()=>{
+ const parameters=legacyLiveParameters(argv('/output')),selected=fixture();
+ selected.engineProfile={engine:'docker',expectedUsernsMode:''};
+ selected.socketGid=998;
+ selected.hostRequirement.hostConfig={UsernsMode:''};
+ const copy=validateLegacyLiveFixture(parameters,selected);
+ selected.engineProfile.expectedUsernsMode='private';
+ selected.socketGid=999;
+ assert.equal(copy.socketGid,998);
+ assert.deepEqual(copy.engineProfile,{engine:'docker',expectedUsernsMode:''});
+ assert.equal(copy.hostRequirement.hostConfig.UsernsMode,'');
+ const podman=fixture();podman.engineProfile={engine:'podman',expectedUsernsMode:'private'};
+ podman.hostRequirement.hostConfig={UsernsMode:'private'};
+ assert.deepEqual(validateLegacyLiveFixture(parameters,podman),podman);
+});
+for(const [name,engineProfile,hostMode] of [
+ ['Docker default relabelled private',{engine:'docker',expectedUsernsMode:'private'},'private'],
+ ['foreign observed host namespace',{engine:'docker',expectedUsernsMode:''},'private'],
+ ['Podman relabelled Docker default',{engine:'podman',expectedUsernsMode:''},''],
+ ['unrecognised engine',{engine:'remote',expectedUsernsMode:''},''],
+ ['extra namespace declaration',{engine:'docker',expectedUsernsMode:'',rootless:true},''],
+]){
+ test(name+' refuses before any admission or output effect',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'legacy-live-engine-')),output=join(root,'output');
+  try{
+   const selected=fixture();selected.engineProfile=engineProfile;selected.hostRequirement.hostConfig={UsernsMode:hostMode};
+   await assert.rejects(qualifyLegacyLive(argv(output),selected));
+   await assert.rejects(access(output),{code:'ENOENT'});
+  }finally{await rm(root,{recursive:true,force:true})}
+ });
+}
+
+test('native Docker default namespace must be observed exactly before it satisfies the profile',async()=>{
+ const {validateObservation}=await import('@robotics-runtime/infra-host');
+ const facts={endpoint:'unix:///fixture.sock',serverApi:'1.41',serverMinApi:'1.24',clientApi:'1.41',versionResponse:{}};
+ const native={Id:'a'.repeat(64),Image:image,Config:{User:'1000:1000',Labels:{'org.robotics.runtime.run-id':'fixture-owner','com.docker.compose.project':'fixture-project'}},
+  State:{Status:'running',Running:true,ExitCode:0},Mounts:[],HostConfig:{NetworkMode:'none',UsernsMode:''},NetworkSettings:{Networks:{}}};
+ const requirement={runId:'fixture-owner',projectName:'fixture-project',imageId:image,user:'1000:1000',mounts:[],hostConfig:{UsernsMode:''}};
+ assert.equal(validateObservation(facts,native,{Id:image},[],requirement).status,'complete');
+ for(const mode of ['private','host',undefined]){
+  const changed=structuredClone(native);changed.HostConfig.UsernsMode=mode;
+  const observed=validateObservation(facts,changed,{Id:image},[],requirement);
+  assert.equal(observed.status,'incomplete');
+  assert.ok(observed.mismatches.includes('container.HostConfig.UsernsMode'));
+ }
+});
+
+for(const socketGid of [undefined,-1,1.5,'998']){
+ test('Docker socket group '+String(socketGid)+' cannot become an admitted native group',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'legacy-live-socket-')),output=join(root,'output');
+  try{
+   const selected=fixture();selected.engineProfile={engine:'docker',expectedUsernsMode:''};
+   selected.hostRequirement.hostConfig={UsernsMode:''};selected.socketGid=socketGid;
+   await assert.rejects(qualifyLegacyLive(argv(output),selected),/actual Docker socket group required/);
+   await assert.rejects(access(output),{code:'ENOENT'});
+  }finally{await rm(root,{recursive:true,force:true})}
+ });
+}
+
+test('selected runtime closure is resolved by stock Compose and only immutable auxiliaries are prefetched', {skip: !process.env.ROBOTICS_COMPOSE}, async()=>{
+ const root=fileURLToPath(new URL('../../',import.meta.url)),jobs=[],saved=[];
+ for(const engine of ['docker','podman']){
+  const parameters=legacyLiveParameters(argv('/output'));parameters.root=root;
+  const options=legacyLiveComposeOptions(parameters,{engineProfile:{engine,expectedUsernsMode:engine==='docker'?'':'private'},sourceHostRoot:root,composeEnvironment:{COMPOSE_PARALLEL_LIMIT:'1'}});
+  assert.equal(options.env.ROBOTICS_RUN_ID,parameters.runId);
+  assert.equal(options.env.LEGACY_SOURCE_ROOT,root);
+  assert.equal(options.env.LEGACY_SIMULATION_IMAGE,parameters.simulationImage);
+  assert.equal(options.env.LEGACY_COORDINATOR_IMAGE,parameters.coordinatorImage);
+  assert.equal(options.env.LEGACY_EVIDENCE_IMAGE,parameters.evidenceImage);
+  assert.equal(options.env.COMPOSE_PARALLEL_LIMIT,'1');
+  assert.equal(options.files.length,engine==='podman'?3:2);
+  const invoke=args=>{
+   const argumentsList=['--project-name',options.projectName,...options.files.flatMap(file=>['--file',file]),...args];
+   const result=spawnSync(process.env.ROBOTICS_COMPOSE,argumentsList,{env:{...process.env,...options.env},encoding:'utf8'});
+   return {ok:result.status===0,stdout:result.stdout,stderr:result.stderr};
+  };
+  const model=invoke(['config','--format','json']);assert.equal(model.ok,true,model.stderr);
+  const owned=[parameters.simulationImage,parameters.coordinatorImage,parameters.evidenceImage];
+  const declared=[...new Set(Object.values(JSON.parse(model.stdout).services).map(service=>service.image))];
+  const expected=declared.filter(image=>!owned.includes(image));assert.ok(expected.length);
+  const start=jobs.length;
+  const actual=await prefetchLegacyImages({run:async args=>invoke(args)},owned,async(name,args)=>jobs.push({name,args}),async(name,value)=>saved.push({name,value}));
+  assert.deepEqual(new Set(actual),new Set(expected));
+  assert.deepEqual(jobs.slice(start).filter(row=>row.args[0]==='pull').map(row=>row.args[1]),actual);
+  assert.deepEqual(jobs.slice(start).filter(row=>row.args[0]==='image').map(row=>row.args[2]),actual);
+  assert.ok(actual.every(image=>/^[^\s@]+@sha256:[a-f0-9]{64}$/.test(image)));
+ }
+ assert.equal(saved.filter(row=>row.name==='runtime-image-closure').length,2);
+});
+test('mutable auxiliary image closure is refused before any pull',async()=>{
+ const jobs=[],saved=[];
+ await assert.rejects(prefetchLegacyImages({run:async()=>({ok:true,stdout:'localhost/owned@sha256:'+'a'.repeat(64)+'\nlocalhost/auxiliary:latest\n'})},
+  ['localhost/owned@sha256:'+'a'.repeat(64)],async(...args)=>jobs.push(args),async(...args)=>saved.push(args)),/declared digest/);
+ assert.deepEqual(jobs,[]);
+ assert.equal(saved[0][0],'runtime-image-closure');
 });

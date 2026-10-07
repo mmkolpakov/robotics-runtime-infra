@@ -4,7 +4,6 @@ services:
     pull_policy: never
     init: true
     user: "1000:1000"
-    userns_mode: keep-id:uid=1000,gid=1000
     network_mode: none
     read_only: true
     mem_limit: 1g
@@ -15,6 +14,7 @@ services:
     environment:
       C18_HOST_OWNER: "${C18_HOST_OWNER:?required}"
       C18_HOST_PROJECT: "${C18_HOST_PROJECT:?required}"
+      C18_SOCKET_GID: "${C18_SOCKET_GID:?actual socket group required}"
       C18_NODE_IMAGE: "${C18_NODE_IMAGE:?required}"
       C18_SOURCE_VOLUME: "${C18_SOURCE_VOLUME:?required}"
       C18_RETAINED_VOLUME: "${C18_RETAINED_VOLUME:?required}"

@@ -4,7 +4,6 @@ x-evidence: &evidence
   pull_policy: never
   user: "10001:1000"
   init: true
-  userns_mode: keep-id:uid=1000,gid=1000
   network_mode: none
   read_only: true
   mem_limit: 512m
@@ -44,7 +43,6 @@ services:
     pull_policy: never
     user: "1000:1000"
     init: true
-    userns_mode: keep-id:uid=1000,gid=1000
     network_mode: none
     read_only: true
     mem_limit: 512m
