@@ -1,23 +1,31 @@
 ---
 name: qualify-released-runtime
 # B3 remains open: retained run 37157837270 failed strict Clock/JointState gates.
-# See docs/qualification-baseline.md; keep caller/tooling/image identities distinct.
+# See docs/qualification-baseline.md; caller/tooling/image identities remain distinct.
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Canonical immutable image release tag (vX.Y.Z or prerelease).
+        required: true
+        type: string
+      tooling_ref:
+        description: Exact tooling commit SHA; blank selects this dispatch commit.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   qualify:
-    # yamllint disable-line rule:line-length
-    uses: mmkolpakov/robotics-runtime-infra/.github/workflows/reusable-qualify.yml@9944f0cc6ffd7fe16e14192f85887a06be59435a
+    uses: ./.github/workflows/reusable-qualify.yml
     with:
-      tooling_ref: 9944f0cc6ffd7fe16e14192f85887a06be59435a
+      tooling_ref: ${{ inputs.tooling_ref || github.sha }}
       execution_mode: released
-      release_tag: v0.10.0-rc.1
-      release_lock: examples/minimal-consumer/release.env
+      release_tag: ${{ inputs.release_tag }}
       scenario: examples/neutral-robot/scenario.yaml
       compose_project: examples/minimal-consumer/compose.yaml
       artifact_arguments_file: examples/neutral-robot/artifact-arguments.txt
@@ -34,13 +42,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: mmkolpakov/robotics-runtime-infra
-          ref: 9944f0cc6ffd7fe16e14192f85887a06be59435a
+          ref: ${{ inputs.tooling_ref || github.sha }}
           path: tooling
           persist-credentials: false
       - name: Verify the immutable tooling checkout
         shell: bash
         env:
-          TOOLING_REF: 9944f0cc6ffd7fe16e14192f85887a06be59435a
+          TOOLING_REF: ${{ inputs.tooling_ref || github.sha }}
         run: test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
@@ -54,7 +62,7 @@ jobs:
           name: qualification-${{ github.sha }}
           path: ${{ runner.temp }}/qualification-consumer/artifacts
       - name: Verify the published consumer
-        uses: ./caller/.github/actions/verify-published-consumer
+        uses: ./tooling/.github/actions/verify-published-consumer
         with:
           tooling-directory: ${{ github.workspace }}/tooling
           package-directory: ${{ runner.temp }}/qualification-consumer/artifacts/qualification
