@@ -271,8 +271,6 @@ jobs:
           --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-amd64'
       - name: Verify portable runtime images
         run: scripts/ci/integration/verify-portable-runtime-images.sh
-      - name: Verify host time evidence
-        run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify Cosign DSSE boundary and tamper rejection
         env:
           COSIGN_PASSWORD: test-only
@@ -281,6 +279,13 @@ jobs:
         env:
           COSIGN_PASSWORD: test-only
         run: bash scripts/ci/integration/verify-logged-permit-preflight.sh
+      - name: Prepare synthetic physical attach prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            can-utils socat "linux-modules-extra-$(uname -r)"
+      - name: Verify host time evidence
+        run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify synthetic physical attach end to end
         env:
           COSIGN_PASSWORD: test-only
