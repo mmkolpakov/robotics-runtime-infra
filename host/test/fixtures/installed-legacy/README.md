@@ -23,10 +23,11 @@ operations use that explicit socket.
 
 A successful fixture retains the original live result, verifies cleanup,
 removes the owned source volume, then checks every retained SHA-256 and size
-before public aggregate, package, signing and portable verification. This is a
-positive installed ROS qualification fixture. Cancellation, deadline, foreign
-cleanup and corrupted retained payload scenarios require their own installed
-ROS gates; this profile change does not close the full consumer acceptance.
+before public aggregate, package, signing and portable verification. The positive route
+qualifies installed ROS. The separate negative-lifecycle route checks
+interruption and foreign cleanup refusal with retained diagnostic evidence;
+it cannot publish a successful measurement or aggregate. Corrupted retained
+payload acceptance remains a separate required gate.
 
 Configuration checks use the existing pinned tools without native workloads:
 
@@ -43,3 +44,19 @@ Docker overlays add the group measured from the actual Unix socket. Both
 installed processes verify the socket stat GID and native HostConfig.GroupAdd
 array. The socket mode is not changed; default namespace metadata remains
 the exact empty string, without a remapping or rootless claim.
+
+Prepare with --negative-lifecycle and run negative-launch.mjs with the final
+argument startup-cancel, foreign-cleanup, cancel or timeout. Startup
+cancellation interrupts the exact native application-start command after
+simulation acquisition. The foreign case preserves an exact test-owned
+container with another run label while the provider refuses project teardown.
+
+The cancel and timeout cases first observe READY, open measurement, and bind
+the actual running source and observer. They interrupt the existing public
+closeMeasurement producer after two seconds using cancellation or an explicit
+native producer deadline signal. The RunOwner profile deadline remains
+240 seconds; this case does not claim that profile deadline expired.
+The interrupted producer settles before native last-state capture, writer
+drain, diagnostic export and cleanup. Completion must remain an error.
+Every case removes only its owned source volume and then verifies retained
+hashes through an installed process with only the retained volume mounted.

@@ -94,7 +94,8 @@ export async function retainHomeComposeQualification(compose,save,environment){
  const versionProbe=await compose.requireVersion();
  await save('home-compose-qualification',{version:versionProbe.stdout.trim(),versionProbe,environment,scope:'HOME source qualification only'});
 }
-export async function qualifyLegacyLive(argv,fixture={}){
+export async function qualifyLegacyLive(argv,fixture={},afterMeasurement){
+ if(afterMeasurement!==undefined)assert.equal(typeof afterMeasurement,'function','fixed installed measurement probe required');
  const parameters=legacyLiveParameters(argv);
  fixture=validateLegacyLiveFixture(parameters,fixture);
  const {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision}=parameters;
@@ -213,6 +214,11 @@ try{
  const Module=await import(finalizerPlugin);const fiber=run.context.plugin(Module.default);await fiber.await();finalizer=run.context.get('legacyFinalization');
  run.beginMeasurement();await save('measurement-open',{afterReadiness:true,phase:run.phase});
  await finalizer.beginMeasurement(AbortSignal.timeout(240000));
+ if(afterMeasurement){
+  const result=await afterMeasurement({run,finalizer,engine,compose,parameters,options,requirements,plan,save});
+  assert.equal(result.scope,'installed native ROS interrupted measurement; diagnostic export only');
+  await save('joint-result',result);return result;
+ }
  completion=await run.finish(finalizer.hooks);await save('completion',completion);
  assert.equal(completion.status,'passed',JSON.stringify(completion.errors));assert.ok(isDisposed(run.fiber));
  const retainedRefs=new Map(completion.evidenceRefs.map(ref=>[ref.uri,ref]));

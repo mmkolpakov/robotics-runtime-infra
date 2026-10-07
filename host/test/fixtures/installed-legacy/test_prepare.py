@@ -65,7 +65,7 @@ class InstalledPreparation(unittest.TestCase):
             return json.dumps(self.probe).encode()
         raise AssertionError(argv)
 
-    def prepare(self, engine=None):
+    def prepare(self, engine=None, negative=False):
         consumer = self.directory / "consumer"
         args = [
             "prepare",
@@ -94,6 +94,8 @@ class InstalledPreparation(unittest.TestCase):
         ]
         if engine is not None:
             args += ["--engine", engine]
+        if negative:
+            args.append("--negative-lifecycle")
         with (
             patch.object(sys, "argv", args),
             patch.object(PREPARE.subprocess, "check_output", self.command),
@@ -130,6 +132,28 @@ class InstalledPreparation(unittest.TestCase):
         self.assertIn(
             "host/test/fixtures/legacy-live/compose.podman.yaml", docker["deployment"]
         )
+
+    @unittest.skipUnless(
+        COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
+    )
+    def test_negative_consumer_retains_exact_worker_and_installed_entrypoints(self):
+        identity = self.prepare("docker", negative=True)
+        consumer = self.directory / "consumer"
+        worker = "host/workers/legacy-live/export-startup-failure.py"
+        raw = (consumer / "deployment" / worker).read_bytes()
+        self.assertEqual(raw, (ROOT / worker).read_bytes())
+        self.assertEqual(
+            identity["deployment"][worker],
+            {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)},
+        )
+        for target, source in (
+            ("app/negative-bootstrap.mjs", "negative-bootstrap.mjs"),
+            ("negative-launch.mjs", "negative-launch.mjs"),
+        ):
+            self.assertEqual(
+                (consumer / target).read_bytes(),
+                (ROOT / "host/test/fixtures/installed-legacy" / source).read_bytes(),
+            )
 
     @unittest.skipUnless(
         COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
