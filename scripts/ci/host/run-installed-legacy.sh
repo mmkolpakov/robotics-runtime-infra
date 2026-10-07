@@ -157,7 +157,7 @@ docker buildx build --builder "${builder}" --platform linux/amd64 --load --file 
   --build-arg "FOUNDATION_WHEELS_IMAGE=${wheels}" --build-arg "LEGACY_BASE_IMAGE=${base}" \
   --tag "${coordinator_tag}" .
 simulation="$(share_image "${coordinator_tag}" coordinator)"
-docker buildx bake --builder "${builder}" --file docker-bake.hcl \
+docker buildx bake --builder "${builder}" --file docker-bake.hcl --allow "fs.write=${work}" \
   --set 'policy-tooling.platform=linux/amd64' --set 'policy-tooling.target=cosign-license' \
   --set "policy-tooling.output=type=local,dest=${work}/cosign-license" policy-tooling
 finalizer_tag="${registry}/installed-ros/finalizer:${scope}"
