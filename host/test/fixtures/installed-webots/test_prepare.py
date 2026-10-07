@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,23 @@ worker = load("installed_webots_prepare_worker", "prepare-worker.py")
 
 class Preparation(unittest.TestCase):
     def setUp(self):
+        # Disable automatic Git writers until strict temporary cleanup completes.
+        git_config = patch.dict(
+            os.environ,
+            {
+                "GIT_CONFIG_COUNT": "4",
+                "GIT_CONFIG_KEY_0": "gc.auto",
+                "GIT_CONFIG_VALUE_0": "0",
+                "GIT_CONFIG_KEY_1": "maintenance.auto",
+                "GIT_CONFIG_VALUE_1": "false",
+                "GIT_CONFIG_KEY_2": "gc.autoDetach",
+                "GIT_CONFIG_VALUE_2": "false",
+                "GIT_CONFIG_KEY_3": "maintenance.autoDetach",
+                "GIT_CONFIG_VALUE_3": "false",
+            },
+        )
+        git_config.start()
+        self.addCleanup(git_config.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -150,6 +168,56 @@ class Preparation(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             prepare.main()
+
+    def test_ephemeral_git_lifecycle_disables_automatic_maintenance(self):
+        policy = {
+            "gc.auto": ("1", "0"),
+            "maintenance.auto": ("true", "false"),
+            "gc.autoDetach": ("true", "false"),
+            "maintenance.autoDetach": ("true", "false"),
+        }
+        for key, (local_value, expected) in policy.items():
+            self.git("config", "--local", key, local_value)
+            effective = subprocess.run(
+                ["git", "-C", str(self.repo), "config", "--get", key],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(effective.returncode, 0, key)
+            self.assertEqual(effective.stdout.strip(), expected, key)
+
+        trace = self.root / "git-lifecycle.trace.jsonl"
+        with patch.dict(os.environ, {"GIT_TRACE2_EVENT": str(trace)}):
+            self.prepare()
+            probe = self.repo / "lifecycle-probe"
+            probe.write_bytes(b"ordinary fixture commit\n")
+            self.git("add", probe.name)
+            self.git(
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "Advance lifecycle probe",
+            )
+            self.assertEqual(self.git("status", "--porcelain"), b"")
+
+        events = [json.loads(line) for line in trace.read_text().splitlines()]
+        self.assertTrue(any(event["event"] == "start" for event in events))
+        automatic_children = [
+            event
+            for event in events
+            if event["event"] == "child_start"
+            and "--auto" in event.get("argv", [])
+            and any(
+                command in event.get("argv", []) for command in ("gc", "maintenance")
+            )
+        ]
+        self.assertEqual(automatic_children, [])
+        self.assertFalse((self.repo / ".git/gc.pid").exists())
 
     def test_deployment_bytes_survive_layout_changes_and_overlay_is_selected(self):
         self.prepare()
