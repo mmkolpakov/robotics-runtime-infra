@@ -5,12 +5,19 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
+import tempfile
 from pathlib import Path
 
 import export_retained as copy_worker
 
 
-def collect(plan: dict[str, object]) -> tuple[dict[str, object], list[str]]:
+def collect(
+    plan: dict[str, object],
+    *,
+    source_arguments: bool = False,
+    retained_arguments: list[str] | None = None,
+) -> tuple[dict[str, object], list[str]]:
     root = Path(str(plan["sourceRoot"])).resolve(strict=True)
     destination = Path(str(plan["destinationRoot"]))
     bindings = plan["bindings"]
@@ -63,8 +70,13 @@ def collect(plan: dict[str, object]) -> tuple[dict[str, object], list[str]]:
                 "size_bytes": size,
             }
         )
-        target = str(destination / output)
+        target = str(actual if source_arguments else destination / output)
         arguments.extend([flag, (subject + "=" + target) if subject else target])
+        if retained_arguments is not None:
+            retained = str(destination / output)
+            retained_arguments.extend(
+                [flag, (subject + "=" + retained) if subject else retained]
+            )
         identities.append((kind, digest, size))
 
     for item in bindings:
@@ -178,19 +190,265 @@ def collect(plan: dict[str, object]) -> tuple[dict[str, object], list[str]]:
     return inventory, arguments
 
 
+def _result(path: Path):
+    from robotics_acceptance_harness.documents import load_document_bytes
+    from robotics_runtime_contracts.serialization import read_document_bytes
+
+    raw = read_document_bytes(path)
+    return load_document_bytes(
+        raw, source=path, expected_role="acceptance_result"
+    ), len(raw)
+
+
+def _exit_verdict(exit_code: int, verdict: str) -> None:
+    if type(exit_code) is not int or exit_code not in (0, 1):
+        raise ValueError("completed assessment requires exit 0 or 1")
+    if exit_code != (0 if verdict == "passed" else 1):
+        raise ValueError("assessment exit code and canonical verdict disagree")
+
+
+def _full_validation(arguments: list[str], aggregate: Path, helpers: Path) -> None:
+    with tempfile.TemporaryDirectory(prefix="completed-assessment-") as directory:
+        subprocess.run(
+            [
+                str(helpers / "scripts/qualification/create-statement"),
+                *arguments,
+                "--aggregate",
+                str(aggregate),
+                "--output",
+                str(Path(directory) / "statement.json"),
+            ],
+            check=True,
+        )
+
+
+def _binding(plan: dict[str, object], flag: str) -> tuple[str, Path]:
+    rows = [row for row in plan["bindings"] if row["flag"] == flag]
+    if len(rows) != 1:
+        raise ValueError("completed legacy assessment requires one " + flag)
+    row = rows[0]
+    root = Path(str(plan["sourceRoot"])).resolve(strict=True)
+    path = copy_worker.inside(root / copy_worker.relative(str(row["source"])), root)
+    return str(row.get("subject", "")), path
+
+
+def _check_payloads(inventory: dict[str, object], root: Path, field: str) -> None:
+    for row in inventory["entries"]:
+        path = copy_worker.inside(root / copy_worker.relative(row[field]), root)
+        with path.open("rb") as stream:
+            sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+        if path.stat().st_size != row["size_bytes"] or sha256 != row["sha256"]:
+            raise ValueError("payload differs from sealed completed inventory")
+
+
+def verify_result(
+    plan: dict[str, object], exit_code: int, helpers: Path
+) -> dict[str, object]:
+    from robotics_acceptance_harness.aggregate import aggregate_results
+
+    retained_arguments: list[str] = []
+    inventory, arguments = collect(
+        plan, source_arguments=True, retained_arguments=retained_arguments
+    )
+    if sum(row["size_bytes"] for row in inventory["entries"]) > plan["maximumBytes"]:
+        raise ValueError("current assessment exceeds admitted export byte bound")
+    domain, path = _binding(plan, "--result")
+    result, size = _result(path)
+    if result.data["run_id"] != plan["runId"] or result.data["domain_id"] != domain:
+        raise ValueError("completed result belongs to another admitted run or domain")
+    _exit_verdict(exit_code, result.data["status"])
+    _, scenario = _binding(plan, "--scenario")
+    _, context = _binding(plan, "--acceptance-run")
+    with tempfile.TemporaryDirectory(prefix="completed-assessment-") as directory:
+        aggregate = aggregate_results(
+            scenario_path=scenario,
+            run_context_path=context,
+            result_paths=[path],
+            output_path=Path(directory) / "aggregate.json",
+        )
+        _full_validation(arguments, aggregate, helpers)
+    _check_payloads(
+        inventory, Path(str(plan["sourceRoot"])).resolve(strict=True), "source"
+    )
+    sealed = {"sha256": result.sha256, "size_bytes": size}
+    current, current_size = _result(path)
+    if {"sha256": current.sha256, "size_bytes": current_size} != sealed:
+        raise ValueError("completed result changed during validation")
+    return {
+        "runId": plan["runId"],
+        "domainId": domain,
+        "verdict": result.data["status"],
+        "observerExitCode": exit_code,
+        "result": sealed,
+        "resultRelativePath": next(
+            row["relativePath"]
+            for row in inventory["entries"]
+            if row["source"]
+            == str(path.relative_to(Path(str(plan["sourceRoot"])).resolve(strict=True)))
+        ),
+        "inventory": inventory,
+        "arguments": retained_arguments,
+        "sourceArguments": arguments,
+    }
+
+
+def verify_aggregate(
+    arguments: list[str],
+    aggregate: Path,
+    result_path: Path,
+    completed: dict[str, object],
+    exit_code: int,
+    helpers: Path,
+) -> dict[str, object]:
+    if (
+        not isinstance(arguments, list)
+        or len(arguments) > 8192
+        or any(not isinstance(value, str) for value in arguments)
+    ):
+        raise ValueError("invalid retained qualification argument inventory")
+    if arguments != completed["arguments"]:
+        raise ValueError(
+            "qualification arguments differ from sealed completed inventory"
+        )
+    result, size = _result(result_path)
+    if (
+        {"sha256": result.sha256, "size_bytes": size} != completed["result"]
+        or result.data["run_id"] != completed["runId"]
+        or result.data["domain_id"] != completed["domainId"]
+        or result.data["status"] != completed["verdict"]
+    ):
+        raise ValueError("retained result differs from sealed completed assessment")
+    _exit_verdict(completed["observerExitCode"], result.data["status"])
+    relative_result = copy_worker.relative(completed["resultRelativePath"])
+    retained = result_path.absolute()
+    for part in relative_result.parts:
+        retained = retained.parent
+    if retained / relative_result != result_path.absolute():
+        raise ValueError("retained result path differs from admitted inventory")
+    _check_payloads(completed["inventory"], retained, "relativePath")
+    from robotics_acceptance_harness.documents import load_document_bytes
+    from robotics_runtime_contracts.serialization import read_document_bytes
+
+    raw = read_document_bytes(aggregate)
+    document = load_document_bytes(
+        raw, source=aggregate, expected_role="acceptance_aggregate"
+    )
+    _exit_verdict(exit_code, document.data["per_domain_aggregate"])
+    _full_validation(arguments, aggregate, helpers)
+    if (
+        read_document_bytes(aggregate) != raw
+        or _result(result_path)[0].sha256 != result.sha256
+    ):
+        raise ValueError("retained assessment changed during validation")
+    _check_payloads(completed["inventory"], retained, "relativePath")
+    return {
+        "runId": completed["runId"],
+        "verdict": document.data["per_domain_aggregate"],
+        "aggregateExitCode": exit_code,
+        "aggregate": {"sha256": document.sha256, "size_bytes": len(raw)},
+        "result": completed["result"],
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--arguments", type=Path, required=True)
+    parser.add_argument("--arguments", type=Path)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--verify-result-exit-code", type=int)
+    modes.add_argument("--verify-aggregate-exit-code", type=int)
+    parser.add_argument("--aggregate", type=Path)
+    parser.add_argument("--result", type=Path)
+    parser.add_argument("--completed-result", type=Path)
+    parser.add_argument(
+        "--helpers", type=Path, default=Path(__file__).resolve().parent.parent
+    )
     args = parser.parse_args()
-    inventory, arguments = collect(json.loads(args.plan.read_bytes()))
-    for target in (args.output, args.arguments):
+    plan = json.loads(args.plan.read_bytes())
+    if args.verify_result_exit_code is not None:
+        outputs = [
+            (
+                args.output,
+                verify_result(plan, args.verify_result_exit_code, args.helpers),
+            )
+        ]
+    elif args.verify_aggregate_exit_code is not None:
+        if any(
+            path is None
+            for path in (
+                args.arguments,
+                args.aggregate,
+                args.result,
+                args.completed_result,
+            )
+        ):
+            parser.error(
+                "aggregate validation requires arguments, aggregate, result and completed-result"
+            )
+        completed = json.loads(args.completed_result.read_bytes())
+        if completed["runId"] != plan["runId"]:
+            raise ValueError("completed assessment belongs to another admitted run")
+        outputs = [
+            (
+                args.output,
+                verify_aggregate(
+                    json.loads(args.arguments.read_bytes()),
+                    args.aggregate,
+                    args.result,
+                    completed,
+                    args.verify_aggregate_exit_code,
+                    args.helpers,
+                ),
+            )
+        ]
+    else:
+        if args.arguments is None:
+            parser.error("inventory requires --arguments")
+        source_arguments = None
+        if args.completed_result is None:
+            inventory, arguments = collect(plan)
+        else:
+            arguments = []
+            inventory, source_arguments = collect(
+                plan, source_arguments=True, retained_arguments=arguments
+            )
+        outputs = [(args.output, inventory), (args.arguments, arguments)]
+        if args.completed_result is not None:
+            completed = json.loads(args.completed_result.read_bytes())
+            if source_arguments != completed["sourceArguments"]:
+                raise ValueError(
+                    "current qualification roles differ from validated assessment"
+                )
+            sealed = completed["inventory"]
+            if any(
+                inventory[field] != sealed[field]
+                for field in ("runId", "sourceRoot", "maximumBytes", "entries")
+            ):
+                raise ValueError(
+                    "current export inventory differs from validated assessment"
+                )
+            target = Path(str(args.arguments) + ".completed-result.json")
+            if target.resolve() == args.completed_result.resolve():
+                if arguments != completed["arguments"] or inventory != sealed:
+                    raise ValueError(
+                        "current qualification arguments differ from validated assessment"
+                    )
+            else:
+                # An issued retry changes its destination; the sealed input closure stays exact.
+                outputs.append(
+                    (
+                        target,
+                        {**completed, "inventory": inventory, "arguments": arguments},
+                    )
+                )
+    for target, value in outputs:
         if target.exists():
             raise ValueError("inventory output already exists")
-    for target, value in ((args.output, inventory), (args.arguments, arguments)):
+    for target, value in outputs:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+        with target.open("x", encoding="utf-8") as stream:
+            stream.write(json.dumps(value, indent=2) + "\n")
 
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ import Finalization from '../src/plugins/legacy-finalization/index.js';
 import Inputs from '../src/plugins/legacy-finalization/inputs.js';
 import type {LegacyFinalizationPlan} from '../src/plugins/legacy-finalization/inputs.js';
 
-test('a stopped nonzero observer retains its real SDK log bytes and original verification refusal',async t=>{
- for(const logStatus of [200,500]){
+test('stopped observers retain guarded logs and distinguish process refusal from capture failure',async t=>{
+ for(const [exitCode,logStatus] of [[7,200],[7,500],[1,500]] as const){
   const root=await mkdtemp(join(tmpdir(),'rr-observer-refusal-')),ctx=new Context();
   const socketPath=join(root,'engine.sock'),resultPath=join(root,'observer-result.json');
   const effects=join(root,'effects.jsonl'),observerId='b'.repeat(64),sourceId='a'.repeat(64),imageId='sha256:'+'c'.repeat(64);
@@ -49,7 +49,7 @@ test('a stopped nonzero observer retains its real SDK log bytes and original ver
    'const args=process.argv.slice(2);appendFileSync('+JSON.stringify(effects)+',JSON.stringify(args)+"\\n");\n'+
    'if(args.includes("version"))console.log("5.3.1");\n'+
    'else if(args.includes("ps"))console.log('+JSON.stringify(ids)+'[args.at(-1)]);\n'+
-   'else if(args.includes("run")&&args.includes("observer")){const actual=spawnSync(process.execPath,["-e","process.stdout.write(\\"real stopped verifier refusal\\\\n\\");process.exitCode=7"],{encoding:"utf8"});writeFileSync('+JSON.stringify(resultPath)+',JSON.stringify({exitCode:actual.status,stdout:actual.stdout}));console.log('+JSON.stringify(observerId)+')}\n'+
+   'else if(args.includes("run")&&args.includes("observer")){const actual=spawnSync(process.execPath,["-e","process.stdout.write(\\"real stopped verifier refusal\\\\n\\");process.exitCode='+exitCode+'"],{encoding:"utf8"});writeFileSync('+JSON.stringify(resultPath)+',JSON.stringify({exitCode:actual.status,stdout:actual.stdout}));console.log('+JSON.stringify(observerId)+')}\n'+
    'else if(args.includes("logs"))process.stdout.write('+JSON.stringify(foundation)+');\n',
    {mode:0o700});
   await ctx.plugin(Jobs,{timeoutMs:3000,maxBufferBytes:1048576}).await();
@@ -67,10 +67,16 @@ test('a stopped nonzero observer retains its real SDK log bytes and original ver
   let provider!:Finalization;
   await ctx.plugin(async scope=>{await scope.plugin(RunResources,'run1').await();await scope.plugin(Inputs).await();scope.get('legacyFinalizationInputs')!.issue(plan);await scope.plugin(Finalization).await();provider=scope.get('legacyFinalization')!}).await();
   await provider.beginMeasurement(AbortSignal.timeout(3000));
-  const actual=JSON.parse(await readFile(resultPath,'utf8')) as {exitCode:number;stdout:string};assert.equal(actual.exitCode,7);
+  const actual=JSON.parse(await readFile(resultPath,'utf8')) as {exitCode:number;stdout:string};assert.equal(actual.exitCode,exitCode);
   await assert.rejects(provider.hooks.drainRecorders!(AbortSignal.timeout(3000)),(error:unknown)=>{
-   assert.ok(error instanceof Error);assert.match(error.message,/public live observer verification failed/);
-   if(logStatus!==200){assert.ok(error instanceof AggregateError);assert.match(error.message,/Engine evidence read failed/);assert.match(String(error.errors[1]),/Engine evidence read failed/)}
+   assert.ok(error instanceof Error);
+   if(exitCode===7){
+    assert.match(error.message,/public live observer verification failed/);
+    if(logStatus!==200){assert.ok(error instanceof AggregateError);assert.match(error.message,/Engine evidence read failed/);assert.match(String(error.errors[1]),/Engine evidence read failed/)}
+   }else{
+    assert.equal(error instanceof AggregateError,false);assert.match(error.message,/Engine evidence read failed/);
+    assert.doesNotMatch(error.message,/observer verification failed/);
+   }
    return true;
   });
   assert.equal(await readFile(plan.foundationLogPath,'utf8'),foundation);
@@ -83,5 +89,6 @@ test('a stopped nonzero observer retains its real SDK log bytes and original ver
   }
   const calls=(await readFile(effects,'utf8')).trim().split('\n').map(line=>JSON.parse(line) as string[]);
   assert.equal(calls.some(args=>args.includes('down')),false);
+  assert.equal(calls.some(args=>args.includes('--verify-result-exit-code')),false);
  }
 });
