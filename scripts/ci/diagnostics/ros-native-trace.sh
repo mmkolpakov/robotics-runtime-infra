@@ -13,7 +13,9 @@ prepare_native_trace() {
   timeout 5 lttng-sessiond --daemonize --no-kernel || return
   timeout 5 lttng create robotics-native-diagnostic \
     --output=/tmp/robotics-native-ust/trace || return
-  # Two 64 KiB subbuffers bound buffer memory per CPU/process. Trace files\n  # rotate at 1 MiB, two files per stream, within the existing producer lifetime.\n  # Rotation/discarding can remove earlier events: absence is never proven.
+  # Two 64 KiB subbuffers bound buffer memory per CPU/process. Trace files
+  # rotate at 1 MiB, two files per stream, within the existing producer lifetime.
+  # Rotation/discarding can remove earlier events: absence is never proven.
   timeout 5 lttng enable-channel --userspace --buffers-pid \
     --subbuf-size=65536 --num-subbuf=2 --tracefile-size=1048576 --tracefile-count=2 native-ros || return
   timeout 5 lttng enable-event --userspace --channel=native-ros \
