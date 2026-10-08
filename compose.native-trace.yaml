@@ -1,0 +1,43 @@
+---
+# Optional diagnostic capture; the underlying ROS commands remain unchanged.
+services:
+  runtime-metrics:
+    command:
+      - /bin/bash
+      - /tmp/ros-native-trace.sh
+      - ros2
+      - run
+      - robotics_observability
+      - runtime_metrics
+    volumes:
+      - type: bind
+        source: ./scripts/ci/diagnostics/ros-native-trace.sh
+        target: /tmp/ros-native-trace.sh
+        read_only: true
+  runtime-probe-publisher:
+    command:
+      - /bin/bash
+      - /tmp/ros-native-trace.sh
+      - ros2
+      - topic
+      - pub
+      - --rate
+      - "20"
+      - --print
+      - "0"
+      - --wait-matching-subscriptions
+      - "1"
+      - --max-wait-time-secs
+      - "30"
+      - --qos-reliability
+      - reliable
+      - --qos-depth
+      - "100"
+      - "${ROBOTICS_METRICS_TOPIC:-/robotics/runtime_probe}"
+      - std_msgs/msg/UInt64
+      - "{data: 1}"
+    volumes:
+      - type: bind
+        source: ./scripts/ci/diagnostics/ros-native-trace.sh
+        target: /tmp/ros-native-trace.sh
+        read_only: true

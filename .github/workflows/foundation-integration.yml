@@ -4,6 +4,11 @@ name: foundation-integration
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      native_ust_trace:
+        description: Capture diagnostic ROS userspace traces
+        type: boolean
+        default: false
   schedule:
     - cron: "17 4 * * 1"
   pull_request:
@@ -85,6 +90,7 @@ jobs:
           ROBOTICS_STEP_INTERVAL_SEC: "0.01"
           # Qualify the native received chronology independently of Clock payloads.
           ROBOTICS_RECORD_USE_SIM_TIME: "false"
+          ROBOTICS_NATIVE_UST_TRACE: ${{ inputs.native_ust_trace && '1' || '0' }}
           ROBOTICS_CAPTURE_CLOCK_POLICY: system-time
         run: bash scripts/ci/foundation/run-acceptance-isolation.sh
       - name: Run the default edge-attach verifier against live simulation
