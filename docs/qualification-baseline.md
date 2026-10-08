@@ -1,102 +1,64 @@
-# Qualification baseline for architecture C
+# Qualification reference
 
-Architecture C is the selected target: public Python contracts and harness,
-a Cordis host, and separate simulator providers. These are implementation
-requirements, not a qualification of the combined stack. The retained ROS v1
-provider remains Ubuntu 24.04 / ROS 2 Jazzy / Gazebo Harmonic. A native provider
-has its own environment and capability gates; it does not create a ROS graph to
-satisfy this legacy profile.
+Qualification binds exact package, image, caller, tooling, workload and
+platform identities. Installation, source integration and image publication
+establish different claims.
 
-## Distinct identities and claims
+## Published profile
 
-The current source line pins published contracts 0.19.0 and harness 0.20.0;
-`config/foundation-lock.json` records the exact runtime workspace and package
-trees. Its images use source-built wheels from those released package trees.
-The package payloads and distribution metadata match the published wheels;
-the contracts wheel archive has a different reproducible ZIP timestamp.
-The current dataset role is `dataset-manifest.v2`: one complete native bag
-with retained metadata and ordered MCAP/summary references, for one or more
-members. Full live playback qualification requires a passing attempt for this
-cohort.
+[`v0.11.0-rc2`](https://github.com/mmkolpakov/robotics-runtime-infra/releases/tag/v0.11.0-rc2)
+contains contracts 0.19.0 and harness 0.20.0 from workspace
+`efeac712ea512b19523ce41be40752f703fa782b`.
+Its image-source commit is `51cd10baaa82745ec1ff59b12ad3f77c4e507e38`;
+the unchanged release lock has SHA-256
+`d92dd0db44400db321d7dc28c1c4e1f26681a6b3c2c55aad4202173e21b8c427`.
+The release inventory and each target's declared platforms define the published
+asset set. Provenance and platform verification do not qualify device execution.
 
-The published R9 release,
-`v0.9.0-rc.1`, passed its stock UInt64 simulation and independent consumer gates
-with contracts 0.18.1 / harness 0.19.0. This result is scoped to that profile.
+[Released qualification 37740199071](https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/37740199071)
+uses caller ref `v0.11.0-rc2` and exact tooling
+`95cbb8e21e4132f07252e2d8dc1c2c421a472c25` on Ubuntu 24.04 AMD64 with Docker.
+It verifies the neutral robot's native entity presence, missing-file rejection,
+Clock, JointState and TF, live acceptance and a signed retained package.
+A separate consumer installs the published package pair, verifies the original
+bytes and readmits the robot without the producer snapshot.
 
-R10, `v0.10.0-rc.1`, was published from image-source commit
-`d6dc8a1c6b976faacab7b371821e9af54b9883c2` using contracts 0.18.2 / harness
-0.19.1. The unchanged release lock has SHA-256
-`21a0e760cdbb3d0ede362b96ad5a79b58ea44bbe201aeb1d47a3fe66204b129f`.
-Successful publication and provenance checks do not qualify a later caller.
+The same run verifies natural EOF of the stock rosbag2 player with a single
+Int32 MCAP bag. Native process exit, observed time, retained input bytes and
+cleanup are distinct checks. The dataset contract supports ordered bag members;
+this single-bag result does not qualify every message type, large multi-member
+live playback, another middleware or another backend.
 
-The retained B3 released attempt is [run
-37157837270](https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/37157837270),
-attempt 1, on caller commit `63c33dd4a3cb1091876fbe38b0310c7bd942a5c9`.
-Its reusable workflow and tooling checkout both use
-`9944f0cc6ffd7fe16e14192f85887a06be59435a`. Its images retain the R10
-source and lock above. These caller, tooling and image-source identities are
-separate inputs.
+Rootless Podman, native GPU providers, physical hardware, HIL and AWS/EKS
+execution require their own environment and operation evidence. A source
+Docker success does not establish these scopes.
 
-## Open B3 gates
+## Input identity and trust
 
-This attempt **failed**. The native entity gates passed: model absent before
-creation, acknowledged missing-file request rejected by actual server state,
-and positive model observed through native `GetEntities`. An acknowledgement
-alone does not satisfy any entity gate.
+The caller owns its scenario and workload. Its ref selects the workflow
+declaration. `tooling_ref` selects a full reviewed infra implementation checkout
+and the consumer action. These identities may differ from each other and from
+the image-source commit. The immutable tag and canonical `release.env` bind
+image digests and their source attestations independently.
 
-The retained stepper diagnostic reports Clock `16133000000` ns where
-`16026000000` ns was required, an overshoot of `107000000` ns. The foreground
-JointState readiness command then reached its shared 90-second outer deadline
-with exit 124 and an empty qualifying output. TF observation was not reached.
-A nonzero Clock sample of 16.133 s establishes a sample, not continuing clock
-advancement or correct time ownership.
+Released admission verifies release assets and image provenance before starting
+services. It rejects source-image fallbacks, wrong digests and substituted
+inputs. Retained subjects include the original robot description, runtime and
+acceptance documents, recording metadata, ordered MCAP references and native
+observations. Verification after producer removal uses those retained bytes.
 
-Observer evaluation, live acceptance JUnit, signed qualification production,
-portable readmission and the independent published consumer did not complete;
-the independent consumer job was skipped. The historical grouped log alone does not establish exact
-wall ordering.
-A subsequent [bounded native diagnostic](b3-startup-cause.md) reproduces the
-initialization/clock-owner race and passes the ordered counterpart; full B3
-acceptance and the published consumer remain open.
-The earlier apparently green run 37152524765 lacks the required entity proof
-and is not a substitute for B3 acceptance.
+An included ephemeral signing key proves integrity under that key. Trusted
+producer identity requires an independently selected signing policy and root.
+Neither image provenance nor a package signature is safety certification.
+Failed or incomplete attempts retain their original diagnostics and are never
+relabelled successful by a later passing run.
 
-## Retained raw evidence and trust
+## Selecting a profile
 
-The failed run's native artifact `qualification-63c33dd4a3cb1091876fbe38b0310c7bd942a5c9`
-contains 35 regular files. Its ZIP is 60,898 bytes with SHA-256
-`e69b1aa92927c3cbd4aafe8ceecac74a2aa5aa65e641689976eacdb687d03179`.
-The retained raw closure manifest has SHA-256
-`4627e6bdf20bde3a62bb24a02da091477702ada0abbd77c8a2c5feb8580936665`.
-The files and archive remain unchanged in the review evidence store; a new
-attempt must have a new identity and must preserve these failed observations.
+Choose the release tag, exact tooling commit, scenario and declared environment
+through `qualify-released-runtime`. Admission, native execution, retained export
+and independent consumption must all pass for the same attempt. Unsupported
+capabilities and missing evidence are errors, not inferred defaults.
 
-Source checks, image attestations, exact package-byte verification and live
-qualification answer different questions. An included ephemeral signing key
-proves package integrity under that key, not trusted producer identity. R10
-provenance does not imply B3 passed. No Clock, JointState, TF, wrong-digest,
-JUnit or portable-consumer gate is waived by the C migration.
-
-## Selecting a new released attempt
-
-Dispatch `qualify-released-runtime` at the caller commit with an explicit
-`release_tag`. The reusable workflow comes from that same caller commit.
-`tooling_ref` accepts a full commit SHA and defaults to the dispatch commit;
-the qualification and independent consumer jobs check out that exact tooling
-identity. The independent job uses the consumer action from that tooling
-checkout and installs the published pair declared by its foundation lock.
-
-The wrapper downloads the selected tag's canonical `release.env` into a new
-directory within the caller checkout. Existing external callers may still
-supply their own canonical lock path to `reusable-qualify.yml`. The release
-and asset verification, image digests and source attestations are checked
-before image references are admitted. A new dispatch preserves the old B3
-failure and records a new artifact under its caller SHA.
-
-Image publication remains scoped to the complete target set in
-`config/ci/release-environment.json` and each target's declared platforms.
-A passing reusable qualification run establishes the selected neutral robot
-scenario on its Ubuntu 24.04 AMD64 runner. Other providers, hardware and
-platforms require
-their own retained qualification; publishing an image does not establish
-those results.
+[Image locks](runtime-lock.md) describes source/released selection;
+[qualification](qualification.md) defines package production and verification.
