@@ -1,0 +1,122 @@
+{
+  "platform": "linux/amd64",
+  "ros_distribution": "jazzy",
+  "ubuntu_release": "24.04",
+  "simulation": "Gazebo Harmonic",
+  "robot": "official nav2_minimal_tb3_sim Waffle",
+  "map": "nav2_bringup/maps/tb3_sandbox.yaml",
+  "world": "nav2_minimal_tb3_sim/worlds/tb3_sandbox.sdf.xacro",
+  "model": "nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro",
+  "images": {
+    "library/ros": {
+      "tag": "jazzy-ros-base-noble",
+      "index_digest": "sha256:066420e07f60aa18262f2479981def87ebcfcec42eefb0c0c57c4a46098348ca",
+      "linux_amd64_digest": "sha256:a5426de405f6f0a82b0f3def3bbd3bce2a71a91421fe980c17613b4e51ef38d9"
+    },
+    "library/node": {
+      "tag": "24.21.0-bookworm-slim",
+      "index_digest": "sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20",
+      "linux_amd64_digest": "sha256:51b1100cc2a83d370c6a60952e3f2989c8a43159d0e38586e090f3b3326efefd"
+    }
+  },
+  "packages": {
+    "ros-jazzy-nav2-bringup": {
+      "Package": "ros-jazzy-nav2-bringup",
+      "Version": "1.3.13-1noble.20261006.042503",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-nav2-bringup/ros-jazzy-nav2-bringup_1.3.13-1noble.20261006.042503_amd64.deb",
+      "SHA256": "d77a96dfc41580687724a7658844197670556f3eefcb1360b586bbc6a4f11424",
+      "Size": "35002"
+    },
+    "ros-jazzy-nav2-minimal-tb3-sim": {
+      "Package": "ros-jazzy-nav2-minimal-tb3-sim",
+      "Version": "1.0.1-1noble.20261006.041307",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-nav2-minimal-tb3-sim/ros-jazzy-nav2-minimal-tb3-sim_1.0.1-1noble.20261006.041307_amd64.deb",
+      "SHA256": "e2a09efb117059302f01ba83c7564fda3354aeeb9371bd9eb7afed3519fa8fa0",
+      "Size": "43794"
+    },
+    "ros-jazzy-nav2-simple-commander": {
+      "Package": "ros-jazzy-nav2-simple-commander",
+      "Version": "1.3.13-1noble.20260921.030016",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-nav2-simple-commander/ros-jazzy-nav2-simple-commander_1.3.13-1noble.20260921.030016_amd64.deb",
+      "SHA256": "1e1bac80c37a72143b27e8f0f6aa1ad63a1948a510e7101123e9ef8e44d02747",
+      "Size": "42486"
+    },
+    "ros-jazzy-rclpy": {
+      "Package": "ros-jazzy-rclpy",
+      "Version": "7.1.12-1noble.20260912.162354",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-rclpy/ros-jazzy-rclpy_7.1.12-1noble.20260912.162354_amd64.deb",
+      "SHA256": "26cd2496696325f508c11913297e1e014a9635c77d5894e7ee08ec5119d70dfe",
+      "Size": "467768"
+    },
+    "ros-jazzy-ros-gz-sim": {
+      "Package": "ros-jazzy-ros-gz-sim",
+      "Version": "1.0.24-1noble.20261006.035056",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz-sim/ros-jazzy-ros-gz-sim_1.0.24-1noble.20261006.035056_amd64.deb",
+      "SHA256": "13c49739259f8e8f59bec0b7ad36c896393817231eb7a724e641017fd9349543",
+      "Size": "703022"
+    },
+    "ros-jazzy-rosbag2-storage-mcap": {
+      "Package": "ros-jazzy-rosbag2-storage-mcap",
+      "Version": "0.26.11-1noble.20260911.143733",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-rosbag2-storage-mcap/ros-jazzy-rosbag2-storage-mcap_0.26.11-1noble.20260911.143733_amd64.deb",
+      "SHA256": "631e16732659422c108ccb3d4535eccc5520eba8df96f6388c849cde37bf136a",
+      "Size": "137132"
+    },
+    "ros-jazzy-gz-sim-vendor": {
+      "Package": "ros-jazzy-gz-sim-vendor",
+      "Version": "0.0.13-1noble.20260905.073557",
+      "Filename": "pool/main/r/ros-jazzy-gz-sim-vendor/ros-jazzy-gz-sim-vendor_0.0.13-1noble.20260905.073557_amd64.deb",
+      "SHA256": "8fa5fa4a903946bd93a4dbd5baf751516e8c8aafc82f38a3b726336fea0797db",
+      "Size": "11065564"
+    },
+    "ros-jazzy-nav2-msgs": {
+      "Package": "ros-jazzy-nav2-msgs",
+      "Version": "1.3.13-1noble.20260921.023049",
+      "Filename": "pool/main/r/ros-jazzy-nav2-msgs/ros-jazzy-nav2-msgs_1.3.13-1noble.20260921.023049_amd64.deb",
+      "SHA256": "2a9605718f6d95997b0b8282dbdf5a96cb4245b429e5eb12d0a0d4ab6cb500d8",
+      "Size": "1826476"
+    },
+    "ros-jazzy-rmw-fastrtps-cpp": {
+      "Package": "ros-jazzy-rmw-fastrtps-cpp",
+      "Version": "8.4.4-1noble.20260911.100940",
+      "Filename": "pool/main/r/ros-jazzy-rmw-fastrtps-cpp/ros-jazzy-rmw-fastrtps-cpp_8.4.4-1noble.20260911.100940_amd64.deb",
+      "SHA256": "b7a5e28eb14d7cd676fe8381f75dc3b50b4e5074c59564ad9c1f8c41abc65507",
+      "Size": "92008"
+    },
+    "ros-jazzy-ros-gz-bridge": {
+      "Package": "ros-jazzy-ros-gz-bridge",
+      "Version": "1.0.24-1noble.20260920.234644",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz-bridge/ros-jazzy-ros-gz-bridge_1.0.24-1noble.20260920.234644_amd64.deb",
+      "SHA256": "b3b13a1b621b352b799d9d2981c9508cd37e4af4d7ab2ecec2687822f93ae761",
+      "Size": "1937776"
+    },
+    "ros-jazzy-rosbag2-transport": {
+      "Package": "ros-jazzy-rosbag2-transport",
+      "Version": "0.26.11-1noble.20260911.150336",
+      "Filename": "pool/main/r/ros-jazzy-rosbag2-transport/ros-jazzy-rosbag2-transport_0.26.11-1noble.20260911.150336_amd64.deb",
+      "SHA256": "57b78bfc23fb99d7e54a9a362ccd794313edda5c6024ac9cb050522dc2fcf1f7",
+      "Size": "402938"
+    }
+  },
+  "public_packages": {
+    "contracts": {
+      "version": "0.20.0",
+      "sha256": "e761c1f7a8a36180419f71988cd1c4320233de68156ba4dfe0f026058f1a8b6c"
+    },
+    "harness": {
+      "version": "0.21.0",
+      "sha256": "da70f267d263407fca551aaef658b7fc76b421c68f58577934c700ccca72d2a3"
+    },
+    "host": {
+      "version": "0.1.0-rc.0",
+      "release": "host-v0.1.0-rc.0",
+      "sha256": "51c919953f6b761e20c89eee22e7dfe2c7aacb221329b61a99a52cf13ccf1e57"
+    }
+  }
+}

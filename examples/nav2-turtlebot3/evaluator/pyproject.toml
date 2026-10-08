@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nav2-turtlebot3-evaluator"
+version = "0.2.1"
+description = "Evidence-bound Nav2 TurtleBot3 action outcome assertions"
+requires-python = ">=3.12,<3.15"
+dependencies = ["robotics-runtime-contracts==0.20.0", "robotics-acceptance-harness==0.21.0"]
+
+[project.entry-points."robotics_acceptance.evaluators"]
+"org.example.nav2-turtlebot3" = "nav2_turtlebot3_evaluator:evaluate"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nav2_turtlebot3_evaluator"]
