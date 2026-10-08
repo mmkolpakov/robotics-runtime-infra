@@ -13,11 +13,11 @@ services:
       ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID:?ROBOTICS_DOMAIN_ID is required}"
     volumes:
       - type: bind
-        source: ./probe.py
+        source: ./examples/generic-consumer/probe.py
         target: /consumer/probe.py
         read_only: true
       - type: bind
-        source: ./inputs/opaque.bin
+        source: ./examples/generic-consumer/inputs/opaque.bin
         target: /consumer/opaque.bin
         read_only: true
     tmpfs:

@@ -457,6 +457,37 @@ foundation_bind_settlement_endpoint() {
   FOUNDATION_SETTLEMENT_ENDPOINT_FINGERPRINT="$(foundation_settlement_endpoint_fingerprint)" || return "$?"
 }
 
+# Use only the public route already admitted in the trusted foundation model.
+foundation_provider_public_route() {
+  local model="$1" provider="$2"
+  [[ "${provider}" == simulation || "${provider}" == playback ]] || return 64
+  jq -er --arg provider "${provider}" '
+    .services[$provider].environment |
+    {ROS_DOMAIN_ID, RMW_IMPLEMENTATION} |
+    if all(.[]; type == "string" and length > 0) then .
+    else error("foundation provider route is not admitted") end' "${model}"
+}
+
+# Offline stock Compose rendering has one explicit public environment contract.
+foundation_render_consumer_model() {
+  local consumer_root="$1" consumer_file="$2" model="$3" provider="$4" environment_name="$5" route
+  local -n consumer_compose_environment="${environment_name}"
+  route="$(foundation_provider_public_route "${model}" "${provider}")" || return "$?"
+  env -i \
+    PATH="${PATH}" \
+    HOME="${HOME}" \
+    PWD="${CI_REPO_ROOT}" \
+    COMPOSE_DISABLE_ENV_FILE=1 \
+    OBSERVER_IMAGE="${OBSERVER_IMAGE:?selected observer image is required}" \
+    ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:?runner-issued run ID is required}" \
+    ROBOTICS_DOMAIN_ID="${ROBOTICS_DOMAIN_ID:?runner-issued domain ID is required}" \
+    ROS_DOMAIN_ID="$(jq -er '.ROS_DOMAIN_ID' <<<"${route}")" \
+    RMW_IMPLEMENTATION="$(jq -er '.RMW_IMPLEMENTATION' <<<"${route}")" \
+    docker compose "${consumer_compose_environment[@]}" \
+    --project-directory "${consumer_root}" -f "${consumer_file}" \
+    config --no-normalize --format json
+}
+
 foundation_settle_caller_services() {
   local compose_name="$1" project="$2" model="$3" output="$4" provider="$5"
   local -n settlement_compose="${compose_name}"
@@ -470,12 +501,7 @@ foundation_settle_caller_services() {
     printf 'admitted caller settlement endpoint changed\n' >&2
     return 65
   }
-  [[ "${provider}" == simulation || "${provider}" == playback ]] || return 64
-  route="$(jq -er --arg provider "${provider}" '
-    .services[$provider].environment |
-    {ROS_DOMAIN_ID, RMW_IMPLEMENTATION} |
-    if all(.[]; type == "string" and length > 0) then .
-    else error("foundation provider route is not admitted") end' "${model}")" || return "$?"
+  route="$(foundation_provider_public_route "${model}" "${provider}")" || return "$?"
   mkdir -p -- "${output}"
   printf '%s\n' "${endpoint}" >"${output}/endpoint.sha256"
   # Preflight every selected native identity before any stop or native wait.

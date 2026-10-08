@@ -21,7 +21,10 @@ digest and payload constraints; the installed observer and aggregate receive the
 same registry. No extension code or evaluator is loaded.
 
 The optional `settle_services` list must be a unique subset of admitted caller
-services. Each selected service must carry exactly one runner-issued
+services. Caller Compose bind paths resolve from the caller repository root.
+The offline renderer exposes only the selected observer image, current run/domain
+and admitted ROS routing values; ambient credentials and Docker controls are not
+passed through. Each selected service must carry exactly one runner-issued
 `ROBOTICS_RUN_ID` and `ROBOTICS_DOMAIN_ID`. Optional `ROS_DOMAIN_ID` and
 `RMW_IMPLEMENTATION` fields must match the admitted foundation route and may
 not be duplicated. Non-ROS services need only the run and domain markers.

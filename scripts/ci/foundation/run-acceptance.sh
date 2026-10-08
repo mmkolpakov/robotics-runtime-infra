@@ -304,15 +304,10 @@ if [[ -n "${ROBOTICS_FOUNDATION_COMPOSE_PROJECT:-}" ]]; then
     "${consumer_source_relative}"
   ci_require_source_paths_within_root \
     "${consumer_source_model}" "${consumer_root}"
-  env -i \
-    PATH="${PATH}" \
-    HOME="${HOME}" \
-    PWD="${CI_REPO_ROOT}" \
-    COMPOSE_DISABLE_ENV_FILE=1 \
-    docker compose "${compose_environment[@]}" \
-    --project-directory "${consumer_root}" \
-    -f "${consumer_file}" \
-    config --no-normalize --format json >"${consumer_model}"
+  consumer_provider=simulation
+  [[ "${data_source}" != recording_playback ]] || consumer_provider=playback
+  foundation_render_consumer_model "${consumer_root}" "${consumer_file}" \
+    "${foundation_model}" "${consumer_provider}" compose_environment >"${consumer_model}"
   ci_require_model_paths_within_root "${consumer_model}" "${consumer_root}"
   wrapper="${run_dir}/compose.json"
   jq -n \
