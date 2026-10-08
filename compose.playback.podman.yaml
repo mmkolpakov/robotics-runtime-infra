@@ -1,0 +1,5 @@
+---
+# Preserve the host identity for the private manifest workspace on rootless Podman.
+services:
+  runtime-manifest:
+    userns_mode: keep-id

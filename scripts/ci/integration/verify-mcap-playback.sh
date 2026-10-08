@@ -167,6 +167,11 @@ run_case() (
       -f compose.yaml -f compose.playback.yaml -f compose.released.yaml
       --profile playback --profile test --profile acceptance)
   fi
+  local backend
+  backend="$(ci_engine_backend)" || return
+  if [[ "${backend}" == podman ]]; then
+    compose+=(-f compose.playback.podman.yaml)
+  fi
   export ROS_DOMAIN_ID="${domain_id}"
   if ((expect_failure)); then
     export ROBOTICS_PLAYBACK_READINESS_TOPIC=/never_present
