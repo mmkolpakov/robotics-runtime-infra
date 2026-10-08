@@ -37,3 +37,21 @@ The Bake `COSIGN_IMAGE` digest and `COSIGN_VERSION` are tracked separately and g
 review. Image tags do not prove the binary version: the publisher verification step and the
 image builds' binary-version checks remain mandatory. Rclone image updates use the native
 Dockerfile manager.
+
+## Maintenance policy
+
+Hosted runner updates use the `github-runners` datasource and require Dependency Dashboard
+approval. This applies to amd64 and ARM runner labels independently of Docker base image
+constraints. Other GitHub Actions updates keep their existing policy.
+
+The native pre-commit manager tracks repository hook revisions. Two lookup exceptions are
+confined to the local `sha256` image ID in `docker/ros-cohort-source.Dockerfile` and the private
+`@robotics-runtime/host` peer in `host/package.json`; public dependencies remain tracked.
+The existing extraction test also checks these policy boundaries with Renovate's native
+managers and package-rule implementation.
+
+Inference inputs and hash locks still use their recorded `uv pip compile` commands for
+reviewed regeneration. The pinned Renovate pip-compile manager does not parse the current
+lock headers' spaced `--python-version` argument and does not support their
+`--python-platform` argument. It is not enabled for these lockfiles; input updates require
+matching reviewed lock regeneration and provider qualification.

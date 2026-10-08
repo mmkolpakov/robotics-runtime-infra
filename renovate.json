@@ -206,7 +206,57 @@
         "python"
       ],
       "allowedVersions": "/^3\\.12-slim-bookworm$/"
+    },
+    {
+      "description": "Review hosted runner platform migrations separately from dependency updates",
+      "matchDatasources": [
+        "github-runners"
+      ],
+      "dependencyDashboardApproval": true,
+      "groupName": "GitHub runner migrations",
+      "automerge": false,
+      "prBodyNotes": [
+        "Qualify the changed hosted runner platform and its release/consumer paths before approving this migration in the Dependency Dashboard. Container image compatibility is reviewed separately."
+      ]
+    },
+    {
+      "description": "The ROS source cohort uses a qualified local image ID, not a Docker registry package",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchFileNames": [
+        "docker/ros-cohort-source.Dockerfile"
+      ],
+      "matchPackageNames": [
+        "sha256"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "The private host peer is installed from the verified release asset, not the npm registry",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchDatasources": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "host/package.json"
+      ],
+      "matchDepTypes": [
+        "peerDependencies"
+      ],
+      "matchPackageNames": [
+        "@robotics-runtime/host"
+      ],
+      "enabled": false
     }
   ],
-  "automerge": false
+  "automerge": false,
+  "pre-commit": {
+    "enabled": true
+  }
 }
