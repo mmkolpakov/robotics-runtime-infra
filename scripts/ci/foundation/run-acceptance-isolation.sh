@@ -94,6 +94,7 @@ if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 ]]; then
   (
     cd "${source_package}"
     mapfile -t portable_inputs <qualification-arguments.txt
+    ROBOTICS_CONTRACTS_CLI="${root}/dependencies/robotics-runtime/.venv/bin/robotics-contracts" \
     "${root}/scripts/qualification/verify-bundle" "${portable_inputs[@]}" \
       --bundle qualification.sigstore.json --key qualification.pub
   )
