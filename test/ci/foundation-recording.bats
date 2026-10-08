@@ -926,6 +926,9 @@ mkdir -p "${artifact_dir}"
 cd "${root}"
 source scripts/ci/lib.sh
 ci_set_compose_fixture_env
+source scripts/ci/foundation/lib.sh
+foundation_load_artifact_arguments "${consumer_root}" ""
+foundation_stage_extension_schemas "${run_dir}"
 robot_selected="$("${FOUNDATION_PYTHON}" docker/runtime/admit-robot-description \
   --root "${root}" --scenario examples/minimal-consumer/scenario.yaml | jq -r '.selected')"
 [[ "${robot_selected}" == false ]]
