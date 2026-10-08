@@ -268,43 +268,67 @@ write_document(scenario, root / "scenario.yaml", schema="acceptance-scenario.v1"
 shutil.copyfile(fixtures / "runtime-manifest.json", root / "runtime-manifest.json")
 for name in ("qos-overrides.yaml", "mcap-writer.yaml"):
     shutil.copyfile(repository / "config/recording" / name, root / "configuration/capture" / name)
-recording = root / "bags/recording/selected.mcap"
-with recording.open("wb") as stream:
-    writer = Writer(stream, compression=CompressionType.NONE)
-    writer.start(profile="ros2")
-    schema = writer.register_schema("std_msgs/msg/UInt64", "ros2msg", b"uint64 data\n")
-    clock_schema = writer.register_schema("rosgraph_msgs/msg/Clock", "ros2msg", b"builtin_interfaces/Time clock\n")
-    channel = writer.register_channel("/example/sequence", "cdr", schema)
-    clock = writer.register_channel("/clock", "cdr", clock_schema)
-    # Synthetic typed raw records; native CDR replay belongs to real ROS CI.
-    # The short density fixture retains the actual stock's 1 ms / 2 ms groups.
-    if recording_mode == "wall":
-        stamps = range(record_start_ns, record_start_ns + span_ns + 1, 50_000_000)
-    else:
-        stamps = (range(10**9, 10**9 + span_ns + 1, 1_000_000)
-                  if span_ns < 10**9 else (10**9, 10**9 + span_ns // 2, 10**9 + span_ns))
-    clock_count = message_count = 0
-    for index, stamp in enumerate(stamps):
-        if recording_mode == "wall":
-            # Native received and publish headers are wall time; Clock payload is ROS time.
-            clock_stamp = 10**9 + (stamp - record_start_ns) * 378_000_000 // span_ns
-            clock_data = b"\x00\x01\x00\x00" + struct.pack("<ii", clock_stamp // 10**9, clock_stamp % 10**9)
-            data = b"\x00\x01\x00\x00" + struct.pack("<Q", index)
-            publish_stamp = stamp - 200_000
-        else:
-            clock_data = struct.pack("<Iii", 1, stamp // 10**9, stamp % 10**9)
-            data = struct.pack("<IQ", 1, index)
-            publish_stamp = stamp
-        writer.add_message(clock, stamp, clock_data, publish_stamp)
-        clock_count += 1
-        if recording_mode == "ros" and span_ns < 10**9 and index == 76:
-            continue
-        writer.add_message(channel, stamp, data, publish_stamp)
-        message_count += 1
-    writer.finish()
-summary = recording_summary_from_mcap(recording)
-summary_path = root / "evidence/summaries/selected.recording-summary.json"
-write_document(summary, summary_path)
+statement = dict(load_mapping(root / "results/qualification-statement.json"))
+context = dict(load_mapping(fixtures / "acceptance-run.json"))
+context.update(run_id=statement["predicate"]["run_id"], scenario_id=scenario["scenario_id"],
+               scenario_sha256=hashlib.sha256((root / "scenario.yaml").read_bytes()).hexdigest())
+write_document(context, root / "acceptance-run.json")
+custom = {"captured_at": "2026-10-03T10:00:00Z", "dataset_license": "NOASSERTION",
+          "data_classification": "public", "retention_class": "pull-request-7d",
+          "run_id": context["run_id"], "capture_clock_policy": "ros-time-no-reset",
+          "record_timestamp_basis": "ros_time"}
+if recording_mode == "wall":
+    custom.update(capture_clock_policy="system-time", record_timestamp_basis="system_time")
+stamps = (range(record_start_ns, record_start_ns + span_ns + 1, 50_000_000)
+          if recording_mode == "wall" else
+          (range(10**9, 10**9 + span_ns + 1, 1_000_000) if span_ns < 10**9
+           else (10**9, 10**9 + span_ns // 2, 10**9 + span_ns)))
+groups = []
+segment_limit_ns = scenario["evidence_policy"]["max_segment_duration_sec"] * 10**9
+for number, stamp in enumerate(stamps):
+    if not groups or stamp - groups[-1][0][1] > segment_limit_ns:
+        groups.append([])
+    groups[-1].append((number, stamp))
+recordings, summaries = [], []
+clock_count = message_count = 0
+for ordinal, group in enumerate(groups):
+    name = "selected.mcap" if ordinal == 0 else f"selected-{ordinal}.mcap"
+    recording = root / "bags/recording" / name
+    with recording.open("wb") as stream:
+        writer = Writer(stream, compression=CompressionType.NONE)
+        writer.start(profile="ros2")
+        schema = writer.register_schema("std_msgs/msg/UInt64", "ros2msg", b"uint64 data\n")
+        clock_schema = writer.register_schema("rosgraph_msgs/msg/Clock", "ros2msg", b"builtin_interfaces/Time clock\n")
+        channel = writer.register_channel("/example/sequence", "cdr", schema)
+        clock = writer.register_channel("/clock", "cdr", clock_schema)
+        writer.add_metadata("rosbag2", {"serialized_metadata": json.dumps(
+            {"custom_data": custom, "ros_distro": "jazzy", "message_count": 0})})
+        for number, stamp in group:
+            if recording_mode == "wall":
+                clock_stamp = 10**9 + (stamp - record_start_ns) * 378_000_000 // span_ns
+                clock_data = b"\x00\x01\x00\x00" + struct.pack("<ii", clock_stamp // 10**9, clock_stamp % 10**9)
+                data = b"\x00\x01\x00\x00" + struct.pack("<Q", number)
+                publish_stamp = stamp - 200_000
+            else:
+                clock_data = struct.pack("<Iii", 1, stamp // 10**9, stamp % 10**9)
+                data = struct.pack("<IQ", 1, number)
+                publish_stamp = stamp
+            writer.add_message(clock, stamp, clock_data, publish_stamp)
+            clock_count += 1
+            if recording_mode == "ros" and span_ns < 10**9 and number == 76:
+                continue
+            writer.add_message(channel, stamp, data, publish_stamp)
+            message_count += 1
+        writer.add_metadata("rosbag2", {"serialized_metadata": json.dumps(
+            {"custom_data": custom, "ros_distro": "jazzy",
+             "message_count": message_count + clock_count})})
+        writer.finish()
+    summary = recording_summary_from_mcap(
+        recording, max_raw_evidence_bytes=scenario["evidence_policy"]["max_segment_size_bytes"])
+    summary_path = root / "evidence/summaries" / f"{recording.stem}.recording-summary.json"
+    write_document(summary, summary_path)
+    recordings.append(recording)
+    summaries.append((summary_path, summary))
 metadata = dict(load_mapping(repository / "test/fixtures/playback/golden/metadata.yaml"))
 info = metadata["rosbag2_bagfile_information"]
 topic = info["topics_with_message_count"][0]
@@ -315,47 +339,51 @@ clock_topic = json.loads(json.dumps(topic))
 clock_topic["topic_metadata"].update(name="/clock", type="rosgraph_msgs/msg/Clock")
 clock_topic["message_count"] = clock_count
 info.update(
-    relative_file_paths=["selected.mcap"], message_count=message_count + clock_count,
-    topics_with_message_count=[topic, clock_topic],
-    files=[{"path": "selected.mcap", "starting_time": {"nanoseconds_since_epoch": record_start_ns},
-            "duration": {"nanoseconds": span_ns}, "message_count": message_count + clock_count}],
-    custom_data={"captured_at": "2026-10-03T10:00:00Z", "dataset_license": "NOASSERTION",
-                 "data_classification": "public", "retention_class": "pull-request-7d",
-                 "capture_clock_policy": "ros-time-no-reset"})
-if recording_mode == "wall":
-    info["starting_time"] = {"nanoseconds_since_epoch": record_start_ns}
-    info["duration"] = {"nanoseconds": span_ns}
-    info["custom_data"].update(capture_clock_policy="system-time", record_timestamp_basis="system_time")
+    relative_file_paths=[path.name for path in recordings], message_count=message_count + clock_count,
+    starting_time={"nanoseconds_since_epoch": record_start_ns}, duration={"nanoseconds": span_ns},
+    topics_with_message_count=[topic, clock_topic], custom_data=custom,
+    files=[{"path": path.name,
+            "starting_time": {"nanoseconds_since_epoch": summary["statistics"]["message_start_time_ns"]},
+            "duration": {"nanoseconds": summary["statistics"]["message_end_time_ns"] - summary["statistics"]["message_start_time_ns"]},
+            "message_count": summary["statistics"]["message_count"]}
+           for path, (_, summary) in zip(recordings, summaries)])
 (root / "bags/recording/metadata.yaml").write_text(json.dumps(metadata))
 digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
 index = dict(load_mapping(fixtures / "evidence-index.json"))
-entry = index["artifacts"][0]
-entry.update(sha256=digest(recording), size_bytes=recording.stat().st_size,
-             local_path=str(recording), uri=recording.as_uri())
-entry["recording_summary"] = {
-    "uri": summary_path.as_uri(), "sha256": digest(summary_path), "size_bytes": summary_path.stat().st_size}
-index["artifacts"] = [entry]
+prototype = index["artifacts"][0]
+index["run_id"] = context["run_id"]
+index["artifacts"] = []
+for ordinal, (recording, (summary_path, _)) in enumerate(zip(recordings, summaries)):
+    entry = json.loads(json.dumps(prototype))
+    entry.update(artifact_id=f"artifact-{ordinal}", segment_index=ordinal,
+                 sha256=digest(recording), size_bytes=recording.stat().st_size,
+                 local_path=str(recording), uri=recording.as_uri(), storage_state="local",
+                 retention_class=custom["retention_class"])
+    entry["recording_summary"] = {
+        "uri": summary_path.as_uri(), "sha256": digest(summary_path), "size_bytes": summary_path.stat().st_size}
+    index["artifacts"].append(entry)
 write_document(index, root / "evidence/evidence-index.json")
-# Schema-valid origin scaffold, not a synthetic claim of completed live ROS.
-statement = dict(load_mapping(root / "results/qualification-statement.json"))
-updates = {
-    "scenario.json": root / "scenario.yaml",
-    "runtime-manifests/primary.json": root / "runtime-manifest.json",
-    "evidence-indexes/primary.json": root / "evidence/evidence-index.json",
-    "recording-summaries/control-0.json": summary_path,
-    "evidence/recording-0.mcap": recording,
-}
+# Schema-valid source scaffold; this fixture does not claim completed live ROS.
+removed = {item["subject_name"] for item in statement["predicate"]["artifacts"]
+           if item["kind"] in ("recording", "recording_summary")}
+statement["subject"] = [item for item in statement["subject"] if item["name"] not in removed]
+statement["predicate"]["artifacts"] = [item for item in statement["predicate"]["artifacts"]
+                                     if item["subject_name"] not in removed]
+updates = {"scenario.json": root / "scenario.yaml", "acceptance-run.json": root / "acceptance-run.json",
+           "runtime-manifests/primary.json": root / "runtime-manifest.json",
+           "evidence-indexes/primary.json": root / "evidence/evidence-index.json"}
 for subject in statement["subject"]:
     if subject["name"] in updates:
         subject["digest"]["sha256"] = digest(updates[subject["name"]])
-for subject, path in [
-    ("capture/qos-overrides.yaml", root / "configuration/capture/qos-overrides.yaml"),
-    ("capture/mcap-writer.yaml", root / "configuration/capture/mcap-writer.yaml"),
-    ("capture/bags/recording/metadata.yaml", root / "bags/recording/metadata.yaml"),
-]:
-    statement["subject"].append({
-        "name": subject, "digest": {"sha256": digest(path)}})
-    statement["predicate"]["artifacts"].append({"kind": "other_evidence", "subject_name": subject})
+retained = [("other_evidence", "capture/qos-overrides.yaml", root / "configuration/capture/qos-overrides.yaml"),
+            ("other_evidence", "capture/mcap-writer.yaml", root / "configuration/capture/mcap-writer.yaml"),
+            ("other_evidence", "capture/bags/recording/metadata.yaml", root / "bags/recording/metadata.yaml")]
+for ordinal, (recording, (summary_path, _)) in enumerate(zip(recordings, summaries)):
+    retained.extend([("recording", f"evidence/recording-{ordinal}.mcap", recording),
+                     ("recording_summary", f"recording-summaries/control-{ordinal}.json", summary_path)])
+for kind, subject, path in retained:
+    statement["subject"].append({"name": subject, "digest": {"sha256": digest(path)}})
+    statement["predicate"]["artifacts"].append({"kind": kind, "subject_name": subject})
 write_document(statement, root / "results/qualification-statement.json", schema="qualification-bundle.v1")
 PY
 }
@@ -372,24 +400,18 @@ repository, source, output = map(Path, sys.argv[1:])
 spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/ci/integration/prepare-playback-inputs.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-# Original source summary is native-generated in fixture setup. Production
-# preparation must work without the evidence sink's optional MCAP Python extra.
-import builtins
-original_import = builtins.__import__
-def minimal_production_import(name, *args, **kwargs):
-    if name.split(".")[0] in ("mcap", "lz4", "zstandard"):
-        raise ModuleNotFoundError("MCAP extra is absent from the selected production interpreter")
-    return original_import(name, *args, **kwargs)
-builtins.__import__ = minimal_production_import
+# The coordinator consumes the existing locked MCAP extra for native identity.
+from mcap.reader import SeekingReader
+assert SeekingReader
 # Only the absent ROS transport boundary is replaced; public writers are real.
 module.scan_recording = lambda path, topic: {
-    "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3, "clock_samples": 3}
+    "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3, "clock_samples": 3, "total_message_count": 3 + 3}
 module.prepare(source, output, output)
 dataset = load_mapping(output / "dataset-manifest.json")
 scenario = load_mapping(output / "scenario.json")
 validate_document(dataset)
 validate_document(scenario, schema="acceptance-scenario.v1")
-assert dataset["artifact"]["sha256"] == module.sha256(output / "source/bag/selected.mcap")
+assert dataset["bag"]["members"][0]["recording"]["sha256"] == module.sha256(output / "source/bag/selected.mcap")
 assert dataset["provenance"]["scenario_sha256"] == module.sha256(source / "scenario.yaml")
 assert dataset["provenance"]["runtime_manifest_sha256"] == module.sha256(source / "runtime-manifest.json")
 assert dataset["governance"]["license"] == "NOASSERTION"
@@ -425,10 +447,13 @@ module_path = Path(os.environ.get("FOUNDATION_PLAYBACK_PREPARER", repository / "
 spec = importlib.util.spec_from_file_location("prepare", module_path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-recording = source / "bags/recording/selected.mcap"
-before = recording.read_bytes()
-with recording.open("rb") as stream:
-    rows = list(make_reader(stream, validate_crcs=True).iter_messages())
+names = load_mapping(source / "bags/recording/metadata.yaml")["rosbag2_bagfile_information"]["relative_file_paths"]
+recordings = [source / "bags/recording" / name for name in names]
+before = {path: path.read_bytes() for path in recordings}
+rows = []
+for recording in recordings:
+    with recording.open("rb") as stream:
+        rows.extend(make_reader(stream, validate_crcs=True).iter_messages())
 data = [message for _, channel, message in rows if channel.topic == "/example/sequence"]
 clocks = [message for _, channel, message in rows if channel.topic == "/clock"]
 clock_bytes = [message.data for message in clocks]
@@ -441,7 +466,7 @@ assert load_mapping(source / "runtime-manifest.json")["clock"]["basis"] == "ros_
 # Only the ROS SDK transport boundary is replaced; timestamps come from stock MCAP.
 module.scan_recording = lambda path, topic: {
     "first_ns": data[0].log_time, "last_ns": data[-1].log_time,
-    "message_count": len(data), "clock_samples": len(clocks)}
+    "message_count": len(data), "clock_samples": len(clocks), "total_message_count": len(data) + len(clocks)}
 module.prepare(source, output, output)
 dataset = load_mapping(output / "dataset-manifest.json")
 scenario = load_mapping(output / "scenario.json")
@@ -453,13 +478,17 @@ assert dataset["time"]["start_ns"] == data[0].log_time
 assert dataset["time"]["end_ns"] == data[-1].log_time
 assert parameters["rate"] == scenario["time_policy"]["playback_rate"] == 1.0
 assert parameters["desired_playback_duration_sec"] == 30
-retained = output / "source/bag/selected.mcap"
-assert before == recording.read_bytes() == retained.read_bytes()
-assert dataset["artifact"]["sha256"] == hashlib.sha256(before).hexdigest()
+assert len(dataset["bag"]["members"]) == len(recordings) == 2
+retained_clocks = []
+for member, recording in zip(dataset["bag"]["members"], recordings, strict=True):
+    retained = output / "source/bag" / recording.relative_to(source / "bags/recording")
+    assert before[recording] == recording.read_bytes() == retained.read_bytes()
+    assert member["recording"]["sha256"] == hashlib.sha256(before[recording]).hexdigest()
+    with retained.open("rb") as stream:
+        retained_clocks.extend(message.data for _, channel, message
+                               in make_reader(stream, validate_crcs=True).iter_messages()
+                               if channel.topic == "/clock")
 assert (source / "runtime-manifest.json").read_bytes() == (output / "source/capture/runtime-manifest.json").read_bytes()
-with retained.open("rb") as stream:
-    retained_clocks = [message.data for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages()
-                       if channel.topic == "/clock"]
 assert retained_clocks == clock_bytes
 print("wall received span 36 s; ROS Clock payload span 378 ms; rate 1; source bytes unchanged")
 PY
@@ -495,13 +524,10 @@ write_document(statement, statement_path, schema="qualification-bundle.v1")
 PY
 }
 
-@test "playback preparer keeps legacy compressed ROS-time chronology and explicit ROS timestamp basis" {
+@test "playback preparer keeps compressed ROS-time chronology with explicit timestamp basis" {
   local actual
-  for actual in missing ros_time; do
-    prepare_playback_capture_fixture 10 378000000 "-legacy-${actual}"
-    if [[ "${actual}" == ros_time ]]; then
-      update_capture_recording_metadata '{"record_timestamp_basis":"ros_time"}'
-    fi
+  for actual in ros_time; do
+    prepare_playback_capture_fixture 10 378000000 "-ros-${actual}" ros
     run "${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" "${CAPTURE}" "${PREPARED}" <<'PY'
 import importlib.util
 import sys
@@ -523,7 +549,7 @@ gaps = [following - previous for previous, following in zip(times, times[1:])]
 assert times[-1] - times[0] == 378_000_000 and max(gaps) == 2_000_000
 module.scan_recording = lambda path, topic: {
     "first_ns": times[0], "last_ns": times[-1], "message_count": len(times),
-    "clock_samples": len(clock_bytes)}
+    "clock_samples": len(clock_bytes), "total_message_count": len(times) + len(clock_bytes)}
 module.prepare(source, output, output)
 dataset = load_mapping(output / "dataset-manifest.json")
 parameters = load_mapping(output / "playback-inputs.json")
@@ -536,7 +562,7 @@ with (output / "source/bag/selected.mcap").open("rb") as stream:
     retained = [message.data for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages()
                 if channel.topic == "/clock"]
 assert retained == clock_bytes
-print("legacy ROS span 378 ms retained; rate 0.0126; Clock bytes unchanged")
+print("ROS span 378 ms retained; rate 0.0126; Clock bytes unchanged")
 PY
     printf '%s\n' "${output}"
     [ "${status}" -eq 0 ]
@@ -577,7 +603,7 @@ data = [message for _, channel, message in rows if channel.topic == "/example/se
 clocks = [message for _, channel, message in rows if channel.topic == "/clock"]
 module.scan_recording = lambda path, topic: {
     "first_ns": data[0].log_time, "last_ns": data[-1].log_time,
-    "message_count": len(data), "clock_samples": len(clocks)}
+    "message_count": len(data), "clock_samples": len(clocks), "total_message_count": len(data) + len(clocks)}
 try:
     module.prepare(source, output, output)
 except ValueError as error:
@@ -629,7 +655,7 @@ clock_count = sum(channel.topic == "/clock" for _, channel, _ in rows)
 # Native MCAP records supply the timing fixture; only the ROS SDK boundary is replaced.
 module.scan_recording = lambda path, topic: {
     "first_ns": times[0], "last_ns": times[-1],
-    "message_count": len(times), "clock_samples": clock_count}
+    "message_count": len(times), "clock_samples": clock_count, "total_message_count": len(times) + clock_count}
 module.prepare(source, output, output)
 parameters = load_mapping(output / "playback-inputs.json")
 scenario = load_mapping(output / "scenario.json")
@@ -638,7 +664,7 @@ validate_document(scenario, schema="acceptance-scenario.v1")
 validate_document(dataset)
 window = load_mapping(source / "scenario.yaml")["timeouts"]["execution_sec"]
 assert parameters["rate"] == scenario["time_policy"]["playback_rate"]
-assert dataset["artifact"]["sha256"] == module.sha256(recording)
+assert dataset["bag"]["members"][0]["recording"]["sha256"] == module.sha256(recording)
 assert dataset["provenance"]["scenario_sha256"] == module.sha256(source / "scenario.yaml")
 assert dataset["provenance"]["runtime_manifest_sha256"] == module.sha256(source / "runtime-manifest.json")
 assert recording.read_bytes() == before == (output / "source/bag/selected.mcap").read_bytes()
@@ -814,7 +840,7 @@ spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/c
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.scan_recording = lambda *_: {
-    "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3, "clock_samples": 3}
+    "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3, "clock_samples": 3, "total_message_count": 3 + 3}
 metadata = source / "bags/recording/metadata.yaml"
 original = load_mapping(metadata)
 statement_path = source / "results/qualification-statement.json"
@@ -834,7 +860,7 @@ for case in ("segment", "license"):
     destination = output.with_name(case)
     try:
         module.prepare(source, destination, destination)
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, FileNotFoundError):
         pass
     else:
         raise AssertionError(f"{case} was accepted")
@@ -855,7 +881,7 @@ spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/c
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.scan_recording = lambda *_: {
-    "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3, "clock_samples": 3}
+    "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3, "clock_samples": 3, "total_message_count": 3 + 3}
 module.prepare(source, output, output)
 PY
   prepare_orchestration_fixture

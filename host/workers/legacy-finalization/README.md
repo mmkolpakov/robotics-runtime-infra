@@ -69,7 +69,8 @@ ephemeral key fixture is not a publisher identity
 or live acceptance claim.
 
 Build the worker with the admitted immutable coordinator image containing contracts
-0.18.2 and harness 0.19.1. `docker/legacy-finalizer.Dockerfile` checks both versions.
+0.19.0 and harness 0.20.0. `docker/legacy-finalizer.Dockerfile` checks both versions
+against the foundation lock.
 Cosign uses the existing publisher-pinned image digest and checks its actual
 `v3.1.3+dirty` metadata/commit; it does not claim a pristine upstream build.
 Supply the official v3.1.3 source checkout at commit

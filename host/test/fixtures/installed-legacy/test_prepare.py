@@ -65,7 +65,7 @@ class InstalledPreparation(unittest.TestCase):
             return json.dumps(self.probe).encode()
         raise AssertionError(argv)
 
-    def prepare(self, engine=None):
+    def prepare(self, engine=None, negative=False):
         consumer = self.directory / "consumer"
         args = [
             "prepare",
@@ -94,6 +94,8 @@ class InstalledPreparation(unittest.TestCase):
         ]
         if engine is not None:
             args += ["--engine", engine]
+        if negative:
+            args.append("--negative-lifecycle")
         with (
             patch.object(sys, "argv", args),
             patch.object(PREPARE.subprocess, "check_output", self.command),
@@ -130,6 +132,93 @@ class InstalledPreparation(unittest.TestCase):
         self.assertIn(
             "host/test/fixtures/legacy-live/compose.podman.yaml", docker["deployment"]
         )
+        env = {
+            **os.environ,
+            "ROBOTICS_RUN_ID": "run-fixture",
+            "ROS_DOMAIN_ID": "181",
+            "GZ_PARTITION": "fixture",
+            "LEGACY_SIMULATION_IMAGE": self.image,
+            "LEGACY_SOURCE_REVISION": "c" * 40,
+            "LEGACY_COORDINATOR_IMAGE": self.image,
+            "LEGACY_SOURCE_ROOT": "/deployment",
+            "LEGACY_SHARED_VOLUME": "rr-source",
+            "ROBOTICS_RETAINED_VOLUME": "rr-retained",
+            "LEGACY_SIMULATION_REFERENCE": self.reference,
+            "LEGACY_SIMULATION_DIGEST": "sha256:" + "b" * 64,
+        }
+        compose = (
+            self.directory
+            / "consumer/deployment/host/test/fixtures/legacy-live/compose.yaml"
+        )
+        model = json.loads(
+            subprocess.run(
+                [COMPOSE, "--file", str(compose), "config", "--format", "json"],
+                env=env,
+                check=True,
+                capture_output=True,
+            ).stdout
+        )
+        health = model["services"]["simulation"]["healthcheck"]
+        self.assertEqual(health["start_interval"], "2s")
+        self.assertEqual(health["interval"], "30s")
+        self.assertEqual(health["timeout"], "6s")
+        self.assertEqual(health["start_period"], "15s")
+        self.assertEqual(health["retries"], 3)
+        self.assertEqual(
+            health["test"][-3:],
+            [
+                "/simulator/get_simulator_features",
+                "simulation_interfaces/srv/GetSimulatorFeatures",
+                "{}",
+            ],
+        )
+
+    @unittest.skipUnless(
+        COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
+    )
+    def test_positive_consumer_retains_admission_helper_closure(self):
+        identity = self.prepare("docker")
+        deployment = self.directory / "consumer/deployment"
+        for worker in (
+            "compose.simulation-health.yaml",
+            "host/workers/legacy/prepare-source.py",
+            "host/workers/legacy-live/capture-provider.py",
+            "host/workers/legacy-live/export-startup-failure.py",
+            "host/workers/legacy-live/probe-diagnostic-export.py",
+        ):
+            with self.subTest(worker=worker):
+                raw = (deployment / worker).read_bytes()
+                self.assertEqual(raw, (ROOT / worker).read_bytes())
+                self.assertEqual((deployment / worker).stat().st_mode & 0o777, 0o444)
+                self.assertEqual(
+                    identity["deployment"][worker],
+                    {
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                        "size_bytes": len(raw),
+                    },
+                )
+
+    @unittest.skipUnless(
+        COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
+    )
+    def test_negative_consumer_retains_exact_worker_and_installed_entrypoints(self):
+        identity = self.prepare("docker", negative=True)
+        consumer = self.directory / "consumer"
+        worker = "host/workers/legacy-live/export-startup-failure.py"
+        raw = (consumer / "deployment" / worker).read_bytes()
+        self.assertEqual(raw, (ROOT / worker).read_bytes())
+        self.assertEqual(
+            identity["deployment"][worker],
+            {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)},
+        )
+        for target, source in (
+            ("app/negative-bootstrap.mjs", "negative-bootstrap.mjs"),
+            ("negative-launch.mjs", "negative-launch.mjs"),
+        ):
+            self.assertEqual(
+                (consumer / target).read_bytes(),
+                (ROOT / "host/test/fixtures/installed-legacy" / source).read_bytes(),
+            )
 
     @unittest.skipUnless(
         COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
@@ -160,10 +249,148 @@ class InstalledPreparation(unittest.TestCase):
         self.assertFalse((self.directory / "consumer").exists())
 
 
+class DiagnosticStateAccess(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="diagnostic-state-")
+        self.addCleanup(self.temporary.cleanup)
+        self.state = Path(self.temporary.name) / "state"
+        self.state.mkdir(mode=0o700)
+        spec = importlib.util.spec_from_file_location(
+            "diagnostic_export_probe",
+            ROOT / "host/workers/legacy-live/probe-diagnostic-export.py",
+        )
+        self.probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.probe)
+
+    def inspect(self, uid=None):
+        return self.probe.private_state_inventory(
+            self.state, os.getuid() if uid is None else uid, os.getgid()
+        )
+
+    def test_absent_lazy_metric_keeps_actual_empty_private_directory_readable(self):
+        result = self.inspect()
+        self.assertTrue(result["stateDirectoryReadable"])
+        self.assertEqual(result["presentStateFilesRead"], [])
+        self.assertFalse((self.state / "spool-peak-size-bytes").exists())
+
+    def test_stock_sink_empty_spool_preserves_inherited_setgid_directory_mode(self):
+        self.state.rmdir()
+        self.state.parent.chmod(0o2770)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                "umask 0022; source <(sed '/^for command/,$d' "
+                "docker/evidence-sink/evidence-sink); "
+                "update_max_state spool-peak-size-bytes 0",
+            ],
+            cwd=ROOT,
+            env={**os.environ, "EVIDENCE_STATE_DIR": str(self.state)},
+            check=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.state.stat().st_mode & 0o7777, 0o2755)
+        self.assertFalse((self.state / "spool-peak-size-bytes").exists())
+        observed = self.inspect()
+        self.assertEqual(observed["stateMode"], "0o2755")
+        self.assertTrue(observed["stateDirectoryReadable"])
+        self.assertEqual(observed["presentStateFilesRead"], [])
+
+    def test_every_present_private_state_file_is_read_without_changing_bytes(self):
+        registrations = self.state / "registrations"
+        registrations.mkdir(mode=0o700)
+        files = {
+            self.state / "spool-peak-size-bytes": b"7",
+            registrations / "receipt.json": b'{"original": true}',
+        }
+        for path, raw in files.items():
+            path.write_bytes(raw)
+            path.chmod(0o600)
+        result = self.inspect()
+        self.assertCountEqual(
+            result["presentStateFilesRead"],
+            ["spool-peak-size-bytes", "registrations/receipt.json"],
+        )
+        self.assertEqual({path: path.read_bytes() for path in files}, files)
+
+    def test_missing_foreign_or_nonprivate_directory_refuses(self):
+        with self.assertRaisesRegex(ValueError, "ownership"):
+            self.inspect(os.getuid() + 1)
+        self.state.chmod(0o777)
+        with self.assertRaisesRegex(ValueError, "foreign writes"):
+            self.inspect()
+        self.state.rmdir()
+        with self.assertRaises(FileNotFoundError):
+            self.inspect()
+
+    def test_unreadable_present_file_refuses(self):
+        path = self.state / "private"
+        path.write_bytes(b"preserved")
+        path.chmod(0)
+        with self.assertRaises(PermissionError):
+            self.inspect()
+        self.assertEqual(path.stat().st_mode & 0o777, 0)
+
+    def test_symlink_entry_or_root_refuses_without_following_it(self):
+        target = self.state.parent / "outside"
+        target.write_bytes(b"outside")
+        link = self.state / "linked"
+        link.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            self.inspect()
+        link.unlink()
+        self.state.rmdir()
+        self.state.symlink_to(self.state.parent, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "directory type"):
+            self.inspect()
+
+
 @unittest.skipUnless(
     COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
 )
 class ComposeProfiles(unittest.TestCase):
+    def test_public_simulator_profiles_share_native_probe_and_startup_policy(self):
+        for overlay in ("compose.stepped.yaml", "compose.simulation-conformance.yaml"):
+            with self.subTest(overlay=overlay):
+                model = json.loads(
+                    subprocess.check_output(
+                        [
+                            COMPOSE,
+                            "--file",
+                            str(ROOT / "compose.yaml"),
+                            "--file",
+                            str(ROOT / overlay),
+                            "--profile",
+                            "*",
+                            "config",
+                            "--format",
+                            "json",
+                        ],
+                        env={
+                            **os.environ,
+                            "ROBOTICS_RUN_ID": "run-fixture",
+                            "ROBOTICS_DOMAIN_ID": "0",
+                            "ROBOTICS_SIMULATOR_SERVICE_NAMESPACE": "/custom",
+                        },
+                    )
+                )
+                health = model["services"]["simulation"]["healthcheck"]
+                self.assertEqual(health["start_interval"], "2s")
+                self.assertEqual(health["interval"], "30s")
+                self.assertEqual(health["timeout"], "6s")
+                self.assertEqual(health["start_period"], "20s")
+                self.assertEqual(health["retries"], 3)
+                self.assertEqual(
+                    health["test"][-3:],
+                    [
+                        "/custom/get_simulator_features",
+                        "simulation_interfaces/srv/GetSimulatorFeatures",
+                        "{}",
+                    ],
+                )
+                self.assertNotIn("simulation-health", model["services"])
+
     def test_engine_overlays_keep_native_namespace_and_socket_groups_explicit(self):
         self.assertEqual(
             hashlib.sha256(Path(COMPOSE).read_bytes()).hexdigest(),

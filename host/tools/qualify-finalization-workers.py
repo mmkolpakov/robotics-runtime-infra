@@ -6,9 +6,9 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
-import sys
 from pathlib import Path
 
 WORKERS = Path("/opt/robotics/finalizer/workers")
@@ -140,6 +140,7 @@ class Inventory(unittest.TestCase):
                 "qualification_profile:providers/profile.json",
                 "provider_conformance:providers/conformance.json",
                 "other_evidence:providers/configuration.json",
+                "other_evidence:providers/configuration.json",
                 "other_evidence:providers/observation.json",
                 "other_evidence:logs/foundation.log",
                 "other_evidence:logs/observer.log",
@@ -195,6 +196,123 @@ class Inventory(unittest.TestCase):
 
 
 class PublicQualification(unittest.TestCase):
+    def portable(
+        self,
+        root: Path,
+        retained: Path,
+        args: list[str],
+        recording_sha256: str,
+        *,
+        aggregate: Path | None = None,
+    ) -> None:
+        package = root / "portable"
+
+        def run(
+            command: list[str], cwd: Path = root, expected_exit: int = 0
+        ) -> subprocess.CompletedProcess[str]:
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode, expected_exit, result.stdout + result.stderr
+            )
+            return result
+
+        if aggregate is None:
+            derived = retained / "derived-aggregate.json"
+            run(
+                [
+                    "/opt/contracts/bin/robotics-acceptance",
+                    "aggregate",
+                    "--scenario",
+                    str(retained / "acceptance-scenario.yaml"),
+                    "--run-context",
+                    str(retained / "acceptance-run.json"),
+                    "--result",
+                    str(retained / "acceptance-result.json"),
+                    "--output",
+                    str(derived),
+                ]
+            )
+        else:
+            derived = aggregate
+            args += ["--aggregate", str(derived)]
+        for index in range(1, len(args), 2):
+            if args[index].startswith("acceptance_aggregate:"):
+                args[index] = args[index].split("=", 1)[0] + "=" + str(derived)
+        run(
+            [
+                str(HELPERS / "scripts/qualification/package-artifacts"),
+                "--output",
+                str(package),
+                *args,
+            ]
+        )
+        statement, bundle, key = (
+            retained / "statement.json",
+            retained / "bundle.json",
+            retained / "public.key",
+        )
+        run(
+            [
+                str(HELPERS / "scripts/qualification/create-statement"),
+                *args,
+                "--output",
+                str(statement),
+            ]
+        )
+        run(
+            [
+                "bash",
+                str(HELPERS / "scripts/ci/foundation/sign-ephemeral-qualification.sh"),
+                str(statement),
+                str(bundle),
+                str(key),
+            ]
+        )
+        for path in (statement, bundle, key):
+            shutil.copyfile(path, package / path.name)
+        portable = (package / "qualification-arguments.txt").read_text().splitlines()
+        shutil.rmtree(retained)
+        verified = run(
+            [
+                str(HELPERS / "scripts/qualification/verify-bundle"),
+                *portable,
+                "--bundle",
+                "bundle.json",
+                "--key",
+                "public.key",
+            ],
+            package,
+        )
+        self.assertIn("qualification bundle verified", verified.stdout)
+        recording_spec = next(v for v in portable[1::2] if v.startswith("recording:"))
+        copied = package / recording_spec.split("=", 1)[1]
+        self.assertEqual(recording_sha256, digest(copied))
+        raw = copied.read_bytes()
+        copied.chmod(0o640)
+        copied.write_bytes(raw + b"tamper")
+        rejected = subprocess.run(
+            [
+                str(HELPERS / "scripts/qualification/verify-bundle"),
+                *portable,
+                "--bundle",
+                "bundle.json",
+                "--key",
+                "public.key",
+            ],
+            cwd=package,
+            capture_output=True,
+            timeout=45,
+            check=False,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+
     def test_existing_helpers_portable_after_raw_teardown(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -234,114 +352,292 @@ class PublicQualification(unittest.TestCase):
                     + "="
                     + str(retained / spec["file"]),
                 ]
-            package = root / "portable"
+            self.portable(root, retained, args, expected["recording-0.mcap"])
 
-            def run(
-                command: list[str], cwd: Path = root
-            ) -> subprocess.CompletedProcess[str]:
-                result = subprocess.run(
-                    command,
-                    cwd=cwd,
-                    capture_output=True,
-                    text=True,
-                    timeout=45,
-                    check=False,
+
+class CompletedAssessment(unittest.TestCase):
+    # Repository unit fixtures only; no native cleanup or performance proof.
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.source = self.root / "source"
+        shutil.copytree(FIXTURES, self.source)
+        self.retained = self.root / "retained"
+        self.original = json.loads(
+            (self.source / "acceptance-result.json").read_bytes()
+        )
+        self.result_path = self.source / "acceptance-result.json"
+        self.bindings = [
+            {"flag": "--scenario", "source": "acceptance-scenario.yaml"},
+            {
+                "flag": "--runtime-manifest",
+                "subject": "primary",
+                "source": "runtime-manifest.json",
+            },
+            {"flag": "--acceptance-run", "source": "acceptance-run.json"},
+            {
+                "flag": "--result",
+                "subject": "primary",
+                "source": "acceptance-result.json",
+            },
+            {
+                "flag": "--evidence-index",
+                "subject": "primary",
+                "source": "evidence-index.json",
+            },
+        ]
+        specs = json.loads((self.source / "single-artifacts.json").read_bytes())[
+            "artifacts"
+        ]
+        excluded = {
+            "scenario",
+            "runtime_manifest",
+            "acceptance_run",
+            "domain_result",
+            "acceptance_aggregate",
+            "evidence_index",
+            "recording",
+            "recording_summary",
+        }
+        for spec in specs:
+            if (
+                spec["kind"] not in excluded
+                and spec["kind"] != "metrics"
+                and spec["file"] != "fastdds-profile.xml"
+            ):
+                self.bindings.append(
+                    {
+                        "flag": "--artifact",
+                        "subject": spec["kind"] + ":" + spec["subject_name"],
+                        "source": spec["file"],
+                    }
                 )
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                return result
+        selected = {
+            "metrics:metrics.otlp.jsonl": "metrics.otlp.jsonl",
+            "other_evidence:fastdds-profile.xml": "fastdds-profile.xml",
+            "qualification_profile:providers/profile.json": "provider-profile.json",
+            "provider_conformance:providers/conformance.json": "provider-conformance.json",
+        }
+        opaque = (
+            "junit:junit.xml",
+            "other_evidence:host-topology.json",
+            "other_evidence:runtime-resources.json",
+            "other_evidence:capture/qos-overrides.yaml",
+            "other_evidence:capture/mcap-writer.yaml",
+            "other_evidence:providers/configuration.json",
+            "other_evidence:providers/observation.json",
+            "other_evidence:logs/foundation.log",
+            "other_evidence:logs/observer.log",
+            "other_evidence:providers/world.sdf",
+        )
+        for index, subject in enumerate(opaque):
+            name = f"unit-inventory-extra-{index}.bin"
+            (self.source / name).write_text(
+                "opaque auxiliary unit fixture: " + subject + "\n"
+            )
+            selected[subject] = name
+        existing = {item.get("subject") for item in self.bindings}
+        self.bindings += [
+            {"flag": "--artifact", "subject": subject, "source": name}
+            for subject, name in selected.items()
+            if subject not in existing
+        ]
+        (self.source / "bags").mkdir()
+        shutil.copyfile(
+            self.source / "recording-0.mcap", self.source / "bags/recording-0.mcap"
+        )
+        (self.source / "summaries").mkdir()
+        shutil.copyfile(
+            self.source / "recording-summary.json",
+            self.source / "summaries/0.recording-summary.json",
+        )
+        self.plan = {
+            "sourceRoot": str(self.source),
+            "destinationRoot": str(self.retained),
+            "runId": self.original["run_id"],
+            "maximumBytes": 64 * 1024**2,
+            "bindings": self.bindings,
+            "dataSource": "simulator",
+            "bagsDirectory": "bags",
+            "summariesDirectory": "summaries",
+        }
 
-            derived = retained / "derived-aggregate.json"
-            run(
+    def negative(self) -> None:
+        result = dict(self.original)
+        result["assertion_results"] = [
+            dict(item) for item in result["assertion_results"]
+        ]
+        item = next(
+            row
+            for row in result["assertion_results"]
+            if row["assertion_id"] == "data-plane-message-age"
+        )
+        item.update(
+            status="failed",
+            observed_value=1000.0,
+            message="repository unit fixture negative assessment",
+        )
+        result["status"] = "failed"
+        self.result_path.write_text(json.dumps(result) + "\n")
+
+    def retained_assessment(self):
+        completed = collect_inventory.verify_result(self.plan, 1, HELPERS)
+        self.assertEqual(completed["verdict"], "failed")
+        inventory, arguments = collect_inventory.collect(self.plan)
+        self.assertEqual(arguments, completed["arguments"])
+        export_retained.export(inventory)
+        result = self.retained / completed["resultRelativePath"]
+        aggregate = self.retained / "derived-aggregate.json"
+        cli = subprocess.run(
+            [
+                "/opt/contracts/bin/robotics-acceptance",
+                "aggregate",
+                "--scenario",
+                str(self.retained / "payloads/acceptance-scenario.yaml"),
+                "--run-context",
+                str(self.retained / "payloads/acceptance-run.json"),
+                "--result",
+                str(result),
+                "--output",
+                str(aggregate),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+        self.assertEqual(cli.returncode, 1, cli.stdout + cli.stderr)
+        return completed, arguments, result, aggregate
+
+    def test_negative_is_signed_and_portable_after_raw_source_removal(self):
+        self.negative()
+        completed, arguments, result, aggregate = self.retained_assessment()
+        original_digest = digest(result)
+        shutil.rmtree(self.source)
+        verified = collect_inventory.verify_aggregate(
+            arguments, aggregate, result, completed, 1, HELPERS
+        )
+        self.assertEqual(verified["verdict"], "failed")
+        self.assertEqual(verified["result"]["sha256"], original_digest)
+        PublicQualification.portable(
+            self,
+            self.root,
+            self.retained,
+            arguments,
+            digest(self.retained / "payloads/bags/recording-0.mcap"),
+            aggregate=aggregate,
+        )
+
+    def test_exit_and_canonical_verdict_must_agree(self):
+        positive = collect_inventory.verify_result(self.plan, 0, HELPERS)
+        self.assertEqual(positive["verdict"], "passed")
+        for code in (1, 2, -1, True):
+            with self.subTest(passed_exit=code), self.assertRaises(ValueError):
+                collect_inventory.verify_result(self.plan, code, HELPERS)
+        self.negative()
+        for code in (0, 2, -1, True):
+            with self.subTest(negative_exit=code), self.assertRaises(ValueError):
+                collect_inventory.verify_result(self.plan, code, HELPERS)
+
+    def test_bad_missing_and_foreign_result_refuse(self):
+        for field, value in (
+            ("run_id", "run-00000000-0000-4000-8000-000000000999"),
+            ("domain_id", "foreign"),
+        ):
+            with self.subTest(field=field):
+                value_result = {**self.original, field: value}
+                self.result_path.write_text(json.dumps(value_result))
+                with self.assertRaises(ValueError):
+                    collect_inventory.verify_result(self.plan, 0, HELPERS)
+        self.result_path.write_bytes(b"not a canonical result")
+        with self.assertRaises(ValueError):
+            collect_inventory.verify_result(self.plan, 0, HELPERS)
+        self.result_path.unlink()
+        with self.assertRaises((OSError, ValueError)):
+            collect_inventory.verify_result(self.plan, 0, HELPERS)
+
+    def test_sealed_result_and_payload_bytes_cannot_change(self):
+        self.negative()
+        completed, arguments, result, aggregate = self.retained_assessment()
+        for path in (result, self.retained / "payloads/metrics.otlp.jsonl"):
+            raw = path.read_bytes()
+            path.chmod(0o640)
+            path.write_bytes(raw + b"\n")
+            with self.subTest(payload=path.name), self.assertRaises(ValueError):
+                collect_inventory.verify_aggregate(
+                    arguments, aggregate, result, completed, 1, HELPERS
+                )
+            path.write_bytes(raw)
+        for code in (0, 2):
+            with self.subTest(aggregate_exit=code), self.assertRaises(ValueError):
+                collect_inventory.verify_aggregate(
+                    arguments, aggregate, result, completed, code, HELPERS
+                )
+
+    def test_issued_retry_preserves_original_subject_roles(self):
+        self.negative()
+        completed = collect_inventory.verify_result(self.plan, 1, HELPERS)
+        plan_path = self.root / "plan.json"
+        completed_path = self.root / "completed.json"
+        completed_path.write_text(json.dumps(completed))
+        original_seal = completed_path.read_bytes()
+        self.plan["destinationRoot"] = str(self.root / "issued-retry")
+        plan_path.write_text(json.dumps(self.plan))
+
+        def invoke(output: Path, arguments: Path):
+            return subprocess.run(
                 [
-                    "/opt/contracts/bin/robotics-acceptance",
-                    "aggregate",
-                    "--scenario",
-                    str(retained / "acceptance-scenario.yaml"),
-                    "--run-context",
-                    str(retained / "acceptance-run.json"),
-                    "--result",
-                    str(retained / "acceptance-result.json"),
+                    sys.executable,
+                    str(WORKERS / "collect_inventory.py"),
+                    "--plan",
+                    str(plan_path),
                     "--output",
-                    str(derived),
-                ]
-            )
-            for index in range(1, len(args), 2):
-                if args[index].startswith("acceptance_aggregate:"):
-                    args[index] = args[index].split("=", 1)[0] + "=" + str(derived)
-            run(
-                [
-                    str(HELPERS / "scripts/qualification/package-artifacts"),
-                    "--output",
-                    str(package),
-                    *args,
-                ]
-            )
-            statement, bundle, key = (
-                retained / "statement.json",
-                retained / "bundle.json",
-                retained / "public.key",
-            )
-            run(
-                [
-                    str(HELPERS / "scripts/qualification/create-statement"),
-                    *args,
-                    "--output",
-                    str(statement),
-                ]
-            )
-            run(
-                [
-                    "bash",
-                    str(
-                        HELPERS
-                        / "scripts/ci/foundation/sign-ephemeral-qualification.sh"
-                    ),
-                    str(statement),
-                    str(bundle),
-                    str(key),
-                ]
-            )
-            for path in (statement, bundle, key):
-                shutil.copyfile(path, package / path.name)
-            portable = (
-                (package / "qualification-arguments.txt").read_text().splitlines()
-            )
-            shutil.rmtree(retained)
-            verified = run(
-                [
-                    str(HELPERS / "scripts/qualification/verify-bundle"),
-                    *portable,
-                    "--bundle",
-                    "bundle.json",
-                    "--key",
-                    "public.key",
+                    str(output),
+                    "--arguments",
+                    str(arguments),
+                    "--completed-result",
+                    str(completed_path),
                 ],
-                package,
-            )
-            self.assertIn("qualification bundle verified", verified.stdout)
-            recording_spec = next(
-                v for v in portable[1::2] if v.startswith("recording:")
-            )
-            copied = package / recording_spec.split("=", 1)[1]
-            self.assertEqual(expected["recording-0.mcap"], digest(copied))
-            raw = copied.read_bytes()
-            copied.chmod(0o640)
-            copied.write_bytes(raw + b"tamper")
-            rejected = subprocess.run(
-                [
-                    str(HELPERS / "scripts/qualification/verify-bundle"),
-                    *portable,
-                    "--bundle",
-                    "bundle.json",
-                    "--key",
-                    "public.key",
-                ],
-                cwd=package,
                 capture_output=True,
                 timeout=45,
                 check=False,
             )
-            self.assertNotEqual(rejected.returncode, 0)
+
+        output, arguments = (
+            self.root / "retry-inventory.json",
+            self.root / "retry-arguments.json",
+        )
+        cli = invoke(output, arguments)
+        self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
+        retry = json.loads(Path(str(arguments) + ".completed-result.json").read_bytes())
+        self.assertEqual(retry["result"], completed["result"])
+        self.assertEqual(retry["sourceArguments"], completed["sourceArguments"])
+        self.assertEqual(
+            retry["inventory"]["destinationRoot"], self.plan["destinationRoot"]
+        )
+        self.assertNotEqual(retry["arguments"], completed["arguments"])
+        self.assertEqual(completed_path.read_bytes(), original_seal)
+
+        next(
+            row
+            for row in self.bindings
+            if row.get("subject") == "other_evidence:evidence/diagnostics.json"
+        )["subject"] = "other_evidence:renamed-diagnostics.json"
+        plan_path.write_text(json.dumps(self.plan))
+        output, arguments = (
+            self.root / "invalid-inventory.json",
+            self.root / "invalid-arguments.json",
+        )
+        cli = invoke(output, arguments)
+        self.assertNotEqual(cli.returncode, 0)
+        self.assertIn(
+            b"current qualification roles differ from validated assessment", cli.stderr
+        )
+        self.assertFalse(output.exists())
+        self.assertFalse(arguments.exists())
+        self.assertFalse(Path(str(arguments) + ".completed-result.json").exists())
+        self.assertEqual(completed_path.read_bytes(), original_seal)
 
 
 if __name__ == "__main__":

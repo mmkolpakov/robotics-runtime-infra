@@ -11,9 +11,10 @@ certificate verification remain delegated to Cosign.
 - jq 1.6 or newer
 - The exact contracts workspace revision in `foundation.repos` (Python 3.12+)
 
-The current foundation uses the v1 generation and the contracts 0.18.2 statement
-writer and matcher with harness 0.19.1. Install the pinned workspace or exact
-published pair; the earlier 0.15.4 / 0.17.1 foundation cannot read these artifacts.
+The current foundation uses the contracts 0.19.0 statement writer and matcher
+with harness 0.20.0, including the canonical dataset-manifest v2 bag model. Install
+the pinned workspace or exact published pair; the earlier 0.15.4 / 0.17.1 foundation
+cannot read these artifacts.
 Source qualification, an OCI release, and external consumer qualification are
 [separate gates](compatibility.md#foundation-generations).
 
@@ -93,6 +94,15 @@ every ROS participant through `compose.foundation.yaml`, and
 `runtime-manifest.json` must contain its SHA-256 digest. The signed statement
 therefore binds the acceptance result to both the runtime manifest and the DDS
 profile bytes that the runtime loaded.
+
+The UDP profile selects asynchronous publication for `/clock` and the neutral
+example's `/example/sequence` reference producer. The stock ROS 2 CLI publishes
+the reference messages from a 20 Hz timer; the named writer uses
+[Fast DDS asynchronous publication](https://fast-dds.docs.eprosima.com/en/2.14.x/fastdds/ros2/ros2_configure.html)
+to move routine DDS sends off that callback. Other topics retain the synchronous
+default writer. Reliable delivery, reader history and transport settings remain
+unchanged. This publication mode provides no latency guarantee, including for the
+reference producer; every consumer must pass its measurement and coverage limits.
 
 Before starting the periodic stepper, the foundation runner executes the standard
 `simulation_interfaces` pause, exact-step and resume probe in the running simulator.

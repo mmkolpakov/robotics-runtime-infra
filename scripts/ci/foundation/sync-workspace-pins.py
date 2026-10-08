@@ -246,7 +246,10 @@ def outputs(
                 "without a release tag binding.",
             ]
         ),
-        "Both packages are built from this source with locked build dependencies.",
+        "The images use a source-built package cohort from these immutable source trees.",
+        "Package source trees and project metadata are bound by this compatibility lock.",
+        "Whole wheel archive digests identify this source-built cohort.",
+        "Build dependencies remain locked.",
         "CI checks the imported revision, workspace lock and installed image versions.",
         "Stable release adoption remains gated on completed publication "
         "and foundation qualification.",

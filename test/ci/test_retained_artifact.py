@@ -75,7 +75,7 @@ class RetainedArtifactTests(unittest.TestCase):
         )
 
     @classmethod
-    def sign(cls, predicate, bundle):
+    def sign(cls, predicate, bundle, source=None):
         predicate_file = bundle.with_suffix(".predicate.json")
         predicate_file.write_text(json.dumps(predicate), encoding="utf-8")
         cls.cosign_command(
@@ -93,7 +93,7 @@ class RetainedArtifactTests(unittest.TestCase):
             verifier.PREDICATE_TYPE,
             "--bundle",
             str(bundle),
-            str(cls.source),
+            str(source if source is not None else cls.source),
         )
 
     def setUp(self):
@@ -114,6 +114,8 @@ class RetainedArtifactTests(unittest.TestCase):
         )
         self.remote_bytes = self.source_raw
         self.response_overrides = {}
+        self.head_overrides = {}
+        self.get_error = None
         self.aws_commands = []
         self.real_execute = verifier.execute
 
@@ -125,16 +127,19 @@ class RetainedArtifactTests(unittest.TestCase):
             return self.real_execute(command, **kwargs)
         self.aws_commands.append(command)
         size = len(self.remote_bytes)
+        response = {
+            "VersionId": self.document["version_id"],
+            "ContentType": self.document["media_type"],
+            "ContentLength": size,
+        }
+        if command[2] == "head-object":
+            return json.dumps({**response, **self.head_overrides}).encode()
+        if self.get_error:
+            raise ValueError(self.get_error)
         Path(command[-1]).write_bytes(self.remote_bytes)
-        return json.dumps(
-            {
-                "VersionId": self.document["version_id"],
-                "ContentType": self.document["media_type"],
-                "ContentLength": size,
-                "ContentRange": f"bytes 0-{size - 1}/{size}",
-                **self.response_overrides,
-            }
-        ).encode()
+        if any(item.startswith("--range=") for item in command):
+            response["ContentRange"] = f"bytes 0-{size - 1}/{size}"
+        return json.dumps({**response, **self.response_overrides}).encode()
 
     def verify(self):
         with patch.object(verifier, "execute", side_effect=self.execute):
@@ -179,9 +184,97 @@ class RetainedArtifactTests(unittest.TestCase):
             (output / "verification-evidence.sigstore.json").read_bytes(),
             self.bundle.read_bytes(),
         )
-        self.assertFalse((output / "downloaded.mcap").exists())
+        self.assertFalse((output / "downloaded.artifact").exists())
         self.assertIn("--version-id=retained-version-1", self.aws_commands[0])
         self.assertIn(f"--range=bytes=0-{len(self.source_raw)}", self.aws_commands[0])
+
+    def opaque_artifact(self, media_type, raw):
+        self.source = self.work / "attachment"
+        self.source.write_bytes(raw)
+        self.remote_bytes = raw
+        self.document.update(
+            uri="s3://fixture-bucket/attachment",
+            sha256=verifier.sha256(raw),
+            size_bytes=len(raw),
+            media_type=media_type,
+        )
+        self.save_registration()
+        self.args.bundle = self.work / "opaque.sigstore.json"
+        self.sign(
+            verifier.retention_predicate(self.registration_path, self.source),
+            self.args.bundle,
+            source=self.source,
+        )
+
+    def test_jsonl_is_signed_and_read_back_as_unchanged_opaque_bytes(self):
+        raw = b'{"$metadata":{"topic":"sample"},"$data":{"value":1}}\n'
+        self.opaque_artifact("application/x-ndjson", raw)
+        output = self.verify()
+        result = json.loads((output / "artifact-verification.json").read_bytes())
+        self.assertEqual(result["artifact"]["media_type"], "application/x-ndjson")
+        self.assertEqual(result["artifact"]["sha256"], verifier.sha256(raw))
+
+    def test_png_is_verified_as_opaque_bytes_without_an_image_parser(self):
+        raw = b"\x89PNG\r\n\x1a\nopaque fixture"
+        self.opaque_artifact("image/png", raw)
+        output = self.verify()
+        result = json.loads((output / "artifact-verification.json").read_bytes())
+        self.assertEqual(result["artifact"]["media_type"], "image/png")
+        self.assertEqual(result["artifact"]["size_bytes"], len(raw))
+
+    def test_zero_byte_text_requires_head_and_successful_unranged_exact_get(self):
+        self.opaque_artifact("text/plain", b"")
+        output = self.verify()
+        result = json.loads((output / "artifact-verification.json").read_bytes())
+        self.assertEqual(result["artifact"]["size_bytes"], 0)
+        self.assertEqual(result["artifact"]["sha256"], verifier.sha256(b""))
+        self.assertEqual(
+            [command[2] for command in self.aws_commands], ["head-object", "get-object"]
+        )
+        self.assertTrue(
+            all(
+                "--version-id=retained-version-1" in command
+                for command in self.aws_commands
+            )
+        )
+        self.assertFalse(
+            any(item.startswith("--range=") for item in self.aws_commands[1])
+        )
+
+    def test_zero_declared_but_nonempty_head_never_downloads(self):
+        self.opaque_artifact("text/plain", b"")
+        self.remote_bytes = b"unexpected"
+        self.assert_rejected("complete requested object version")
+        self.assertEqual([command[2] for command in self.aws_commands], ["head-object"])
+
+    def test_zero_get_416_is_failure_not_empty_success(self):
+        self.opaque_artifact("text/plain", b"")
+        self.get_error = "fixture-aws failed (416): InvalidRange"
+        self.assert_rejected("416")
+
+    def test_zero_head_wrong_version_media_or_delete_marker_is_refused(self):
+        for override in (
+            {"VersionId": "another-version"},
+            {"ContentType": "image/png"},
+            {"DeleteMarker": True},
+        ):
+            with self.subTest(override=override):
+                self.opaque_artifact("text/plain", b"")
+                self.head_overrides = override
+                self.assert_rejected("complete requested object version")
+
+    def test_zero_get_nonempty_bytes_cannot_hide_under_zero_metadata(self):
+        self.opaque_artifact("text/plain", b"")
+        self.head_overrides["ContentLength"] = 0
+        self.response_overrides["ContentLength"] = 0
+        self.remote_bytes = b"unexpected"
+        self.assert_rejected("downloaded object bytes do not match")
+
+    def test_zero_mcap_still_refused_before_s3(self):
+        self.document["size_bytes"] = 0
+        self.save_registration()
+        self.assert_rejected("recording size must be positive")
+        self.assertEqual(self.aws_commands, [])
 
     def test_wrong_public_key_cannot_create_a_verification(self):
         self.args.key = self.root / "foreign.pub"

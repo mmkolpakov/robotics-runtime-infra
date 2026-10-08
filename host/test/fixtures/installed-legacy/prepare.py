@@ -22,6 +22,7 @@ DEPLOYMENT = [
     "config/recording/qos-overrides.yaml",
     "host/test/fixtures/legacy-live/mcap-writer-small-segment.yaml",
     "host/test/fixtures/legacy-live/compose.yaml",
+    "compose.simulation-health.yaml",
     "host/test/fixtures/legacy-live/evidence.yaml",
     "host/test/fixtures/legacy-live/otel-collector.yaml",
     "host/workers/legacy/prepare-source.py",
@@ -30,6 +31,8 @@ DEPLOYMENT = [
     "host/workers/legacy/capture-last-state.py",
     "host/workers/legacy-live/prepare-live.py",
     "host/workers/legacy-live/capture-provider.py",
+    "host/workers/legacy-live/export-startup-failure.py",
+    "host/workers/legacy-live/probe-diagnostic-export.py",
     "host/workers/legacy-live/prepare-runtime.py",
 ]
 
@@ -37,6 +40,7 @@ DEPLOYMENT = [
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", choices=("podman", "docker"), default="podman")
+    parser.add_argument("--negative-lifecycle", action="store_true")
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--consumer", type=Path, required=True)
     parser.add_argument("--assets", type=Path, required=True)
@@ -221,9 +225,29 @@ def main():
     (consumer / "app/qualify-legacy-live.mjs").write_bytes(
         source("host/tools/qualify-legacy-live.mjs", fixture_revision)
     )
+    (consumer / "app/installed-fixture.mjs").write_bytes(
+        source(
+            "host/test/fixtures/installed-legacy/installed-fixture.mjs",
+            fixture_revision,
+        )
+    )
     (consumer / "app/bootstrap.mjs").write_bytes(
         source("host/test/fixtures/installed-legacy/bootstrap.mjs", fixture_revision)
     )
+    if args.negative_lifecycle:
+        for name in (
+            "negative-bootstrap.mjs",
+            "startup-negative-bootstrap.mjs",
+            "negative-launch.mjs",
+            "negative-retention.mjs",
+            "measurement-negative.mjs",
+        ):
+            destination = (
+                consumer / ("" if name == "negative-launch.mjs" else "app") / name
+            )
+            destination.write_bytes(
+                source("host/test/fixtures/installed-legacy/" + name, fixture_revision)
+            )
     (consumer / "profiles/ros.yml").write_text(
         json.dumps(
             [

@@ -27,6 +27,7 @@ export interface ContainerRequirement {
   imageId?: string;
   mounts: readonly {destination: string; readOnly: boolean; volumeName: string}[];
   hostConfig: Readonly<Record<string, unknown>>;
+  healthcheck?: Readonly<Record<string, unknown>>;
   user: string;
   networkNamespaceContainerId?: string;
 }
@@ -54,6 +55,14 @@ export function selectApi(versionResponse: unknown, endpoint: EngineEndpoint): E
   const selected = Math.min(high!, max!);
   if (selected < Math.max(low!, min!)) throw new Error('Engine API range and metadata operation policy do not overlap');
   return {endpoint: `unix://${endpoint.socketPath}`, serverApi: version!.ApiVersion as string, serverMinApi: version!.MinAPIVersion as string, clientApi: `1.${selected}`, versionResponse};
+}
+export function requireDockerHealthcheckStartInterval(facts:EngineFacts):void {
+  const components=object(facts.versionResponse)?.Components;
+  const engine=Array.isArray(components)?components.map(object).find(row=>row?.Name==='Engine'):undefined;
+  const major=typeof engine?.Version==='string'?Number(/^(\d+)\./.exec(engine.Version)?.[1]):NaN;
+  if(!Array.isArray(components)||components.map(object).some(row=>row?.Name==='Podman Engine')||
+    !Number.isInteger(major)||major<25||(api(facts.clientApi)??0)<44)
+    throw new Error('native health startup interval requires Docker Engine API 1.44 or newer; Podman startup scheduling is unqualified');
 }
 export class EngineMetadata {
   private constructor(private readonly docker: Docker, private readonly socketPath: string, readonly facts: EngineFacts) {}
@@ -163,15 +172,15 @@ export class EngineMetadata {
        !Number.isSafeInteger(limits.deadlineMs)||limits.deadlineMs<1||limits.deadlineMs>120000) throw new Error('invalid finite native log bounds');
     const signal=cancel?AbortSignal.any([cancel,AbortSignal.timeout(limits.deadlineMs)]):AbortSignal.timeout(limits.deadlineMs);
     signal.throwIfAborted();
-    const request=(path:string,isStream=false)=>new Promise<unknown>((resolve,reject)=>this.docker.modem.dial({
-      path,method:'GET',abortSignal:signal,isStream,
+    const request=(path:string,isStream=false,options?:Record<string,unknown>)=>new Promise<unknown>((resolve,reject)=>this.docker.modem.dial({
+      path,method:'GET',abortSignal:signal,isStream,options,
       statusCodes:{200:true,404:'owned container is unavailable',500:'Engine evidence read failed'},
     },(error:unknown,value:unknown)=>error?reject(error):resolve(value)));
     const actual=object(await request('/containers/'+containerId+'/json'));
     const config=object(actual?.Config),labels=object(config?.Labels);
     if(actual?.Id!==containerId||labels?.['org.robotics.runtime.run-id']!==owner.runId||labels?.['com.docker.compose.project']!==owner.projectName) throw new Error('native log read refused foreign container ownership');
     if(typeof config?.Tty!=='boolean') throw new Error('native log transport framing is unavailable');
-    const stream=await request('/containers/'+containerId+'/logs?stdout=1&stderr=1&follow=0&tail='+limits.tailLines,true) as Readable;
+    const stream=await request('/containers/'+containerId+'/logs?',true,{stdout:true,stderr:true,follow:false,tail:limits.tailLines}) as Readable;
     const abort=()=>stream.destroy(signal.reason instanceof Error?signal.reason:new Error('native log read canceled'));
     signal.addEventListener('abort',abort,{once:true});
     try {
@@ -184,7 +193,6 @@ export class EngineMetadata {
         if(length>limits.maxBytes) throw new Error('native log evidence exceeds byte bound');
         chunks.push(chunk);
       }
-      if(!length) throw new Error('owned container returned no retained log bytes');
       return {containerId,clientApi:this.facts.clientApi,tty:config.Tty,bytes:Buffer.concat(chunks,length)};
     } finally {
       signal.removeEventListener('abort',abort);
@@ -228,6 +236,11 @@ export function validateObservation(engine: EngineFacts, rawContainer: unknown, 
   equal(requireField(labels, 'org.robotics.runtime.run-id', 'owner.run-id', string), required.runId, 'owner.run-id');
   equal(requireField(labels, 'com.docker.compose.project', 'owner.compose-project', string), required.projectName, 'owner.compose-project');
   equal(requireField(config, 'User', 'container.Config.User', string), required.user, 'container.Config.User');
+  if(required.healthcheck) {
+    const health=object(requireField(config,'Healthcheck','container.Config.Healthcheck',v=>object(v)!==undefined));
+    for(const [field,expected] of Object.entries(required.healthcheck))
+      equal(requireField(health,field,`container.Config.Healthcheck.${field}`,v=>v!==undefined&&v!==null),expected,`container.Config.Healthcheck.${field}`);
+  }
   requireField(state, 'Status', 'container.State.Status', string);
   requireField(state, 'Running', 'container.State.Running', v => typeof v === 'boolean');
   requireField(state, 'ExitCode', 'container.State.ExitCode', Number.isInteger);

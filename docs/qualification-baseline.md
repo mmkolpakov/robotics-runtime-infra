@@ -9,8 +9,17 @@ satisfy this legacy profile.
 
 ## Distinct identities and claims
 
-The current source line pins contracts 0.18.2 and harness 0.19.1 to runtime
-workspace `dc02c62897372514537cf241f06dc71b9f960c44`. The published R9 release,
+The current source line pins published contracts 0.19.0 and harness 0.20.0;
+`config/foundation-lock.json` records the exact runtime workspace and package
+trees. Its images use source-built wheels from those released package trees.
+The package payloads and distribution metadata match the published wheels;
+the contracts wheel archive has a different reproducible ZIP timestamp.
+The current dataset role is `dataset-manifest.v2`: one complete native bag
+with retained metadata and ordered MCAP/summary references, for one or more
+members. Full live playback qualification requires a passing attempt for this
+cohort.
+
+The published R9 release,
 `v0.9.0-rc.1`, passed its stock UInt64 simulation and independent consumer gates
 with contracts 0.18.1 / harness 0.19.0. This result is scoped to that profile.
 
@@ -67,3 +76,27 @@ qualification answer different questions. An included ephemeral signing key
 proves package integrity under that key, not trusted producer identity. R10
 provenance does not imply B3 passed. No Clock, JointState, TF, wrong-digest,
 JUnit or portable-consumer gate is waived by the C migration.
+
+## Selecting a new released attempt
+
+Dispatch `qualify-released-runtime` at the caller commit with an explicit
+`release_tag`. The reusable workflow comes from that same caller commit.
+`tooling_ref` accepts a full commit SHA and defaults to the dispatch commit;
+the qualification and independent consumer jobs check out that exact tooling
+identity. The independent job uses the consumer action from that tooling
+checkout and installs the published pair declared by its foundation lock.
+
+The wrapper downloads the selected tag's canonical `release.env` into a new
+directory within the caller checkout. Existing external callers may still
+supply their own canonical lock path to `reusable-qualify.yml`. The release
+and asset verification, image digests and source attestations are checked
+before image references are admitted. A new dispatch preserves the old B3
+failure and records a new artifact under its caller SHA.
+
+Image publication remains scoped to the complete target set in
+`config/ci/release-environment.json` and each target's declared platforms.
+A passing reusable qualification run establishes the selected neutral robot
+scenario on its Ubuntu 24.04 AMD64 runner. Other providers, hardware and
+platforms require
+their own retained qualification; publishing an image does not establish
+those results.

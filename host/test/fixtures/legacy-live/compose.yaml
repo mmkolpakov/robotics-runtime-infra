@@ -52,22 +52,11 @@ services:
     network_mode: none
     ipc: shareable
     command: [ros2, launch, robotics_runtime_infra, headless.launch.py]
+    extends:
+      file: ../../../../compose.simulation-health.yaml
+      service: simulation
     healthcheck:
-      test:
-        - CMD
-        - /usr/local/bin/robotics-entrypoint
-        - timeout
-        - '5'
-        - ros2
-        - service
-        - call
-        - /simulator/get_simulator_features
-        - simulation_interfaces/srv/GetSimulatorFeatures
-        - '{}'
-      interval: 2s
-      timeout: 6s
       start_period: 15s
-      retries: 15
   neutral-robot:
     <<: *ros
     network_mode: service:simulation

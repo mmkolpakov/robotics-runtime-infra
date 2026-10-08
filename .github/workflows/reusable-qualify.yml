@@ -14,7 +14,9 @@ on:
         default: source
         type: string
       release_lock:
-        description: Canonical release.env path relative to the caller repository.
+        description: >-
+          Canonical release.env path relative to the caller repository; blank
+          downloads the selected release tag's canonical asset in released mode.
         required: false
         default: ""
         type: string
@@ -91,6 +93,7 @@ jobs:
           ARTIFACT_ARGUMENTS_FILE: ${{ inputs.artifact_arguments_file }}
           COMPOSE_PROJECT: ${{ inputs.compose_project }}
           EXECUTION_MODE: ${{ inputs.execution_mode }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_LOCK: ${{ inputs.release_lock }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           SCENARIO: ${{ inputs.scenario }}
@@ -98,8 +101,21 @@ jobs:
         run: |
           test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
           source tooling/scripts/ci/foundation/released-mode.sh
-          foundation_validate_execution_mode "${EXECUTION_MODE}" "${RELEASE_LOCK}" "${RELEASE_TAG}"
           consumer_root="$(realpath consumer)"
+          if test "${EXECUTION_MODE}" = released && test -z "${RELEASE_LOCK}"; then
+            foundation_validate_execution_mode released release.env "${RELEASE_TAG}"
+            repository="$(jq -er '.infra.repository' tooling/config/trust/identities.json)"
+            lock_directory="$(mktemp -d "${consumer_root}/.release-lock.XXXXXX")"
+            gh release download "${RELEASE_TAG}" --repo "${repository}" \
+              --pattern release.env --dir "${lock_directory}" || {
+              status=$?
+              rm -f -- "${lock_directory}/release.env"
+              rmdir -- "${lock_directory}"
+              exit "${status}"
+            }
+            RELEASE_LOCK="${lock_directory}/release.env"
+          fi
+          foundation_validate_execution_mode "${EXECUTION_MODE}" "${RELEASE_LOCK}" "${RELEASE_TAG}"
           printf 'ROBOTICS_RUNTIME_MODE=%s\n' "${EXECUTION_MODE}" >>"${GITHUB_ENV}"
           if test "${EXECUTION_MODE}" = released; then
             release_lock="$(foundation_consumer_file "${consumer_root}" "${RELEASE_LOCK}")"

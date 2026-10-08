@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ComposeExecution, selectApi, validateObservation, type FiniteJobRequest, type FiniteJobResult, type ContainerRequirement} from '../src/index.js';
+import {ComposeExecution, selectApi, validateObservation, requireDockerHealthcheckStartInterval, type FiniteJobRequest, type FiniteJobResult, type ContainerRequirement} from '../src/index.js';
 const result: FiniteJobResult = {ok: true, exitCode: 0, signal: undefined, timedOut: false, canceled: false, stdout: '5.3.1\n', stderr: '', diagnostic: undefined, code: undefined, durationMs: 1};
 
 test('Compose delegates finite argv and fixes the same Unix endpoint without inherited engine context', async () => {
@@ -107,4 +107,38 @@ test('qualified native network name projection requires actual inspected name an
   assert.equal(validateObservation(qualified,child,image,[{...actual,Id:'not-native-id'}],required).status,'incomplete');
   const other={...qualified,versionResponse:{Components:[{Name:'Podman Engine',Version:'4.9.4',Details:{APIVersion:'4.9.4'}}]}};
   assert.equal(validateObservation(other,child,image,[actual],required).status,'incomplete');
+});
+
+
+test('native startup cadence rejects unsupported engines while generic metadata keeps its wider API range', () => {
+  const endpoint={socketPath:'/run/engine.sock',operationMinApi:'1.24',operationMaxApi:'1.53'};
+  for(const [ApiVersion,Components,accepted] of [
+    ['1.44',[{Name:'Engine',Version:'28.0.4'}],true],['1.48',[{Name:'Engine',Version:'28.0.4'}],true],
+    ['1.43',[{Name:'Engine',Version:'28.0.4'}],false],['1.48',[{Name:'Podman Engine'}],false],
+    ['1.48',[{Name:'Engine',Version:'28.0.4'},{Name:'Podman Engine'}],false],['1.48',undefined,false],
+    ['1.48',[{Name:'Engine',Version:'24.0.9'}],false],['1.48',[{Name:'Engine'}],false],
+  ] as const) {
+    const actual=selectApi({ApiVersion,MinAPIVersion:'1.24',Components},endpoint);
+    assert.equal(actual.clientApi,ApiVersion);
+    if(accepted) requireDockerHealthcheckStartInterval(actual);
+    else assert.throws(()=>requireDockerHealthcheckStartInterval(actual),/Docker Engine API 1.44/);
+  }
+  const selectedOld=selectApi({ApiVersion:'1.48',MinAPIVersion:'1.24',Components:[{Name:'Engine',Version:'28.0.4'}]},{...endpoint,operationMaxApi:'1.43'});
+  assert.throws(()=>requireDockerHealthcheckStartInterval(selectedOld),/Docker Engine API 1.44/);
+});
+
+test('acquired health configuration must retain the actual native command and startup cadence', () => {
+  const healthcheck={Test:['CMD','native-probe'],StartInterval:2000000000,Interval:30000000000,Timeout:6000000000,StartPeriod:15000000000,Retries:3};
+  const bound={...required,healthcheck};
+  const raw=native();
+  (raw.Config as Record<string,unknown>).Healthcheck=structuredClone(healthcheck);
+  assert.equal(validateObservation(facts,raw,image,[],bound).status,'complete');
+  for(const field of Object.keys(healthcheck)) {
+    const missing=structuredClone(raw),wrong=structuredClone(raw);
+    delete ((missing.Config as Record<string,unknown>).Healthcheck as Record<string,unknown>)[field];
+    ((wrong.Config as Record<string,unknown>).Healthcheck as Record<string,unknown>)[field]=field==='Test'?['NONE']:0;
+    assert.ok(validateObservation(facts,missing,image,[],bound).missing.includes('container.Config.Healthcheck.'+field));
+    assert.ok(validateObservation(facts,wrong,image,[],bound).mismatches.includes('container.Config.Healthcheck.'+field));
+  }
+  assert.equal(validateObservation(facts,native(),image,[],required).status,'complete');
 });

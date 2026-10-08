@@ -20,7 +20,7 @@ setup() {
 }
 
 register_local() {
-  bash "$SINK" artifact "$SOURCE" application/x-ndjson "${1:-0007}"
+  EVIDENCE_MODE=local bash "$SINK" artifact "$SOURCE" application/x-ndjson "${1:-0007}"
 }
 
 assert_index_preserved() {

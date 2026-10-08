@@ -26,6 +26,30 @@
       </qos>
       <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
     </data_writer>
+    <!-- Use the ROS topic name to decouple routine DDS sends from the bridge callback. -->
+    <data_writer profile_name="/clock">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+        <publishMode>
+          <kind>ASYNCHRONOUS</kind>
+        </publishMode>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_writer>
+    <!-- Send the neutral example data through the asynchronous DDS writer. -->
+    <data_writer profile_name="/example/sequence">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+        <publishMode>
+          <kind>ASYNCHRONOUS</kind>
+        </publishMode>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_writer>
     <data_reader profile_name="robotics_udp_reader" is_default_profile="true">
       <qos>
         <data_sharing>

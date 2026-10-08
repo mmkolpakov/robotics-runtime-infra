@@ -81,8 +81,9 @@ copy_capture_configurations(a.source, a.input, data)
 target = a.input / "config/observability/otel-collector.yaml"
 target.parent.mkdir(parents=True, exist_ok=True)
 shutil.copyfile(a.source / "host/test/fixtures/legacy-live/otel-collector.yaml", target)
-target = a.input / "helpers/capture-provider.py"
-shutil.copyfile(a.source / "host/workers/legacy-live/capture-provider.py", target)
+for name in ("capture-provider.py", "export-startup-failure.py"):
+    target = a.input / "helpers" / name
+    shutil.copyfile(a.source / "host/workers/legacy-live" / name, target)
 shutil.copyfile(
     a.source / "config/fastdds/udp-only.xml", data / "configuration/fastdds-profile.xml"
 )

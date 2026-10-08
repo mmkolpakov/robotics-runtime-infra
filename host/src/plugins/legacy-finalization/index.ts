@@ -36,6 +36,7 @@ export class LegacyFinalization extends Service {
   private readonly postprocess:ComposeExecution;
   private engine:EngineMetadata|undefined;
   private observerId:string|undefined;
+  private completedResultRef:ArtifactRef|undefined;
   private counter=0;
   private readonly refs:ArtifactRef[]=[];
   private readonly work=new Map<string,Promise<readonly ArtifactRef[]>>();
@@ -129,35 +130,49 @@ export class LegacyFinalization extends Service {
       await this.require('metrics',['run','--rm','--no-deps','evidence-sink','artifact',this.plan.evidenceRoot+'/metrics.otlp.jsonl','application/x-ndjson','900000'],signal);
       await this.require('finalize',['run','--rm','--no-deps','evidence-finalize'],signal);
       if(!this.observerId) throw new Error('observer ID absent');
+      let verificationError:Error|undefined;
+      let observerExitCode:unknown;
       const deadline=performance.now()+this.plan.timeoutMs;
       for(;;){
         const observer=await this.facts(this.plan.observerService,signal,this.observerId);
-        if(observer.Running===false){if(observer.ExitCode!==0) throw new Error('public live observer verification failed');break}
+        if(observer.Running===false){observerExitCode=observer.ExitCode;if(observer.Status!=='exited'||observer.OOMKilled===true||typeof observer.Error==='string'&&observer.Error.length){observerExitCode=undefined;verificationError=new Error('public live observer did not exit normally')}else if(observer.ExitCode!==0&&observer.ExitCode!==1)verificationError=new Error('public live observer verification failed');break}
         if(performance.now()>=deadline) throw new Error('public live observer did not finish after evidence finalization');
         await pause(100,undefined,{signal});
       }
-      const foundation=await this.require('final-logs',['logs','--no-color'],signal);
-      await mkdir(dirname(this.plan.foundationLogPath),{recursive:true});
-      await writeFile(this.plan.foundationLogPath,foundation.stdout,{flag:'wx'});
-      const retainedFoundation=join(this.plan.artifactDirectory,'foundation.log');
-      await copyFile(this.plan.foundationLogPath,retainedFoundation);
-      this.refs.push(await referenceFile(retainedFoundation));
-      if(!this.engine) throw new Error('native observer evidence endpoint absent');
-      const logs=await this.engine.readLogs(this.observerId,{runId:this.plan.runId,projectName:this.plan.compose.projectName},{tailLines:10000,maxBytes:1048576,deadlineMs:Math.min(this.plan.timeoutMs,120000)},signal);
-      await mkdir(dirname(this.plan.observerLogPath),{recursive:true});
-      const rawPath=join(this.plan.artifactDirectory,'observer.docker-raw');
-      await writeFile(rawPath,logs.bytes,{flag:'wx'});
-      this.refs.push(await referenceFile(rawPath));
-      const chunks:Buffer[]=[];
-      const capture=()=>new Writable({write(chunk,_encoding,callback){chunks.push(Buffer.from(chunk));callback()}});
-      const source=Readable.from([logs.bytes]);
-      if(logs.tty) source.on('data',chunk=>chunks.push(Buffer.from(chunk)));
-      else new Docker({socketPath:this.plan.compose.socketPath,version:'v'+this.engine.facts.clientApi}).modem.demuxStream(source,capture(),capture());
-      await finished(source);
-      await writeFile(this.plan.observerLogPath,Buffer.concat(chunks),{flag:'wx'});
-      const retainedObserver=join(this.plan.artifactDirectory,'observer.log');
-      await copyFile(this.plan.observerLogPath,retainedObserver);
-      this.refs.push(await referenceFile(retainedObserver));
+      try {
+        const foundation=await this.require('final-logs',['logs','--no-color'],signal);
+        await mkdir(dirname(this.plan.foundationLogPath),{recursive:true});
+        await writeFile(this.plan.foundationLogPath,foundation.stdout,{flag:'wx'});
+        const retainedFoundation=join(this.plan.artifactDirectory,'foundation.log');
+        await copyFile(this.plan.foundationLogPath,retainedFoundation);
+        this.refs.push(await referenceFile(retainedFoundation));
+        if(!this.engine) throw new Error('native observer evidence endpoint absent');
+        const logs=await this.engine.readLogs(this.observerId,{runId:this.plan.runId,projectName:this.plan.compose.projectName},{tailLines:10000,maxBytes:1048576,deadlineMs:Math.min(this.plan.timeoutMs,120000)},signal);
+        await mkdir(dirname(this.plan.observerLogPath),{recursive:true});
+        const rawPath=join(this.plan.artifactDirectory,'observer.docker-raw');
+        await writeFile(rawPath,logs.bytes,{flag:'wx'});
+        this.refs.push(await referenceFile(rawPath));
+        const chunks:Buffer[]=[];
+        const capture=()=>new Writable({write(chunk,_encoding,callback){chunks.push(Buffer.from(chunk));callback()}});
+        const source=Readable.from([logs.bytes]);
+        if(logs.tty) source.on('data',chunk=>chunks.push(Buffer.from(chunk)));
+        else new Docker({socketPath:this.plan.compose.socketPath,version:'v'+this.engine.facts.clientApi}).modem.demuxStream(source,capture(),capture());
+        await finished(source);
+        await writeFile(this.plan.observerLogPath,Buffer.concat(chunks),{flag:'wx'});
+        const retainedObserver=join(this.plan.artifactDirectory,'observer.log');
+        await copyFile(this.plan.observerLogPath,retainedObserver);
+        this.refs.push(await referenceFile(retainedObserver));
+      } catch(captureError) {
+        if(verificationError) throw new AggregateError([verificationError,captureError],verificationError.message+'; native diagnostic log capture failed: '+String(captureError));
+        throw captureError;
+      }
+      if(observerExitCode!==0&&observerExitCode!==1){if(verificationError)throw verificationError;throw new Error('observer did not return a completed assessment exit')}
+      await this.finite('completed-observer-validation',[this.plan.contractPythonPath,this.plan.inventoryWorkerPath,
+        '--plan',this.plan.inventoryPlanPath,'--output',this.plan.qualificationInputsWorkerPath+'.completed-result.json',
+        '--verify-result-exit-code',String(observerExitCode),'--helpers',this.plan.helperRoot],
+        signal,this.compose,this.plan.exportCoordinatorService??this.plan.coordinatorService);
+      this.completedResultRef=await referenceFile(this.plan.qualificationInputsHostPath+'.completed-result.json');
+      this.refs.push(this.completedResultRef);
       return [...this.refs];
     }),
     exportEvidence:signal=>this.performExport(this.plan,signal),
@@ -170,9 +185,19 @@ export class LegacyFinalization extends Service {
   private finite(name:string,command:readonly string[],signal:AbortSignal,executor:ComposeExecution=this.compose,service=this.plan.coordinatorService):Promise<JobResult>{
     return this.require(name,['run','--rm','--no-deps',service,'timeout','--signal=TERM','--kill-after=5s',String(Math.ceil(this.plan.timeoutMs/1000)),...command],signal,executor);
   }
+  private async completedResult(completion?:RunCompletion):Promise<Record<string,unknown>>{
+    const path=this.plan.qualificationInputsHostPath+'.completed-result.json';
+    const expected=completion?completion.evidenceRefs.find(ref=>ref.uri===pathToFileURL(path).href):this.completedResultRef;
+    const current=await referenceFile(path);
+    if(!expected||current.sha256!==expected.sha256||current.size_bytes!==expected.size_bytes) throw new Error('completed assessment seal is absent or changed');
+    const completed=object(JSON.parse(await readFile(path,'utf8')));
+    if(completed.runId!==this.plan.runId) throw new Error('completed assessment seal belongs to another run');
+    return completed;
+  }
   private async performExport(plan:Readonly<LegacyFinalizationPlan>,signal:AbortSignal):Promise<readonly ArtifactRef[]>{
+      if(this.completedResultRef) await this.completedResult();
       // RunOwner retains acquisition on failure; there is no destructive finally here.
-      await this.finite('inventory',[plan.contractPythonPath,plan.inventoryWorkerPath,'--plan',plan.inventoryPlanPath,'--output',plan.exportPlanPath,'--arguments',plan.qualificationInputsWorkerPath],signal,this.compose,plan.exportCoordinatorService??plan.coordinatorService);
+      await this.finite('inventory',[plan.contractPythonPath,plan.inventoryWorkerPath,'--plan',plan.inventoryPlanPath,'--output',plan.exportPlanPath,'--arguments',plan.qualificationInputsWorkerPath,...(this.completedResultRef?['--completed-result',this.plan.qualificationInputsWorkerPath+'.completed-result.json']:[])],signal,this.compose,plan.exportCoordinatorService??plan.coordinatorService);
       await this.finite('export',[plan.contractPythonPath,plan.exportWorkerPath,'--plan',plan.exportPlanPath],signal,this.compose,plan.exportCoordinatorService??plan.coordinatorService);
       const manifestPath=join(plan.retainedDirectory,'export-manifest.json');
       const manifest=object(JSON.parse((await readFile(manifestPath)).toString('utf8')));
@@ -188,12 +213,35 @@ export class LegacyFinalization extends Service {
         if(ref.sha256!==entry.sha256||ref.size_bytes!==entry.size_bytes) throw new Error('retained bytes differ from export');
         exported.push(ref);
       }
+      if(this.completedResultRef){
+        this.refs.push(await referenceFile(plan.qualificationInputsHostPath+'.completed-result.json'));
+        const completed=await this.completedResult();
+        const relativeResult=completed.resultRelativePath;
+        if(typeof relativeResult!=='string'||isAbsolute(relativeResult)||relativeResult.split('/').includes('..')) throw new Error('invalid completed result path');
+        const observed=await referenceRetained(resolve(plan.retainedDirectory,relativeResult)),sealed=object(completed.result);
+        if(observed.sha256!==sealed.sha256||observed.size_bytes!==sealed.size_bytes) throw new Error('exported result differs from sealed completed assessment');
+      }
       return [...exported,await referenceFile(manifestPath),await referenceFile(plan.qualificationInputsHostPath),...this.refs];
   }
 
   async aggregateAfterCleanup(completion:RunCompletion,signal:AbortSignal):Promise<ArtifactRef>{
     if(completion.runId!==this.plan.runId||completion.status!=='passed'||!completion.resourceOutcomes.length||completion.resourceOutcomes.some(r=>!r.attempted||!r.released||r.cleanupError)) throw new Error('evaluation requires export and independently verified cleanup');
-    const result=await this.finite('aggregate',['/opt/contracts/bin/robotics-acceptance','aggregate','--scenario',this.plan.scenarioPath,'--run-context',this.plan.runContextPath,'--result',this.plan.resultPath,'--output',this.plan.aggregatePath],signal,this.postprocess);
+    await this.completedResult(completion);
+    const argumentsPath=this.plan.qualificationInputsHostPath,expectedArguments=completion.evidenceRefs.find(ref=>ref.uri===pathToFileURL(argumentsPath).href),actualArguments=await referenceFile(argumentsPath);
+    if(!expectedArguments||expectedArguments.sha256!==actualArguments.sha256||expectedArguments.size_bytes!==actualArguments.size_bytes) throw new Error('retained qualification argument bytes differ from completed export');
+    signal.throwIfAborted();
+    const result=await this.postprocess.run(['run','--rm','--no-deps',this.plan.coordinatorService,'timeout','--signal=TERM','--kill-after=5s',String(Math.ceil(this.plan.timeoutMs/1000)),
+      '/opt/contracts/bin/robotics-acceptance','aggregate','--scenario',this.plan.scenarioPath,'--run-context',this.plan.runContextPath,'--result',this.plan.resultPath,'--output',this.plan.aggregatePath],signal);
+    await this.retain('aggregate',result);
+    if(result.signal||result.timedOut||result.canceled||result.code!==undefined||!((result.exitCode===0&&result.ok)||(result.exitCode===1&&!result.ok))) throw new Error('aggregate did not return a completed assessment: '+(result.diagnostic??result.stderr));
+    await this.finite('completed-aggregate-validation',[this.plan.contractPythonPath,this.plan.inventoryWorkerPath,
+      '--plan',this.plan.inventoryPlanPath,'--arguments',this.plan.qualificationInputsWorkerPath,'--output',this.plan.qualificationInputsWorkerPath+'.aggregate-validation.json',
+      '--aggregate',this.plan.aggregatePath,'--result',this.plan.resultPath,'--completed-result',this.plan.qualificationInputsWorkerPath+'.completed-result.json',
+      '--verify-aggregate-exit-code',String(result.exitCode),'--helpers',this.plan.helperRoot],signal,this.postprocess);
+    const validationPath=this.plan.qualificationInputsHostPath+'.aggregate-validation.json';
+    this.refs.push(await referenceFile(validationPath));
+    const validated=object(object(JSON.parse(await readFile(validationPath,'utf8'))).aggregate),actual=await referenceRetained(this.plan.aggregatePath);
+    if(actual.sha256!==validated.sha256||actual.size_bytes!==validated.size_bytes) throw new Error('aggregate differs from validated completed assessment');
     return this.retain('aggregate-complete',result);
   }
   private async cleanupPostprocess(signal:AbortSignal):Promise<void>{
