@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Admit exact robot-description files within a caller's explicit product root."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+from robotics_acceptance_harness.errors import HarnessInputError
+from robotics_acceptance_harness.extension_schemas import load_extension_schemas
+from robotics_runtime_contracts import file_sha256, load_mapping, validate_role
+from robotics_runtime_contracts.serialization import read_document_bytes
+
+
+def contained_file(root: Path, value: str) -> Path:
+    if any(character in value for character in "\r\n\t\0"):
+        raise ValueError("robot artifact paths must not contain control characters")
+    path = Path(value)
+    if not path.is_absolute():
+        path = root / path
+    if any(part.is_symlink() for part in (path, *path.parents)):
+        raise ValueError(f"symlink robot artifact is not supported: {value}")
+    resolved = path.resolve(strict=True)
+    if not resolved.is_relative_to(root) or not resolved.is_file():
+        raise ValueError(f"robot artifact is not a contained regular file: {value}")
+    return resolved
+
+
+def admit(
+    root: Path,
+    scenario: Path,
+    manifest: str | None,
+    artifacts: list[str],
+    extension_schemas: dict[str, bytes] | None = None,
+) -> dict:
+    scenario_document = load_mapping(scenario)
+    validate_role(
+        scenario_document, "acceptance_scenario", extension_schemas=extension_schemas
+    )
+    expected = scenario_document.get("workload", {}).get("robot_description_sha256")
+    if expected is None:
+        return {"selected": False}
+    root = root.resolve(strict=True)
+    if manifest is None:
+        candidates = set()
+        for specification in artifacts:
+            label, value = specification.split("=", 1)
+            if label.split(":", 1)[0] != "other_evidence":
+                continue
+            path = contained_file(root, value)
+            if file_sha256(path) == expected:
+                candidates.add(path)
+        if len(candidates) != 1:
+            raise ValueError(
+                "scenario robot-description digest must select one retained manifest"
+            )
+        manifest_path = candidates.pop()
+    else:
+        manifest_path = contained_file(root, manifest)
+    if file_sha256(manifest_path) != expected:
+        raise ValueError(
+            "robot-description manifest raw SHA-256 differs from the scenario"
+        )
+    document = load_mapping(manifest_path)
+    validate_role(document, "robot_description", extension_schemas=extension_schemas)
+    if document["description"]["format"] != "urdf":
+        raise ValueError("native robot-state publication requires ready URDF")
+    if "path" not in document["source"]:
+        raise ValueError("native admission requires a retained local source artifact")
+    if document["inertia_check"]["status"] != "passed":
+        raise ValueError("native admission requires a passed producer inertia check")
+
+    files = {}
+
+    def retain(path: Path) -> None:
+        relative = path.relative_to(root).as_posix()
+        files[relative] = {
+            "path": relative,
+            "sha256": file_sha256(path),
+            "size_bytes": path.stat().st_size,
+        }
+
+    retain(manifest_path)
+    for artifact in (document["source"], document["description"], *document["meshes"]):
+        path = contained_file(root, artifact["path"])
+        if file_sha256(path) != artifact["sha256"]:
+            raise ValueError(f"robot artifact raw SHA-256 differs: {artifact['path']}")
+        retain(path)
+    package = document["package"]
+    package_xml = contained_file(root, f"{package['path']}/package.xml")
+    package_document = ET.fromstring(read_document_bytes(package_xml))
+    if (
+        package_document.tag != "package"
+        or package_document.findtext("name") != package["name"]
+    ):
+        raise ValueError("robot package.xml name differs from the declared package")
+    retain(package_xml)
+    description = contained_file(root, document["description"]["path"])
+    robot = ET.fromstring(read_document_bytes(description))
+    if robot.tag != "robot" or robot.find("link") is None:
+        raise ValueError("description must be ready URDF with a robot root and links")
+    referenced = set()
+    prefix = f"package://{package['name']}/"
+    for mesh in robot.iter("mesh"):
+        uri = mesh.attrib.get("filename", "")
+        if uri.startswith(prefix):
+            relative = f"{package['path']}/{uri[len(prefix) :]}"
+        elif "://" not in uri and not Path(uri).is_absolute():
+            relative = (Path(document["description"]["path"]).parent / uri).as_posix()
+        else:
+            raise ValueError(f"unsupported portable mesh URI: {uri}")
+        path = contained_file(root, relative)
+        referenced.add(path.relative_to(root).as_posix())
+    if referenced != {artifact["path"] for artifact in document["meshes"]}:
+        raise ValueError(
+            "URDF mesh references differ from the declared retained meshes"
+        )
+    return {
+        "selected": True,
+        "manifest_path": manifest_path.relative_to(root).as_posix(),
+        "manifest_sha256": expected,
+        "description_path": document["description"]["path"],
+        "files": [files[path] for path in sorted(files)],
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--scenario", type=Path, required=True)
+    parser.add_argument("--manifest")
+    parser.add_argument("--artifact", action="append", default=[])
+    parser.add_argument("--extension-schema", action="append", default=[])
+    args = parser.parse_args()
+    try:
+        result = admit(
+            args.root,
+            args.scenario,
+            args.manifest,
+            args.artifact,
+            extension_schemas=load_extension_schemas(args.extension_schema),
+        )
+    except (ValueError, OSError, ET.ParseError, HarnessInputError) as error:
+        print(f"robot-description admission: {error}", file=sys.stderr)
+        return 65
+    print(json.dumps(result, sort_keys=True, allow_nan=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -6,6 +6,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$script_dir/lib.sh"
 
+QUALIFICATION_PREDICATE_TYPE='https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1'
+
 usage() {
   cat >&2 <<'EOF'
 usage: verify-bundle
@@ -18,14 +20,19 @@ usage: verify-bundle
   --aggregate PATH
   [--transport-qualification PATH]
   --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
-  --mcap-summary LABEL=PATH [--mcap-summary LABEL=PATH ...]
+  --recording-summary LABEL=PATH [--recording-summary LABEL=PATH ...]
   [--extension-schema URI=PATH ...]
   [--evidence KIND:LABEL=PATH ...]
+
+Alternatively supply the complete inventory with repeated --artifact KIND:SUBJECT=PATH.
+Named options and native artifact arguments may be combined.
 
 Optional evidence KIND is one of:
   metrics, traces, junit, causal_chain_contract, channel_contract,
   channel_observation, model_manifest, dataset_manifest, execution_permit,
-  execution_verification, policy, raw_mcap, other_evidence
+  execution_verification, policy, recording, other_evidence, clock_relation, qualification_profile,
+  provider_conformance, artifact_receipt, artifact_verification, attestation,
+  verification, package
 EOF
   exit 64
 }
@@ -34,8 +41,16 @@ qualification_parse_cli verify "$@"
 qualification_require_command cosign
 qualification_require_command base64
 qualification_require_command sha256sum
+qualification_prepare
+work="$(mktemp -d)"
+trap 'qualification_cleanup "$work"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # shellcheck disable=SC2154
 qualification_require_file "$bundle"
+cp -- "$bundle" "$work/bundle.json"
+bundle="$work/bundle.json"
 jq --slurp --exit-status 'length == 1' "$bundle" >/dev/null ||
   qualification_fail "expected exactly one JSON document: $bundle"
 if [[ -n "$verification_key" ]]; then
@@ -43,13 +58,19 @@ if [[ -n "$verification_key" ]]; then
     qualification_fail \
       '--key is mutually exclusive with --trusted-root and --policy'
   qualification_require_file "$verification_key"
+  cp -- "$verification_key" "$work/public.key"
+  verification_key="$work/public.key"
 else
   [[ -n "$trusted_root" && -n "$policy" ]] ||
     qualification_fail \
       'identity verification requires --trusted-root and --policy'
   qualification_require_file "$trusted_root"
   qualification_require_file "$policy"
-  qualification_validate_contract "$policy" qualification-policy.v2
+  cp -- "$trusted_root" "$work/trusted-root.json"
+  cp -- "$policy" "$work/policy.json"
+  trusted_root="$work/trusted-root.json"
+  policy="$work/policy.json"
+  qualification_validate_contract "$policy" qualification-policy.v1
   [[ "$(qualification_sha256 "$trusted_root")" == \
     "$(jq -er '.trusted_root_sha256' "$policy")" ]] ||
     qualification_fail 'trusted root digest does not match qualification policy'
@@ -58,12 +79,15 @@ else
     qualification_fail 'qualification policy has an unsupported predicate type'
 fi
 
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT HUP INT TERM
-qualification_prepare "$work"
-qualification_write_statement "$work" "$work/expected-statement.json"
+qualification_write_statement "$work/expected-statement.json"
 
-aggregate_sha256="$(cat "$work/aggregate-sha256")"
+aggregate_sha256="$(jq -er '
+  . as $statement
+  | .predicate.artifacts[]
+  | select(.kind == "acceptance_aggregate")
+  | .subject_name as $name
+  | $statement.subject[] | select(.name == $name) | .digest.sha256
+' "$work/expected-statement.json")"
 verified_identity=''
 if [[ -n "$verification_key" ]]; then
   cosign verify-blob-attestation \
@@ -79,9 +103,9 @@ else
   missing_kinds="$(
     jq -n -r \
       --slurpfile policy "$policy" \
-      --slurpfile artifacts "$work/artifacts.json" '
+      --slurpfile statement "$work/expected-statement.json" '
         ($policy[0].required_artifact_kinds -
-          ($artifacts[0] | map(.kind) | unique))[]
+          ($statement[0].predicate.artifacts | map(.kind) | unique))[]
       '
   )"
   [[ -z "$missing_kinds" ]] ||
@@ -117,13 +141,7 @@ fi
 jq -er '.dsseEnvelope.payload' "$bundle" |
   base64 --decode >"$work/verified-statement.json" ||
   qualification_fail 'Sigstore bundle contains an invalid DSSE payload'
-qualification_validate_contract "$work/verified-statement.json" qualification-bundle.v2
-
-jq -S -c . "$work/expected-statement.json" >"$work/expected.canonical.json"
-jq -S -c . "$work/verified-statement.json" >"$work/verified.canonical.json"
-cmp --silent "$work/expected.canonical.json" "$work/verified.canonical.json" ||
-  qualification_fail \
-    'authenticated statement does not exactly match local subjects, digests, and classifications'
+qualification_match_statement "$work/verified-statement.json"
 
 printf 'qualification bundle verified for %s as %s\n' \
-  "$(cat "$work/run-id")" "$verified_identity"
+  "$(jq -er '.predicate.run_id' "$work/expected-statement.json")" "$verified_identity"

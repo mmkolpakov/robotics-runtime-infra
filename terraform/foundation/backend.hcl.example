@@ -1,0 +1,3 @@
+bucket = "REPLACE_WITH_STATE_BUCKET"
+key = "foundation/terraform.tfstate"
+region = "REPLACE_WITH_REGION"

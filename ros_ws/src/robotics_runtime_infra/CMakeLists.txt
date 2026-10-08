@@ -54,6 +54,11 @@ if(BUILD_TESTING)
     ENV "ROS_DOMAIN_ID=125"
     TIMEOUT 240
   )
+  add_launch_test(
+    test/test_neutral_robot.py
+    ENV "ROS_DOMAIN_ID=126"
+    TIMEOUT 120
+  )
 endif()
 
 ament_package()

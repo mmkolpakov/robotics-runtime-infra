@@ -1,0 +1,19 @@
+---
+# Copy outside version control and replace all example values before use.
+all:
+  children:
+    robotics_product_nodes:
+      hosts:
+        product_node_01:
+          ansible_host: product-node.example.invalid
+          ansible_user: product_operator
+          robotics_node_enrolled: true
+          robotics_node_features: [time_chrony]
+          robotics_node_package_versions:
+            bash: REPLACE_WITH_APPROVED_PACKAGE_VERSION
+            coreutils: REPLACE_WITH_APPROVED_PACKAGE_VERSION
+            jq: REPLACE_WITH_APPROVED_PACKAGE_VERSION
+            chrony: REPLACE_WITH_APPROVED_PACKAGE_VERSION
+          robotics_node_time_evidence_dir: /var/lib/robotics/time-evidence
+          robotics_node_chrony_sources: [server time.example.invalid iburst]
+          robotics_node_chrony_existing_config_reviewed: true

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$script_dir/lib.sh"
+usage() {
+  printf 'usage: package-artifacts --output NEW_DIRECTORY [create-statement inventory options]\n' >&2
+  exit 64
+}
+qualification_parse_cli create "$@"
+qualification_resolve_contracts_cli
+qualification_collect_subjects
+qualification_require_command python3
+# shellcheck disable=SC2154
+exec python3 "$script_dir/package_artifacts.py" "$output" "$QUALIFICATION_CONTRACTS_CLI" \
+  "${#extension_schema_specs[@]}" "${extension_schema_specs[@]}" "${QUALIFICATION_ARTIFACT_SPECS[@]}"

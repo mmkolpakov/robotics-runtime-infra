@@ -1,0 +1,18 @@
+---
+- name: Create product unit directory
+  ansible.builtin.file:
+    path: "{{ robotics_can_file_root }}/etc/systemd/system"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install unchanged read-only CAN gateway unit
+  ansible.builtin.copy:
+    src: "{{ robotics_can_asset_root }}/systemd/robotics-can-observation@.service"
+    dest: "{{ robotics_can_file_root }}/etc/systemd/system/robotics-can-observation@.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload product CAN gateway unit
+  register: robotics_can_unit

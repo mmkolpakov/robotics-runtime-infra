@@ -1,0 +1,39 @@
+{
+  "schema_version": "robot-description.v1",
+  "robot_id": "neutral_robot",
+  "source": {
+    "path": "ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf",
+    "sha256": "2ce74baca4542a2e0c6ff6e4bbf26b956f97f62e78bd8d9126c015fdfb84a835"
+  },
+  "package": {
+    "name": "robotics_runtime_infra",
+    "path": "ros_ws/src/robotics_runtime_infra"
+  },
+  "description": {
+    "format": "urdf",
+    "path": "ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf",
+    "sha256": "2ce74baca4542a2e0c6ff6e4bbf26b956f97f62e78bd8d9126c015fdfb84a835"
+  },
+  "meshes": [],
+  "mass_kg": 1.25,
+  "center_of_mass_m": [
+    0.04,
+    0,
+    0
+  ],
+  "inertia_check": {
+    "status": "passed",
+    "detail": "Uniform boxes 0.2 m / 1 kg and 0.1 m / 0.25 kg: principal moments m*a*a/6, zero cross terms; authored link inertias are positive."
+  },
+  "spawn": {
+    "frame": "world",
+    "pose": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  }
+}

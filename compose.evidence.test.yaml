@@ -54,15 +54,14 @@ services:
       AWS_DEFAULT_REGION: us-east-1
       AWS_ENDPOINT_URL: http://s3-fixture:8333
       AWS_SECRET_ACCESS_KEY: robotics-test-secret
+      AWS_SESSION_TOKEN: ""
       EVIDENCE_BUCKET: robotics-evidence
       EVIDENCE_MODE: s3
       EVIDENCE_PREFIX: regression-30d
-      RCLONE_CONFIG_EVIDENCE_ACCESS_KEY_ID: robotics-test
+      # Override only fixture routing; type and AWS env auth come from production.
       RCLONE_CONFIG_EVIDENCE_ENDPOINT: http://s3-fixture:8333
-      RCLONE_CONFIG_EVIDENCE_FORCE_PATH_STYLE: "true"
+      RCLONE_CONFIG_EVIDENCE_REGION: us-east-1
       RCLONE_CONFIG_EVIDENCE_PROVIDER: Other
-      RCLONE_CONFIG_EVIDENCE_SECRET_ACCESS_KEY: robotics-test-secret
-      RCLONE_CONFIG_EVIDENCE_TYPE: s3
       RCLONE_REMOTE: evidence
       ROBOTICS_RETENTION_CLASS: regression-30d
       ROBOTICS_RUN_ID: run-00000000-0000-4000-8000-000000000001

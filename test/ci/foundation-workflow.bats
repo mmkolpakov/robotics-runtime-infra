@@ -9,8 +9,8 @@ setup() {
   ACCEPTANCE_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance.sh"
   KEYLESS_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/run-keyless-qualification.sh"
   VALIDATION_SCRIPT="${REPOSITORY_ROOT}/scripts/ci/foundation/validate-foundation.sh"
-  INTEGRATION_PROJECT="${REPOSITORY_ROOT}/tooling/foundation/pyproject.toml"
-  INTEGRATION_LOCK="${REPOSITORY_ROOT}/tooling/foundation/uv.lock"
+  INTEGRATION_PROJECT="${REPOSITORY_ROOT}/foundation.repos"
+  INTEGRATION_LOCK="${REPOSITORY_ROOT}/config/foundation-lock.json"
   QUALIFICATION_POLICY="${REPOSITORY_ROOT}/trust/qualification-policy.json"
   QUALIFICATION_ROOT="${REPOSITORY_ROOT}/trust/qualification.trusted-root.json"
   # shellcheck source=scripts/ci/foundation/lib.sh
@@ -19,16 +19,15 @@ setup() {
   source "${CI_LIBRARY}"
 }
 
-@test "runtime foundation owns the joint Python lock" {
-  [ -f "${INTEGRATION_PROJECT}" ]
-  [ -f "${INTEGRATION_LOCK}" ]
-  run grep -F 'foundation_project=tooling/foundation' "${VALIDATION_SCRIPT}"
+@test "runtime foundation imports one workspace and derives the package lock" {
+  run jq -e '.repositories | keys == ["robotics-runtime"]' "${INTEGRATION_PROJECT}"
   [ "${status}" -eq 0 ]
-  run grep -E 'uv sync --project .*dependencies/robotics-' "${VALIDATION_SCRIPT}"
-  [ "${status}" -eq 1 ]
-  run grep -F 'robotics-acceptance-harness' "${INTEGRATION_PROJECT}"
+  run jq -e '.workspace.uv_lock_sha256 | test("^[a-f0-9]{64}$")' "${INTEGRATION_LOCK}"
   [ "${status}" -eq 0 ]
-  run grep -F 'robotics-runtime-contracts' "${INTEGRATION_PROJECT}"
+  run grep -F 'foundation_project=dependencies/robotics-runtime' "${VALIDATION_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run jq -e '.packages.contracts.distribution == "robotics-runtime-contracts" and
+    .packages.harness.distribution == "robotics-acceptance-harness"' "${INTEGRATION_LOCK}"
   [ "${status}" -eq 0 ]
 }
 
@@ -40,6 +39,26 @@ setup() {
   run ci_require_policy_allows policy.rego missing input.json
 
   [ "${status}" -ne 0 ]
+}
+
+@test "source import preserves a dirty checkout before invoking vcs" {
+  local fixture="${BATS_TEST_TMPDIR}/import-fixture"
+  local checkout="${fixture}/dependencies/robotics-runtime"
+  mkdir -p "${fixture}/scripts/ci/foundation" "${checkout}"
+  cp "${REPOSITORY_ROOT}/scripts/ci/foundation/import-sources.sh" \
+    "${fixture}/scripts/ci/foundation/import-sources.sh"
+  git -C "${checkout}" init --quiet
+  printf 'original\n' >"${checkout}/input.txt"
+  git -C "${checkout}" add input.txt
+  git -C "${checkout}" -c user.name=Fixture \
+    -c user.email=fixture@example.invalid commit --quiet -m fixture
+  printf 'local edit\n' >"${checkout}/input.txt"
+
+  run bash "${fixture}/scripts/ci/foundation/import-sources.sh"
+
+  [ "${status}" -eq 65 ]
+  [[ "${output}" == *"has local changes"* ]]
+  [ "$(cat "${checkout}/input.txt")" = "local edit" ]
 }
 
 @test "consumer path validation resolves symlinks" {
@@ -190,9 +209,57 @@ setup() {
       "\"\${run_dir}/configuration/${artifact}\" \"\${artifact_dir}/\"" \
       "${ACCEPTANCE_SCRIPT}"
     [ "${status}" -eq 0 ]
-    run grep -F -- \
-      "other_evidence:${artifact}=artifacts/${artifact}" \
-      "${KEYLESS_SCRIPT}"
-    [ "${status}" -eq 0 ]
   done
+  run grep -F 'mapfile -t qualification_inputs <qualification-arguments.txt' "${KEYLESS_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run grep -F "'artifacts/qualification/'" "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+}
+
+@test "foundation evidence uses a guarded upload ID and an attempt-scoped archive" {
+  local python="${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}"
+  run "${python}" -I - "${WORKFLOW}" <<'PY'
+import os
+import subprocess
+import sys
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping
+
+jobs = load_mapping(Path(sys.argv[1]))["jobs"]
+foundation = jobs["foundation"]
+upload = next(step for step in foundation["steps"]
+              if step.get("id") == "upload-foundation-evidence")
+assert foundation["outputs"]["evidence-artifact-id"] == (
+    "${{ steps.upload-foundation-evidence.outputs.artifact-id }}")
+assert upload["with"]["name"] == (
+    "foundation-reports-${{ github.sha }}-${{ github.run_attempt }}")
+assert upload["if"] == "always()"
+assert upload["with"]["path"] == "artifacts/"
+assert upload["with"]["if-no-files-found"] == "error"
+assert not upload["with"].get("overwrite", False)
+consumer = jobs["trusted-keyless-qualification"]
+assert consumer["needs"] == "foundation"
+steps = consumer["steps"]
+index = next(i for i, step in enumerate(steps)
+             if step.get("uses", "").startswith("actions/download-artifact@"))
+guard, download = steps[index - 1], steps[index]
+assert guard["env"]["EVIDENCE_ARTIFACT_ID"] == (
+    "${{ needs.foundation.outputs.evidence-artifact-id }}")
+assert download["with"] == {
+    "artifact-ids": "${{ needs.foundation.outputs.evidence-artifact-id }}",
+    "path": "artifacts"}
+assert "${{" not in guard["run"]
+for artifact_id in ("11279763969", "", "0", "-1", "1,2", "1.0", "1\n2", "1; exit 0"):
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", guard["run"]],
+        env={**os.environ, "EVIDENCE_ARTIFACT_ID": artifact_id},
+        capture_output=True, text=True, check=False)
+    assert result.returncode == (0 if artifact_id == "11279763969" else 64), (
+        artifact_id, result.returncode, result.stdout, result.stderr)
+    assert result.stdout == ""
+    if result.returncode:
+        assert "must be one positive integer" in result.stderr
+PY
+  printf '%s\n' "${output}"
+  [ "${status}" -eq 0 ]
 }

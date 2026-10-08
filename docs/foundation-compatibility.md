@@ -1,10 +1,20 @@
 # Foundation Compatibility Lock
 
-Generated from the repositories imported through `foundation.repos`.
+Generated from the single workspace revision in `foundation.repos`.
 
-| Component | Version | Commit | Source |
-| --- | --- | --- | --- |
-| `robotics-runtime-contracts` | `0.15.4` | `d0f2909d1808aa475c82ced630c1cf0703f31921` | <https://github.com/mmkolpakov/robotics-runtime-contracts.git> |
-| `robotics-acceptance-harness` | `0.17.1` | `2fbdaf72b524634e7ec736e1ede1f6edb6aad00f` | <https://github.com/mmkolpakov/robotics-acceptance-harness.git> |
+| Component | Version | Workspace commit |
+| --- | --- | --- |
+| `robotics-runtime-contracts` | `0.19.0` | `efeac712ea512b19523ce41be40752f703fa782b` |
+| `robotics-acceptance-harness` | `0.20.0` | `efeac712ea512b19523ce41be40752f703fa782b` |
 
-CI imports these exact commits and verifies the versions embedded in runtime images.
+The pin is bound to the source tags `harness-v0.20.0` and `contracts-v0.19.0`.
+The pinned commit matches the harness tag, and its contracts source
+tree is identical to the contracts tag.
+This proves source identity, not completed package publication.
+Verify publication separately before release adoption.
+The images use a source-built package cohort from these immutable source trees.
+Package source trees and project metadata are bound by this compatibility lock.
+Whole wheel archive digests identify this source-built cohort.
+Build dependencies remain locked.
+CI checks the imported revision, workspace lock and installed image versions.
+Stable release adoption remains gated on completed publication and foundation qualification.

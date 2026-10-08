@@ -1,0 +1,28 @@
+---
+services:
+  admission:
+    userns_mode: keep-id:uid=1000,gid=1000
+  simulation:
+    userns_mode: keep-id:uid=1000,gid=1000
+  neutral-robot:
+    userns_mode: keep-id:uid=1000,gid=1000
+  simulation-stepper:
+    userns_mode: keep-id:uid=1000,gid=1000
+  runtime-probe-publisher:
+    userns_mode: keep-id:uid=1000,gid=1000
+  runtime-metrics:
+    userns_mode: keep-id:uid=1000,gid=1000
+  recorder:
+    userns_mode: keep-id:uid=1000,gid=1000
+  otel-collector:
+    userns_mode: keep-id:uid=1000,gid=1000
+  acceptance-observer:
+    userns_mode: keep-id:uid=1000,gid=1000
+  legacy-coordinator:
+    userns_mode: keep-id:uid=1000,gid=1000
+  evidence-sink:
+    userns_mode: keep-id:uid=1000,gid=1000
+  evidence-finalize:
+    userns_mode: keep-id:uid=1000,gid=1000
+  legacy-export:
+    userns_mode: keep-id:uid=1000,gid=1000

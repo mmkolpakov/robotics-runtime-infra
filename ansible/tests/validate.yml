@@ -1,0 +1,10 @@
+---
+- name: Validate declared site settings without touching a host
+  hosts: fixture
+  gather_facts: false
+  vars_files: [site.yml]
+  tasks:
+    - name: Load product validation only
+      ansible.builtin.import_role:
+        name: robotics_node
+        tasks_from: validate

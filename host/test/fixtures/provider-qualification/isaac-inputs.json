@@ -1,0 +1,12 @@
+{
+  "backend": "isaac",
+  "nativeProofScope": "representative shape only; C17 execution open",
+  "version": "6.0.1-representative",
+  "executionSubjectDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "files": {
+    "representative.json": {
+      "sha256": "0f171a0946a911535a433987be6ea5abdd29e316bdcbff88dfbcc110fce7236c",
+      "size_bytes": 561
+    }
+  }
+}

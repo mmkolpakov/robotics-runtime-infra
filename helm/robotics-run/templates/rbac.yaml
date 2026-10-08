@@ -1,0 +1,57 @@
+{{- if .Values.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.name | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    resourceNames: [{{ .Values.name | quote }}]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    resourceNames: [{{ .Values.spool.name | quote }}]
+    verbs: ["get"]
+  # The Job-generated Pod name is unknown when rendering.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.name | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.identity.serviceAccount | quote }}
+    namespace: {{ .Release.Namespace | quote }}
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: {{ .Values.name | quote }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "%s-%s-storage-read" .Release.Namespace .Values.name | quote }}
+rules:
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    resourceNames: [{{ .Values.spool.storageClassName | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-%s-storage-read" .Release.Namespace .Values.name | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.identity.serviceAccount | quote }}
+    namespace: {{ .Release.Namespace | quote }}
+roleRef:
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+  name: {{ printf "%s-%s-storage-read" .Release.Namespace .Values.name | quote }}
+{{- end }}

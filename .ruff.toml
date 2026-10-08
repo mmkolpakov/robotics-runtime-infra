@@ -1,0 +1,2 @@
+# Keep nested local checkouts and standalone CI on the same formatting rules.
+line-length = 88

@@ -1,0 +1,19 @@
+services:
+  retained-byte-verifier:
+    image: "${C18_WORKER_IMAGE:?qualified native SDK worker required}"
+    pull_policy: never
+    init: true
+    user: "10001:1000"
+    userns_mode: keep-id:uid=1000,gid=1000
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [/opt/contracts/bin/python, /opt/c18/portable-checks.py]
+    volumes: [retained:/retained]
+    labels:
+      org.robotics.runtime.run-id: "${C18_HOST_OWNER:?host owner required}"
+volumes:
+  retained:
+    external: true
+    name: "${C18_RETAINED_VOLUME:?retained required}"

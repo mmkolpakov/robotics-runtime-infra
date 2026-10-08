@@ -1,0 +1,11 @@
+{{- if .Values.enabled }}
+{{- if ne .Values.identity.namespace .Release.Namespace }}{{ fail "product identity namespace must match release namespace" }}{{ end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.identity.serviceAccount | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  annotations:
+    helm.sh/resource-policy: keep
+automountServiceAccountToken: false
+{{- end }}

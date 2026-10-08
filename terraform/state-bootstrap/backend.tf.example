@@ -1,0 +1,7 @@
+# Add this only after approved bootstrap creation, then migrate the protected local state.
+terraform {
+  backend "s3" {
+    encrypt      = true
+    use_lockfile = true
+  }
+}

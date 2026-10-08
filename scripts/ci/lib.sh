@@ -11,10 +11,41 @@ ci_enter_repo() {
 
 ci_set_compose_fixture_env() {
   export ROBOTICS_RUNTIME_MODE="${ROBOTICS_RUNTIME_MODE:-source}"
+  # Source tags and socket path below are Compose syntax fixtures, not observations.
+  export MEDIA_IMAGE="${MEDIA_IMAGE:-local/robotics-runtime-infra/media:dev}"
+  export HOST_IMAGE="${HOST_IMAGE:-local/robotics-runtime-infra/host:dev}"
+  export ROBOTICS_WEBOTS_IMAGE="${ROBOTICS_WEBOTS_IMAGE:-local/native-webots:dev}"
+  export ROBOTICS_WEBOTS_SCOPE="${ROBOTICS_WEBOTS_SCOPE:-ci-webots}"
+  export ROBOTICS_PX4_IMAGE="${ROBOTICS_PX4_IMAGE:-local/native-px4:dev}"
+  export ROBOTICS_PX4_SCOPE="${ROBOTICS_PX4_SCOPE:-ci-px4}"
+  export ROBOTICS_PX4_GRPC_PORT="${ROBOTICS_PX4_GRPC_PORT:-50052}"
+  export ROBOTICS_RUN_VOLUME="${ROBOTICS_RUN_VOLUME:-ci-run-data}"
+  export ROBOTICS_RETAINED_VOLUME="${ROBOTICS_RETAINED_VOLUME:-ci-retained-data}"
+  export LEGACY_FINALIZER_IMAGE="${LEGACY_FINALIZER_IMAGE:-local/native-finalizer:dev}"
+  export ROBOTICS_INPUT_VOLUME="${ROBOTICS_INPUT_VOLUME:-ci-input}"
+  export ROBOTICS_RESULT_VOLUME="${ROBOTICS_RESULT_VOLUME:-ci-result}"
+  export ISAAC_SCENE_SHA256="${ISAAC_SCENE_SHA256:-0a19bca17a24a7d61bdef19dc410a220ef1ffe464f4e992a5c1cae7c52cbca29}"
+  export ROBOTICS_ISAAC_INPUT_VOLUME="${ROBOTICS_ISAAC_INPUT_VOLUME:-ci-isaac-input}"
+  export ROBOTICS_ISAAC_RESULT_VOLUME="${ROBOTICS_ISAAC_RESULT_VOLUME:-ci-isaac-result}"
+  export ROBOTICS_ISAAC_SCOPE="${ROBOTICS_ISAAC_SCOPE:-ci-isaac}"
+  export ROBOTICS_ISAAC_PHASE_TOKEN="${ROBOTICS_ISAAC_PHASE_TOKEN:-ci-correlation}"
+  export ROBOTICS_ISAAC_PHASE_TIMEOUT="${ROBOTICS_ISAAC_PHASE_TIMEOUT:-90}"
+  export ROBOTICS_ISAAC_STEPS="${ROBOTICS_ISAAC_STEPS:-60}"
+  export ROBOTICS_ISAAC_DT="${ROBOTICS_ISAAC_DT:-0.016666666666666666}"
+  export ROBOTICS_ISAAC_RENDER_FRAMES="${ROBOTICS_ISAAC_RENDER_FRAMES:-0}"
+  export ROBOTICS_ISAAC_WIDTH="${ROBOTICS_ISAAC_WIDTH:-640}"
+  export ROBOTICS_ISAAC_HEIGHT="${ROBOTICS_ISAAC_HEIGHT:-480}"
+  export ROBOTICS_HOST_ID="${ROBOTICS_HOST_ID:-host-ci-compose}"
+  export ROBOTICS_ENGINE_HOST_SOCKET="${ROBOTICS_ENGINE_HOST_SOCKET:-/run/robotics-ci/engine.sock}"
+  export SIMULATION_IMAGE="${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:ci}"
+  export ROBOTICS_METRICS_TOPIC="${ROBOTICS_METRICS_TOPIC:-/example/sequence}"
+  export ROBOTICS_PLAYBACK_CLOCK_HZ="${ROBOTICS_PLAYBACK_CLOCK_HZ:-200}"
+  export ROBOTICS_PLAYBACK_RATE="${ROBOTICS_PLAYBACK_RATE:-1}"
+  export ROBOTICS_PLAYBACK_START_OFFSET="${ROBOTICS_PLAYBACK_START_OFFSET:-0}"
   export ROBOTICS_CHRONY_IDENTITY="${ROBOTICS_CHRONY_IDENTITY:-100:101}"
   export ROBOTICS_DOMAIN_ID="${ROBOTICS_DOMAIN_ID:-0}"
   export PERMIT_PREFLIGHT_CI_IMAGE="${PERMIT_PREFLIGHT_CI_IMAGE:-local/robotics-runtime-infra/permit-preflight-ci:dev}"
-  export ROBOTICS_PTP_SAMPLE_FILE="${ROBOTICS_PTP_SAMPLE_FILE:-./test/time/pmc.fixture}"
+  export ROBOTICS_PTP_SAMPLE_DIR="${ROBOTICS_PTP_SAMPLE_DIR:-./test/time}"
   export ROBOTICS_RKNN_RENDER_GID="${ROBOTICS_RKNN_RENDER_GID:-65534}"
   export ROBOTICS_RUN_ID="${ROBOTICS_RUN_ID:-run-ci-compose}"
   export ROBOTICS_SERIAL_DEVICE="${ROBOTICS_SERIAL_DEVICE:-/dev/robotics/controller-alpha}"
@@ -142,7 +173,13 @@ ci_require_source_paths_within_root() {
 }
 
 ci_validate_contract_documents() {
-  uv run --isolated --with "${ROBOTICS_CONTRACTS_REQUIREMENT}" \
+  local foundation="${CI_REPO_ROOT}/dependencies/robotics-runtime"
+  if [[ ! -e "${foundation}/.git" ]]; then
+    bash "${CI_REPO_ROOT}/scripts/ci/foundation/import-sources.sh"
+  fi
+  python3 "${CI_REPO_ROOT}/scripts/ci/foundation/sync-workspace-pins.py" --check
+  uv run --project "${foundation}" --locked --no-default-groups \
+    --package robotics-runtime-contracts --no-editable \
     robotics-contracts validate --quiet "$@"
 }
 

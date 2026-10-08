@@ -30,8 +30,9 @@ verify_role_attestation() {
   require_file "${trusted_root}"
   assert_single_json_document "${statement}"
   assert_single_json_document "${bundle}"
-  digest="$(statement_subject_digest "${statement}")"
-  predicate_type="$(execution_permit_predicate_type "${statement}")"
+  # Explicit exits: callers may run this where errexit is ignored.
+  digest="$(statement_subject_digest "${statement}")" || exit 65
+  predicate_type="$(execution_permit_predicate_type "${statement}")" || exit 65
   cosign verify-blob-attestation \
     --bundle "${bundle}" \
     --trusted-root "${trusted_root}" \
@@ -39,8 +40,11 @@ verify_role_attestation() {
     --certificate-oidc-issuer "${issuer}" \
     --digest "${digest}" \
     --digestAlg sha256 \
-    --type "${predicate_type}"
-  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}"
+    --type "${predicate_type}" || {
+    printf 'attestation signature verification failed: %s\n' "${bundle}" >&2
+    exit 65
+  }
+  assert_bundle_statement "${statement}" "${bundle}" "${decoded_statement}" || exit 65
 }
 
 command_name="${1:-}"

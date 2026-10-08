@@ -259,6 +259,8 @@ services:
         set -e
         printf '%s\n' "$${output}"
         test "$${status}" -ne 0
+        test "$${status}" -ne 124
+        if grep -Fq 'Publishing:' <<<"$${output}"; then exit 1; fi
         grep -Eqi 'permission|not allowed|denied|create publisher' <<<"$${output}"
     volumes:
       - *fastdds-volume
@@ -285,6 +287,8 @@ services:
         set -e
         printf '%s\n' "$${output}"
         test "$${status}" -ne 0
+        test "$${status}" -ne 124
+        if grep -Fq 'Publishing:' <<<"$${output}"; then exit 1; fi
         grep -Eqi 'permission|not allowed|denied|create publisher' <<<"$${output}"
     volumes:
       - *fastdds-volume
@@ -311,7 +315,10 @@ services:
         set -e
         printf '%s\n' "$${output}"
         test "$${status}" -ne 0
-        grep -Eqi 'security directory|security files|enclave' <<<"$${output}"
+        test "$${status}" -ne 124
+        if grep -Fq 'Publishing:' <<<"$${output}"; then exit 1; fi
+        grep -Fq "SECURITY ERROR: directory '/security/enclaves/missing' does not exist" \
+          <<<"$${output}"
     volumes:
       - *fastdds-volume
       - *security-public-volume

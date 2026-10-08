@@ -13,12 +13,25 @@ project="$(foundation_project_name runtime "${run_id}" "${run_attempt}")"
 artifact_dir="$(foundation_artifact_dir "${root}" "${project}")"
 mkdir -p "${artifact_dir}/test-results"
 
+# Invoked indirectly by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() {
+  local run_status=$?
+  local cleanup_status=0
+  trap - EXIT
+  if ((${status:-0} != 0)); then
+    run_status="${status}"
+  fi
   foundation_compose_cleanup \
     "${artifact_dir}/foundation-runtime.log" \
-    docker compose -p "${project}" --profile test
+    "${project}" \
+    docker compose -p "${project}" --profile test || cleanup_status=$?
+  if ((run_status != 0)); then
+    exit "${run_status}"
+  fi
+  exit "${cleanup_status}"
 }
-trap cleanup EXIT
+trap 'cleanup' EXIT
 
 docker compose -p "${project}" \
   up --detach --no-build --wait --wait-timeout 120
@@ -35,7 +48,4 @@ docker cp \
   "${artifact_dir}/test-results/"
 docker rm "${test_container}"
 
-cleanup
-trap - EXIT
-foundation_assert_project_clean "${project}"
 exit "${status}"

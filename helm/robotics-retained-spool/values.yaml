@@ -1,0 +1,10 @@
+---
+enabled: false
+name: ""
+storageClassName: ""
+capacity: ""
+binding:
+  runId: ""
+  domainId: ""
+  profileId: ""
+  profileSha256: ""

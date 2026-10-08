@@ -15,9 +15,11 @@
   <exec_depend>gz_ros2_control</exec_depend>
   <exec_depend>image_transport</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>launch_xml</exec_depend>
   <exec_depend>mavlink</exec_depend>
   <exec_depend>mavros</exec_depend>
   <exec_depend>mavros_extras</exec_depend>
@@ -55,6 +57,7 @@
   <test_depend>launch_testing_ros</test_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>rosbag2_interfaces</test_depend>
+  <test_depend>liburdfdom-tools</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

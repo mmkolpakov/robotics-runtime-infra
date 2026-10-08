@@ -1,0 +1,27 @@
+---
+# Overlay for the admitted source composition. Existing recorder/Collector/evidence
+# services keep their installed commands; this adds only finite coordinator jobs.
+services:
+  legacy-coordinator:
+    image: "${LEGACY_FINALIZER_IMAGE:?immutable finalizer image required}"
+    pull_policy: never
+    user: "1000:1000"
+    init: true
+    network_mode: none
+    read_only: true
+    mem_limit: 512m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,mode=1777,size=512m"]
+    entrypoint: []
+    volumes:
+      - run-data:/run/robotics:ro
+      - run-input:/run/robotics/input:ro
+      - retained-data:/retained
+      - retained-data:/run/robotics/source-evidence:ro
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+volumes:
+  retained-data:
+    external: true
+    name: "${ROBOTICS_RETAINED_VOLUME:?host-owned retained volume required}"

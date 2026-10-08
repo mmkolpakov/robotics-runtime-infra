@@ -3,6 +3,12 @@
 # This module is sourced by physical-attach.sh and uses its coordinator state.
 # shellcheck disable=SC2034,SC2154
 
+# shellcheck source=scripts/ci/image-provenance.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/image-provenance.sh"
+
+# shellcheck source=scripts/ci/image-identity.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/image-identity.sh"
+
 acquire_host_lock() {
   local lock_file="${ROBOTICS_PHYSICAL_ATTACH_LOCK_FILE:-/run/lock/robotics-runtime-infra-physical-attach.lock}"
 
@@ -15,43 +21,10 @@ acquire_host_lock() {
 }
 
 verify_released_verifier_provenance() {
-  local canonical_repository
-  local evidence_tmp
-  local signer_workflow
-
-  canonical_repository="mmkolpakov/robotics-runtime-infra"
-  signer_workflow="${canonical_repository}/.github/workflows/release-image.yml"
-  [[ "${ROBOTICS_RELEASE_SOURCE_SHA}" =~ ^[a-f0-9]{40}$ ]] || {
-    printf 'ROBOTICS_RELEASE_SOURCE_SHA is not a Git commit digest\n' >&2
-    return 65
-  }
-  [[ "${ROBOTICS_RELEASE_SOURCE_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || {
-    printf 'ROBOTICS_RELEASE_SOURCE_REF is not a release tag ref\n' >&2
-    return 65
-  }
-  test -n "${GH_TOKEN:-}" || {
-    printf 'GH_TOKEN is required to verify released image provenance\n' >&2
-    return 69
-  }
-
   ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE="${work_root}/verifier-attestation.json"
-  evidence_tmp="${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}.tmp"
-  umask 077
-  gh attestation verify "oci://${PERMIT_PREFLIGHT_IMAGE}" \
-    --repo "${canonical_repository}" \
-    --signer-workflow "${signer_workflow}" \
-    --source-digest "${ROBOTICS_RELEASE_SOURCE_SHA}" \
-    --source-ref "${ROBOTICS_RELEASE_SOURCE_REF}" \
-    --deny-self-hosted-runners \
-    --bundle-from-oci \
-    --format json >"${evidence_tmp}"
-  jq -e 'type == "array" and length > 0' "${evidence_tmp}" >/dev/null || {
-    printf 'verifier provenance evidence is empty or malformed\n' >&2
-    rm -f "${evidence_tmp}"
-    return 65
-  }
-  chmod 0444 "${evidence_tmp}"
-  mv "${evidence_tmp}" "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
+  ci_verify_released_image_provenance \
+    "${PERMIT_PREFLIGHT_IMAGE}" "${ROBOTICS_RELEASE_SOURCE_SHA}" \
+    "${ROBOTICS_RELEASE_SOURCE_REF}" "${ROBOTICS_VERIFIER_PROVENANCE_EVIDENCE}"
 }
 
 verify_verifier_image_digest() {
@@ -59,8 +32,10 @@ verify_verifier_image_digest() {
   local name_and_tag
   local reference_digest
   local trusted_release_repository
+  local identities
 
-  trusted_release_repository="ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight"
+  identities="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)/config/trust/identities.json"
+  trusted_release_repository="$(jq -er '.infra.registry' "${identities}")/permit-preflight"
 
   case "${ROBOTICS_RUNTIME_MODE}" in
     released | source)
@@ -93,7 +68,7 @@ verify_verifier_image_digest() {
           return 65
           ;;
       esac
-      verify_released_verifier_provenance
+      verify_released_verifier_provenance || return
       docker image inspect "${PERMIT_PREFLIGHT_IMAGE}" >/dev/null
       ;;
     *)
@@ -447,8 +422,8 @@ prepare_vcan_gateway() {
     fi
     sleep 1
   done
-  can_compose logs --no-color can-observation-client |
-    grep -q '123#DEADBEEF'
+  can_compose logs --no-color can-observation-client >"${work_root}/can-received.txt"
+  grep -q '123#DEADBEEF' "${work_root}/can-received.txt"
 }
 
 verify_time_evidence() {

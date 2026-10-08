@@ -1,0 +1,6 @@
+.git
+artifacts
+tmp
+**/node_modules
+**/dist
+**/__pycache__

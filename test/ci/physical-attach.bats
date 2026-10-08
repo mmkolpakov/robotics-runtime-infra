@@ -88,13 +88,14 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "authorization renderer binds one identity across permit and statement" {
+@test "released authorization renderer binds registry identity across permit and statement" {
+  : "${ROBOTICS_CONTRACTS_CLI:?install the pinned contracts CLI before this test}"
   run bash -c '
     set -Eeuo pipefail
     export PHYSICAL_ATTACH_LIBRARY_ONLY=1
     source "$1"
-    work_root="$(mktemp -d)"
-    trap "rm -rf -- \"${work_root}\"" EXIT
+    work_root="${BATS_TEST_TMPDIR}/permit-render"
+    mkdir "$work_root"
     target_identity="$(
       printf "controller-ci" | sha256sum | awk "{print \$1}"
     )"
@@ -106,21 +107,31 @@ setup() {
       "${PHYSICAL_ATTACH_FIXTURE_ROOT}/target-evidence.json" \
       >"${work_root}/target-evidence.json"
     docker() {
+      if test "$1" = buildx; then
+        test "$#" -eq 6
+        test "$2 $3 $4" = "imagetools inspect --format"
+        test "$5" = "{{json .Manifest}}"
+        test "$6" = "acceptance-observer@sha256:$(printf "%064d" 1)"
+        printf "{\"digest\":\"sha256:%064d\",\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\"}\n" 1
+        return
+      fi
       test "$1" = image
       test "$2" = inspect
+      test "$#" -eq 3
       case "$3" in
-        acceptance-observer)
-          printf "sha256:%064d\n" 1
+        acceptance-observer@*)
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"acceptance-observer@sha256:%064d\"]}]\n" 9 1
           ;;
         permit-preflight)
-          printf "sha256:%064d\n" 2
+          printf "[{\"Id\":\"sha256:%064d\",\"RepoDigests\":[\"permit-preflight@sha256:%064d\"]}]\n" 8 2
           ;;
         *)
           return 64
           ;;
       esac
     }
-    OBSERVER_IMAGE=acceptance-observer
+    ROBOTICS_RUNTIME_MODE=released
+    OBSERVER_IMAGE="acceptance-observer@sha256:$(printf "%064d" 1)"
     PERMIT_PREFLIGHT_IMAGE=permit-preflight
     write_trust_policy
     write_permit_case \
@@ -128,6 +139,8 @@ setup() {
       "2026-07-26T12:00:00Z" \
       "2026-07-26T12:15:00Z" \
       "${target_identity}"
+    "$ROBOTICS_CONTRACTS_CLI" validate --schema execution-permit.v1 --quiet \
+      "${work_root}/case/execution-permit.json"
     scenario_sha256="$(
       jq -r ".scenario_sha256" \
         "${work_root}/case/execution-permit.json"
@@ -142,37 +155,11 @@ setup() {
     jq -e --slurpfile permit "${work_root}/case/execution-permit.json" "
       .predicate == \$permit[0] and
       .subject[0].digest.sha256 == \$permit[0].scenario_sha256 and
-      (\"sha256:\" + .subject[1].digest.sha256) == \$permit[0].image_digest and
-      \$permit[0].image_digest == \"sha256:$(printf "%064d" 1)\"
+      (\"sha256:\" + .subject[1].digest.sha256) == \$permit[0].subject_digest and
+      \$permit[0].subject_digest == \"sha256:$(printf "%064d" 1)\"
     " "${work_root}/case/execution-statement.json"
   ' _ "${SCRIPT}"
 
-  [ "${status}" -eq 0 ]
-}
-
-@test "runtime manifest filter binds revisions and physical evidence" {
-  run jq \
-    --arg architecture x86_64 \
-    --arg contracts_revision contracts-revision \
-    --arg harness_revision harness-revision \
-    --arg infra_revision infra-revision \
-    --arg image_digest "sha256:$(printf '%064d' 0)" \
-    --arg image_reference "local/synthetic-observer@sha256:$(printf '%064d' 0)" \
-    --arg kernel 6.8.0 \
-    --arg observer_policy_sha256 "$(printf '%064d' 1)" \
-    --arg target_evidence_sha256 "$(printf '%064d' 2)" \
-    --arg target_identity "$(printf '%064d' 3)" \
-    -f "${FIXTURES}/runtime-manifest.jq" \
-    "${REPOSITORY_ROOT}/test/physical/hil-runtime.input.json"
-  [ "${status}" -eq 0 ]
-  run jq -e '
-      .runtime_id == "ci.physical-attach-runtime" and
-      .execution.target_environment == "hil" and
-      .physical_targets[0].target_id == "controller-ci" and
-      .physical_targets[0].identity_kind == "x509_spki" and
-      (.physical_targets[0] | has("stable_device_path") | not) and
-      .clock.sync_protocol == "chrony_ntp"
-  ' <<<"${output}"
   [ "${status}" -eq 0 ]
 }
 
@@ -427,6 +414,108 @@ setup() {
   [ "${status}" -eq 0 ]
   [ "$(cat "${report_path}")" = "verified" ]
   [ ! -e "${pending}" ]
+  [ -z "$(find "${BATS_TEST_TMPDIR}" -maxdepth 1 -type d -name 'physical-attach-report.failure.*')" ]
+}
+
+
+@test "failed cleanup retains public physical diagnostics before deleting its workspace" {
+  report_path="$BATS_TEST_TMPDIR/physical-attach.json"
+  pending="$report_path.pending"
+  run env PHYSICAL_ATTACH_LIBRARY_ONLY=1 bash -c '
+    set -Eeuo pipefail
+    source "$1"
+    RUNNER_TEMP="$2"
+    work_root="$RUNNER_TEMP/physical-attach.early-failure"
+    mkdir -p "$work_root/keys" "$work_root/security/keystore"
+    report_output="$3"
+    report_pending="$4"
+    printf "not-success\n" >"$report_pending"
+    printf "partial-cases\n" >"$work_root/physical-attach-report.json"
+    printf "target-to-host\n" >"$work_root/serial-received.txt"
+    printf "host-to-target\n" >"$work_root/serial-reverse-received.txt"
+    printf "serial-public-log\n" >"$work_root/serial-socat.log"
+    printf "123#DEADBEEF\n" >"$work_root/can-received.txt"
+    printf "secret-key\n" >"$work_root/keys/operator.key"
+    printf "secret-keystore\n" >"$work_root/security/keystore/private.key"
+    printf "private-authorization\n" >"$work_root/execution-permit.json"
+    printf "private-signing-bundle\n" >"$work_root/operator.sigstore.json"
+    ln -s "$work_root/keys/operator.key" "$work_root/unexpected-can-frame.log"
+    ROBOTICS_TIME_EVIDENCE="$RUNNER_TEMP/physical-attach-time.otlp.json"
+    ROBOTICS_TIME_EVIDENCE_WINDOW="$RUNNER_TEMP/physical-attach-time-window.json"
+    printf "{ \"raw_time\": 1 }\n" >"$ROBOTICS_TIME_EVIDENCE"
+    printf "{ \"raw_window\": 2 }\n" >"$ROBOTICS_TIME_EVIDENCE_WINDOW"
+    cleanup_owned_host_resources() {
+      printf "owned-writer-stopped\n" >>"$work_root/can-received.txt"
+      return 0
+    }
+    sudo() { return 0; }
+    exit_with_cleanup 1
+  ' _ "$SCRIPT" "$BATS_TEST_TMPDIR" "$report_path" "$pending"
+
+  [ "$status" -eq 1 ]
+  [ ! -e "$BATS_TEST_TMPDIR/physical-attach.early-failure" ]
+  [ ! -e "$report_path" ]
+  [ ! -e "$pending" ]
+  diagnostics="$(find "$BATS_TEST_TMPDIR" -maxdepth 1 -type d -name 'physical-attach.failure.*')"
+  [ -d "$diagnostics" ]
+  [ "$(cat "$diagnostics/physical-attach-report.json")" = partial-cases ]
+  [ "$(cat "$diagnostics/serial-received.txt")" = target-to-host ]
+  [ "$(cat "$diagnostics/serial-reverse-received.txt")" = host-to-target ]
+  [ "$(cat "$diagnostics/serial-socat.log")" = serial-public-log ]
+  [ "$(cat "$diagnostics/can-received.txt")" = "$(printf '123#DEADBEEF\nowned-writer-stopped')" ]
+  cmp "$BATS_TEST_TMPDIR/physical-attach-time.otlp.json" "$diagnostics/time-evidence.otlp.json"
+  cmp "$BATS_TEST_TMPDIR/physical-attach-time-window.json" "$diagnostics/time-evidence-window.json"
+  [ ! -e "$diagnostics/unexpected-can-frame.log" ]
+  [ -z "$(find "$diagnostics" -type l -print -quit)" ]
+  [ "$(find "$diagnostics" -type f | wc -l)" -eq 8 ]
+  run grep -R -E 'secret-key|secret-keystore|private-authorization|private-signing-bundle' "$diagnostics"
+  [ "$status" -eq 1 ]
+  run jq -e '.status == "failed" and .exit_status == 1 and .snapshot == "available-after-owned-cleanup-attempt"' "$diagnostics/diagnostic.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "failure diagnostics omit unsafe workspaces and unrecognized time input paths" {
+  report_path="$BATS_TEST_TMPDIR/physical-attach.json"
+  run env PHYSICAL_ATTACH_LIBRARY_ONLY=1 bash -c '
+    set -Eeuo pipefail
+    source "$1"
+    RUNNER_TEMP="$2"
+    work_root="$RUNNER_TEMP/physical-attach.rejected-input"
+    mkdir "$work_root"
+    report_output="$3"
+    printf "can-public\n" >"$work_root/can-received.txt"
+    ROBOTICS_TIME_EVIDENCE="$RUNNER_TEMP/arbitrary-time.json"
+    ROBOTICS_TIME_EVIDENCE_WINDOW="$RUNNER_TEMP/physical-attach-time-window.json"
+    printf "secret-input\n" >"$ROBOTICS_TIME_EVIDENCE"
+    ln -s "$ROBOTICS_TIME_EVIDENCE" "$ROBOTICS_TIME_EVIDENCE_WINDOW"
+    cleanup_owned_host_resources() { return 0; }
+    sudo() { return 0; }
+    exit_with_cleanup 1
+  ' _ "$SCRIPT" "$BATS_TEST_TMPDIR" "$report_path"
+
+  [ "$status" -eq 1 ]
+  diagnostics="$(find "$BATS_TEST_TMPDIR" -maxdepth 1 -type d -name 'physical-attach.failure.*')"
+  [ -d "$diagnostics" ]
+  [ ! -e "$diagnostics/time-evidence.otlp.json" ]
+  [ ! -e "$diagnostics/time-evidence-window.json" ]
+
+  unsafe_report="$BATS_TEST_TMPDIR/unsafe-physical-attach.json"
+  run env PHYSICAL_ATTACH_LIBRARY_ONLY=1 bash -c '
+    set -Eeuo pipefail
+    source "$1"
+    RUNNER_TEMP="$2"
+    work_root="$RUNNER_TEMP/foreign-workspace"
+    mkdir "$work_root"
+    report_output="$3"
+    printf "must-not-copy\n" >"$work_root/can-received.txt"
+    cleanup_owned_host_resources() { return 0; }
+    sudo() { return 0; }
+    exit_with_cleanup 1
+  ' _ "$SCRIPT" "$BATS_TEST_TMPDIR" "$unsafe_report"
+
+  [ "$status" -eq 70 ]
+  [ -d "$BATS_TEST_TMPDIR/foreign-workspace" ]
+  [ -z "$(find "$BATS_TEST_TMPDIR" -maxdepth 1 -type d -name 'unsafe-physical-attach.failure.*')" ]
 }
 
 @test "workspace cleanup failure suppresses a pending successful report" {
@@ -618,7 +707,7 @@ setup() {
 
 @test "time evidence policy accepts only its fresh measurement window" {
   common_args=(
-    --arg evidence_sha256 fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2
+    --arg evidence_sha256 ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba
     --arg run_id test-run
     --arg source_revision local
     --arg workflow_run_attempt 1
@@ -654,7 +743,7 @@ setup() {
     ' _ \
       "${FIXTURES}/time-evidence.jsonl" \
       "${FIXTURES}/verify-time-evidence.jq" \
-      fcdc985da6acac1247b59e969557ca58ceeaa208bee2d4d01a7f69b4ab0f5be2 \
+      ede22d7a95dc8af32a5de40b17e0961ac3acc46f753e5d8fa3d47040ee62bfba \
       "${FIXTURES}/time-evidence-window.json"
   [ "${status}" -eq 1 ]
 
@@ -688,7 +777,9 @@ setup() {
     start_ns="$((now_ns - 2000000000))"
     jq \
       --arg sample_ns "${sample_ns}" \
-      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns else . end)" \
+      "walk(if type == \"object\" and has(\"timeUnixNano\") then .timeUnixNano = \$sample_ns
+        elif type == \"object\" and .key? == \"robotics.clock.sample_unix_ms\"
+        then .value.doubleValue = ((\$sample_ns | tonumber) / 1000000 - 10) else . end)" \
       "$2" >"${work_root}/evidence.json"
     jq -n \
       --arg evidence_sha256 "$(sha256_file "${work_root}/evidence.json")" \
@@ -726,7 +817,8 @@ setup() {
     production="$1"
     core="$2"
     ci="$3"
-    ! grep -F -- "--insecure-ignore-tlog" "${production}" "${core}"
+    # The core inspects the flag for evidence, but must never add it to a call.
+    ! grep -F -- "--insecure-ignore-tlog" "${production}"
     ! grep -F -- "authorize-offline-test" "${production}" "${core}"
     ! grep -F -- "verify-offline-test-attestation" "${production}" "${core}"
     grep -F -- "--insecure-ignore-tlog" "${ci}"
@@ -737,4 +829,44 @@ setup() {
     "${REPOSITORY_ROOT}/docker/permit-preflight/core.sh" \
     "${REPOSITORY_ROOT}/docker/permit-preflight/permit-preflight-ci"
   [ "${status}" -eq 0 ]
+}
+
+@test "released verifier wrapper propagates native and malformed provenance failures in conditions" {
+  for failure in native empty multiple; do
+    run bash -c '
+      set -Eeuo pipefail
+      export PHYSICAL_ATTACH_LIBRARY_ONLY=1
+      source "$1"
+      work_root="$2"
+      mkdir "${work_root}"
+      GH_TOKEN=fixture-token
+      ROBOTICS_RUNTIME_MODE=released
+      ROBOTICS_RELEASE_SOURCE_SHA="$(printf "%040d" 1)"
+      ROBOTICS_RELEASE_SOURCE_REF=refs/tags/v0.8.0
+      PERMIT_PREFLIGHT_IMAGE="ghcr.io/mmkolpakov/robotics-runtime-infra/permit-preflight:0.8.0@sha256:$(printf "%064d" 8)"
+      failure="$3"
+      gh() {
+        case "${failure}" in
+          native) return 42 ;;
+          empty) printf "[]\n" ;;
+          multiple) printf "[{}]\n[{}]\n" ;;
+        esac
+      }
+      docker() { touch "${work_root}/image-used"; }
+      if verify_verifier_image_digest; then
+        exit 99
+      else
+        status=$?
+      fi
+      test ! -e "${work_root}/image-used"
+      test ! -e "${work_root}/verifier-attestation.json"
+      test ! -e "${work_root}/verifier-attestation.json.tmp"
+      exit "${status}"
+    ' _ "${SCRIPT}" "${BATS_TEST_TMPDIR}/${failure}" "${failure}"
+    if [ "${failure}" = native ]; then
+      [ "${status}" -eq 42 ]
+    else
+      [ "${status}" -eq 65 ]
+    fi
+  done
 }

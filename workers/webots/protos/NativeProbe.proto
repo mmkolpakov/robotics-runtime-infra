@@ -1,0 +1,21 @@
+#VRML_SIM R2025a utf8
+PROTO NativeProbe [] {
+  Robot {
+    name "rr-native-probe"
+    model "robotics-runtime-webots-native-v1"
+    controller "<extern>"
+    synchronization TRUE
+    supervisor TRUE
+    children [
+      Camera {
+        translation -1.2 0 0.8
+        name "native_camera"
+        width 96
+        height 64
+        fieldOfView 0.9
+        near 0.01
+        far 10
+      }
+    ]
+  }
+}

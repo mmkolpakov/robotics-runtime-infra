@@ -1,0 +1,46 @@
+services:
+  storage-init:
+    image: "${C18_NODE_IMAGE:?required}"
+    pull_policy: never
+    init: true
+    user: "0:0"
+    network_mode: none
+    entrypoint: [node, /app/init-storage.mjs]
+    volumes: [source:/run/robotics, retained:/retained]
+    labels:
+      org.robotics.runtime.run-id: "${C18_HOST_OWNER:?required}"
+  installed-host:
+    image: "${C18_NODE_IMAGE:?required}"
+    pull_policy: never
+    init: true
+    user: "1000:1000"
+    network_mode: none
+    read_only: true
+    mem_limit: 1g
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      C18_HOST_OWNER: "${C18_HOST_OWNER:?required}"
+      C18_HOST_PROJECT: "${C18_HOST_PROJECT:?required}"
+      C18_SOCKET_GID: "${C18_SOCKET_GID:?actual socket group required}"
+      C18_NODE_IMAGE: "${C18_NODE_IMAGE:?required}"
+      C18_SOURCE_VOLUME: "${C18_SOURCE_VOLUME:?required}"
+      C18_RETAINED_VOLUME: "${C18_RETAINED_VOLUME:?required}"
+      C18_DEPLOYMENT_HOST_ROOT: "${C18_DEPLOYMENT_HOST_ROOT:?required}"
+    volumes:
+      - source:/run/robotics
+      - retained:/retained
+      - "${C18_SOCKET:?required}:/engine.sock:ro"
+      - "${C18_DEPLOYMENT_HOST_ROOT:?required}:/inputs:ro"
+    labels:
+      org.robotics.runtime.run-id: "${C18_HOST_OWNER:?required}"
+volumes:
+  source:
+    name: "${C18_SOURCE_VOLUME:?required}"
+    labels:
+      org.robotics.runtime.storage-owner: "${C18_HOST_OWNER:?required}"
+      org.robotics.runtime.run-id: "${C18_HOST_OWNER:?required}"
+  retained:
+    external: true
+    name: "${C18_RETAINED_VOLUME:?required}"

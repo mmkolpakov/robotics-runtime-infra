@@ -83,10 +83,14 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
-@test "Gazebo clock bridges use the standard CLOCK QoS profile" {
+@test "Gazebo clock bridges configure queued reliable delivery for stepped observation" {
   local config=ros_ws/src/robotics_runtime_infra/config/clock_bridge.yaml
-  run grep -F 'qos_profile: CLOCK' "${config}"
+  # The live test_clock subscriber requests reliable delivery. Here retain the
+  # packaging check that every launch selects its shared bridge configuration.
+  run grep -F 'publisher_queue: 1000' "${config}"
   [ "${status}" -eq 0 ]
+  run grep -E '^[[:space:]]*qos_profile: CLOCK' "${config}"
+  [ "${status}" -eq 1 ]
 
   run grep -F 'clock_bridge.yaml' \
     ros_ws/src/robotics_runtime_infra/launch/headless.launch.py
@@ -117,18 +121,385 @@ setup() {
     ros_ws/src/robotics_runtime_infra/launch/gpu_lidar.launch.py
   [ "${status}" -eq 0 ]
 
-  run grep -F 'qos_profile=qos_profile_sensor_data' \
+  run grep -F 'qos_profile=QoSProfile(depth=1000, reliability=ReliabilityPolicy.RELIABLE)' \
     ros_ws/src/robotics_runtime_infra/test/test_clock.py
+  [ "${status}" -eq 0 ]
+}
+
+@test "UDP publication changes only the Clock and reference-topic writer boundaries" {
+  run python3 - config/fastdds/udp-only.xml <<'PYTHON'
+import xml.etree.ElementTree as ET
+import sys
+
+ns = {"dds": "http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles"}
+profiles = ET.parse(sys.argv[1]).getroot().find("dds:profiles", ns)
+assert profiles is not None
+participant = profiles.find("dds:participant[@is_default_profile='true']", ns)
+assert participant.findtext("dds:rtps/dds:useBuiltinTransports", namespaces=ns) == "false"
+assert [node.text for node in participant.findall("dds:rtps/dds:userTransports/dds:transport_id", ns)] == ["robotics_udp_v4"]
+assert [node.text for node in profiles.findall("dds:transport_descriptors/dds:transport_descriptor/dds:type", ns)] == ["UDPv4"]
+writers = profiles.findall("dds:data_writer", ns)
+assert len(writers) == 3
+assert sorted(node.get("profile_name") for node in writers) == ["/clock", "/example/sequence", "robotics_udp_writer"]
+for writer in writers:
+    expected = "ASYNCHRONOUS" if writer.get("profile_name") in {"/clock", "/example/sequence"} else "SYNCHRONOUS"
+    assert writer.findtext("dds:qos/dds:publishMode/dds:kind", namespaces=ns) == expected
+    assert writer.findtext("dds:qos/dds:data_sharing/dds:kind", namespaces=ns) == "OFF"
+    assert writer.findtext("dds:historyMemoryPolicy", namespaces=ns) == "PREALLOCATED_WITH_REALLOC"
+    assert writer.get("is_default_profile") == ("true" if expected == "SYNCHRONOUS" else None)
+reader = profiles.find("dds:data_reader[@profile_name='/clock']", ns)
+assert reader.findtext("dds:topic/dds:historyQos/dds:kind", namespaces=ns) == "KEEP_ALL"
+assert reader.findtext("dds:topic/dds:resourceLimitsQos/dds:max_samples", namespaces=ns) == "1000"
+assert reader.findtext("dds:qos/dds:reliability/dds:kind", namespaces=ns) == "RELIABLE"
+assert reader.findtext("dds:qos/dds:durability/dds:kind", namespaces=ns) == "VOLATILE"
+PYTHON
   [ "${status}" -eq 0 ]
 }
 
 @test "launch tests use distinct ROS domains" {
   cmake=ros_ws/src/robotics_runtime_infra/CMakeLists.txt
 
-  [ "$(grep -Ec 'ENV "ROS_DOMAIN_ID=[0-9]+"' "${cmake}")" -eq 5 ]
-  [ "$(
-    grep -Eo 'ROS_DOMAIN_ID=[0-9]+' "${cmake}" |
-      sort -u |
-      wc -l
-  )" -eq 5 ]
+  run python3 - "${cmake}" <<'PYTHON'
+import ast
+import re
+import shlex
+import sys
+from pathlib import Path
+
+cmake = Path(sys.argv[1])
+blocks = re.findall(r"\badd_launch_test\s*\(([^)]*)\)", cmake.read_text())
+assert blocks, "no launch tests registered"
+registered, domains = [], []
+for block in blocks:
+    name = shlex.split(block)[0]
+    registered.append(name)
+    values = re.findall(r'\bENV\s+"ROS_DOMAIN_ID=([0-9]+)"', block)
+    assert len(values) == 1, f"{name} requires exactly one explicit ROS domain"
+    domains.append(int(values[0]))
+launch_files = {
+    path.relative_to(cmake.parent).as_posix()
+    for path in (cmake.parent / "test").glob("test_*.py")
+    if any(isinstance(node, ast.FunctionDef) and node.name == "generate_test_description"
+           for node in ast.parse(path.read_text()).body)
+}
+assert set(registered) == launch_files, "launch test inventory differs from CMake registrations"
+assert len(registered) == len(set(registered)), "duplicate launch test registration"
+assert len(domains) == len(set(domains)), "launch tests share a ROS domain"
+PYTHON
+  [ "${status}" -eq 0 ]
+}
+
+prepare_playback_transport() {
+  local bin="${BATS_TEST_TMPDIR}/bin"
+  mkdir "${bin}"
+  export PLAYBACK_NATIVE_DOCKER
+  PLAYBACK_NATIVE_DOCKER="$(command -v docker)"
+  export PATH="${bin}:${PATH}"
+  export PLAYBACK_REPO_ROOT="${REPO_ROOT}"
+  export ROBOTICS_PLAYBACK_ARTIFACT_ROOT="${BATS_TEST_TMPDIR}/retained"
+  export PLAYBACK_TRACE="${BATS_TEST_TMPDIR}/docker-trace"
+  export PLAYBACK_LARGE_DOMAIN=87 PLAYBACK_NEGATIVE_DATA=0 PLAYBACK_LOG_FAILURE_DOMAIN=none
+  export PLAYBACK_WRONG_IMAGE=0 PLAYBACK_PLAYER_EXIT=0 PLAYBACK_WAIT_FAILURE=0 PLAYBACK_PLAYER_OOM=false PLAYBACK_PLAYER_RESTARTS=0
+  export ROBOTICS_FOUNDATION_LOCK="${REPO_ROOT}/config/foundation-lock.json" ROS_DISTRO=jazzy
+  export GITHUB_SHA
+  GITHUB_SHA="$(printf '%040d' 2)"
+  : "${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}"
+  : "${ROBOTICS_CONTRACTS_CLI:?use the installed contracts CLI}"
+  cat >"${bin}/ros2" <<'SH'
+#!/usr/bin/env bash
+[[ "$*" == 'pkg xml rmw_fastrtps_cpp --tag version' ]] || exit 64
+printf '8.4.1-fixture-package\n'
+SH
+  cat >"${bin}/docker" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${PLAYBACK_TRACE}"
+container_id() { printf '%s' "${ROS_DOMAIN_ID}-$1" | sha256sum | cut -d' ' -f1; }
+container_role() {
+  for role in playback playback-gate playback-probe; do
+    if [[ "$1" == "$(container_id "$role")" ]]; then printf '%s' "$role"; return; fi
+  done
+  exit 64
+}
+case "$1" in
+  image)
+    image_id="sha256:$(printf '%064d' 4)"
+    [[ "${*: -1}" != *edge* ]] || image_id="sha256:$(printf '%064d' 5)"
+    jq -n --arg id "${image_id}" '[{Id: $id, RepoDigests: []}]'
+    ;;
+  run) printf '0.26.9-fixture\n' ;;
+  compose)
+    original=("$@")
+    while (($#)); do
+      case "$1" in
+        config) exec "${PLAYBACK_NATIVE_DOCKER}" "${original[@]}" ;;
+        ps) container_id "${@: -1}"; printf '\n'; exit 0 ;;
+        up | wait) exit 0 ;;
+        down)
+          if [[ -f "${ROBOTICS_RUN_DIR:-}/runtime-manifest.json" ]]; then
+            printf 'retained-manifest-before-down\n' >>"${PLAYBACK_TRACE}"
+          fi
+          exit 0
+          ;;
+        run)
+          # Exercise the native flag parser before mocking only daemon execution.
+          native_prefix=()
+          for value in "${original[@]}"; do
+            [[ "${value}" != runtime-manifest ]] || break
+            native_prefix+=("${value}")
+          done
+          "${PLAYBACK_NATIVE_DOCKER}" "${native_prefix[@]}" --help >/dev/null
+          shift
+          while [[ "$1" != runtime-manifest ]]; do
+            if [[ "$1" == -e ]]; then
+              export "${2//\/run\/robotics/${ROBOTICS_RUN_DIR}}"
+              shift 2
+            else
+              shift
+            fi
+          done
+          shift
+          while IFS= read -r entry; do
+            export "${entry//\/run\/robotics/${ROBOTICS_RUN_DIR}}"
+          done < <(jq -r '.services["runtime-manifest"].environment |
+            to_entries[] | "\(.key)=\(.value)"' "${ROBOTICS_RUN_DIR}/compose.json")
+          if (($# == 0)); then
+            exec bash "${PLAYBACK_REPO_ROOT}/docker/runtime/emit-runtime-manifest" \
+              "${ROBOTICS_RUN_DIR}/runtime-manifest.json"
+          fi
+          argv=()
+          for value in "$@"; do
+            case "${value}" in
+              /opt/contracts/bin/python) argv+=("${ROBOTICS_FOUNDATION_PYTHON}") ;;
+              /tmp/create-playback-provider.py) argv+=("${PLAYBACK_REPO_ROOT}/scripts/ci/integration/create-playback-provider.py") ;;
+              robotics-contracts) argv+=("${ROBOTICS_CONTRACTS_CLI}") ;;
+              *) argv+=("${value//\/run\/robotics/${ROBOTICS_RUN_DIR}}") ;;
+            esac
+          done
+          exec "${argv[@]}"
+          ;;
+      esac
+      shift
+    done
+    exit 64
+    ;;
+  inspect)
+    role="$(container_role "${@: -1}")"
+    if [[ "$*" == *'{{.Image}}'* ]]; then
+      image_id="sha256:$(printf '%064d' 4)"
+      [[ "$role" != playback-probe ]] || image_id="sha256:$(printf '%064d' 5)"
+      [[ "${PLAYBACK_WRONG_IMAGE}" != 1 ]] || image_id="sha256:$(printf '%064d' 6)"
+      printf '%s\n' "${image_id}"
+    elif [[ "$*" == *'{{.State.ExitCode}}'* ]]; then
+      if [[ "${ROS_DOMAIN_ID}-$role" == 86-playback-gate ]]; then printf '1\n'
+      elif [[ "${ROS_DOMAIN_ID}-$role" == 86-playback-probe ]]; then printf '124\n'
+      else printf '0\n'; fi
+    else
+      exited=false
+      [[ ! -f "${ROBOTICS_RUN_DIR}/player-exited" ]] || exited=true
+      jq -n --arg id "${@: -1}" --arg image "sha256:$(printf '%064d' 4)"         --arg project "playback-ready-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"         --argjson exited "$exited" --argjson code "${PLAYBACK_PLAYER_EXIT}"         --argjson oom "${PLAYBACK_PLAYER_OOM}" --argjson restarts "${PLAYBACK_PLAYER_RESTARTS}"         --slurpfile model "${ROBOTICS_RUN_DIR}/compose.json"         '[{Id:$id,Image:$image,RestartCount:$restarts,
+          Config:{Cmd:$model[0].services.playback.command,
+            Labels:{"com.docker.compose.project":$project,"com.docker.compose.service":"playback"}},
+          State:{Status:(if $exited then "exited" else "running" end),Running:($exited|not),
+            ExitCode:$code,OOMKilled:$oom,Dead:false}}]'
+    fi
+    ;;
+  wait)
+    role="$(container_role "${@: -1}")"
+    [[ "$role" == playback ]] || exit 64
+    if ((PLAYBACK_WAIT_FAILURE)); then exit "${PLAYBACK_WAIT_FAILURE}"; fi
+    touch "${ROBOTICS_RUN_DIR}/player-exited"
+    printf '%s\n' "${PLAYBACK_PLAYER_EXIT}"
+    ;;
+  logs)
+    role="$(container_role "${@: -1}")"
+    if [[ "$role" == playback-probe ]]; then
+      if [[ "${ROS_DOMAIN_ID}" == 87 || "${PLAYBACK_NEGATIVE_DATA}" == 1 ]]; then
+        printf 'data: 42\n'
+      fi
+      if [[ "${ROS_DOMAIN_ID}" == "${PLAYBACK_LARGE_DOMAIN}" ]]; then
+        printf '%262144s\n' ''
+      fi
+      [[ "${ROS_DOMAIN_ID}" != "${PLAYBACK_LOG_FAILURE_DOMAIN}" ]] || exit 42
+    elif [[ "$role" == playback ]]; then
+      printf 'stock player terminated\n'
+    else
+      printf 'resume accepted\n'
+    fi
+    ;;
+  *) exit 64 ;;
+esac
+SH
+  chmod +x "${bin}/docker" "${bin}/ros2"
+}
+
+@test "MCAP playback accepts large logs and retains a byte-bound manifest before cleanup" {
+  prepare_playback_transport
+  run bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *'playback timeout fixture failed closed'* ]]
+  [ "$(grep -c '^logs ' "${PLAYBACK_TRACE}")" -eq 5 ]
+  [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
+  [ "$(grep -c '^retained-manifest-before-down$' "${PLAYBACK_TRACE}")" -eq 1 ]
+  local ready timeout
+  ready="$(find "${ROBOTICS_PLAYBACK_ARTIFACT_ROOT}" -maxdepth 1 -name 'ready.*' -type d)"
+  timeout="$(find "${ROBOTICS_PLAYBACK_ARTIFACT_ROOT}" -maxdepth 1 -name 'timeout.*' -type d)"
+  run "${ROBOTICS_CONTRACTS_CLI}" validate --quiet "${ready}/runtime-manifest.json" \
+    "${ready}/conformance-result.json"
+  [ "${status}" -eq 0 ]
+  [ "$(stat -c '%s' "${ready}/logs/playback-probe.log")" -gt 262144 ]
+  [ -f "${timeout}/observation.json" ]
+  [ ! -e "${timeout}/runtime-manifest.json" ]
+  local moved="${BATS_TEST_TMPDIR}/downloaded-case"
+  cp -R "${ready}" "${moved}"
+  cmp "${ready}/runtime-manifest.json" "${moved}/runtime-manifest.json"
+  cmp "${ready}/conformance-result.json" "${moved}/conformance-result.json"
+  rm -rf -- "${ready}"
+  run "${ROBOTICS_CONTRACTS_CLI}" validate --quiet "${moved}/runtime-manifest.json" \
+    "${moved}/conformance-result.json" "${moved}/profile.json"
+  [ "${status}" -eq 0 ]
+  run "${ROBOTICS_FOUNDATION_PYTHON}" - "${ready}" "${moved}" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+original, moved = map(Path, sys.argv[1:])
+result = json.loads((moved / "conformance-result.json").read_bytes())
+manifest = json.loads((moved / "runtime-manifest.json").read_bytes())
+binding = manifest["provider_bindings"][0]
+assert binding["conformance_result_sha256"] == hashlib.sha256(
+    (moved / "conformance-result.json").read_bytes()).hexdigest()
+assert binding["qualification_profile_sha256"] == hashlib.sha256(
+    (moved / "profile.json").read_bytes()).hexdigest()
+for ref in result["evidence"]:
+    relative = Path(unquote(urlparse(ref["uri"]).path)).relative_to(original)
+    raw = (moved / relative).read_bytes()
+    assert len(raw) == ref["size_bytes"]
+    assert hashlib.sha256(raw).hexdigest() == ref["sha256"]
+PY
+  [ "${status}" -eq 0 ]
+}
+
+@test "MCAP playback timeout rejects data before a log tail larger than the pipe buffer" {
+  prepare_playback_transport
+  run env PLAYBACK_LARGE_DOMAIN=86 PLAYBACK_NEGATIVE_DATA=1 \
+    bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -eq 1 ]
+  [[ "${output}" != *'playback timeout fixture failed closed'* ]]
+  [ "$(grep -c "^logs $(printf '%s' '86-playback-probe' | sha256sum | cut -d' ' -f1)$" "${PLAYBACK_TRACE}")" -eq 1 ]
+  [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
+}
+
+@test "MCAP playback preserves failed log retrieval even after matching data" {
+  prepare_playback_transport
+  run env PLAYBACK_LARGE_DOMAIN=86 PLAYBACK_NEGATIVE_DATA=1 PLAYBACK_LOG_FAILURE_DOMAIN=86 \
+    bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -eq 42 ]
+  [[ "${output}" != *'playback timeout fixture failed closed'* ]]
+  [ "$(grep -c "^logs $(printf '%s' '86-playback-probe' | sha256sum | cut -d' ' -f1)$" "${PLAYBACK_TRACE}")" -eq 1 ]
+  [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
+}
+
+@test "MCAP playback refuses an actual image mismatch without a passing binding" {
+  prepare_playback_transport
+  run env PLAYBACK_WRONG_IMAGE=1 bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -ne 0 ]
+  [ -z "$(find "${ROBOTICS_PLAYBACK_ARTIFACT_ROOT}" -name conformance-result.json)" ]
+  [ -n "$(find "${ROBOTICS_PLAYBACK_ARTIFACT_ROOT}" -name observation.json)" ]
+}
+
+@test "MCAP playback binds configured bag QoS and options instead of golden defaults" {
+  prepare_playback_transport
+  mkdir "${BATS_TEST_TMPDIR}/dataset"
+  cp -R test/fixtures/playback/golden "${BATS_TEST_TMPDIR}/dataset/selected"
+  cp -R config/playback "${BATS_TEST_TMPDIR}/qos"
+  mv "${BATS_TEST_TMPDIR}/dataset/selected/golden_0.mcap" \
+    "${BATS_TEST_TMPDIR}/dataset/selected/selected-sequence.mcap"
+  sed -i 's/golden_0.mcap/selected-sequence.mcap/g' "${BATS_TEST_TMPDIR}/dataset/selected/metadata.yaml"
+  printf '\n# selected recording bytes\n' >>"${BATS_TEST_TMPDIR}/dataset/selected/metadata.yaml"
+  printf '\n# selected QoS bytes\n' >>"${BATS_TEST_TMPDIR}/qos/qos-overrides.yaml"
+  local selected="${BATS_TEST_TMPDIR}/dataset/selected"$'\n'
+  mv "${BATS_TEST_TMPDIR}/dataset/selected" "${selected}"
+  run env ROBOTICS_DATASET_DIR="${selected}" ROBOTICS_PLAYBACK_BAG=/datasets \
+    ROBOTICS_PLAYBACK_CONFIG_DIR="${BATS_TEST_TMPDIR}/qos" ROBOTICS_PLAYBACK_RATE=2.0 \
+    bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "${status}" -eq 0 ]
+  local ready
+  ready="$(find "${ROBOTICS_PLAYBACK_ARTIFACT_ROOT}" -maxdepth 1 -name 'ready.*' -type d)"
+  cmp "${selected}/metadata.yaml" "${ready}/source/bag/metadata.yaml"
+  cmp "${selected}/selected-sequence.mcap" \
+    "${ready}/source/bag/selected-sequence.mcap"
+  [ ! -e "${ready}/source/bag/golden_0.mcap" ]
+  run jq -e --arg dataset "${ready}/source" --arg qos "${ready}/source/qos" '
+    .services.playback.volumes |
+    any(.[]; .target == "/datasets" and .source == $dataset and .read_only == true) and
+    any(.[]; .target == "/etc/robotics/playback" and .source == $qos and .read_only == true)
+  ' "${ready}/compose.json"
+  [ "${status}" -eq 0 ]
+  cmp "${BATS_TEST_TMPDIR}/qos/qos-overrides.yaml" "${ready}/source/qos/qos-overrides.yaml"
+  run jq -e '.playback_command | .[index("--rate") + 1] == "2.0" and
+    .[index("--input") + 1] == "/datasets/bag"' "${ready}/configuration/provider.json"
+  [ "${status}" -eq 0 ]
+}
+
+
+@test "MCAP playback requires native zero exit after bounded player wait before cleanup" {
+  prepare_playback_transport
+  run bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 0 ]
+  local ready
+  ready="$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -maxdepth 1 -name 'ready.*' -type d)"
+  run jq -e '.wait_client_exit_code == 0 and .reported_player_exit_code == "0" and
+    .stop_requested_before_wait == false and .deadline_seconds == 75' "$ready/player-terminal.json"
+  [ "$status" -eq 0 ]
+  run jq -e '.[0].State.Status == "exited" and .[0].State.Running == false and
+    .[0].State.ExitCode == 0 and .[0].State.OOMKilled == false and .[0].RestartCount == 0' "$ready/player-after-wait.json"
+  [ "$status" -eq 0 ]
+  local waited cleanup
+  waited="$(grep -n '^wait ' "$PLAYBACK_TRACE" | head -n1 | cut -d: -f1)"
+  cleanup="$(grep -n ' down --volumes --remove-orphans$' "$PLAYBACK_TRACE" | head -n1 | cut -d: -f1)"
+  [ "$waited" -lt "$cleanup" ]
+  [ -f "$ready/logs/playback-player.log" ]
+}
+
+@test "MCAP playback preserves native nonzero player exit without a passing manifest" {
+  prepare_playback_transport
+  run env PLAYBACK_PLAYER_EXIT=17 bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -ne 0 ]
+  [ -n "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name player-terminal.json)" ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+}
+
+@test "MCAP playback preserves native wait refusal without a passing manifest" {
+  prepare_playback_transport
+  run env PLAYBACK_WAIT_FAILURE=124 bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 124 ]
+  [ -n "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name player-wait.stderr)" ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+}
+
+@test "MCAP playback refuses OOM or restarted player without a passing manifest" {
+  prepare_playback_transport
+  run env PLAYBACK_PLAYER_OOM=true bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -ne 0 ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+  run env PLAYBACK_PLAYER_RESTARTS=1 bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -ne 0 ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+}
+
+
+@test "MCAP playback retained terminal validator rejects missing or forged native outcomes" {
+  run "${ROBOTICS_FOUNDATION_PYTHON}" -m unittest discover -s test/ci -p test_playback_terminal.py -v
+  [ "$status" -eq 0 ]
+}
+
+@test "MCAP released playback refuses missing authenticated lock before daemon effects" {
+  prepare_playback_transport
+  run env ROBOTICS_RUNTIME_MODE=released ROBOTICS_FOUNDATION_RELEASE_TAG=v0.11.0-rc1     ROBOTICS_FOUNDATION_RELEASE_LOCK= bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"requires a release lock"* ]]
+  [ ! -s "$PLAYBACK_TRACE" ]
 }

@@ -1,0 +1,153 @@
+{
+  "owner_id": "c14-5577de9995644fa5a54e73bcc43131b6",
+  "status": "error",
+  "samples": [
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.0,
+      "after_seconds": 0.016,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.99748864
+      ]
+    },
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.016,
+      "after_seconds": 0.032,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.99246592
+      ]
+    },
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.032,
+      "after_seconds": 0.048,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.98493184
+      ]
+    },
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.048,
+      "after_seconds": 0.064,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.9748864
+      ]
+    },
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.064,
+      "after_seconds": 0.08,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.9623296
+      ]
+    },
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.08,
+      "after_seconds": 0.096,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.94726144
+      ]
+    },
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.096,
+      "after_seconds": 0.112,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.92968192
+      ]
+    },
+    {
+      "request_ms": 16,
+      "result": 0,
+      "before_seconds": 0.112,
+      "after_seconds": 0.128,
+      "body_position_m": [
+        0.0,
+        0.0,
+        0.90959104
+      ]
+    }
+  ],
+  "time": {
+    "authority": "Webots Supervisor.getTime",
+    "native_unit": "seconds",
+    "representation": "float64",
+    "epoch": "c14-5577de9995644fa5a54e73bcc43131b6:initial"
+  },
+  "camera": {
+    "enabled": false,
+    "timestamp_origin": "controller Supervisor.getTime observation after step; no camera timestamp API",
+    "sampling_period_ms": 0
+  },
+  "reset": {
+    "requested": true,
+    "api": "Supervisor.simulationReset",
+    "before_seconds": 0.128,
+    "observed": false
+  },
+  "world": {
+    "path": "/opt/robotics/webots/worlds/native.wbt",
+    "source_ref": {
+      "uri": "file:///run/robotics/output/inputs/native.wbt",
+      "sha256": "71d46273c8e096a17ed27432522156783f5bf6f50a2314edf88654b635842f8b",
+      "size_bytes": 999
+    },
+    "title": "robotics-runtime Webots native fixture v1",
+    "random_seed": 1,
+    "optimal_thread_count": 1,
+    "coordinate_system": "ENU",
+    "basic_time_step_ms": 16.0
+  },
+  "robot": {
+    "name": "rr-native-probe",
+    "model": "robotics-runtime-webots-native-v1",
+    "node_id": 16,
+    "synchronization": true,
+    "synchronization_native_value": 1
+  },
+  "initial_state": {
+    "time_seconds": 0.0,
+    "body_position_m": [
+      0.0,
+      0.0,
+      1.0
+    ]
+  },
+  "last_native_state": {
+    "time_seconds": 0.128,
+    "body_position_m": [
+      0.0,
+      0.0,
+      0.90959104
+    ],
+    "epoch": "c14-5577de9995644fa5a54e73bcc43131b6:initial"
+  },
+  "last_native_state_ref": {
+    "uri": "file:///run/robotics/output/last-native-state.json",
+    "sha256": "3099d0e5ecb6e737d87df1ecd8c297944459573469129d5fe05a1b02a996ac8b",
+    "size_bytes": 148
+  }
+}

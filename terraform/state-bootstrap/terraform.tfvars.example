@@ -1,0 +1,11 @@
+aws_region       = "REPLACE_WITH_REGION"
+aws_account_id   = "REPLACE_WITH_ACCOUNT_ID"
+state_bucket_name = "REPLACE_WITH_STATE_BUCKET"
+state_keys = ["bootstrap/terraform.tfstate", "foundation/terraform.tfstate"]
+state_operator_role_arns = ["arn:aws:iam::REPLACE_WITH_ACCOUNT_ID:role/REPLACE_WITH_DEPLOYMENT_ROLE"]
+tags = {
+  Product = "REPLACE_WITH_PRODUCT"
+  Environment = "REPLACE_WITH_ENVIRONMENT"
+  Owner = "REPLACE_WITH_OWNER"
+  CostCenter = "REPLACE_WITH_COST_CENTER"
+}

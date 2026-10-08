@@ -39,7 +39,7 @@ jq -e '
   .services["edge-attach-observer"].network_mode ==
     "service:edge-attach-data-plane" and
   (.services["edge-attach-observer"].command |
-    index("--otel-metrics")) == null
+    index("--otel-metrics")) != null
 ' tmp/edge-attach-compose.json >/dev/null
 jq -e '
   (.services | keys | sort) == [

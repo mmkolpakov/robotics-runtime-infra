@@ -1,13 +1,13 @@
 ---
-schema_version: acceptance-scenario.v5
+schema_version: acceptance-scenario.v1
 scenario_id: org.example.runtime-infra.zenoh-transport
 execution:
   target_environment: simulation
   hardware_scope: []
   physical_effect: none
   test_intent: interface_smoke
-  data_source: gazebo
-  plant_backend: gazebo_physics
+  data_source: simulator
+  plant_backend: simulated_physics
   time_mode: simulation_realtime
   data_plane_profile: standard_isolated
   security_profile: none
@@ -31,6 +31,9 @@ expected_ros_graph:
   lifecycle_nodes: []
 metric_definitions: []
 assertions: []
+evaluator_requirements: []
+provider_requirements:
+  capabilities: [simulated_physics]
 time_policy:
   min_realtime_factor: 0.8
   max_deadline_miss_ratio: 0.01

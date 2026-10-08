@@ -5,7 +5,7 @@ set -Eeuo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 ci_enter_repo
 mkdir -p tmp
-ci_yq -o=json test/acceptance/stepped-smoke.yaml \
+ci_yq -o=json examples/minimal-consumer/scenario.yaml \
   > tmp/stepped-smoke.json
 test "$(ci_policy_deny_count policy/scenario.rego scenario tmp/stepped-smoke.json)" -eq 0
 ci_yq -o=json test/zenoh/scenario.yaml \

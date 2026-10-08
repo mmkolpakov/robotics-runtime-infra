@@ -1,7 +1,13 @@
 # Runtime Image Lock
 
 This repository has two explicit execution modes. They serve different
-purposes and must not be mixed within one run.
+purposes and must not be mixed within one run. Architecture C is the selected
+target; its separate host asset lock and worker qualifications are introduced
+by implementation commits and are not supplied by the historical OCI lock.
+
+[The qualification baseline](qualification-baseline.md) distinguishes accepted
+R9, published R10 and the failed neutral-robot B3 attempt. Source validation,
+release authenticity and live consumer acceptance are separate gates.
 
 ## Source Mode
 
@@ -19,10 +25,12 @@ qualification claim.
 
 ## Released Mode
 
-Released mode pulls immutable images listed in `release.env`:
+Released mode pulls immutable images listed in the selected release's unchanged
+`release.env`. This R10 example illustrates image selection; it does not claim
+that the neutral-robot consumer passed:
 
 ```bash
-gh release download v0.8.0-rc.1 \
+gh release download v0.10.0-rc.1 \
   --repo mmkolpakov/robotics-runtime-infra \
   --pattern release.env
 docker compose --env-file release.env pull simulation
@@ -39,8 +47,8 @@ selected by the registry.
 The lock also sets `ROBOTICS_RUNTIME_MODE=released` and records the exact
 release source commit and tag ref. The resolved Compose model records the
 runtime mode, and `policy/release-images.rego` rejects any internal
-`local/*:dev` fallback. Source mode remains the default only when no release
-lock is supplied.
+`local/*:dev` fallback, including a consumer's own local image. Source mode remains
+the default only when no release lock is supplied.
 
 Physical-attach tooling accepts a released `PERMIT_PREFLIGHT_IMAGE` only from
 the canonical release repository at an OCI digest. In source mode, the
@@ -63,6 +71,25 @@ filled with a guessed digest, a mutable tag, or a digest copied from another
 target. The target enters the lock only after its own OCI manifest has been
 published and its registry digest is known.
 
+## Caller, tooling and image source
+
+The workflow caller selects its own scenario and artifacts. The reusable
+workflow ref and `tooling_ref` must select the same reviewed full infra SHA.
+This tooling identity may differ from the source SHA attested for the images.
+The canonical release tag and exact lock select the images independently.
+
+The retained B3 attempt used caller `63c33dd4a3cb1091876fbe38b0310c7bd942a5c9`,
+tooling `9944f0cc6ffd7fe16e14192f85887a06be59435a` and R10 image source
+`d6dc8a1c6b976faacab7b371821e9af54b9883c2`. Its Python workspace source was
+`dc02c62897372514537cf241f06dc71b9f960c44`. The image attestations bind the
+image source, not the caller or successful business outcome.
+
+A downloaded qualification package verified with its included ephemeral key
+establishes integrity under that key. Trusted producer verification requires
+an independently selected key or qualification policy and trusted root. A
+failed readiness run retains diagnostic subjects; it is not a successful
+qualification package.
+
 ## Updates
 
 Every release produces a new lock from the declarative image inventory in
@@ -73,16 +100,29 @@ source dependency updater cannot invent or modify released image records.
 
 ## Policy Check
 
+`scripts/ci/foundation/run-acceptance.sh` applies the scenario policy to its
+private copy of the caller's scenario before creating the run. It parses that
+copy with the contracts loader used by the verifier. It then applies the
+release-image policy to the final resolved Compose model before starting any
+runtime service, including the separate edge-attach model when selected.
+The reusable qualification workflow calls this same entrypoint. A caller's
+`ROBOTICS_RUNTIME_MODE` takes precedence over a consumer's Compose extension,
+including when `include` omits that extension from its result. Unknown modes
+fail closed. The evaluated JSON inputs are retained with successful run evidence.
+
+Direct `docker compose` commands do not invoke OPA automatically; the manual
+check below is required when operating outside that entrypoint.
+
 `policy/release-images.rego` evaluates resolved Docker Compose JSON. It rejects
 references in this repository's GHCR namespace unless they contain a complete
 SHA-256 digest:
 
 ```bash
-docker compose --env-file release.env config --format json |
+test "$(docker compose --env-file release.env config --format json |
   opa eval --stdin-input \
     --data policy/release-images.rego \
-    --format pretty \
-    'data.release_images.deny'
+    --format raw \
+    'count(data.release_images.deny)')" -eq 0
 ```
 
 The policy intentionally accepts `local/*:dev` references used by source mode.

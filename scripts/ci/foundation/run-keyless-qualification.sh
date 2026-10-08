@@ -8,7 +8,7 @@ source "${script_dir}/lib.sh"
 
 root="$(foundation_repository_root)"
 cd "${root}"
-readonly foundation_project="${root}/tooling/foundation"
+readonly foundation_project="${root}/dependencies/robotics-runtime"
 
 foundation_require_env \
   ACTIONS_ID_TOKEN_REQUEST_TOKEN \
@@ -32,7 +32,7 @@ expected_identity="$(
   ' "${policy}"
 )"
 actual_identity="https://github.com/${GITHUB_WORKFLOW_REF}"
-[[ "${GITHUB_REPOSITORY}" == mmkolpakov/robotics-runtime-infra ]] || {
+[[ "${GITHUB_REPOSITORY}" == "$(jq -er '.infra.repository' "${root}/config/trust/identities.json")" ]] || {
   printf 'keyless qualification is restricted to the canonical repository\n' >&2
   exit 65
 }
@@ -50,52 +50,28 @@ actual_identity="https://github.com/${GITHUB_WORKFLOW_REF}"
   exit 65
 }
 
-uv sync --project "${foundation_project}" --locked --no-default-groups --no-editable
+uv sync --project "${foundation_project}" --locked --all-packages --no-default-groups --no-editable
 uv pip check --python "${foundation_project}/.venv/bin/python"
 export ROBOTICS_CONTRACTS_CLI="${foundation_project}/.venv/bin/robotics-contracts"
 
-mapfile -t mcap_summaries < <(
-  find artifacts -maxdepth 1 -type f -name '*.mcap-summary.json' -print |
-    LC_ALL=C sort
-)
-mapfile -t mcap_files < <(
-  find artifacts/raw-mcap -maxdepth 1 -type f -name '*.mcap' -print |
-    LC_ALL=C sort
-)
-test "${#mcap_summaries[@]}" -ge 1
-test "${#mcap_files[@]}" -eq "${#mcap_summaries[@]}"
+qualification_package="${ROBOTICS_FOUNDATION_QUALIFICATION_PACKAGE:-${root}/artifacts/qualification}"
+test -s "${qualification_package}/qualification-arguments.txt"
+test -s "${qualification_package}/qualification-statement.json"
+cd "${qualification_package}"
+mapfile -t qualification_inputs <qualification-arguments.txt
 
-qualification_inputs=(
-  --scenario artifacts/scenario.yaml
-  --runtime-manifest primary=artifacts/runtime-manifest.json
-  --acceptance-run artifacts/acceptance-run.json
-  --result primary=artifacts/acceptance-results/acceptance-result.json
-  --aggregate artifacts/acceptance-results/acceptance-aggregate.json
-  --evidence-index primary=artifacts/evidence-index.json
-  --evidence metrics:metrics.otlp.json=artifacts/metrics.otlp.json
-  --evidence junit:junit.xml=artifacts/acceptance-results/junit.xml
-  --evidence other_evidence:fastdds-profile.xml=artifacts/fastdds-profile.xml
-  --evidence other_evidence:host-topology.json=artifacts/host-topology.json
-  --evidence other_evidence:runtime-resources.json=artifacts/runtime-resources.json
-)
-for index in "${!mcap_summaries[@]}"; do
-  qualification_inputs+=(
-    --mcap-summary "primary-${index}=${mcap_summaries[$index]}"
-    --evidence "raw_mcap:primary-${index}.mcap=${mcap_files[$index]}"
-  )
-done
-
-bundle="artifacts/qualification.keyless.sigstore.json"
+bundle="qualification.keyless.sigstore.json"
 cosign attest-blob --yes \
   --use-signing-config=true \
   --trusted-root "${trusted_root}" \
-  --statement artifacts/qualification-statement.json \
+  --statement qualification-statement.json \
   --bundle "${bundle}"
-scripts/qualification/verify-bundle \
+"${root}/scripts/qualification/verify-bundle" \
+  "${qualification_inputs[@]}" \
   --bundle "${bundle}" \
   --trusted-root "${trusted_root}" \
-  --policy "${policy}" \
-  "${qualification_inputs[@]}"
+  --policy "${policy}"
 
-cp "${policy}" artifacts/qualification-policy.json
-cp "${trusted_root}" artifacts/qualification.trusted-root.json
+# These copies record the signing configuration; verifiers pin their own trust inputs.
+cp "${policy}" qualification-policy.json
+cp "${trusted_root}" qualification.trusted-root.json

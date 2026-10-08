@@ -1,0 +1,91 @@
+---
+services:
+  storage-init:
+    image: node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697
+    pull_policy: never
+    user: "0:0"
+    network_mode: none
+    command: [node, /fixture/storage.mjs, init]
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input
+      - ./host/tools/storage.mjs:/fixture/storage.mjs:ro
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+  storage-worker:
+    image: node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697
+    pull_policy: never
+    user: "10001:1000"
+    network_mode: none
+    read_only: true
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [node, /fixture/storage.mjs, worker]
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input:ro
+      - ./host/tools/storage.mjs:/fixture/storage.mjs:ro
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+  storage-host:
+    init: true
+    image: node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697
+    pull_policy: never
+    user: "1000:1000"
+    network_mode: none
+    read_only: true
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [node, /fixture/storage.mjs, host]
+    depends_on:
+      storage-worker:
+        condition: service_completed_successfully
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input
+      - ./host/tools/storage.mjs:/fixture/storage.mjs:ro
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+  host-image:
+    init: true
+    image: "${HOST_IMAGE:-local/robotics-runtime-infra/host:dev}"
+    profiles: [host-preflight]
+    pull_policy: never
+    user: "1000:1000"
+    network_mode: none
+    read_only: true
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [node]
+    command: [/fixture/host-image-preflight.mjs]
+    depends_on:
+      storage-host:
+        condition: service_completed_successfully
+    environment:
+      ROBOTICS_EXPECTED_INIT_SHA256: "${ROBOTICS_EXPECTED_INIT_SHA256:-}"
+      ROBOTICS_ENGINE_ROOTLESS_UID: "${ROBOTICS_ENGINE_ROOTLESS_UID:-}"
+      ROBOTICS_ENGINE_ROOTLESS_GID: "${ROBOTICS_ENGINE_ROOTLESS_GID:-}"
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input
+      - ./host/tools/host-image-preflight.mjs:/fixture/host-image-preflight.mjs:ro
+      - type: bind
+        source: "${ROBOTICS_ENGINE_HOST_SOCKET:-/run/robotics-ci/engine.sock}"
+        target: /run/engine.sock
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+volumes:
+  run-data:
+    name: "${ROBOTICS_RUN_ID:?run owner required}-data"
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+  run-input:
+    name: "${ROBOTICS_RUN_ID:?run owner required}-input"
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"

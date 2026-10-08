@@ -1,0 +1,45 @@
+---
+- name: Observe canonical physical store paths before any permission changes
+  ansible.builtin.command:
+    argv: [/usr/bin/realpath, --canonicalize-missing, --, "{{ robotics_node_file_root }}{{ item }}"]
+  loop: "{{ [robotics_node_authorization_dir, robotics_node_nonce_dir] }}"
+  register: robotics_node_canonical_stores
+  changed_when: false
+  check_mode: false
+
+- name: Reject physical stores reached through ancestor symlinks
+  ansible.builtin.assert:
+    that:
+      - item.stdout == robotics_node_file_root + item.item
+  loop: "{{ robotics_node_canonical_stores.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Observe physical store paths without following links
+  ansible.builtin.stat:
+    path: "{{ robotics_node_file_root }}{{ item }}"
+    follow: false
+  loop: "{{ [robotics_node_authorization_dir, robotics_node_nonce_dir] }}"
+  register: robotics_node_store_paths
+
+- name: Reject physical store symlinks
+  ansible.builtin.assert:
+    that:
+      - not item.stat.islnk | default(false)
+  loop: "{{ robotics_node_store_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Install physical attach directory permissions
+  ansible.builtin.file:
+    path: "{{ robotics_node_file_root }}{{ item.path }}"
+    state: directory
+    follow: false
+    owner: "10002"
+    group: "10002"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ robotics_node_authorization_dir }}"
+      mode: "0755"
+    - path: "{{ robotics_node_nonce_dir }}"
+      mode: "0700"

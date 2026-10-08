@@ -4,543 +4,132 @@
 [![Foundation integration](https://github.com/mmkolpakov/robotics-runtime-infra/actions/workflows/foundation-integration.yml/badge.svg)](https://github.com/mmkolpakov/robotics-runtime-infra/actions/workflows/foundation-integration.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Run portable ROS 2 workloads from a developer machine to qualification hosts
-without coupling the runtime platform to one robot or product.
+Worker environments, deployment and qualification for
+[robotics-runtime](https://github.com/mmkolpakov/robotics-runtime).
+Use this repository to launch a composition, record the actual runtime and
+retain evidence for independent verification.
 
-Use this repository to:
+Product repositories supply scenes, robot descriptions, control logic, cameras
+and vision models. Contracts validate documents; the attach-only harness
+observes and evaluates executions. They do not launch this repository's services.
 
-1. **Run** headless ROS 2 Jazzy simulation, sensor, playback, recording, and
-   edge services through Docker Compose.
-2. **Select** an explicit CPU, accelerator, or device profile without hidden
-   provider fallback.
-3. **Prove** what ran with runtime manifests, MCAP and OpenTelemetry evidence,
-   and an attach-only acceptance observer.
+## Execution profiles
 
-This repository owns the execution environment. Consuming repositories own
-scenes, robot descriptions, models, hardware drivers, and control logic.
+The published OCI release is `v0.11.0-rc2`. It supplies the retained ROS 2
+Jazzy/Gazebo Harmonic and portable worker profiles. The source foundation and
+released image lock have separate identities:
+[compatibility](docs/compatibility.md) and
+[foundation lock](docs/foundation-compatibility.md).
 
-Compatibility, maturity, and supply-chain claims are documented in
-[Compatibility](docs/compatibility.md),
-[Quality Declaration](QUALITY_DECLARATION.md), and
-[Supply-Chain Declaration](docs/supply-chain.md). Accepted architectural
-decisions are indexed under [docs/decisions](docs/decisions/README.md).
+Gazebo, Webots and Isaac providers use their own native APIs, assets and
+environments. Each execution profile has a separate qualification scope;
+simulator support does not imply the same autopilot, rendering or hardware
+support in every engine.
 
-## Where It Fits
+## Architecture
 
-```mermaid
-flowchart LR
-    product["Product repository<br/>worlds, robots, models, drivers, behavior"]
-    infra["Runtime infra<br/>start services, expose facts, capture evidence"]
-    execution["Running ROS 2 execution"]
-    harness["Acceptance harness<br/>observe, evaluate, report"]
-    result["Acceptance result<br/>JSON and JUnit"]
-    contracts["Runtime contracts<br/>scenario, runtime, evidence, result"]
+The local execution view shows owned worker environments and retained results.
+The shared C4 model and generated diagrams are maintained in robotics-runtime.
 
-    product --> infra --> execution --> harness --> result
-    contracts -. validates .-> product
-    contracts -. validates .-> infra
-    contracts -. validates .-> harness
-```
+![Local execution topology: composition host, owned workers and retained results](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/ExecutionDeployment.svg "Local execution — source topology")
 
-The end-to-end handoff is machine-readable: a product repository supplies its
-workload and scenario, runtime infra emits observed runtime and evidence facts,
-and the harness emits an acceptance result plus JUnit. Each layer can evolve
-and be tested independently.
+Source topology, not a qualification result. The published ROS profile and
+candidate providers retain their own version, environment and evidence scopes.
 
-The shared document model lives in
-[`robotics-runtime-contracts`](https://github.com/mmkolpakov/robotics-runtime-contracts).
-Execution verdicts are produced by
-[`robotics-acceptance-harness`](https://github.com/mmkolpakov/robotics-acceptance-harness),
-which observes a running graph but never starts or controls it.
+Host lifecycle is separate from native control and video connections. The
+common document/evaluator environment does not require a simulator SDK or ROS.
+[Architecture](docs/architecture.md) describes native API boundaries and
+evidence-before-reset ordering.
 
-## Choose a Workflow
+[Kubernetes and AWS responsibilities](docs/architecture.md#kubernetes-and-aws-responsibilities)
+defines Terraform and Helm ownership. Native Kubernetes execution and
+recovery are not implemented; configuration checks do not qualify AWS workloads.
 
-| Goal | Start here |
-| --- | --- |
-| Prove the local simulation runtime | [Quick Start](#quick-start) |
-| Develop a scene, robot, driver, or control package | [Add a Product Repository](#add-a-product-repository) |
-| Replay or record deterministic sensor data | [Compose Profiles](#compose-profiles) |
-| Choose CPU, accelerator, or edge hardware | [Support Status](#support-status) |
-| Observe HIL or a real target | [Physical Host Preflight](#physical-host-preflight) and [Scope and Safety](#scope-and-safety) |
+Read the shared diagrams by purpose:
 
-## Quick Start
+- [Platform context](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Context.svg)
+- [Process composition](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Container.svg)
+- [Native and consumer interfaces](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/ContainerDetail.svg)
+- [Run ordering](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/run-sequence.svg)
+- [Retention and recovery](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/run-state.svg)
 
-The headless simulation requires Docker Engine or Docker Desktop, the Compose
-plugin 2.35.1 or newer, and an amd64 host. It does not require a host ROS
-installation or a display server.
+[Diagram sources and scope](https://github.com/mmkolpakov/robotics-runtime/tree/main/docs/architecture)
+describe the model and its qualification boundaries.
+
+## Run the published simulation
+
+Use an amd64 host with Docker Engine/Desktop and Compose 2.35.1 or newer.
+This retained headless ROS profile does not require host ROS or a display.
+
+Run from this checkout; download its published image lock:
 
 ```bash
-gh release download v0.8.0-rc.1 \
+gh release download v0.11.0-rc2 \
   --repo mmkolpakov/robotics-runtime-infra \
   --pattern release.env
-docker compose --env-file release.env pull simulation
-docker compose --env-file release.env up --detach --no-build --wait simulation
-docker compose --env-file release.env exec -T simulation \
+docker compose --project-name robotics-example --env-file release.env pull simulation
+docker compose --project-name robotics-example --env-file release.env \
+  up --detach --no-build --wait simulation
+docker compose --project-name robotics-example --env-file release.env exec -T simulation \
   robotics-entrypoint timeout 20 ros2 topic echo /clock --once
 ```
 
-The final command must print one `/clock` message. Inspect or stop the service
-without entering the container:
+A printed clock sample confirms that observation, not a full workload verdict.
+Inspect logs and stop only this example's resources:
 
 ```bash
-docker compose --env-file release.env ps
-docker compose --env-file release.env logs --tail 100 simulation
-docker compose --env-file release.env down --volumes --remove-orphans
+docker compose --project-name robotics-example --env-file release.env logs --tail 100 simulation
+docker compose --project-name robotics-example --env-file release.env down --volumes --remove-orphans
 ```
 
-`simulation` is healthy only after Gazebo publishes `/clock`. Run the packaged
-ROS/Gazebo acceptance tests with:
+Released mode uses immutable `tag@sha256` references and rejects local-image
+fallbacks. Source mode builds the checkout and has no release qualification
+claim. Follow [image locks](docs/runtime-lock.md) for both modes.
 
-```bash
-docker compose --env-file release.env --profile test run --rm --no-deps test
-```
+For playback, sensor, recording and physical observation settings, use
+[Runtime profiles](docs/runtime-profiles.md).
 
-`release.env` is generated by the release workflow and attached to the matching
-GitHub release. It is not maintained by hand in the source tree. Every registry
-reference uses `tag@sha256`. Compose defaults use `local/...:dev` for source
-builds, so a developer cannot silently substitute a mutable registry tag for a
-qualified release. To test the current checkout instead, run `docker compose
-build simulation` before `docker compose up`.
+## Consumer integration
 
-## Add a Product Repository
+Use the
+[minimal consumer](examples/minimal-consumer/README.md) and
+[neutral-robot consumer](examples/neutral-robot/README.md) as scoped examples.
 
-Do not add product code to this repository. Copy
-`compose.override.yaml.example` to the consuming repository, set
-`ROBOTICS_PROJECT_DIR`, and run Compose from this repository with the consumer
-override:
+Consumers retain product sources and configuration in their own repository.
+Images inherit the released foundation by digest and preserve its exact
+source lock. Every run has its own Compose project, ROS domain/Gz partition
+when applicable, and resource owner.
 
-```bash
-export ROBOTICS_PROJECT_DIR=../my-robotics-project
-docker compose -f compose.yaml -f ../my-robotics-project/compose.override.yaml \
-  up --detach --wait simulation
-docker compose -f compose.yaml -f ../my-robotics-project/compose.override.yaml \
-  exec simulation bash
-```
+Three reusable workflows accept an immutable infra commit:
 
-The consumer workspace is mounted at `/workspace/project`. Production
-consumers should inherit released images by digest, add their own ROS packages
-in a product Dockerfile, and keep worlds, models, parameters, and hardware
-access in their own Compose overlays. Set a distinct `ROS_DOMAIN_ID`,
-`GZ_PARTITION`, and Compose project name for each concurrent run.
+- `reusable-validate-documents.yml` validates explicitly selected document roles;
+- `reusable-qualify.yml` runs the locked foundation and emits a signed package;
+- `reusable-verify-qualification.yml` independently verifies a retained package.
 
-The inherited image exposes its exact common-layer source lock at
-`/usr/share/robotics-runtime/foundation.repos`. Product images must retain that
-file so generated runtime manifests remain attributable to the contracts and
-acceptance harness that were actually integrated.
+[Qualification](docs/qualification.md) describes evidence, signatures and
+consumer inputs. [Evidence producers](docs/evidence-producers.md) describes the
+native formats and authorities. Workflow success is scoped to its actual
+source, image, workload and environment.
 
-## Runtime Images
+## Platforms and development
 
-Release tags publish immutable digests for these images under
-`ghcr.io/mmkolpakov/robotics-runtime-infra/`:
+[Compatibility](docs/compatibility.md) records software and hardware boundaries.
+[Edge attachment](docs/edge-attach.md) describes observation-only physical
+profiles; [WSL2](docs/wsl2.md) records host limitations. Image builds and
+accelerator imports are not device qualification. Real actuation is outside
+the retained profile's supported scope.
 
-| Image | Platforms | Purpose |
-| --- | --- | --- |
-| `simulation` | amd64 | ROS 2, Gazebo, ros2_control, MoveIt 2, MAVROS, camera and MCAP tests |
-| `edge` | amd64, arm64 | ROS 2, MAVLink/MAVROS and standard robotics messages without Gazebo |
-| `sensor` | amd64, arm64 | `edge` plus OpenCV, `cv_bridge`, `image_transport`, GStreamer and V4L2 |
-| `inference-cpu` | amd64, arm64 | ONNX Runtime CPU execution provider |
-| `provider-conformance-cpu` | amd64 | CPU provider identity, fallback, and tensor-parity gate |
-| `sensor-inference-cpu` | amd64 | Deterministic sensor-to-ONNX-to-OTLP qualification probe |
-| `inference-intel-cpu` | amd64 | OpenVINO execution on Intel CPUs without GPU system packages |
-| `sensor-inference-intel-cpu` | amd64 | Sensor qualification through the OpenVINO CPU provider |
-| `acceptance-observer` | amd64, arm64 | Attach-only acceptance verification and JSON/JUnit results |
-| `benchmark` | amd64, arm64 | `performance_test` for ROS 2 transport measurements |
-| `evidence-sink` | amd64, arm64 | MCAP validation, checksums, S3-compatible upload and evidence finalization |
+## Deployment roadmap
 
-The simulation image is tested by running Gazebo and ROS 2 tests on amd64. The
-portable images are built for amd64 and arm64; hardware-specific accelerators
-and device drivers are not qualified by the 0.8 release.
-CI also builds the non-release `host-io-fixture` image for amd64 and arm64 to
-validate host time, udev, systemd, and SocketCAN assets reproducibly.
+[Terraform](terraform/README.md) and [Helm](helm/README.md) define infrastructure,
+retained storage and finite workloads. The next execution provider uses the
+[official Kubernetes client and sealed-attempt recovery design](docs/architecture.md#kubernetes-and-aws-responsibilities).
+Native Kubernetes execution/recovery and AWS workload qualification are not
+supported by the existing local providers.
 
-## Version Baseline
+## Source development
 
-| Component | Release baseline |
-| --- | --- |
-| OS | Ubuntu 24.04 packages from snapshot `20260930T000000Z` |
-| ROS | ROS 2 Jazzy packages from snapshot `2026-06-18` |
-| Simulator | Gazebo Harmonic from the pinned Jazzy simulation image |
-| CPU inference | ONNX Runtime 1.27.0 |
-| Intel inference candidate | ONNX Runtime OpenVINO 1.24.1 with OpenVINO 2025.4.1 |
-| NVIDIA inference candidate | ONNX Runtime GPU 1.27.0, CUDA 13.3.0 and cuDNN 9 |
-| AMD inference candidate | ONNX Runtime MIGraphX 1.23.2 with ROCm 7.2.4 |
-| Jetson inference candidate | JetPack 7.2 host; source-built ONNX Runtime 1.27.0, CUDA 13.3 and TensorRT 11 |
-| RK3588 inference candidate | RKNN Toolkit2 and RKNN Runtime 2.3.2 |
-| Evidence format | rosbag2 MCAP and MCAP CLI 0.3.0 |
-| Time evidence | OpenTelemetry Collector Contrib 0.153.0; Chrony 4.5; linuxptp 4.0 |
-| CAN observation | Ubuntu `can-utils` 2023.03; upstream behavior checked against v2025.01 |
-| Compose | CI floor 2.35.1; CI current 5.3.1 |
-| Contracts | `robotics-runtime-contracts` 0.15.4 |
-| Acceptance harness | `robotics-acceptance-harness` 0.17.1 |
-
-Base images, package snapshots, and Python artifacts are pinned in
-`Dockerfile`, `docker-bake.hcl`, and lock files. `foundation.repos` is the single
-source of exact contracts and harness revisions. BuildKit embeds it and derives
-the runtime-readable `foundation-lock.json` used when a manifest is emitted.
-The non-published project in `tooling/foundation` owns the reproducible joint
-Python environment; each imported repository retains its own development lock.
-CI also requires each imported revision to be an exact release tag matching the
-package version installed in the acceptance observer image.
-Ubuntu packages for both amd64 and arm64 resolve from the same signed,
-timestamped `snapshot.ubuntu.com` archive rather than from architecture-specific
-live mirrors.
-Every released image contains exact Debian and Python package manifests under
-`/usr/share/robotics-runtime/`. GitHub Releases record the image digests; each
-image is published with an SBOM, BuildKit provenance, and an artifact
-attestation.
-
-Candidate versions are reproducible build inputs, not hardware support claims.
-The current source line targets prerelease `v0.8.0-rc.1`; unqualified
-accelerator and physical-observation paths remain qualification-gated.
-
-Private hardware conformance images are produced by the
-[`publish-conformance-image`](.github/workflows/publish-conformance-image.yml)
-workflow. The publication and trust procedure is specified in
-[`docs/conformance-image-signing.md`](docs/conformance-image-signing.md).
-
-## Support Status
-
-Support is scoped to an immutable source revision and image digest. The status
-terms are normative:
-
-- **Released**: an artifact was published from a Git tag after the standard CI
-  gates passed. This does not imply validation on every compatible device.
-- **CI-verified**: the artifact builds and its software-only checks pass on a
-  GitHub-hosted runner; target hardware was not exercised.
-- **Qualification-gated**: the implementation exists, but support requires a
-  passing protected workflow on the named hardware and retained evidence.
-- **Qualified**: a named device passed the protected workflow for the exact
-  source revision and image digest, and the qualification record is published.
-- **Unsupported**: the repository intentionally makes no runtime or safety
-  claim for that target.
-
-### Compute matrix
-
-| Target | Runtime path | Current evidence | Status |
-| --- | --- | --- | --- |
-| amd64 CPU | `simulation`, `inference-cpu` | Native integration and provider-conformance CI; images in `v0.8.0-rc.1` | Released |
-| arm64 CPU | Portable runtime images | Multi-platform BuildKit gate; images in `v0.8.0-rc.1`; no native board claim | Released |
-| Intel CPU on amd64 Linux | `inference-intel-cpu` | Provider parity and full sensor-to-inference OpenVINO path in hosted CI | CI-verified |
-| Intel GPU on native Linux | `compose.intel.yaml` | Device-specific provider, no-fallback and tensor-parity gate defined | Qualification-gated |
-| Intel GPU through WSL2 | `compose.intel.yaml` | `/dev/dxg` route and a separate protected runner gate defined | Qualification-gated |
-| NVIDIA GPU on amd64 Linux | `compose.nvidia.yaml` | CUDA image builds; protected CDI/provider/parity gate defined | Qualification-gated |
-| NVIDIA Jetson Orin or Thor | `compose.nvidia-jetson.yaml` | Pinned source and ARM64 build graph; protected device gate defined | Qualification-gated |
-| AMD GPU on native Linux | `compose.amd.yaml` | ROCm/MIGraphX image builds; protected provider/parity gate defined | Qualification-gated |
-| RK3588, including Orange Pi 5 Plus | `compose.rknn.yaml` | Converter and ARM64 runtime build; dedicated RKNN device gate defined | Qualification-gated |
-| Apple silicon acceleration | Portable CPU image in a Linux VM only | No macOS-native, Metal, CoreML, or device qualification path | Unsupported |
-
-No accelerated target is qualified by the current revision. The generic
-hardware workflow covers NVIDIA, Intel, AMD, and Jetson; RK3588 uses its own
-workflow. A successful image build or provider import cannot promote a row to
-Qualified.
-
-Intel CPU qualification uses
-`config/inference/openvino-cpu-latency.json` by default. It selects the
-documented OpenVINO `LATENCY` hint with one stream. Set
-`ROBOTICS_OPENVINO_CONFIG=config/inference/openvino-cpu-throughput.json` for the
-`THROUGHPUT` hint and OpenVINO-managed stream count. Both files use the official
-ONNX Runtime `load_config` provider option; neither fixes a core count or CPU
-model. Intel GPU system packages exist only in `inference-intel-gpu`.
-
-Each hardware runner label identifies one exclusive physical resource pool.
-Qualification jobs are serialized by that label, use a unique Compose project,
-and must leave no containers, networks, volumes, or qualification images on
-the host. Do not assign the same hardware label to unrelated or non-isolated
-devices.
-
-### Physical execution matrix
-
-| Environment | Allowed physical effect | Current evidence | Status |
-| --- | --- | --- | --- |
-| Gazebo simulation | Simulated actuation | ROS/Gazebo integration and acceptance CI; images in `v0.8.0-rc.1` | Released |
-| MCAP playback | None | Clocked playback, readiness, evidence, and acceptance CI | Released |
-| HIL attach | None | Signed permit, target identity, SROS2, time, serial, and CAN software gates | Qualification-gated |
-| Real target observation | Observation only | Permit policy and live SROS2 telemetry/command-denial CI | Qualification-gated |
-| Real target actuation | Actuation | Rejected by contracts, OPA policy, and the observer enclave | Unsupported |
-
-HIL and real-observation qualification additionally requires an isolated lab,
-named controller or sensor, operator and safety approvals, interlock evidence,
-and target-specific timing limits. Synthetic devices, `vcan`, and software DDS
-tests prove the boundary but do not qualify physical equipment.
-
-The compatibility basis is ROS 2 Jazzy on Ubuntu 24.04
-([REP-2000](https://docs.ros.org/independent/api/rep/html/rep-2000.html)), the
-[ONNX Runtime execution-provider model](https://onnxruntime.ai/docs/execution-providers/),
-[OpenVINO EP 1.24.1](https://onnxruntime.ai/docs/execution-providers/OpenVINO-ExecutionProvider.html),
-[ROCm 7.2.4](https://rocm.docs.amd.com/en/docs-7.2.4/compatibility/compatibility-matrix.html),
-[JetPack 7.2](https://developer.nvidia.com/embedded/jetpack/downloads),
-[CUDA 13 minor-version compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html),
-and [RKNN Toolkit2 2.3.2](https://github.com/airockchip/rknn-toolkit2/releases/tag/v2.3.2).
-
-## Compose Profiles
-
-The base `compose.yaml` is intentionally small. Add one overlay for the runtime
-behavior being tested:
-
-| Overlay | Profiles | Behavior |
-| --- | --- | --- |
-| `compose.playback.yaml` | `playback` | Start-paused, clocked MCAP playback after subscriber readiness |
-| `compose.record.yaml` | `record`, `snapshot` | Bounded Zstd MCAP recording; snapshot is diagnostic only |
-| `compose.evidence.yaml` | `evidence` | Validate segments and finalize an evidence index locally or in S3 |
-| `compose.observability.yaml` | `observability` | Receive OTLP metrics and traces and write bounded evidence files |
-| `compose.high-throughput.yaml` | none | Private shared network and IPC namespaces with Fast DDS SHM |
-| `compose.benchmark.yaml` | `benchmark` | Measure UDP, SHM, or Data Sharing with `performance_test` |
-| `compose.zenoh.yaml` | `zenoh` | Bridge two isolated ROS domains through pinned Zenoh routers |
-| `compose.sensor-inference.yaml` | `sensor-inference` | Run the CPU sensor-to-ONNX-to-OTLP qualification probe |
-| `compose.nvidia-sim.yaml` | `nvidia-simulation` | Run headless OGRE2/EGL rendering and GPU lidar on NVIDIA hardware |
-| `compose.sensor-inference-nvidia.yaml` | `sensor-inference` | Replace the probe with the no-fallback CUDA provider path |
-| `compose.sensor-inference-intel.yaml` | `sensor-inference` | Replace the probe with the no-fallback OpenVINO CPU provider path |
-| `compose.intel.yaml` | `conformance-intel-*` | Run separate Intel CPU, native GPU, or WSL2 GPU provider gates |
-| `compose.security.yaml` | `security*` | SROS2 Enforce, observer-only enclave, positive and denial checks |
-| `compose.stepped.yaml` | `stepped` | Advance any conforming simulator through ROS 2 `simulation_interfaces` |
-| `compose.simulation-conformance.yaml` | `simulation-conformance` | Verify features, pause, step, resume, and `/clock` through the standard simulator API |
-| `compose.edge-attach.yaml` | `edge-attach`, `hil` | Attach-only observation through an external Docker network; HIL is permit-gated and SROS2-enforced |
-| `compose.real-observation.yaml` | `real-observation` | Permit-gated SROS2 observation of a real target; layer after `compose.edge-attach.yaml` |
-| `compose.time.yaml` | `time-chrony`, `time-ptp` | Export host-owned clock observations as contract-aligned OTLP JSON |
-| `compose.serial.yaml` | `serial-preflight` | Verify one exact stable serial device mapping without starting product code |
-| `compose.can-observation.yaml` | `can-observation` | Receive a host SocketCAN stream without exposing the bus to the container |
-
-The stepped profile advances one physics iteration every 0.2 seconds through
-`simulation_interfaces/StepSimulation`. Set `ROBOTICS_STEP_INTERVAL_SEC` to
-change the pace. Set `ROBOTICS_STEPS_PER_TICK` to batch iterations and declare
-the matching `time_policy.max_skipped_steps` in the consuming scenario.
-
-The default Gazebo service namespace is `/simulator`. A replacement
-`SIMULATION_IMAGE` is accepted only when the conformance probe observes the
-required feature flags, pause/step/resume behavior, and an advancing `/clock`:
-
-```bash
-docker compose up --detach --wait simulation
-docker compose -f compose.yaml -f compose.simulation-conformance.yaml \
-  --profile simulation-conformance run --rm simulation-conformance
-```
-
-Override `ROBOTICS_SIMULATOR_SERVICE_NAMESPACE` only when the replacement
-simulator publishes the standard services under another namespace. Product
-code must not call Gazebo Transport control services directly.
-`ROBOTICS_CONFORMANCE_STEP_SIZE_NS` must equal the simulator world's declared
-fixed step; the probe verifies the exact `steps * step_size` clock advance.
-
-Foundation acceptance uses `/clock` only as the simulation time authority.
-Transport age and loss are measured on the separate reliable
-`/robotics/runtime_probe` stream, so best-effort clock delivery is not treated
-as an application-channel reliability guarantee.
-
-Containers only observe host time, serial identity, and CAN frames; they cannot
-configure the host clock, udev, PTP interface, or physical bus.
-The real-observation profile has no device mapping or command-capable ROS
-identity. Sensor drivers remain in the separately managed target deployment.
-
-For example, verify the packaged golden MCAP without starting Gazebo:
-
-```bash
-export ROS_DOMAIN_ID=87
-docker compose \
-  -f compose.yaml \
-  -f compose.playback.yaml \
-  --profile playback --profile test \
-  up --detach \
-  playback playback-gate playback-probe
-docker compose \
-  -f compose.yaml \
-  -f compose.playback.yaml \
-  --profile playback --profile test \
-  wait playback-gate playback-probe
-docker compose \
-  -f compose.yaml \
-  -f compose.playback.yaml \
-  --profile playback --profile test \
-  down --volumes --remove-orphans
-```
-
-Use a free `ROS_DOMAIN_ID` for each concurrent run. Slow executors can override
-`ROBOTICS_PLAYBACK_READY_TIMEOUT_SEC` and
-`ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC`.
-
-## Run Artifacts
-
-Recording and acceptance profiles use one host-visible run directory:
-
-```text
-runs/current/
-├── scenario.yaml
-├── acceptance-run.json
-├── runtime-manifest.json
-├── configuration/
-│   ├── host-topology.json
-│   └── runtime-resources.json
-├── bags/
-├── evidence/
-│   ├── evidence-index.json
-│   ├── metrics.otlp.json
-│   └── traces.otlp.jsonl
-└── results/
-    ├── acceptance-result.json
-    └── acceptance-aggregate.json
-```
-
-Override it with `ROBOTICS_RUN_DIR`, `ROBOTICS_BAG_DIR`, and
-`ROBOTICS_EVIDENCE_DIR`. On Linux, pre-create bind-mounted directories writable
-by UID 1000; the evidence directory must be writable by UID 10001. Named
-volumes avoid host ownership concerns for interactive development.
-The sensor-inference qualification overlay runs both report writers as UID 1000
-so its isolated report tree has one non-root owner.
-Runtime manifests use `runtime-manifest.v2` and digest-link retained provider,
-host-topology, and container-resource configuration files when present.
-Intel sensor qualification also retains the exact ONNX fixture, observed NPY
-inputs, provider report, and a validated `model-artifact-manifest.v1` linking
-those artifacts to the runtime manifest.
-`ROBOTICS_TIME_EVIDENCE_DIR` is the separate bind mount used by host-owned
-Chrony and PTP collectors; it defaults to the run evidence directory. The host
-time directory is owned by the host `_chrony` UID/GID.
-
-The `robotics.*` metric namespace is reserved by the foundation. It includes
-clock, message delivery, inference latency, and
-`robotics.simulation.deadline_miss_ratio`. Scenarios declare every metric they
-consume in `metric_definitions`; product metrics use a reverse-domain prefix.
-
-In S3 mode, `policy_observation.upload_lag_max_sec` is the largest whole-second
-age of any MCAP spool file observed during a sink scan: scan time minus the
-file's modification time, clamped to zero. It is not network transfer duration
-or object-store acknowledgement latency. Local-only runs report zero.
-
-Physical profiles additionally require `authorization-output` to be owned by
-UID/GID `10002:10002` with mode `0755`, and the persistent nonce store to be
-owned by the same identity with mode `0700`. The nonce store is a security
-boundary: do not place it on a shared or group-writable mount.
-
-## Physical Host Preflight
-
-The canonical physical host is Ubuntu 24.04 with systemd 255 or newer. The CI
-fixture qualifies Chrony 4.5, linuxptp 4.0, systemd/udev 255.4, and the Ubuntu
-`can-utils` package from the pinned snapshot. Time-source selection,
-interfaces, PTP domain, and acceptance thresholds remain site configuration.
-
-Install `config/time/chrony-command-socket.conf` as
-`/etc/chrony/conf.d/robotics-command-socket.conf` and
-`tmpfiles.d/robotics-time.conf` as `/etc/tmpfiles.d/robotics-time.conf`. Run
-`systemd-tmpfiles --create`, restart Chrony, and start the evidence collector:
-
-```bash
-export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
-install -d -o "$(id -u _chrony)" -g "$(id -g _chrony)" \
-  -m 0770 runs/current/evidence
-docker compose -f compose.yaml -f compose.time.yaml \
-  --profile time-chrony up -d time-evidence-chrony
-```
-
-For PTP, install `config/time/ptp4l.conf` through host configuration
-management and install both `systemd/robotics-ptp-sample.*` units under
-`/etc/systemd/system`. The timer only queries the read-only `ptp4lro` socket:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now robotics-ptp-sample.timer
-export ROBOTICS_CHRONY_IDENTITY="$(id -u _chrony):$(id -g _chrony)"
-docker compose -f compose.yaml -f compose.time.yaml \
-  --profile time-ptp up -d time-evidence-ptp
-```
-
-Both profiles write `runs/current/evidence/hardware-time.otlp.json` with clock
-offset in milliseconds, drift in ppm, message age in milliseconds, and a
-monotonic-clock flag. `ptp4l` and `phc2sys` remain host services; the collectors
-receive no network device, PHC device, or Linux capability.
-
-The hosted physical-attach test binds its synthetic target to the SPKI digest
-of the generated SROS2 telemetry-source certificate. That identity proves the
-CI authorization path only; it is not a hardware identity. Lab qualification
-must instead bind the permit to the reviewed hardware identity kind and its
-independently captured preflight evidence.
-
-For a serial controller, prefer `/dev/serial/by-id/...`. Sites that need a
-contract name may install a reviewed copy of
-`config/udev/99-robotics-serial.rules` after replacing every example USB
-identifier. Validate and reload it before use:
-
-```bash
-sudo udevadm verify config/udev/99-robotics-serial.rules
-sudo udevadm control --reload
-sudo udevadm trigger --subsystem-match=tty --settle
-export ROBOTICS_SERIAL_DEVICE=/dev/robotics/controller-alpha
-docker compose -f compose.yaml -f compose.serial.yaml \
-  --profile serial-preflight run --rm serial-device-preflight
-```
-
-Capture the stable identity and structured udev observation before issuing a
-physical execution permit:
-
-```bash
-device=/dev/robotics/controller-alpha
-udevadm info --query=property \
-  --property=DEVLINKS,ID_BUS,ID_MODEL_ID,ID_SERIAL,ID_SERIAL_SHORT,ID_VENDOR_ID \
-  --json=short --name="${device}" | jq --sort-keys --compact-output \
-  > runs/current/authorization-output/serial-preflight.json
-udevadm info --query=property --property=ID_SERIAL --value \
-  --name="${device}" > runs/current/authorization-output/serial-identity.txt
-sha256sum runs/current/authorization-output/serial-identity.txt
-sha256sum runs/current/authorization-output/serial-preflight.json
-```
-
-Use the first digest as `identity_sha256` and the second as
-`preflight_evidence_sha256`.
-
-Create a structurally valid permit draft with the contracts CLI, review every
-target and digest, then sign it with the documented Cosign flow:
-
-```bash
-scenario_sha256="$(sha256sum runs/current/input/scenario.yaml | cut -d' ' -f1)"
-robotics-contracts permit init \
-  --scenario-sha256 "${scenario_sha256}" \
-  --image-digest "${ROBOTICS_TARGET_IMAGE_DIGEST}" \
-  --trust-policy-sha256 "${ROBOTICS_TRUST_POLICY_SHA256}" \
-  --environment hil \
-  --target-id controller-alpha \
-  --identity-kind udev_serial \
-  --identity-sha256 "${ROBOTICS_TARGET_IDENTITY_SHA256}" \
-  --hardware-scope controller \
-  --operator-id operator@example.org \
-  --approver-id safety@example.org \
-  --interlock-reference "${ROBOTICS_INTERLOCK_REFERENCE}" \
-  --interlock-sha256 "${ROBOTICS_INTERLOCK_SHA256}" \
-  --output runs/current/authorization/execution-permit.json
-```
-
-The command does not authorize execution and does not create or hold signing
-keys. Physical profiles still require independent operator and safety-approver
-attestations.
-
-The Compose policy rejects `/dev/ttyUSB*`, `/dev/ttyACM*`, wildcards, and a
-complete `/dev` mapping. Runtime manifests carry the reviewed stable identity
-and preflight evidence digests.
-
-For read-only CAN observation, install the template unit and create the
-dedicated internal Compose network before starting the gateway:
-
-```bash
-sudo apt-get install can-utils
-sudo install -m 0644 systemd/robotics-can-observation@.service \
-  /etc/systemd/system/
-docker compose -f compose.yaml -f compose.can-observation.yaml \
-  --profile can-observation create can-observation-client
-sudo systemctl daemon-reload
-sudo systemctl enable --now robotics-can-observation@can0.service
-docker compose -f compose.yaml -f compose.can-observation.yaml \
-  --profile can-observation up -d can-observation-client
-docker compose -f compose.yaml -f compose.can-observation.yaml \
-  --profile can-observation logs -f can-observation-client
-```
-
-The host owns link state, bitrate, termination, and frame transmission. The
-gateway serves the fixed TCP port `28700` only to the internal
-`172.30.247.0/28` network; its deterministic host endpoint is the bridge gateway
-`172.30.247.1:28700`. The systemd unit has no capabilities and applies a
-cgroup-BPF IP allow-list. Qualify this profile on a cgroup v2 host before using
-physical CAN; WSL2 kernels without `vcan` can validate only the static profile.
-The container has no CAN network interface or transmit utility. Command-capable
-CAN belongs to a separately authorized control profile and is not provided by
-this repository.
-
-## Build and Verify Changes
+Build and verify the source checkout:
 
 ```bash
 docker buildx bake --file docker-bake.hcl --print cpu
@@ -550,57 +139,9 @@ docker compose up --detach --no-build --wait simulation
 docker compose --profile test run --rm --no-deps test
 ```
 
-CI also validates every Compose overlay on the supported Compose floor and
-current version, enforces OPA policies, builds all portable targets for
-arm64, scans every image, and runs the three-repository acceptance path.
-Contribution setup and required checks are in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-WSL2 support boundaries and host diagnostics are in [WSL2](docs/wsl2.md).
-
-## Consumer Automation
-
-Consumer repositories can call three narrow reusable workflows by an exact
-40-character infra commit SHA:
-
-- `reusable-validate-documents.yml` validates caller-owned contract documents;
-- `reusable-qualify.yml` runs the locked foundation and returns a signed
-  qualification package;
-- `reusable-verify-qualification.yml` verifies a retained package with a
-  public key or keyless Sigstore policy.
-
-The caller keeps product sources and secrets in its own repository. See the
-[minimal Compose consumer](examples/minimal-consumer/README.md) and the
-[generated compatibility lock](docs/foundation-compatibility.md). Product
-images derive from a released runtime image and build ROS packages after
-sourcing `/opt/robotics_ws/install/setup.bash`; this exposes the installed
-`robotics_observability` and `robotics_observability_msgs` packages without
-copying helper implementations.
-
-The optional `compose_project` input is a standalone, caller-owned model. Its
-source is checked before Compose resolution: recursive `include`/`extends`,
-`env_file`, `label_file`, secrets, and environment-backed or inline configs are
-rejected. Host providers, Docker API socket injection, and lifecycle hooks are
-also forbidden. Local config files are allowed only after canonical path
-validation; the accepted model is rendered with an empty interpolation
-environment and then included by value. This follows the Docker Compose
-[trust model](https://docs.docker.com/compose/trust-model/) and prevents the
-qualification runner from reading host files or credentials during parsing.
-
-## Project Policies
-
-- [Compatibility](docs/compatibility.md)
-- [Runtime image lock](docs/runtime-lock.md)
-- [Supply-chain assurance](docs/supply-chain.md)
-- [Qualification bundles](docs/qualification.md)
-- [Architecture decisions](docs/decisions/README.md)
-
-## Scope and Safety
-
-The 0.8 release supports CPU simulation, playback, recording, transport
-benchmarks, and acceptance observation. It does not claim qualification for GPU,
-HIL, real hardware, or physical actuation. Mock hardware may verify interfaces,
-but policy forbids using it as evidence for physical behavior.
-
-Report security issues through GitHub private vulnerability reporting as
-described in [SECURITY.md](SECURITY.md). This project is licensed under the
-[MIT License](LICENSE).
+[CONTRIBUTING](CONTRIBUTING.md) contains required checks, foundation updates and
+deployment setup. [Supply-chain](docs/supply-chain.md),
+[quality](QUALITY_DECLARATION.md) and
+[architecture decisions](docs/decisions/README.md) define the claims attached
+to published artifacts. Report vulnerabilities through
+[SECURITY](SECURITY.md).
