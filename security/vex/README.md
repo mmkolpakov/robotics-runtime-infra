@@ -19,5 +19,5 @@ No vulnerability risk acceptance is recorded in `.trivyignore`.
 
 References: [Ubuntu package](https://packages.ubuntu.com/noble-updates/linux-libc-dev),
 [OpenVEX](https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md),
-[Trivy VEX support](https://trivy.dev/docs/v0.74/guide/supply-chain/vex/file/),
+[Trivy VEX support](https://trivy.dev/docs/v0.75/guide/supply-chain/vex/file/),
 [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck).
