@@ -97,7 +97,10 @@ if a and a[0].endswith("/build-assets.sh"):
 os.execv("/usr/bin/bash", ["/usr/bin/bash", *a])
 '''
 for name, raw in {"docker": docker, "python3": python, "bash": bash,
-                  "git": "print('a' * 40)\n", "curl": "print('{}')\n"}.items():
+                  "git": "print('a' * 40)\n",
+                  "curl": "from pathlib import Path; import sys; a = sys.argv[1:]; "
+                  "Path(a[a.index('--output') + 1]).write_bytes(b'{}\\n'); "
+                  "Path(a[a.index('--stderr') + 1]).write_bytes(b'')\n"}.items():
     path = folder / name
     path.write_text(header + raw)
     path.chmod(0o755)
@@ -228,4 +231,9 @@ assert marker["original_exit_code"] == 32
 assert marker["status"] == "incomplete"
 assert Path(marker["preserved_work"]).is_dir()
 PY
+}
+
+@test "registry readiness preserves reset diagnostics and finite HTTP refusal" {
+  run "${REAL_PYTHON}" "${REPOSITORY_ROOT}/test/ci/test_registry_startup_readiness.py"
+  [ "${status}" -eq 0 ]
 }
