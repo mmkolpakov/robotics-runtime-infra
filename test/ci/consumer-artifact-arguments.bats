@@ -201,7 +201,7 @@ PY
       (.services[$service].command[3] | startswith("https://example.org/schema.json=" + $input + "/configuration/extension-schemas/")) and
       .services[$service].volumes == [{
         type: "bind", source: $source,
-        target: $input + "/configuration/extension-schemas", read_only: true
+        target: ($input + "/configuration/extension-schemas"), read_only: true
       }]' "${output}" >/dev/null
   done
 }
