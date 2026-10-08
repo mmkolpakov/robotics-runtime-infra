@@ -255,7 +255,7 @@ fi
 if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
   foundation_files+=(compose.released.yaml)
 fi
-if [[ "${native_trace}" == 1 ]]; then
+if [[ "${native_trace:-0}" == 1 ]]; then
   foundation_files+=(compose.native-trace.yaml)
   if [[ "${data_source}" == recording_playback ]]; then
     foundation_files+=(compose.native-trace-playback.yaml)
@@ -822,9 +822,9 @@ if [[ "${data_source}" == recording_playback ]]; then
 fi
 "${compose[@]}" --profile record stop recorder
 capture_runtime_metrics_diagnostics before_metrics_stop || true
-native_trace_capture_status=0
-capture_native_ros_trace || native_trace_capture_status=$?
-if [[ "${native_trace}" == 1 ]]; then
+if [[ "${native_trace:-0}" == 1 ]]; then
+  native_trace_capture_status=0
+  capture_native_ros_trace || native_trace_capture_status=$?
   mkdir -p "${artifact_dir}/native-ust"
   printf '%s\n' "${native_trace_capture_status}" \
     >"${artifact_dir}/native-ust/capture.exit"
