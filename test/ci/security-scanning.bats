@@ -108,12 +108,12 @@ EOF
         {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"}
       ];
     def scoped_cves:
-      ["CVE-2024-46742", "CVE-2024-46833"];
+      ["CVE-2024-46742", "CVE-2024-46833", "CVE-2024-52560", "CVE-2024-56591"];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 10
-    and (.statements | length == 191)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 136)
+    and .version == 11
+    and (.statements | length == 193)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 138)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
