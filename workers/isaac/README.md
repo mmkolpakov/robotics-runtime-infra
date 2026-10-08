@@ -80,7 +80,7 @@ They implement no general simulator command protocol. `cancel()` requests early
 episode closure; native step cancellation uses the SDK's step callback. No
 persistent control/reset capability or completed-episode readiness is advertised.
 
-Source compilation, installed Cordis Admission/Include refusal on HOME WSL and
+Source compilation, installed Cordis Admission/Include refusal in the recorded WSL profile and
 private marker tests are separate from positive SDK execution. The new PAUSED
 provider phase and native Linux OCI execution still require C17 evidence. The
 existing Windows batch workload observations do not qualify this provider phase.

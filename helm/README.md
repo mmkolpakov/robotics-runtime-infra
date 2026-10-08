@@ -71,13 +71,13 @@ drain/export/cancel and real cleanup require actual Kubernetes/EKS acceptance.
 
 ## Offline checks and tools
 
-`scripts/ci/check-product-helm.sh` defaults to Docker for CI; on HOME use
+`scripts/ci/check-product-helm.sh` defaults to Docker for CI; for rootless Podman use
 `ROBOTICS_IMAGE_ENGINE=podman scripts/ci/check-product-helm.sh`.
 Only those engines are accepted. The project container uses pinned Ubuntu/uv/
 certificate bootstrap images, official Helm 4.3.0 and kubectl 1.35.9 binaries
 with verified SHA-256, and the official Kubernetes v1.34.0 OpenAPI snapshot.
 The supported chart range is 1.34 through 1.36, matching this client skew.
-Python validation dependencies are hash locked. Nothing is installed on HOME.
+Python validation dependencies are hash locked. Validation dependencies remain inside the project container.
 
 Checks cover default-disabled charts, strict Helm lint/render, official API
 schema validation, lifetime/mount/RBAC/argv constraints, invalid inputs and

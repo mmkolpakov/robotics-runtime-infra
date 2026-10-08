@@ -28,13 +28,13 @@ read-only `EROFS`, an integer larger than JavaScript's exact Number range, raw
 bytes/hash, native metadata and cleanup inventories are checked. Payload bytes
 and logs are exported before the volumes are removed.
 
-HOME runs rootless Podman 4.9.3 under UID/GID 1001. Its Docker-compatible
+The recorded rootless Podman 4.9.3 profile used host UID/GID 1001. Its Docker-compatible
 HostConfig projects `UsernsMode: private`, an expanded CapDrop list and
 normalized SecurityOpt. That projection does not express the keep-id mapping.
 The preflight reads the child's native `/proc/self/uid_map` and `gid_map`,
 which are relative to its parent namespace, then reads the actual rootless
 parent ID maps through the same socket's versioned native Podman info API.
-The observed chain maps container 1000 to parent 0 to HOME 1001. The host image
+The observed chain maps container 1000 to parent 0 to host 1001. The host image
 also proves access to the original mode-0600 project socket through Compose.
 No supplemental group or socket permission change is required. The owned
 profile list persists for `down`; actual inventory exposed a profiled service
@@ -42,7 +42,7 @@ left behind by a teardown that omitted that list, and that diagnostic is
 retained. Cleanup now requires empty native owner inventories.
 
 A failed diagnostic incorrectly compared a child's parent-relative ID to the
-HOME ID directly. Its failure is retained; it does not prove that Compose
+host ID directly. Its failure is retained; it does not prove that Compose
 ignored keep-id. [Linux user namespace
 semantics](https://man7.org/linux/man-pages/man7/user_namespaces.7.html)
 explain why both mapping levels are required. Compose declarations never fill
@@ -70,7 +70,7 @@ npm test
 ```
 
 A project-scoped Unix Podman API service and verified Compose executable can
-be prepared under `.tools` without changing the machine. If HOME lacks its
+be prepared under `.tools` without changing the machine. If the development host lacks its
 standard OCI init binary, `docker/host/init.Dockerfile` obtains stock catatonit
 from the pinned Ubuntu snapshot. Extract `/out/catatonit` to the owned
 `host/.tools/oci-init` and add only that directory to the project API service
@@ -89,7 +89,7 @@ node host/tools/qualify-storage.mjs \
 
 For Docker CI, omit the final Podman overlay argument. The same Compose/Jobs
 route and metadata checks apply. Docker CI has not yet run for this candidate.
-The checked HOME source results cover Engine metadata, the Node OCI storage
+The recorded source-profile results cover Engine metadata, the Node OCI storage
 fixture and a compiled source host image accessing its mode-0600 socket through
 Compose; they do not qualify installed Python worker entrypoints, full B3,
 released host assets or the complete C08 acceptance surface.

@@ -1,5 +1,5 @@
 ---
-# HOME rootless Podman: the host UID/GID 1000 maps to the remote owner's parent namespace.
+# Rootless Podman profile: container UID/GID 1000 maps through the host user namespace.
 services:
   webots-native:
     userns_mode: keep-id:uid=1000,gid=1000

@@ -135,9 +135,9 @@ Dockerode modem demultiplexer. No Engine exec/start/stop/copy operation is expos
 
 Unavailable or removed containers, wrong ownership, missing framing, empty retained logs, exceeded
 limits, deadline and cancellation reject the read with diagnostics. The caller must report
-incomplete evidence; an empty successful stdout is not substituted. Native HOME proof in
-`/home/dev/src/rr-c-finalization-20261004/artifacts/finalization/log-api-immutable` checked a real
-six-test worker with contracts0.18.2/harness0.19.1, raw framed bytes, foreign run/project refusal,
+incomplete evidence; an empty successful stdout is not substituted. A recorded source-profile
+check exercised a real six-test worker with contracts0.18.2/harness0.19.1, raw framed bytes,
+foreign run/project refusal,
 byte cap1, deadline0 and actual1ms, missing exactID, cancellation, and immediate caller mutation of
 owner/byte limits. Actual cleanup inventory was empty. This evidence-read boundary does not qualify
 a live collector or broaden the Dockerode library compatibility claim.

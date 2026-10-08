@@ -13,24 +13,18 @@ Product repositories supply scenes, robot descriptions, control logic, cameras
 and vision models. Contracts validate documents; the attach-only harness
 observes and evaluates executions. They do not launch this repository's services.
 
-## Current scope
+## Execution profiles
 
-The published OCI release is `v0.10.0-rc.1`. It supplies the retained ROS 2
+The published OCI release is `v0.11.0-rc2`. It supplies the retained ROS 2
 Jazzy/Gazebo Harmonic and portable worker profiles. The source foundation and
 released image lock have separate identities:
 [compatibility](docs/compatibility.md) and
 [foundation lock](docs/foundation-compatibility.md).
 
-The neutral-robot released consumer currently has an open time/readiness
-failure. Native model presence passed, but the complete consumer did not
-qualify. Source CI, image provenance and one healthy service do not close that
-failure.
-
-The plugin-host line selects independent Gazebo, Webots and Isaac providers.
-Their native APIs, assets and environments are separate. New providers remain
-development candidates until their execution, rendering and published-consumer
-gates pass. Simulator support does not imply the same autopilot support in
-each engine.
+Gazebo, Webots and Isaac providers use their own native APIs, assets and
+environments. Each execution profile has a separate qualification scope;
+simulator support does not imply the same autopilot, rendering or hardware
+support in every engine.
 
 ## Architecture
 
@@ -48,8 +42,8 @@ common document/evaluator environment does not require a simulator SDK or ROS.
 evidence-before-reset ordering.
 
 [Kubernetes and AWS responsibilities](docs/architecture.md#kubernetes-and-aws-responsibilities)
-shows Terraform and checked Helm source, plus pending native
-execution/recovery boundaries; real cloud qualification remains open.
+defines Terraform and Helm ownership. Native Kubernetes execution and
+recovery are not implemented; configuration checks do not qualify AWS workloads.
 
 Read the shared diagrams by purpose:
 
@@ -70,7 +64,7 @@ This retained headless ROS profile does not require host ROS or a display.
 Run from this checkout; download its published image lock:
 
 ```bash
-gh release download v0.10.0-rc.1 \
+gh release download v0.11.0-rc2 \
   --repo mmkolpakov/robotics-runtime-infra \
   --pattern release.env
 docker compose --project-name robotics-example --env-file release.env pull simulation
@@ -125,10 +119,15 @@ profiles; [WSL2](docs/wsl2.md) records host limitations. Image builds and
 accelerator imports are not device qualification. Real actuation is outside
 the retained profile's supported scope.
 
-Product cloud configuration is a development candidate: [AWS foundation](terraform/README.md)
-and [Helm packaging](helm/README.md) keep infrastructure, retained run storage
-and attempt workloads under separate owners. Offline configuration checks do not
-establish Kubernetes or AWS runtime qualification.
+## Deployment roadmap
+
+[Terraform](terraform/README.md) and [Helm](helm/README.md) define infrastructure,
+retained storage and finite workloads. The next execution provider uses the
+[official Kubernetes client and sealed-attempt recovery design](docs/architecture.md#kubernetes-and-aws-responsibilities).
+Native Kubernetes execution/recovery and AWS workload qualification are not
+supported by the existing local providers.
+
+## Source development
 
 Build and verify the source checkout:
 
