@@ -2,9 +2,41 @@
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-09-08",
   "author": "mmkolpakov",
-  "timestamp": "2026-10-06T15:59:45Z",
-  "version": 10,
+  "timestamp": "2026-10-08T16:41:33Z",
+  "version": 11,
   "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2024-52560"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-10-08 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. The Linux CNA identifies fs/ntfs3/attrib.c, fs/ntfs3/frecord.c, fs/ntfs3/ntfs_fs.h and fs/ntfs3/record.c (record updated 2026-09-14T11:57:47.206Z). The NTFS3 mi_enum_attr() inode-error handling implementation and private header are absent from these exported UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20260930T000000Z match its published SHA256 values: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. Stock dpkg-deb inspection finds 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries or modules. None of the identified implementation files or functions is supplied. This records binary-content applicability, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/52xxx/CVE-2024-52560.json; https://github.com/torvalds/linux/commit/2afd4d267e6dbaec8d3ccd4f5396cb84bc67aa2e.patch; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-amd64/Packages.xz; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-arm64/Packages.xz. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2024-56591"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-10-08 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. The Linux CNA identifies net/bluetooth/hci_conn.c (record updated 2026-08-05T11:45:13.959Z). Bluetooth hci_conn_del() requires disable_delayed_work_sync() to prevent delayed work from being requeued during connection deletion. This kernel implementation is absent from these exported UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20260930T000000Z match its published SHA256 values: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. Stock dpkg-deb inspection finds 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries or modules. None of the identified implementation files or functions is supplied. This records binary-content applicability, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/56xxx/CVE-2024-56591.json; https://github.com/torvalds/linux/commit/2b0f2fc9ed62e73c95df1fa8ed2ba3dac54699df.patch; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-amd64/Packages.xz; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-arm64/Packages.xz. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture, or any other vulnerability."
+    },
     {
       "vulnerability": {
         "name": "CVE-2024-46742"
