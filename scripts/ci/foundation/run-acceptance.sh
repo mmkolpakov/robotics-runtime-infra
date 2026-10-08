@@ -806,7 +806,9 @@ sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
 settlement_dir=""
 if ((${#FOUNDATION_SETTLE_SERVICES[@]})); then
   settlement_dir="${run_dir}/results/caller-settlement"
-  foundation_settle_caller_services compose "${project}" "${resolved_model}" "${settlement_dir}"
+  settlement_provider=simulation
+  [[ "${data_source}" != recording_playback ]] || settlement_provider=playback
+  foundation_settle_caller_services compose "${project}" "${resolved_model}" "${settlement_dir}" "${settlement_provider}"
 fi
 
 mapfile -t mcap_summaries < <(

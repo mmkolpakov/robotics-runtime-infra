@@ -395,16 +395,31 @@ foundation_load_settle_services() {
 }
 
 foundation_owned_service_snapshot() {
-  local container="$1" project="$2" service="$3" image="$4" inspection
+  local container="$1" project="$2" service="$3" image="$4" route="$5" inspection
   [[ "${container}" =~ ^[0-9a-f]{64}$ ]] || return 65
   inspection="$(timeout --foreground 10 docker inspect "${container}")" || return "$?"
   printf '%s\n' "${inspection}" |
     jq -e --arg id "${container}" --arg project "${project}" \
-      --arg service "${service}" --arg image "${image}" '
+      --arg service "${service}" --arg image "${image}" \
+      --arg run "${ROBOTICS_RUN_ID:?runner-issued run ID is required}" \
+      --arg domain "${ROBOTICS_DOMAIN_ID:?runner-issued domain ID is required}" \
+      --argjson route "${route}" '
       if length != 1 or .[0].Id != $id or .[0].Image != $image or
         .[0].Config.Labels["com.docker.compose.project"] != $project or
         .[0].Config.Labels["com.docker.compose.service"] != $service
       then error("caller service native identity is not owned") else .[0] end |
+      def one($key; $expected):
+        [(.Config.Env // [])[] | select(startswith($key + "="))] as $values |
+        ($values | length) == 1 and $values[0] == ($key + "=" + $expected);
+      def optional($key; $expected):
+        [(.Config.Env // [])[] | select(startswith($key + "="))] as $values |
+        ($values | length) == 0 or one($key; $expected);
+      if (.Config.Env | type) != "array" or
+        (one("ROBOTICS_RUN_ID"; $run) | not) or
+        (one("ROBOTICS_DOMAIN_ID"; $domain) | not) or
+        (optional("ROS_DOMAIN_ID"; $route.ROS_DOMAIN_ID) | not) or
+        (optional("RMW_IMPLEMENTATION"; $route.RMW_IMPLEMENTATION) | not)
+      then error("caller service run ownership or routing is not admitted") else . end |
       {container_id: .Id, image_id: .Image,
        project: .Config.Labels["com.docker.compose.project"],
        service: .Config.Labels["com.docker.compose.service"],
@@ -443,11 +458,11 @@ foundation_bind_settlement_endpoint() {
 }
 
 foundation_settle_caller_services() {
-  local compose_name="$1" project="$2" model="$3" output="$4"
+  local compose_name="$1" project="$2" model="$3" output="$4" provider="$5"
   local -n settlement_compose="${compose_name}"
   ((${#FOUNDATION_SETTLE_SERVICES[@]})) || return 0
   local service image reference containers container directory index status candidate native_exit primary=0
-  local endpoint
+  local endpoint route
   local -a ids=() services=() images=()
   endpoint="$(foundation_settlement_endpoint_fingerprint)" || return "$?"
   [[ -n "${FOUNDATION_SETTLEMENT_ENDPOINT_FINGERPRINT:-}" &&
@@ -455,6 +470,12 @@ foundation_settle_caller_services() {
     printf 'admitted caller settlement endpoint changed\n' >&2
     return 65
   }
+  [[ "${provider}" == simulation || "${provider}" == playback ]] || return 64
+  route="$(jq -er --arg provider "${provider}" '
+    .services[$provider].environment |
+    {ROS_DOMAIN_ID, RMW_IMPLEMENTATION} |
+    if all(.[]; type == "string" and length > 0) then .
+    else error("foundation provider route is not admitted") end' "${model}")" || return "$?"
   mkdir -p -- "${output}"
   printf '%s\n' "${endpoint}" >"${output}/endpoint.sha256"
   # Preflight every selected native identity before any stop or native wait.
@@ -469,7 +490,7 @@ foundation_settle_caller_services() {
       for candidate in "${ids[@]}"; do [[ "${candidate}" != "${container}" ]] || return 65; done
       directory="${output}/${service}/${container}"
       mkdir -p -- "${directory}"
-      foundation_owned_service_snapshot "${container}" "${project}" "${service}" "${image}" \
+      foundation_owned_service_snapshot "${container}" "${project}" "${service}" "${image}" "${route}" \
         >"${directory}/before.json" || return "$?"
       ids+=("${container}"); services+=("${service}"); images+=("${image}")
     done <<<"${containers}"
@@ -497,7 +518,7 @@ foundation_settle_caller_services() {
     else status=$?; fi
     printf '%s\n' "${status}" >"${directory}/native-wait.status"
     if ((status != 0 && primary == 0)); then primary="${status}"; fi
-    if foundation_owned_service_snapshot "${container}" "${project}" "${services[index]}" "${images[index]}" \
+    if foundation_owned_service_snapshot "${container}" "${project}" "${services[index]}" "${images[index]}" "${route}" \
       >"${directory}/after.json"; then
       status=0
     else status=$?; fi

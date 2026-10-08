@@ -8,13 +8,14 @@ setup() {
   mkdir -p "${BIN}"
   export CALLS="${BATS_TEST_TMPDIR}/calls.jsonl" STATE="${BATS_TEST_TMPDIR}/stopped"
   export PATH="${BIN}:${PATH}"
+  export ROBOTICS_RUN_ID=run-fixture ROBOTICS_DOMAIN_ID=primary
   unset DOCKER_HOST DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH
   # The library resolves this array by its fixed nameref name.
   # shellcheck disable=SC2034
   compose=(docker compose)
   OUTPUT="${BATS_TEST_TMPDIR}/facts"
   MODEL="${BATS_TEST_TMPDIR}/model.json"
-  printf '{"services":{"probe-a":{"image":"fixture/image"},"probe-b":{"image":"fixture/image"}}}\n' >"${MODEL}"
+  printf '{"services":{"simulation":{"environment":{"ROS_DOMAIN_ID":"91","RMW_IMPLEMENTATION":"rmw_fastrtps_cpp"}},"probe-a":{"image":"fixture/image"},"probe-b":{"image":"fixture/image"}}}\n' >"${MODEL}"
   cat >"${BIN}/docker" <<'PY'
 #!/usr/bin/env python3
 import json,os,sys,time
@@ -34,9 +35,20 @@ elif args[0]=="inspect":
     project="foreign" if mode=="foreign-second" and cid==b else "owned"
     actual_image="sha256:"+"d"*64 if mode=="wrong-image" else image
     exit_code=7 if mode=="native-seven" else 0
+    env=["ROS_DOMAIN_ID=91","RMW_IMPLEMENTATION=rmw_fastrtps_cpp","ROBOTICS_RUN_ID=run-fixture","ROBOTICS_DOMAIN_ID=primary","AWS_SECRET_ACCESS_KEY=PRIVATE_SENTINEL"]
+    if mode=="non-ros": env=[v for v in env if not v.startswith(("ROS_DOMAIN_ID=","RMW_IMPLEMENTATION="))]
+    if cid==b:
+        if mode=="foreign-run": env=[v if not v.startswith("ROBOTICS_RUN_ID=") else "ROBOTICS_RUN_ID=foreign" for v in env]
+        if mode=="foreign-domain": env=[v if not v.startswith("ROBOTICS_DOMAIN_ID=") else "ROBOTICS_DOMAIN_ID=foreign" for v in env]
+        if mode=="wrong-route": env=[v if not v.startswith("ROS_DOMAIN_ID=") else "ROS_DOMAIN_ID=92" for v in env]
+        if mode=="wrong-rmw": env=[v if not v.startswith("RMW_IMPLEMENTATION=") else "RMW_IMPLEMENTATION=foreign" for v in env]
+        if mode=="duplicate-run": env.append("ROBOTICS_RUN_ID=run-fixture")
+        if mode=="duplicate-route": env.append("ROS_DOMAIN_ID=91")
+        if mode=="missing-run": env=[v for v in env if not v.startswith("ROBOTICS_RUN_ID=")]
+        if mode=="missing-domain": env=[v for v in env if not v.startswith("ROBOTICS_DOMAIN_ID=")]
     print(json.dumps([{"Id":cid,"Image":actual_image,
       "Config":{"Labels":{"com.docker.compose.project":project,"com.docker.compose.service":"probe-a" if cid==a else "probe-b"},
-       "Env":["ROS_DOMAIN_ID=91","RMW_IMPLEMENTATION=rmw_fastrtps_cpp","ROBOTICS_RUN_ID=run-fixture","ROBOTICS_DOMAIN_ID=primary","AWS_SECRET_ACCESS_KEY=PRIVATE_SENTINEL"],
+       "Env":env,
        "Cmd":["PRIVATE_ARGV_MARKER"]},
       "State":{"Status":"exited" if stopped else "running","Running":not stopped,"Pid":0 if stopped else 1234,
        "ExitCode":exit_code,"OOMKilled":mode=="oom","StartedAt":"2026-10-08T00:00:00Z","FinishedAt":"2026-10-08T00:00:01Z" if stopped else ""},
@@ -56,7 +68,7 @@ PY
 
 settle() {
   foundation_bind_settlement_endpoint
-  foundation_settle_caller_services compose owned "${MODEL}" "${OUTPUT}"
+  foundation_settle_caller_services compose owned "${MODEL}" "${OUTPUT}" simulation
 }
 
 @test "empty settlement preserves baseline without native commands or output" {
@@ -104,7 +116,7 @@ PY
   foundation_load_settle_services $'probe-a\nprobe-b' probe-a probe-b
   # Positional arguments are expanded by the child Bash, not this test shell.
   # shellcheck disable=SC2016
-  run env MODE=foreign-second bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services $'\''probe-a\nprobe-b'\'' probe-a probe-b; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3"' _ \
+  run env MODE=foreign-second bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services $'\''probe-a\nprobe-b'\'' probe-a probe-b; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
     "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}"
   [ "${status}" -ne 0 ]
   run grep -E '"stop"|"wait"|"logs"' "${CALLS}"
@@ -114,7 +126,7 @@ PY
 @test "wrong frozen image refuses before effects" {
   # Positional arguments are expanded by the child Bash, not this test shell.
   # shellcheck disable=SC2016
-  run env MODE=wrong-image bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3"' _ \
+  run env MODE=wrong-image bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
     "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}"
   [ "${status}" -ne 0 ]
   run grep -E '"stop"|"wait"|"logs"' "${CALLS}"
@@ -124,13 +136,13 @@ PY
 @test "admitted nondefault rootless endpoint is accepted and changed endpoint refuses before effects" {
   # Positional arguments are expanded by the child Bash, not this test shell.
   # shellcheck disable=SC2016
-  run env DOCKER_HOST=unix:///run/user/1000/owned-podman.sock DOCKER_CONTEXT=owned-rootless bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3"' _ \
+  run env DOCKER_HOST=unix:///run/user/1000/owned-podman.sock DOCKER_CONTEXT=owned-rootless bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
     "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}/valid"
   [ "${status}" -eq 0 ]
   rm -f "${CALLS}" "${STATE}"
   # Positional arguments are expanded by the child Bash, not this test shell.
   # shellcheck disable=SC2016
-  run bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; export DOCKER_HOST=tcp://foreign.invalid:2375; foundation_settle_caller_services compose owned "$2" "$3"' _ \
+  run bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; export DOCKER_HOST=tcp://foreign.invalid:2375; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
     "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}/changed"
   [ "${status}" -eq 65 ]
   run grep -E '"stop"|"wait"|"logs"' "${CALLS}"
@@ -141,7 +153,7 @@ PY
   for mode in native-seven oom restart; do
     # Positional arguments are expanded by the child Bash, not this test shell.
     # shellcheck disable=SC2016
-    run env MODE="${mode}" bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3"' _ \
+    run env MODE="${mode}" bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
       "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}/${mode}"
     if [[ "${mode}" == native-seven ]]; then [ "${status}" -eq 7 ]; else [ "${status}" -eq 65 ]; fi
   done
@@ -150,7 +162,7 @@ PY
 @test "first stop failure survives later inspect refusal with original native receipts" {
   # Positional arguments are expanded by the child Bash, not this test shell.
   # shellcheck disable=SC2016
-  run env MODE=late-inspect-refusal bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3"' _ \
+  run env MODE=late-inspect-refusal bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
     "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}"
   [ "${status}" -eq 71 ]
   [ "$(cat "${OUTPUT}/native-stop.status")" = 71 ]
@@ -160,8 +172,33 @@ PY
 @test "native wait timeout remains refusal and retains its original status" {
   # Positional arguments are expanded by the child Bash, not this test shell.
   # shellcheck disable=SC2016
-  run env MODE=wait-timeout bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3"' _ \
+  run env MODE=wait-timeout bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
     "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}"
   [ "${status}" -eq 124 ]
   [ "$(cat "${OUTPUT}/probe-a/$(printf a%.0s {1..64})/native-wait.status")" = 124 ]
+}
+
+@test "all selected run and optional routing markers are admitted before any logs or stop" {
+  local mode
+  for mode in foreign-run foreign-domain wrong-route wrong-rmw duplicate-run duplicate-route missing-run missing-domain; do
+    rm -f "${CALLS}" "${STATE}"
+    # Positional arguments are expanded by the child Bash, not this test shell.
+    # shellcheck disable=SC2016
+    run env MODE="${mode}" bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services $'\''probe-a\nprobe-b'\'' probe-a probe-b; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
+      "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}/${mode}"
+    [ "${status}" -ne 0 ]
+    [[ "${output}" == *run\ ownership\ or\ routing* ]]
+    run grep -E '"stop"|"wait"|"logs"' "${CALLS}"
+    [ "${status}" -eq 1 ]
+  done
+}
+
+@test "opted-in non-ROS service needs run and domain markers without ROS fields" {
+  # Positional arguments are expanded by the child Bash, not this test shell.
+  # shellcheck disable=SC2016
+  run env MODE=non-ros bash -c 'source "$1"; compose=(docker compose); foundation_load_settle_services probe-a probe-a; foundation_bind_settlement_endpoint; foundation_settle_caller_services compose owned "$2" "$3" simulation' _ \
+    "${REPOSITORY_ROOT}/scripts/ci/foundation/lib.sh" "${MODEL}" "${OUTPUT}"
+  [ "${status}" -eq 0 ]
+  jq -e '.environment == ["ROBOTICS_RUN_ID=run-fixture","ROBOTICS_DOMAIN_ID=primary"]' \
+    "${OUTPUT}/probe-a/$(printf a%.0s {1..64})/after.json" >/dev/null
 }

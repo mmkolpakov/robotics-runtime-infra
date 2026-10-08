@@ -21,7 +21,11 @@ digest and payload constraints; the installed observer and aggregate receive the
 same registry. No extension code or evaluator is loaded.
 
 The optional `settle_services` list must be a unique subset of admitted caller
-services. After measurement and aggregation, the runner verifies every selected
+services. Each selected service must carry exactly one runner-issued
+`ROBOTICS_RUN_ID` and `ROBOTICS_DOMAIN_ID`. Optional `ROS_DOMAIN_ID` and
+`RMW_IMPLEMENTATION` fields must match the admitted foundation route and may
+not be duplicated. Non-ROS services need only the run and domain markers.
+After measurement and aggregation, the runner verifies every selected
 container's project, service and image identity before stopping its exact ID.
 It retains public routing fields, native state, bounded logs and wait statuses
 as qualification evidence. Other caller services keep the normal cleanup order.
