@@ -89,6 +89,13 @@
       ]
     },
     {
+      "name": "simulation-health",
+      "files": [
+        "compose.yaml",
+        "compose.simulation-health.yaml"
+      ]
+    },
+    {
       "name": "stepped",
       "files": [
         "compose.yaml",

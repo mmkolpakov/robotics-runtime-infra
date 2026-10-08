@@ -2,7 +2,7 @@
 # Native startup stays prompt; steady probes avoid repeated ROS CLI discovery.
 # Requires Docker Engine 25 / API 1.44; Podman startup scheduling is unqualified.
 services:
-  simulation-health:
+  simulation:
     healthcheck:
       test:
         - CMD

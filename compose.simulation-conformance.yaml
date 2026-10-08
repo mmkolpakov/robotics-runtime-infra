@@ -4,7 +4,7 @@ services:
     ipc: shareable
     extends:
       file: compose.simulation-health.yaml
-      service: simulation-health
+      service: simulation
 
   simulation-conformance:
     image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"

@@ -54,7 +54,7 @@ services:
     command: [ros2, launch, robotics_runtime_infra, headless.launch.py]
     extends:
       file: ../../../../compose.simulation-health.yaml
-      service: simulation-health
+      service: simulation
     healthcheck:
       start_period: 15s
   neutral-robot:
