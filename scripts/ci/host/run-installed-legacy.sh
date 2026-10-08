@@ -119,7 +119,8 @@ port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5000/tc
 [[ "${port}" =~ ^[0-9]+$ ]] || exit 65
 registry="127.0.0.1:${port}"
 curl --fail --silent --show-error --max-time 3 --retry 10 --retry-connrefused --retry-delay 1 \
-  "http://${registry}/v2/" >"${output}/registry-ready.json"
+  --retry-all-errors --output "${output}/registry-ready.json" \
+  --stderr "${output}/registry-ready.stderr" "http://${registry}/v2/"
 # Reuse the project image pin; configure only this owned BuildKit instance.
 buildkit_image="$(python3 -c 'import re,sys; from pathlib import Path; values=re.findall(r"^\s*image=(moby/buildkit:[^\s]+@sha256:[a-f0-9]{64})\s*$",Path(sys.argv[1]).read_text(),re.M); assert len(values)==1; print(values[0])' \
   .github/actions/setup-buildx/action.yml)"
