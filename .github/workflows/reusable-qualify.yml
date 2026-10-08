@@ -171,6 +171,13 @@ jobs:
           ROBOTICS_FOUNDATION_ARTIFACT_DIR: ${{ github.workspace }}/artifacts
           ROBOTICS_FOUNDATION_EXTRA_SERVICES: ${{ inputs.services }}
         run: bash scripts/ci/foundation/run-acceptance.sh
+      - name: Verify released stock playback natural EOF
+        if: inputs.execution_mode == 'released'
+        working-directory: tooling
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROBOTICS_PLAYBACK_ARTIFACT_ROOT: ${{ github.workspace }}/artifacts/native-player-eof
+        run: bash scripts/ci/integration/verify-mcap-playback.sh
       - name: Upload qualification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
