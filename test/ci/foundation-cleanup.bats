@@ -432,6 +432,10 @@ EOF
     printf 'compose=(docker compose)\n'
     printf 'run_dir=%q\nartifact_dir=%q\nproject=%q\n' \
       "${FIXTURE}/run" "${FIXTURE}/artifacts" "${PROJECT}"
+    # Match the real runner's empty caller registry before extracting its boundary.
+    printf 'source %q\n' "${LIBRARY}"
+    printf 'foundation_load_artifact_arguments %q %q\n' "${REPOSITORY_ROOT}" ""
+    printf 'foundation_stage_extension_schemas %q\n' "${FIXTURE}/run"
     awk '
       /^capture_runtime_metrics_diagnostics\(\) {/ { emit = 1 }
       emit && /^publish_failure_evidence\(\) {/ { exit }

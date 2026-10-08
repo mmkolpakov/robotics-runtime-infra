@@ -108,7 +108,11 @@ setup() {
   [ "${status}" -eq 0 ]
   run grep -F 'policy/consumer_compose_source.rego' "${ACCEPTANCE_SCRIPT}"
   [ "${status}" -eq 0 ]
-  run grep -F 'COMPOSE_DISABLE_ENV_FILE=1' "${ACCEPTANCE_SCRIPT}"
+  # Match the literal production call site, without expanding its variables.
+  # shellcheck disable=SC2016
+  run grep -F 'foundation_render_consumer_model "${consumer_root}" "${consumer_file}"' "${ACCEPTANCE_SCRIPT}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'COMPOSE_DISABLE_ENV_FILE=1' "${LIBRARY}"
   [ "${status}" -eq 0 ]
   run grep -F 'project_directory' "${ACCEPTANCE_SCRIPT}"
   [ "${status}" -eq 0 ]

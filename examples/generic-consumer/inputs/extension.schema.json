@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/robotics/generic-consumer.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "marker"
+  ],
+  "properties": {
+    "marker": {
+      "const": "generic-caller-v1"
+    }
+  }
+}

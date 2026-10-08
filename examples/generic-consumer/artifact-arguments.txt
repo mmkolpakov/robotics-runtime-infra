@@ -1,0 +1,4 @@
+--extension-schema
+https://example.org/robotics/generic-consumer.schema.json=examples/generic-consumer/inputs/extension.schema.json
+--artifact
+other_evidence:consumer/opaque.bin=examples/generic-consumer/inputs/opaque.bin
