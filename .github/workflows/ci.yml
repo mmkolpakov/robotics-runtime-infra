@@ -28,6 +28,55 @@ env:
   TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
 
 jobs:
+  nav2-consumer-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: examples/nav2-turtlebot3
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+        with:
+          version: "0.11.28"
+          enable-cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with:
+          node-version: "24.21.0"
+          package-manager-cache: false
+      - name: Install public consumer packages and wheel
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python --require-hashes -r requirements.lock
+          uv build --wheel --out-dir dist evaluator
+          uv pip install --python .venv/bin/python --no-deps --no-compile-bytecode \
+            dist/nav2_turtlebot3_evaluator-0.1.0-py3-none-any.whl
+          npm ci --ignore-scripts --no-fund
+      - name: Test portable consumer interfaces without simulation
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          node --test native-identity.test.mjs
+          .venv/bin/python test_evaluator.py
+          .venv/bin/python test_derivation.py
+          .venv/bin/python test_capture_controls.py
+          .venv/bin/python qualify-evaluator.py \
+            --wheel dist/nav2_turtlebot3_evaluator-0.1.0-py3-none-any.whl \
+            --tests test_evaluator.py --native-cases evaluator/tests/fixtures \
+            --python "${PWD}/.venv/bin/python" --contracts "${PWD}/.venv/bin/robotics-contracts" \
+            --output results/evaluator
+          .venv/bin/python make-scenario.py --case success \
+            --evaluator-receipt results/evaluator/receipt.json --middleware-profile fastdds.xml \
+            --schema nav2.schema.json --output results/scenario.json
+          .venv/bin/robotics-acceptance create-run --scenario results/scenario.json \
+            --output results/run-context.json --domain nav2=simulation \
+            --time-authority sim_clock --time-source gazebo-harmonic-clock \
+            --extension-schema "urn:nav2-turtlebot3:scenario:v1=${PWD}/nav2.schema.json"
+          NAV2_CONTEXT_FIXTURE="${PWD}/results" \
+            NAV2_CONTRACTS_CLI="${PWD}/.venv/bin/robotics-contracts" \
+            node --test admit-context.test.mjs
   product-helm:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -598,6 +647,7 @@ jobs:
       - product-terraform
       - product-ansible
       - static-analysis
+      - nav2-consumer-unit
       - compose-version
       - integration
       - amd-supply-chain
