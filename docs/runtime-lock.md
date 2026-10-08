@@ -1,13 +1,12 @@
 # Runtime Image Lock
 
-This repository has two explicit execution modes. They serve different
-purposes and must not be mixed within one run. Architecture C is the selected
-target; its separate host asset lock and worker qualifications are introduced
-by implementation commits and are not supplied by the historical OCI lock.
+Source mode builds a checkout. Released mode selects immutable OCI images from
+a canonical lock. Never mix those identities within one run. The compiled host
+has its own asset identity and provider-specific execution profile.
 
-[The qualification baseline](qualification-baseline.md) distinguishes accepted
-R9, published R10 and the failed neutral-robot B3 attempt. Source validation,
-release authenticity and live consumer acceptance are separate gates.
+[Qualification](qualification-baseline.md) records the accepted release scopes.
+Source validation, release authenticity and native consumer acceptance remain
+separate checks.
 
 ## Source Mode
 
@@ -26,11 +25,10 @@ qualification claim.
 ## Released Mode
 
 Released mode pulls immutable images listed in the selected release's unchanged
-`release.env`. This R10 example illustrates image selection; it does not claim
-that the neutral-robot consumer passed:
+`release.env`. The example selects the published ROS profile:
 
 ```bash
-gh release download v0.10.0-rc.1 \
+gh release download v0.11.0-rc2 \
   --repo mmkolpakov/robotics-runtime-infra \
   --pattern release.env
 docker compose --env-file release.env pull simulation
@@ -73,16 +71,15 @@ published and its registry digest is known.
 
 ## Caller, tooling and image source
 
-The workflow caller selects its own scenario and artifacts. The reusable
-workflow ref and `tooling_ref` must select the same reviewed full infra SHA.
-This tooling identity may differ from the source SHA attested for the images.
-The canonical release tag and exact lock select the images independently.
+The caller ref selects its workflow declaration, scenario and artifacts.
+`tooling_ref` selects a reviewed full infra SHA for implementation scripts and
+the independent consumer action; it defaults to the dispatch commit. It may
+differ from the caller and from the attested image-source SHA. The canonical
+release tag and exact lock select images independently.
 
-The retained B3 attempt used caller `63c33dd4a3cb1091876fbe38b0310c7bd942a5c9`,
-tooling `9944f0cc6ffd7fe16e14192f85887a06be59435a` and R10 image source
-`d6dc8a1c6b976faacab7b371821e9af54b9883c2`. Its Python workspace source was
-`dc02c62897372514537cf241f06dc71b9f960c44`. The image attestations bind the
-image source, not the caller or successful business outcome.
+The [qualification reference](qualification-baseline.md) binds the selected
+caller/tooling commits and image-source commit. Image attestations bind image
+source; they do not prove the caller's result.
 
 A downloaded qualification package verified with its included ephemeral key
 establishes integrity under that key. Trusted producer verification requires
