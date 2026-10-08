@@ -369,3 +369,160 @@ foundation_explain_qualification() (
   "$@" "${arguments[@]}" >"${output}" || return "$?"
   jq -e --arg desired "${desired}" '.execution.data_source == $desired' "${output}" >/dev/null
 )
+
+# A caller supplies only a subset of services already admitted by the model.
+foundation_load_settle_services() {
+  local raw="$1" service candidate admitted
+  shift
+  FOUNDATION_SETTLE_SERVICES=()
+  while IFS= read -r service; do
+    [[ -n "${service}" ]] || continue
+    [[ "${service}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || return 64
+    admitted=false
+    for candidate in "$@"; do [[ "${candidate}" != "${service}" ]] || admitted=true; done
+    [[ "${admitted}" == true ]] || {
+      printf 'settlement service is outside the admitted caller list: %s\n' "${service}" >&2
+      return 64
+    }
+    for candidate in "${FOUNDATION_SETTLE_SERVICES[@]}"; do
+      [[ "${candidate}" != "${service}" ]] || {
+        printf 'duplicate settlement service: %s\n' "${service}" >&2
+        return 64
+      }
+    done
+    FOUNDATION_SETTLE_SERVICES+=("${service}")
+  done <<<"${raw}"
+}
+
+foundation_owned_service_snapshot() {
+  local container="$1" project="$2" service="$3" image="$4" inspection
+  [[ "${container}" =~ ^[0-9a-f]{64}$ ]] || return 65
+  inspection="$(timeout --foreground 10 docker inspect "${container}")" || return "$?"
+  printf '%s\n' "${inspection}" |
+    jq -e --arg id "${container}" --arg project "${project}" \
+      --arg service "${service}" --arg image "${image}" '
+      if length != 1 or .[0].Id != $id or .[0].Image != $image or
+        .[0].Config.Labels["com.docker.compose.project"] != $project or
+        .[0].Config.Labels["com.docker.compose.service"] != $service
+      then error("caller service native identity is not owned") else .[0] end |
+      {container_id: .Id, image_id: .Image,
+       project: .Config.Labels["com.docker.compose.project"],
+       service: .Config.Labels["com.docker.compose.service"],
+       environment: [(.Config.Env // [])[] | select(
+         startswith("ROS_DOMAIN_ID=") or startswith("RMW_IMPLEMENTATION=") or
+         startswith("ROBOTICS_RUN_ID=") or startswith("ROBOTICS_DOMAIN_ID="))],
+       state: {status: .State.Status, running: .State.Running, pid: .State.Pid, exit_code: .State.ExitCode,
+         oom_killed: .State.OOMKilled,
+         started_at: .State.StartedAt, finished_at: .State.FinishedAt},
+       restart_count: .RestartCount}'
+}
+
+# Existing Docker logging, bounded by command time and local file size.
+foundation_service_logs() (
+  local container="$1" output="$2"
+  ulimit -f 1024
+  timeout --foreground 10 docker logs --timestamps --tail 1000 "${container}" >"${output}" 2>&1
+)
+
+# Bind the endpoint already selected by the trusted runner; never select a new one.
+foundation_settlement_endpoint_fingerprint() {
+  local context endpoint document
+  context="$(timeout --foreground 10 docker context show)" || return "$?"
+  endpoint="$(timeout --foreground 10 docker context inspect "${context}" --format '{{json .Endpoints.docker}}')" || return "$?"
+  document="$(jq -n --arg context "${context}" --argjson endpoint "${endpoint}" \
+    --arg host "${DOCKER_HOST:-}" --arg override "${DOCKER_CONTEXT:-}" \
+    --arg tls "${DOCKER_TLS_VERIFY:-}" --arg cert "${DOCKER_CERT_PATH:-}" \
+    --arg config "${DOCKER_CONFIG:-}" \
+    '{context:$context,endpoint:$endpoint,host:$host,override:$override,tls:$tls,cert:$cert,config:$config}')" || return "$?"
+  printf '%s\n' "${document}" | sha256sum | cut -d' ' -f1
+}
+
+foundation_bind_settlement_endpoint() {
+  ((${#FOUNDATION_SETTLE_SERVICES[@]})) || return 0
+  FOUNDATION_SETTLEMENT_ENDPOINT_FINGERPRINT="$(foundation_settlement_endpoint_fingerprint)" || return "$?"
+}
+
+foundation_settle_caller_services() {
+  local compose_name="$1" project="$2" model="$3" output="$4"
+  local -n settlement_compose="${compose_name}"
+  ((${#FOUNDATION_SETTLE_SERVICES[@]})) || return 0
+  local service image reference containers container directory index status candidate native_exit primary=0
+  local endpoint
+  local -a ids=() services=() images=()
+  endpoint="$(foundation_settlement_endpoint_fingerprint)" || return "$?"
+  [[ -n "${FOUNDATION_SETTLEMENT_ENDPOINT_FINGERPRINT:-}" &&
+    "${endpoint}" == "${FOUNDATION_SETTLEMENT_ENDPOINT_FINGERPRINT}" ]] || {
+    printf 'admitted caller settlement endpoint changed\n' >&2
+    return 65
+  }
+  mkdir -p -- "${output}"
+  printf '%s\n' "${endpoint}" >"${output}/endpoint.sha256"
+  # Preflight every selected native identity before any stop or native wait.
+  for service in "${FOUNDATION_SETTLE_SERVICES[@]}"; do
+    reference="$(jq -er --arg service "${service}" '.services[$service].image | strings' "${model}")" || return "$?"
+    image="$(timeout --foreground 10 docker image inspect --format '{{.Id}}' "${reference}")" || return "$?"
+    [[ "${image}" =~ ^sha256:[0-9a-f]{64}$ ]] || return 65
+    containers="$(timeout --foreground 10 "${settlement_compose[@]}" ps --all --quiet "${service}")" || return "$?"
+    [[ -n "${containers}" ]] || return 65
+    while IFS= read -r container; do
+      [[ "${container}" =~ ^[0-9a-f]{64}$ ]] || return 65
+      for candidate in "${ids[@]}"; do [[ "${candidate}" != "${container}" ]] || return 65; done
+      directory="${output}/${service}/${container}"
+      mkdir -p -- "${directory}"
+      foundation_owned_service_snapshot "${container}" "${project}" "${service}" "${image}" \
+        >"${directory}/before.json" || return "$?"
+      ids+=("${container}"); services+=("${service}"); images+=("${image}")
+    done <<<"${containers}"
+  done
+  for index in "${!ids[@]}"; do
+    directory="${output}/${services[index]}/${ids[index]}"
+    if foundation_service_logs "${ids[index]}" "${directory}/logs-before.txt"; then
+      status=0
+    else status=$?; fi
+    printf '%s\n' "${status}" >"${directory}/logs-before.status"
+    if ((status != 0 && primary == 0)); then primary="${status}"; fi
+  done
+  ((primary == 0)) || return "${primary}"
+  if timeout --foreground 70 docker stop --time 60 \
+    "${ids[@]}" >"${output}/native-stop.stdout" 2>"${output}/native-stop.stderr"; then
+    status=0
+  else status=$?; primary="${status}"; fi
+  printf '%s\n' "${status}" >"${output}/native-stop.status"
+  # Retain terminal facts even if an earlier native operation refused.
+  for index in "${!ids[@]}"; do
+    container="${ids[index]}"; directory="${output}/${services[index]}/${container}"
+    if timeout --foreground 10 docker wait "${container}" \
+      >"${directory}/native-wait.stdout" 2>"${directory}/native-wait.stderr"; then
+      status=0
+    else status=$?; fi
+    printf '%s\n' "${status}" >"${directory}/native-wait.status"
+    if ((status != 0 && primary == 0)); then primary="${status}"; fi
+    if foundation_owned_service_snapshot "${container}" "${project}" "${services[index]}" "${images[index]}" \
+      >"${directory}/after.json"; then
+      status=0
+    else status=$?; fi
+    printf '%s\n' "${status}" >"${directory}/native-inspect.status"
+    if ((status != 0 && primary == 0)); then primary="${status}"; fi
+    if foundation_service_logs "${container}" "${directory}/logs-after.txt"; then
+      status=0
+    else status=$?; fi
+    printf '%s\n' "${status}" >"${directory}/logs-after.status"
+    if ((status != 0 && primary == 0)); then primary="${status}"; fi
+    if [[ -s "${directory}/after.json" && -s "${directory}/native-wait.stdout" ]]; then
+      if jq -e --rawfile wait "${directory}/native-wait.stdout" '
+        .state.running == false and ($wait | test("^[0-9]+\\n?$")) and
+        .state.exit_code == ($wait | tonumber) and
+        .state.exit_code >= 0 and .state.exit_code <= 255' \
+        "${directory}/after.json" >/dev/null; then
+        native_exit="$(jq -r '.state.exit_code' "${directory}/after.json")"
+        if ((native_exit != 0 && primary == 0)); then primary="${native_exit}"; fi
+        if ! jq -e '.state.oom_killed == false and .restart_count == 0' \
+          "${directory}/after.json" >/dev/null; then
+          if ((primary == 0)); then primary=65; fi
+        fi
+      elif ((primary == 0)); then primary=65; fi
+    elif ((primary == 0)); then primary=65; fi
+  done
+  find "${output}" -type f -exec chmod 0444 -- {} +
+  return "${primary}"
+}

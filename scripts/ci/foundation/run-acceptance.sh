@@ -229,6 +229,8 @@ if [[ -n "${ROBOTICS_FOUNDATION_EXTRA_SERVICES:-}" ]]; then
     extra_services+=("${service}")
   done <<<"${ROBOTICS_FOUNDATION_EXTRA_SERVICES}"
 fi
+foundation_load_settle_services "${ROBOTICS_FOUNDATION_SETTLE_SERVICES:-}" "${extra_services[@]}"
+foundation_bind_settlement_endpoint
 foundation_files=(
   compose.yaml
   compose.foundation.yaml
@@ -801,6 +803,12 @@ fi
   "${FOUNDATION_CONTAINER_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
 
+settlement_dir=""
+if ((${#FOUNDATION_SETTLE_SERVICES[@]})); then
+  settlement_dir="${run_dir}/results/caller-settlement"
+  foundation_settle_caller_services compose "${project}" "${resolved_model}" "${settlement_dir}"
+fi
+
 mapfile -t mcap_summaries < <(
   find "${run_dir}/evidence/summaries" \
     -maxdepth 1 -type f -name '*.recording-summary.json' -print |
@@ -919,6 +927,12 @@ if [[ "${robot_selected}" == true ]]; then
   while IFS= read -r -d '' path; do
     qualification_inputs+=(--artifact "other_evidence:robot-readiness/${path##*/}=${path}")
   done < <(find "${artifact_dir}/robot-readiness" -maxdepth 1 -type f -print0 | sort -z)
+fi
+if [[ -n "${settlement_dir}" ]]; then
+  while IFS= read -r -d '' path; do
+    relative="${path#"${settlement_dir}/"}"
+    qualification_inputs+=(--artifact "other_evidence:consumer/settlement/${relative}=${path}")
+  done < <(find "${settlement_dir}" -type f -print0 | LC_ALL=C sort -z)
 fi
 qualification_inputs+=("${FOUNDATION_ARTIFACT_ARGUMENTS[@]}" "${FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS[@]}")
 qualification_package="$(realpath -e "${artifact_dir}")/qualification"

@@ -41,6 +41,12 @@ on:
         default: ""
         type: string
 
+      settle_services:
+        description: Optional newline-delimited subset of admitted services to settle before packaging.
+        required: false
+        default: ""
+        type: string
+
       artifact_arguments_file:
         description: >-
           Optional caller file containing --artifact/--extension-schema arguments,
@@ -174,6 +180,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ROBOTICS_FOUNDATION_ARTIFACT_DIR: ${{ github.workspace }}/artifacts
           ROBOTICS_FOUNDATION_EXTRA_SERVICES: ${{ inputs.services }}
+          ROBOTICS_FOUNDATION_SETTLE_SERVICES: ${{ inputs.settle_services }}
         run: bash scripts/ci/foundation/run-acceptance.sh
       - name: Verify released stock playback natural EOF
         if: inputs.execution_mode == 'released'
