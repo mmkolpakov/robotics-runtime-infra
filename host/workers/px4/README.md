@@ -18,8 +18,8 @@ native Action API directly; the provider does not define flight-controller metho
 `probe.py` is a finite native Gz Transport client. It records Scene, Pose_V and WorldStatistics,
 and uses WorldControl for the final pause followed by observed quiescent native time. It does
 not parse custom frames or implement physics. Nanosecond times remain strings. Pose/telemetry
-ascent qualifies only the CPU stock x500 source simulation, never hardware, Spiral, a complete
-flight mission, cameras, RTSP or rendering.
+ascent qualifies only the CPU stock x500 source simulation, never hardware, an application-specific
+airframe, a complete flight mission, cameras, RTSP or rendering.
 
 Build dependencies in `docker/px4-sitl-deps.Dockerfile`; download the immutable stock tag with
 filtered Git and initialize only the exact SITL gitlinks declared in
@@ -35,7 +35,9 @@ Include profile with PX4 and MAVSDK services, pins the compiled closure, and inv
 Admission/RunOwner. Measurement calls native generated Action/Telemetry clients.
 
 `qualify-px4-stock.mjs` accepts an immutable `PX4_WORKER_IMAGE` and the actual
-`PX4_VOLUME_ROOT` of named volume `rr-c13-px4-data-20261004`. Its project Unix Engine API uses
+`PX4_VOLUME_ROOT` of the named `PX4_RUN_VOLUME`. The caller supplies absolute
+`PX4_COMPOSE_EXECUTABLE` and `PX4_ENGINE_SOCKET` paths, plus an optional unprivileged
+`PX4_GRPC_PORT` (default `50113`). Its project Unix Engine API uses
 stock OCI init; the probe records actual PID1 binary identity. The consumer stops and drains the
 stock logger while the native clock still advances, then
 WorldControl pauses the world. Its retained drain callback reports the completed native command.
