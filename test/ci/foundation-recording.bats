@@ -926,6 +926,8 @@ mkdir -p "${artifact_dir}"
 cd "${root}"
 source scripts/ci/lib.sh
 ci_set_compose_fixture_env
+# The isolated renderer consumes the selected foundation image, not an ambient default.
+export OBSERVER_IMAGE=local/robotics-runtime-infra/acceptance-observer:ci
 source scripts/ci/foundation/lib.sh
 foundation_load_artifact_arguments "${consumer_root}" ""
 foundation_stage_extension_schemas "${run_dir}"
