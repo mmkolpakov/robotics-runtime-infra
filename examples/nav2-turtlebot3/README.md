@@ -24,8 +24,8 @@ Install the public Python inputs and build the consumer evaluator from this dire
     python3 -m venv .venv
     .venv/bin/python -m pip install --require-hashes -r requirements.lock
     uv build --wheel --out-dir dist evaluator
-    .venv/bin/python -m pip install --no-deps dist/nav2_turtlebot3_evaluator-0.2.0-py3-none-any.whl
-    .venv/bin/python qualify-evaluator.py --wheel dist/nav2_turtlebot3_evaluator-0.2.0-py3-none-any.whl --tests test_evaluator.py --native-cases evaluator/tests/fixtures --python "$PWD/.venv/bin/python" --contracts "$PWD/.venv/bin/robotics-contracts" --output results/evaluator
+    .venv/bin/python -m pip install --no-deps dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl
+    .venv/bin/python qualify-evaluator.py --wheel dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl --tests test_evaluator.py --native-cases evaluator/tests/fixtures --python "$PWD/.venv/bin/python" --contracts "$PWD/.venv/bin/robotics-contracts" --output results/evaluator
 
 The bundled observation fixtures are consumer predicate test inputs, not fresh execution receipts.
 Generate the requirements and issue a canonical run context through the public harness before

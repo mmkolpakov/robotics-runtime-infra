@@ -46,6 +46,9 @@ def evaluate(context: EvaluationContext):
             "required_tf_edges",
         ]
     }
+    expected_parameters["required_tf_edges"] = [
+        list(edge) for edge in expected_parameters["required_tf_edges"]
+    ]
     if report.get("parameters") != expected_parameters:
         raise ValueError("worker parameters differ from the declared scenario")
     case = report.get("case")

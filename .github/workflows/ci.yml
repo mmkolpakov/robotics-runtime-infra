@@ -52,7 +52,7 @@ jobs:
           uv pip install --python .venv/bin/python --require-hashes -r requirements.lock
           uv build --wheel --out-dir dist evaluator
           uv pip install --python .venv/bin/python --no-deps --no-compile-bytecode \
-            dist/nav2_turtlebot3_evaluator-0.2.0-py3-none-any.whl
+            dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl
           npm ci --ignore-scripts --no-fund
       - name: Test portable consumer interfaces without simulation
         env:
@@ -63,7 +63,7 @@ jobs:
           .venv/bin/python test_derivation.py
           .venv/bin/python test_capture_controls.py
           .venv/bin/python qualify-evaluator.py \
-            --wheel dist/nav2_turtlebot3_evaluator-0.2.0-py3-none-any.whl \
+            --wheel dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl \
             --tests test_evaluator.py --native-cases evaluator/tests/fixtures \
             --python "${PWD}/.venv/bin/python" --contracts "${PWD}/.venv/bin/robotics-contracts" \
             --output results/evaluator

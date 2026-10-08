@@ -96,7 +96,7 @@ def create(
                 "namespace": NAMESPACE,
                 "entry_point": "nav2_turtlebot3_evaluator:evaluate",
                 "distribution": "nav2-turtlebot3-evaluator",
-                "version": "0.2.0",
+                "version": "0.2.1",
                 "artifact_sha256": receipt["artifact"]["sha256"],
                 "receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
             }

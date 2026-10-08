@@ -50,6 +50,11 @@ def qualify(
             ):
                 raise ValueError("bounded regular predicate fixture required")
             inputs.append((path, "fixtures/" + case + "/" + name))
+    for name in ("make-scenario.py", "fastdds.xml", "nav2.schema.json"):
+        path = tests.parent / name
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
+            raise ValueError("bounded regular public-context test input required")
+        inputs.append((path, "public-context-inputs/" + name))
     input_hashes = {path: digest(path) for path, _name in inputs}
     inputs_manifest = output / "qualification-inputs.json"
     document(
