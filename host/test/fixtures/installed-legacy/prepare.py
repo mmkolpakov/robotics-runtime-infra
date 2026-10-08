@@ -32,6 +32,7 @@ DEPLOYMENT = [
     "host/workers/legacy-live/prepare-live.py",
     "host/workers/legacy-live/capture-provider.py",
     "host/workers/legacy-live/export-startup-failure.py",
+    "host/workers/legacy-live/probe-diagnostic-export.py",
     "host/workers/legacy-live/prepare-runtime.py",
 ]
 

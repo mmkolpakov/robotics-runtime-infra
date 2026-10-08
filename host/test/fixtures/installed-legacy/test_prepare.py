@@ -184,6 +184,7 @@ class InstalledPreparation(unittest.TestCase):
             "host/workers/legacy/prepare-source.py",
             "host/workers/legacy-live/capture-provider.py",
             "host/workers/legacy-live/export-startup-failure.py",
+            "host/workers/legacy-live/probe-diagnostic-export.py",
         ):
             with self.subTest(worker=worker):
                 raw = (deployment / worker).read_bytes()
@@ -246,6 +247,103 @@ class InstalledPreparation(unittest.TestCase):
             self.prepare("docker")
         self.assertEqual(self.selected_engines, [])
         self.assertFalse((self.directory / "consumer").exists())
+
+
+class DiagnosticStateAccess(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="diagnostic-state-")
+        self.addCleanup(self.temporary.cleanup)
+        self.state = Path(self.temporary.name) / "state"
+        self.state.mkdir(mode=0o700)
+        spec = importlib.util.spec_from_file_location(
+            "diagnostic_export_probe",
+            ROOT / "host/workers/legacy-live/probe-diagnostic-export.py",
+        )
+        self.probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.probe)
+
+    def inspect(self, uid=None):
+        return self.probe.private_state_inventory(
+            self.state, os.getuid() if uid is None else uid, os.getgid()
+        )
+
+    def test_absent_lazy_metric_keeps_actual_empty_private_directory_readable(self):
+        result = self.inspect()
+        self.assertTrue(result["stateDirectoryReadable"])
+        self.assertEqual(result["presentStateFilesRead"], [])
+        self.assertFalse((self.state / "spool-peak-size-bytes").exists())
+
+    def test_stock_sink_empty_spool_preserves_inherited_setgid_directory_mode(self):
+        self.state.rmdir()
+        self.state.parent.chmod(0o2770)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                "umask 0022; source <(sed '/^for command/,$d' "
+                "docker/evidence-sink/evidence-sink); "
+                "update_max_state spool-peak-size-bytes 0",
+            ],
+            cwd=ROOT,
+            env={**os.environ, "EVIDENCE_STATE_DIR": str(self.state)},
+            check=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.state.stat().st_mode & 0o7777, 0o2755)
+        self.assertFalse((self.state / "spool-peak-size-bytes").exists())
+        observed = self.inspect()
+        self.assertEqual(observed["stateMode"], "0o2755")
+        self.assertTrue(observed["stateDirectoryReadable"])
+        self.assertEqual(observed["presentStateFilesRead"], [])
+
+    def test_every_present_private_state_file_is_read_without_changing_bytes(self):
+        registrations = self.state / "registrations"
+        registrations.mkdir(mode=0o700)
+        files = {
+            self.state / "spool-peak-size-bytes": b"7",
+            registrations / "receipt.json": b'{"original": true}',
+        }
+        for path, raw in files.items():
+            path.write_bytes(raw)
+            path.chmod(0o600)
+        result = self.inspect()
+        self.assertCountEqual(
+            result["presentStateFilesRead"],
+            ["spool-peak-size-bytes", "registrations/receipt.json"],
+        )
+        self.assertEqual({path: path.read_bytes() for path in files}, files)
+
+    def test_missing_foreign_or_nonprivate_directory_refuses(self):
+        with self.assertRaisesRegex(ValueError, "ownership"):
+            self.inspect(os.getuid() + 1)
+        self.state.chmod(0o777)
+        with self.assertRaisesRegex(ValueError, "foreign writes"):
+            self.inspect()
+        self.state.rmdir()
+        with self.assertRaises(FileNotFoundError):
+            self.inspect()
+
+    def test_unreadable_present_file_refuses(self):
+        path = self.state / "private"
+        path.write_bytes(b"preserved")
+        path.chmod(0)
+        with self.assertRaises(PermissionError):
+            self.inspect()
+        self.assertEqual(path.stat().st_mode & 0o777, 0)
+
+    def test_symlink_entry_or_root_refuses_without_following_it(self):
+        target = self.state.parent / "outside"
+        target.write_bytes(b"outside")
+        link = self.state / "linked"
+        link.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            self.inspect()
+        link.unlink()
+        self.state.rmdir()
+        self.state.symlink_to(self.state.parent, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "directory type"):
+            self.inspect()
 
 
 @unittest.skipUnless(

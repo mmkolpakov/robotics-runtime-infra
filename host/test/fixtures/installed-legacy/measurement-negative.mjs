@@ -56,9 +56,10 @@ export async function interruptedMeasurement(mode,{run,finalizer,engine,compose,
   assert.equal(lastStateObserved,true,'actual native last-state did not succeed');assert.equal(writerDrainSettled,true,'actual native writer drain did not succeed');
   const before=await engine.remainingOwned(runId);assert.ok(before.containers.some(row=>row.Id===plan.sourceContainerId));assert.ok(run.resources.pending().every(row=>!row.attempted));await save('native-before-diagnostic-export',before);
   const exporterUser='10001:1000',exporterName=options.projectName+'-diagnostic-export-admission';
-  const probeCode="import json,os,pathlib; state=pathlib.Path('/run/robotics/evidence/state/spool-peak-size-bytes'); retained=pathlib.Path('/retained'); facts=retained.stat(); assert os.getuid()==10001 and os.getgid()==1000; assert facts.st_gid==1000 and (facts.st_mode&0o070)==0o070; state.open('rb').read(1); print(json.dumps({'uid':os.getuid(),'gid':os.getgid(),'retainedGid':facts.st_gid,'retainedMode':oct(facts.st_mode&0o7777),'privateStateReadable':True}))";
-  const admission=await saveJob('diagnostic-exporter-admission',['run','--no-deps','--name',exporterName,'--user',exporterUser,plan.coordinatorService,plan.contractPythonPath,'-c',probeCode],signal);
-  const actualUser=JSON.parse(admission.stdout);assert.equal(actualUser.uid,10001);assert.equal(actualUser.gid,1000);assert.equal(actualUser.privateStateReadable,true);
+  const admission=await saveJob('diagnostic-exporter-admission',['run','--no-deps','--name',exporterName,'--user',exporterUser,plan.coordinatorService,plan.contractPythonPath,
+   '/source/host/workers/legacy-live/probe-diagnostic-export.py','--state','/run/robotics/evidence/state','--retained','/retained'],signal);
+  const actualUser=JSON.parse(admission.stdout);assert.equal(actualUser.uid,10001);assert.equal(actualUser.gid,1000);assert.equal(actualUser.stateDirectoryReadable,true);
+  assert.equal(actualUser.stateUid,10001);assert.equal(actualUser.stateGid,1000);assert.equal(Number.parseInt(actualUser.stateMode.slice(2),8)&0o022,0);assert.ok(Array.isArray(actualUser.presentStateFilesRead));
   const candidates=(await engine.remainingOwned(runId)).containers.filter(row=>row.Names?.includes('/'+exporterName));assert.equal(candidates.length,1);
   const exporterRequirement={runId,projectName:options.projectName,imageDigest:parameters.coordinatorImage,user:exporterUser,
    mounts:[{destination:'/run/robotics',readOnly:false,volumeName:parameters.sourceVolume},{destination:'/retained',readOnly:false,volumeName:parameters.retainedVolume}],
