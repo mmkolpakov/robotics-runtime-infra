@@ -1,10 +1,38 @@
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
+import { isAbsolute } from 'node:path';
 
 export function configDigest(value) {
   assert.equal(typeof value, 'string');
   assert.match(value, /^(?:sha256:)?[a-f0-9]{64}(?![\s\S])/);
   return value.replace(/^sha256:/, '');
+}
+
+export function inspectionArguments(config, kind, id) {
+  assert(isAbsolute(config.engineSocket ?? ''), 'absolute selected Engine socket required');
+  assert(/^1\.(?:2[4-9]|[34][0-9]|5[0-3])$/.test(config.engineApiVersion ?? ''),
+    'selected Engine API must stay in the admitted operation range');
+  const routes = {
+    container: ['containers', '/json'], image: ['images', '/json'],
+    volume: ['volumes', ''], network: ['networks', ''],
+  };
+  assert(Object.hasOwn(routes, kind), 'fixed read-only inspection operation required');
+  if (kind === 'container') {
+    assert.match(id, /^[a-f0-9]{64}$/);
+    assert([config.px4Id, config.serverId].includes(id), 'issued actor ID required');
+  } else if (kind === 'image') {
+    configDigest(id);
+  } else if (kind === 'volume') {
+    assert.match(id, /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/);
+    assert.equal(id, config.runVolume);
+  } else {
+    assert.match(config.project, /^rr-px4-[a-f0-9]{24}$/);
+    assert.equal(id, config.project + '_default');
+  }
+  const [collection, suffix] = routes[kind];
+  return ['--disable', '--silent', '--show-error', '--fail', '--max-time', '10',
+    '--unix-socket', config.engineSocket, '--request', 'GET',
+    'http://localhost/v' + config.engineApiVersion + '/' + collection + '/' + encodeURIComponent(id) + suffix];
 }
 
 function environment(values) {

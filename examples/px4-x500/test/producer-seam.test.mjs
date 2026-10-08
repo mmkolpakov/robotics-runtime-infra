@@ -12,30 +12,33 @@ test('default producer path and exactly three explicit controller cases', () => 
   }
 });
 function facts(id, service, overrides = {}) {
-  return { status: 'complete', container: { Id: id.repeat(64), Config: { Labels: {
+  return { status: 'complete', engine: { clientApi: '1.41' }, container: { Id: id.repeat(64), Config: { Labels: {
     'org.robotics.runtime.run-id': 'issued-run',
     'com.docker.compose.project': 'rr-px4-' + 'c'.repeat(24),
     'com.docker.compose.service': service, ...overrides,
   } } } };
 }
 test('operator bootstrap takes real distinct IDs from complete admitted facts', () => {
-  const config = { runVolume: 'issued-volume', grpcPort: 50113 };
+  const config = { runVolume: 'issued-volume', grpcPort: 50113, socketPath: '/run/selected-engine.sock' };
   const result = externalOperator(config, facts('a', 'px4-native'), facts('b', 'mavsdk-native'),
-    'issued-run', 'rr-px4-' + 'c'.repeat(24), '/usr/bin/podman');
+    'issued-run', 'rr-px4-' + 'c'.repeat(24), '1.41');
   assert.equal(result.px4Id, 'a'.repeat(64));
   assert.equal(result.serverId, 'b'.repeat(64));
   assert.equal(result.runVolume, 'issued-volume');
   assert.equal(result.grpcPort, 50113);
+  assert.equal(result.engineApiVersion, '1.41');
+  assert.equal(result.engineSocket, config.socketPath);
+  assert.equal(result.curlExecutable, '/usr/bin/curl');
 });
 test('incomplete/foreign/native-ID-alias facts refuse bootstrap', () => {
-  const config = { runVolume: 'issued-volume', grpcPort: 50113 };
+  const config = { runVolume: 'issued-volume', grpcPort: 50113, socketPath: '/run/selected-engine.sock' };
   const owner = 'issued-run', project = 'rr-px4-' + 'c'.repeat(24);
   const bad = facts('a', 'px4-native');bad.status = 'incomplete';
-  assert.throws(() => externalOperator(config, bad, facts('b', 'mavsdk-native'), owner, project, '/usr/bin/podman'));
+  assert.throws(() => externalOperator(config, bad, facts('b', 'mavsdk-native'), owner, project, '1.41'));
   assert.throws(() => externalOperator(config, facts('a', 'px4-native'),
-    facts('b', 'mavsdk-native', { 'org.robotics.runtime.run-id': 'foreign' }), owner, project, '/usr/bin/podman'));
-  assert.throws(() => externalOperator(config, facts('a', 'px4-native'), facts('a', 'mavsdk-native'), owner, project, '/usr/bin/podman'));
-  assert.throws(() => externalOperator(config, facts('a', 'px4-native'), facts('b', 'mavsdk-native'), owner, project, 'podman'));
+    facts('b', 'mavsdk-native', { 'org.robotics.runtime.run-id': 'foreign' }), owner, project, '1.41'));
+  assert.throws(() => externalOperator(config, facts('a', 'px4-native'), facts('a', 'mavsdk-native'), owner, project, '1.41'));
+  assert.throws(() => externalOperator(config, facts('a', 'px4-native'), facts('b', 'mavsdk-native'), owner, project, '1.99'));
 });
 test('consumer failure still forwards exact owner hooks for native cleanup', async () => {
   const hooks = Object.freeze({ closeMeasurement() {}, captureLastState() {}, drainRecorders() {}, exportEvidence() {} });

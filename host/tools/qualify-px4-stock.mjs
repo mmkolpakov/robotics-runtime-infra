@@ -12,10 +12,12 @@ export function externalCase(argv) {
   assert(['land','unarmed-refusal','application-deadline'].includes(argv[1]),'unknown external flight case');
   return argv[1];
 }
-export function externalOperator(config,px4,server,owner,project,podman) {
-  assert(isAbsolute(podman),'absolute operator Podman executable required');
+export function externalOperator(config,px4,server,owner,project,apiVersion) {
+  assert(isAbsolute(config.socketPath),'absolute selected Engine socket required');
+  assert(/^1\.(?:2[4-9]|[34][0-9]|5[0-3])$/.test(apiVersion),'selected Engine API outside operation range');
   for(const [facts,service] of [[px4,'px4-native'],[server,'mavsdk-native']]){
     assert.equal(facts.status,'complete','producer admission is incomplete');
+    assert.equal(facts.engine?.clientApi,apiVersion,'producer selected API differs');
     assert.match(facts.container?.Id,/^[a-f0-9]{64}$/);
     const labels=facts.container.Config?.Labels;
     assert.equal(labels?.['org.robotics.runtime.run-id'],owner);
@@ -23,7 +25,7 @@ export function externalOperator(config,px4,server,owner,project,podman) {
     assert.equal(labels?.['com.docker.compose.service'],service);
   }
   assert.notEqual(px4.container.Id,server.container.Id);
-  return {podmanExecutable:podman,px4Id:px4.container.Id,serverId:server.container.Id,
+  return {curlExecutable:'/usr/bin/curl',engineSocket:config.socketPath,engineApiVersion:String(apiVersion),px4Id:px4.container.Id,serverId:server.container.Id,
     ownerId:owner,project,runVolume:config.runVolume,grpcPort:config.grpcPort};
 }
 export async function captureConsumerFailure(invoke,recordRefusal) {
@@ -50,8 +52,6 @@ export async function finishAfterConsumer(run,hooks,firstError,recordLater,check
 }
 async function main() {
 const selected=externalCase(process.argv.slice(2));
-const operatorPodman=process.env.PX4_PODMAN_EXECUTABLE??'/usr/bin/podman';
-if(selected)assert(isAbsolute(operatorPodman),'absolute operator Podman executable required');
 const {default:Docker}=await import('dockerode');
 const {ComposeExecution,EngineMetadata}=await import('@robotics-runtime/infra-host');
 const {Context,Jobs,Admission,RunOwner,referenceFile,isDisposed}=await import('@robotics-runtime/host');
@@ -126,10 +126,9 @@ try{
     const inputRefs=[...controllerInputs];const controllerRefs=[];
     let poses;let job;let jobFailure;
     consumerError=await captureConsumerFailure(async()=>{
-    const podman=operatorPodman;
     const p=JSON.parse(await readFile(join(px4.output,'px4-native-engine.json'),'utf8'));
     const m=JSON.parse(await readFile(join(px4.output,'mavsdk-native-engine.json'),'utf8'));
-    const operator=externalOperator(config,p,m,owner,px4.project,podman);
+    const operator=externalOperator(config,p,m,owner,px4.project,observedEngine.facts.clientApi);
     const operatorPath=join(output,'external-operator.json');
     await writeFile(operatorPath,JSON.stringify(operator)+'\n',{flag:'wx',mode:0o400});
     inputRefs.push(await referenceFile(operatorPath));

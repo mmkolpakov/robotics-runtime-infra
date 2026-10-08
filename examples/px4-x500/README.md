@@ -9,13 +9,17 @@ Install with `npm ci --ignore-scripts`. `npm test` runs portable consumer policy
 controls; they do not qualify flight, hardware or producer cleanup.
 
 The trusted operator supplies an absolute `operator.json` with
-`podmanExecutable`, exact `px4Id` and `serverId`, `ownerId`, the actual
+`curlExecutable` (`/usr/bin/curl`), the selected absolute Unix `engineSocket`
+and producer-observed `engineApiVersion` (API 1.24–1.53), exact `px4Id` and
+`serverId`, `ownerId`, the actual
 `rr-px4-<24 hex>` Compose project, an unprivileged loopback `grpcPort` and the
 retained named `runVolume`.
 The producer must use the stock Compose profile, source image and labels.
 The operator JSON is captured from an unchanged regular file bounded to 4 MiB;
 symlinks, FIFOs and files changed during capture are refused.
-Native inspection verifies actual running IDs, image/digest, issued labels,
+Fixed read-only GET routes use the producer-selected Engine API through finite
+public `Jobs`; curl config, redirects and arbitrary request URLs are not used.
+Inspection verifies actual running IDs, image/digest, issued labels,
 MAVSDK namespace parent, stock simulation command, full image environment with
 only the issued PX4 partition override and checked native identity fields,
 named retained volume, sized tmpfs and loopback port before any flight command.

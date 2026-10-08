@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { admitActors, configDigest } from '../src/admission.mjs';
+import { admitActors, configDigest, inspectionArguments } from '../src/admission.mjs';
 
 function actors() {
   const config = { px4Id: 'a'.repeat(64), serverId: 'b'.repeat(64),
@@ -136,4 +136,36 @@ test('refused foreign environment values are absent from assertion diagnostics',
       return true;
     });
   }
+});
+
+test('all inspection operations use only fixed selected Unix Engine GET routes', () => {
+  const [config] = actors();
+  Object.assign(config, { engineSocket: '/run/selected-engine.sock', engineApiVersion: '1.41' });
+  for (const [kind, id, suffix] of [
+    ['container', config.px4Id, 'containers/' + config.px4Id + '/json'],
+    ['image', 'sha256:' + 'd'.repeat(64), 'images/sha256%3A' + 'd'.repeat(64) + '/json'],
+    ['volume', config.runVolume, 'volumes/' + config.runVolume],
+    ['network', config.project + '_default', 'networks/' + config.project + '_default'],
+  ]) {
+    const args = inspectionArguments(config, kind, id);
+    assert.equal(args.at(-1), 'http://localhost/v1.41/' + suffix);
+    assert.equal(args[0], '--disable');
+    assert.equal(args[args.indexOf('--request') + 1], 'GET');
+    assert.equal(args[args.indexOf('--unix-socket') + 1], config.engineSocket);
+    assert.equal(args[args.indexOf('--max-time') + 1], '10');
+    assert(!args.includes('-L') && !args.includes('--location'));
+  }
+});
+test('foreign IDs/names, operation injection and unsupported API refuse before Jobs', () => {
+  const [config] = actors();
+  Object.assign(config, { engineSocket: '/run/selected-engine.sock', engineApiVersion: '1.41' });
+  for (const [kind, id] of [
+    ['container', 'f'.repeat(64)], ['container', '../../containers/other'],
+    ['image', 'https://example.test/image'], ['volume', 'foreign-data'],
+    ['network', 'foreign_default'], ['POST', config.px4Id], ['__proto__', config.px4Id],
+  ]) assert.throws(() => inspectionArguments(config, kind, id));
+  for (const engineApiVersion of ['1.23', '1.54', '1.041', '1.41/containers', undefined]) {
+    assert.throws(() => inspectionArguments({ ...config, engineApiVersion }, 'container', config.px4Id));
+  }
+  assert.throws(() => inspectionArguments({ ...config, engineSocket: 'http://remote' }, 'container', config.px4Id));
 });
