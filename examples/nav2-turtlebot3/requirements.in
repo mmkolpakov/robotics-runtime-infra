@@ -1,0 +1,3 @@
+robotics-runtime-contracts[mcap]==0.19.0
+robotics-acceptance-harness==0.20.1
+mcap==1.5.0
