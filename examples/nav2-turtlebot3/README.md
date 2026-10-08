@@ -43,7 +43,7 @@ After native closure, build the runtime/evidence inputs and run the published of
     .venv/bin/python finalize.py --capture "$PWD/results/success" --output "$PWD/results/evaluation" --qualification "$PWD/results/evaluator" --source-revision "$source_revision" --contracts "$PWD/.venv/bin/robotics-contracts" --harness "$PWD/.venv/bin/robotics-acceptance" --python "$PWD/.venv/bin/python"
 
 The output contains the public runtime, scoped capture/cleanup conformance, evidence index, OTLP
-derivation, acceptance-result JSON and JUnit. A nonzero acceptance exit retains the original failed
+derivation, acceptance-result JSON and JUnit. A nonzero acceptance exit retains the original failed,
 error or incomplete verdict; a successful action cannot override transport failure or unevaluated
 coverage. The conformance profile
 covers topic capture and owned terminal cleanup, not delivery quality, physics or full RunOwner
