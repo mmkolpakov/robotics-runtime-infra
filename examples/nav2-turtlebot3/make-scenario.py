@@ -28,7 +28,9 @@ def create(
                 "min_publishers": 1,
                 "min_subscribers": 1,
                 "first_message_timeout_sec": 10,
-                "qos_profile": "system_default",
+                "qos_profile": "transient_local"
+                if name == "/amcl_pose"
+                else "system_default",
             }
             for name, message_type in (
                 ("/odom", "nav_msgs/msg/Odometry"),
@@ -94,7 +96,7 @@ def create(
                 "namespace": NAMESPACE,
                 "entry_point": "nav2_turtlebot3_evaluator:evaluate",
                 "distribution": "nav2-turtlebot3-evaluator",
-                "version": "0.1.0",
+                "version": "0.2.0",
                 "artifact_sha256": receipt["artifact"]["sha256"],
                 "receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
             }

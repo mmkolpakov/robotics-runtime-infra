@@ -421,7 +421,11 @@ def main() -> int:
                 PoseWithCovarianceStamped,
                 "/amcl_pose",
                 message_callback("amcl_pose"),
-                qos_profile_sensor_data,
+                QoSProfile(
+                    depth=10,
+                    reliability=ReliabilityPolicy.RELIABLE,
+                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                ),
             ),
             navigator.create_subscription(
                 Odometry,
@@ -468,25 +472,6 @@ def main() -> int:
                 expected_graph,
                 observe_clock=True,
                 node_name="nav2_public_graph_observer",
-            )
-            nomotion_client = navigator.create_client(Empty, "/request_nomotion_update")
-            nomotion_deadline = min(ready_deadline, time.monotonic() + 2)
-            while not nomotion_client.wait_for_service(timeout_sec=0.1):
-                if time.monotonic() >= nomotion_deadline:
-                    raise TimeoutError(
-                        "the upstream AMCL nomotion service is unavailable"
-                    )
-            finite_future(
-                navigator,
-                nomotion_client.call_async(Empty.Request()),
-                nomotion_deadline,
-            )
-            record(
-                "initial-nomotion-response",
-                {
-                    "service": "/request_nomotion_update",
-                    "type": "std_srvs/srv/Empty",
-                },
             )
             graph_ready = wait_for_readiness(
                 expected_graph,

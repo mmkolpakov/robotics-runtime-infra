@@ -193,12 +193,12 @@ rfc3986-validator==0.1.1 \
 rfc3987-syntax==1.1.0 \
     --hash=sha256:6c3d97604e4c5ce9f714898e05401a0445a641cfa276432b0a648c80856f6a3f \
     --hash=sha256:717a62cbf33cffdd16dfa3a497d81ce48a660ea691b1ddd7be710c22f00b4a0d
-robotics-acceptance-harness==0.20.1 \
-    --hash=sha256:4f58deba08c91837f6b92ad3588e7bb5dfd1322b0449f3b5f9d7b0c3e7cbe0ea \
-    --hash=sha256:f86dfb49a36f1a6f4254d874c94ddeb92283dbffb14e0ed2b56ff796169c547e
-robotics-runtime-contracts==0.19.0 \
-    --hash=sha256:a6bb738c855f84a26844c303a2060bbce4aeed32fc2623624689b96d2c678e5b \
-    --hash=sha256:f87fe61399a0cb31b9ebf377c871a7f1c02f6ff207e5461573a51e67615e0d70
+robotics-acceptance-harness==0.21.0 \
+    --hash=sha256:4fc69dddc70e33b967f6b230462a367bf20b05b2496ccff628ea88240b58675d \
+    --hash=sha256:da70f267d263407fca551aaef658b7fc76b421c68f58577934c700ccca72d2a3
+robotics-runtime-contracts==0.20.0 \
+    --hash=sha256:949fec2614392421f021ed2f7a06de24947d33681222e20ca186bbd6f01013af \
+    --hash=sha256:e761c1f7a8a36180419f71988cd1c4320233de68156ba4dfe0f026058f1a8b6c
 rpds-py==2026.9.1 \
     --hash=sha256:00ba2d8c7dd4ee537978ddf4b3fbd712bef2d8751603f7f3146b3f4287768e25 \
     --hash=sha256:01445c8d194aa032a08e944f16567672da1c62dbdbefd8b6d0693032e290cf68 \

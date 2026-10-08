@@ -106,12 +106,12 @@
   },
   "public_packages": {
     "contracts": {
-      "version": "0.19.0",
-      "sha256": "a6bb738c855f84a26844c303a2060bbce4aeed32fc2623624689b96d2c678e5b"
+      "version": "0.20.0",
+      "sha256": "e761c1f7a8a36180419f71988cd1c4320233de68156ba4dfe0f026058f1a8b6c"
     },
     "harness": {
-      "version": "0.20.1",
-      "sha256": "4f58deba08c91837f6b92ad3588e7bb5dfd1322b0449f3b5f9d7b0c3e7cbe0ea"
+      "version": "0.21.0",
+      "sha256": "da70f267d263407fca551aaef658b7fc76b421c68f58577934c700ccca72d2a3"
     },
     "host": {
       "version": "0.1.0-rc.0",

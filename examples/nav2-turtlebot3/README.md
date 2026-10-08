@@ -2,7 +2,7 @@
 
 This headless example runs the official Nav2 Jazzy TurtleBot3 Waffle simulation with Gazebo
 Harmonic, the supplied map/world/model, and AMCL. It uses the published runtime host package for
-bounded native commands, published contracts 0.19.0 and acceptance harness 0.20.1 for evaluation,
+bounded native commands, published contracts 0.20.0 and acceptance harness 0.21.0 for evaluation,
 and the upstream ROS APIs for navigation and recording.
 
 The scenario seed is consumer metadata; this recipe does not qualify Gazebo or AMCL engine-seed
@@ -24,8 +24,8 @@ Install the public Python inputs and build the consumer evaluator from this dire
     python3 -m venv .venv
     .venv/bin/python -m pip install --require-hashes -r requirements.lock
     uv build --wheel --out-dir dist evaluator
-    .venv/bin/python -m pip install --no-deps dist/nav2_turtlebot3_evaluator-0.1.0-py3-none-any.whl
-    .venv/bin/python qualify-evaluator.py --wheel dist/nav2_turtlebot3_evaluator-0.1.0-py3-none-any.whl --tests test_evaluator.py --native-cases evaluator/tests/fixtures --python "$PWD/.venv/bin/python" --contracts "$PWD/.venv/bin/robotics-contracts" --output results/evaluator
+    .venv/bin/python -m pip install --no-deps dist/nav2_turtlebot3_evaluator-0.2.0-py3-none-any.whl
+    .venv/bin/python qualify-evaluator.py --wheel dist/nav2_turtlebot3_evaluator-0.2.0-py3-none-any.whl --tests test_evaluator.py --native-cases evaluator/tests/fixtures --python "$PWD/.venv/bin/python" --contracts "$PWD/.venv/bin/robotics-contracts" --output results/evaluator
 
 The bundled observation fixtures are consumer predicate test inputs, not fresh execution receipts.
 Generate the requirements and issue a canonical run context through the public harness before
