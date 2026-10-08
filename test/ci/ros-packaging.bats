@@ -199,7 +199,7 @@ prepare_playback_transport() {
   export ROBOTICS_PLAYBACK_ARTIFACT_ROOT="${BATS_TEST_TMPDIR}/retained"
   export PLAYBACK_TRACE="${BATS_TEST_TMPDIR}/docker-trace"
   export PLAYBACK_LARGE_DOMAIN=87 PLAYBACK_NEGATIVE_DATA=0 PLAYBACK_LOG_FAILURE_DOMAIN=none
-  export PLAYBACK_WRONG_IMAGE=0
+  export PLAYBACK_WRONG_IMAGE=0 PLAYBACK_PLAYER_EXIT=0 PLAYBACK_WAIT_FAILURE=0 PLAYBACK_PLAYER_OOM=false PLAYBACK_PLAYER_RESTARTS=0
   export ROBOTICS_FOUNDATION_LOCK="${REPO_ROOT}/config/foundation-lock.json" ROS_DISTRO=jazzy
   export GITHUB_SHA
   GITHUB_SHA="$(printf '%040d' 2)"
@@ -214,6 +214,13 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${PLAYBACK_TRACE}"
+container_id() { printf '%s' "${ROS_DOMAIN_ID}-$1" | sha256sum | cut -d' ' -f1; }
+container_role() {
+  for role in playback playback-gate playback-probe; do
+    if [[ "$1" == "$(container_id "$role")" ]]; then printf '%s' "$role"; return; fi
+  done
+  exit 64
+}
 case "$1" in
   image)
     image_id="sha256:$(printf '%064d' 4)"
@@ -226,7 +233,7 @@ case "$1" in
     while (($#)); do
       case "$1" in
         config) exec "${PLAYBACK_NATIVE_DOCKER}" "${original[@]}" ;;
-        ps) printf '%s-%s\n' "${ROS_DOMAIN_ID}" "${@: -1}"; exit 0 ;;
+        ps) container_id "${@: -1}"; printf '\n'; exit 0 ;;
         up | wait) exit 0 ;;
         down)
           if [[ -f "${ROBOTICS_RUN_DIR:-}/runtime-manifest.json" ]]; then
@@ -277,21 +284,36 @@ case "$1" in
     exit 64
     ;;
   inspect)
+    role="$(container_role "${@: -1}")"
     if [[ "$*" == *'{{.Image}}'* ]]; then
       image_id="sha256:$(printf '%064d' 4)"
-      [[ "${@: -1}" != *playback-probe ]] || image_id="sha256:$(printf '%064d' 5)"
+      [[ "$role" != playback-probe ]] || image_id="sha256:$(printf '%064d' 5)"
       [[ "${PLAYBACK_WRONG_IMAGE}" != 1 ]] || image_id="sha256:$(printf '%064d' 6)"
       printf '%s\n' "${image_id}"
+    elif [[ "$*" == *'{{.State.ExitCode}}'* ]]; then
+      if [[ "${ROS_DOMAIN_ID}-$role" == 86-playback-gate ]]; then printf '1\n'
+      elif [[ "${ROS_DOMAIN_ID}-$role" == 86-playback-probe ]]; then printf '124\n'
+      else printf '0\n'; fi
     else
-      case "${@: -1}" in
-        86-playback-gate) printf '1\n' ;;
-        86-playback-probe) printf '124\n' ;;
-        *) printf '0\n' ;;
-      esac
+      exited=false
+      [[ ! -f "${ROBOTICS_RUN_DIR}/player-exited" ]] || exited=true
+      jq -n --arg id "${@: -1}" --arg image "sha256:$(printf '%064d' 4)"         --arg project "playback-ready-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"         --argjson exited "$exited" --argjson code "${PLAYBACK_PLAYER_EXIT}"         --argjson oom "${PLAYBACK_PLAYER_OOM}" --argjson restarts "${PLAYBACK_PLAYER_RESTARTS}"         --slurpfile model "${ROBOTICS_RUN_DIR}/compose.json"         '[{Id:$id,Image:$image,RestartCount:$restarts,
+          Config:{Cmd:$model[0].services.playback.command,
+            Labels:{"com.docker.compose.project":$project,"com.docker.compose.service":"playback"}},
+          State:{Status:(if $exited then "exited" else "running" end),Running:($exited|not),
+            ExitCode:$code,OOMKilled:$oom,Dead:false}}]'
     fi
     ;;
+  wait)
+    role="$(container_role "${@: -1}")"
+    [[ "$role" == playback ]] || exit 64
+    if ((PLAYBACK_WAIT_FAILURE)); then exit "${PLAYBACK_WAIT_FAILURE}"; fi
+    touch "${ROBOTICS_RUN_DIR}/player-exited"
+    printf '%s\n' "${PLAYBACK_PLAYER_EXIT}"
+    ;;
   logs)
-    if [[ "${@: -1}" == *playback-probe ]]; then
+    role="$(container_role "${@: -1}")"
+    if [[ "$role" == playback-probe ]]; then
       if [[ "${ROS_DOMAIN_ID}" == 87 || "${PLAYBACK_NEGATIVE_DATA}" == 1 ]]; then
         printf 'data: 42\n'
       fi
@@ -299,6 +321,8 @@ case "$1" in
         printf '%262144s\n' ''
       fi
       [[ "${ROS_DOMAIN_ID}" != "${PLAYBACK_LOG_FAILURE_DOMAIN}" ]] || exit 42
+    elif [[ "$role" == playback ]]; then
+      printf 'stock player terminated\n'
     else
       printf 'resume accepted\n'
     fi
@@ -314,7 +338,7 @@ SH
   run bash scripts/ci/integration/verify-mcap-playback.sh
   [ "${status}" -eq 0 ]
   [[ "${output}" == *'playback timeout fixture failed closed'* ]]
-  [ "$(grep -c '^logs ' "${PLAYBACK_TRACE}")" -eq 4 ]
+  [ "$(grep -c '^logs ' "${PLAYBACK_TRACE}")" -eq 5 ]
   [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
   [ "$(grep -c '^retained-manifest-before-down$' "${PLAYBACK_TRACE}")" -eq 1 ]
   local ready timeout
@@ -364,7 +388,7 @@ PY
     bash scripts/ci/integration/verify-mcap-playback.sh
   [ "${status}" -eq 1 ]
   [[ "${output}" != *'playback timeout fixture failed closed'* ]]
-  [ "$(grep -c '^logs 86-playback-probe$' "${PLAYBACK_TRACE}")" -eq 1 ]
+  [ "$(grep -c "^logs $(printf '%s' '86-playback-probe' | sha256sum | cut -d' ' -f1)$" "${PLAYBACK_TRACE}")" -eq 1 ]
   [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
 }
 
@@ -374,7 +398,7 @@ PY
     bash scripts/ci/integration/verify-mcap-playback.sh
   [ "${status}" -eq 42 ]
   [[ "${output}" != *'playback timeout fixture failed closed'* ]]
-  [ "$(grep -c '^logs 86-playback-probe$' "${PLAYBACK_TRACE}")" -eq 1 ]
+  [ "$(grep -c "^logs $(printf '%s' '86-playback-probe' | sha256sum | cut -d' ' -f1)$" "${PLAYBACK_TRACE}")" -eq 1 ]
   [ "$(grep -c ' down --volumes --remove-orphans$' "${PLAYBACK_TRACE}")" -eq 2 ]
 }
 
@@ -418,4 +442,64 @@ PY
   run jq -e '.playback_command | .[index("--rate") + 1] == "2.0" and
     .[index("--input") + 1] == "/datasets/bag"' "${ready}/configuration/provider.json"
   [ "${status}" -eq 0 ]
+}
+
+
+@test "MCAP playback requires native zero exit after bounded player wait before cleanup" {
+  prepare_playback_transport
+  run bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 0 ]
+  local ready
+  ready="$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -maxdepth 1 -name 'ready.*' -type d)"
+  run jq -e '.wait_client_exit_code == 0 and .reported_player_exit_code == "0" and
+    .stop_requested_before_wait == false and .deadline_seconds == 75' "$ready/player-terminal.json"
+  [ "$status" -eq 0 ]
+  run jq -e '.[0].State.Status == "exited" and .[0].State.Running == false and
+    .[0].State.ExitCode == 0 and .[0].State.OOMKilled == false and .[0].RestartCount == 0' "$ready/player-after-wait.json"
+  [ "$status" -eq 0 ]
+  local waited cleanup
+  waited="$(grep -n '^wait ' "$PLAYBACK_TRACE" | head -n1 | cut -d: -f1)"
+  cleanup="$(grep -n ' down --volumes --remove-orphans$' "$PLAYBACK_TRACE" | head -n1 | cut -d: -f1)"
+  [ "$waited" -lt "$cleanup" ]
+  [ -f "$ready/logs/playback-player.log" ]
+}
+
+@test "MCAP playback preserves native nonzero player exit without a passing manifest" {
+  prepare_playback_transport
+  run env PLAYBACK_PLAYER_EXIT=17 bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -ne 0 ]
+  [ -n "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name player-terminal.json)" ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+}
+
+@test "MCAP playback preserves native wait refusal without a passing manifest" {
+  prepare_playback_transport
+  run env PLAYBACK_WAIT_FAILURE=124 bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 124 ]
+  [ -n "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name player-wait.stderr)" ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+}
+
+@test "MCAP playback refuses OOM or restarted player without a passing manifest" {
+  prepare_playback_transport
+  run env PLAYBACK_PLAYER_OOM=true bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -ne 0 ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+  run env PLAYBACK_PLAYER_RESTARTS=1 bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -ne 0 ]
+  [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+}
+
+
+@test "MCAP playback retained terminal validator rejects missing or forged native outcomes" {
+  run "${ROBOTICS_FOUNDATION_PYTHON}" -m unittest discover -s test/ci -p test_playback_terminal.py -v
+  [ "$status" -eq 0 ]
+}
+
+@test "MCAP released playback refuses missing authenticated lock before daemon effects" {
+  prepare_playback_transport
+  run env ROBOTICS_RUNTIME_MODE=released ROBOTICS_FOUNDATION_RELEASE_TAG=v0.11.0-rc1     ROBOTICS_FOUNDATION_RELEASE_LOCK= bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"requires a release lock"* ]]
+  [ ! -s "$PLAYBACK_TRACE" ]
 }

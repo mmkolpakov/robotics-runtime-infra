@@ -5,6 +5,8 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 cd "${root}"
 # shellcheck source=scripts/ci/image-identity.sh
 source "${root}/scripts/ci/image-identity.sh"
+# shellcheck source=scripts/ci/foundation/released-mode.sh
+source "${root}/scripts/ci/foundation/released-mode.sh"
 
 retain_inputs() {
   local model="$1" run_dir="$2" dataset bag qos
@@ -43,7 +45,7 @@ publish_manifest() {
   local manifest_run=(
     "${compose[@]}" run --rm --no-deps --pull never
     --user "$(id -u):$(id -g)"
-    -e ROBOTICS_INFRA_REVISION="${GITHUB_SHA:-$(git rev-parse HEAD)}"
+    -e ROBOTICS_INFRA_REVISION="${ROBOTICS_RELEASE_SOURCE_SHA:-${GITHUB_SHA:-$(git rev-parse HEAD)}}"
     -e ROBOTICS_HOST_PLATFORM_FILE=/run/robotics/configuration/host-platform.json
     -e ROBOTICS_PROVIDER_BINDINGS_FILE=/run/robotics/provider-bindings.json
   )
@@ -97,6 +99,50 @@ PY
 }
 
 
+observe_player_exit() {
+  local id="$1" run_dir="$2" project="$3" image="$4" deadline="$5"
+  local started settled client_status log_status=0
+  [[ "$id" =~ ^[a-f0-9]{64}$ && "$deadline" =~ ^[1-9][0-9]{0,2}$ ]] || return 64
+  ((deadline <= 300)) || return 64
+  docker inspect "$id" >"$run_dir/player-before-wait.json"
+  jq -e --arg id "$id" --arg project "$project" --arg image "$image" '
+    length == 1 and (.[0] | .Id == $id and .Image == $image and
+      .Config.Labels["com.docker.compose.project"] == $project and
+      .Config.Labels["com.docker.compose.service"] == "playback" and
+      .RestartCount == 0 and .State.OOMKilled == false and
+      (.State.Status == "running" or .State.Status == "exited"))
+  ' "$run_dir/player-before-wait.json" >/dev/null
+  started="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  if timeout --foreground "$deadline" docker wait "$id" >"$run_dir/player-wait.stdout" 2>"$run_dir/player-wait.stderr"; then
+    client_status=0
+  else
+    client_status=$?
+  fi
+  settled="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  docker inspect "$id" >"$run_dir/player-after-wait.json"
+  docker logs "$id" >"$run_dir/logs/playback-player.log" 2>&1 || log_status=$?
+  jq -n --arg id "$id" --arg project "$project" --arg mode "$ROBOTICS_RUNTIME_MODE" \
+    --arg tooling "$(git rev-parse HEAD)" --arg started "$started" --arg settled "$settled" \
+    --argjson deadline "$deadline" --argjson client "$client_status" --argjson logs "$log_status" \
+    --arg output "$(cat "$run_dir/player-wait.stdout")" \
+    '{container_id:$id,project:$project,runtime_mode:$mode,tooling_revision:$tooling,
+      started_at:$started,settled_at:$settled,deadline_seconds:$deadline,
+      command:["timeout","--foreground",($deadline|tostring),"docker","wait",$id],
+      wait_client_exit_code:$client,reported_player_exit_code:$output,
+      player_logs_exit_code:$logs,stop_requested_before_wait:false}' >"$run_dir/player-terminal.json"
+  ((client_status == 0)) || return "$client_status"
+  ((log_status == 0)) || return "$log_status"
+  [[ "$(cat "$run_dir/player-wait.stdout")" == 0 ]]
+  jq -e --arg id "$id" --arg image "$image" \
+    --slurpfile before "$run_dir/player-before-wait.json" '
+      length == 1 and (.[0] | .Id == $id and .Image == $image and
+        .Config == $before[0][0].Config and .RestartCount == 0 and
+        .State.Status == "exited" and .State.Running == false and
+        .State.ExitCode == 0 and .State.OOMKilled == false and .State.Dead == false)
+    ' "$run_dir/player-after-wait.json" >/dev/null
+}
+
+
 run_case() (
   local name="$1" domain_id="$2" expect_failure="$3"
   local project="playback-${name}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
@@ -108,8 +154,17 @@ run_case() (
     docker compose -p "${project}" -f compose.yaml -f compose.playback.yaml
     --profile playback --profile test --profile acceptance
   )
-  trap '"${compose[@]}" down --volumes --remove-orphans >"${run_dir}/logs/cleanup.log" 2>&1 || true' EXIT
+  local acquired=false
+  trap 'if [[ "$acquired" == true ]]; then "${compose[@]}" down --volumes --remove-orphans >"${run_dir}/logs/cleanup.log" 2>&1 || true; fi' EXIT
   mkdir "${run_dir}/logs"
+  foundation_prepare_execution_mode "${ROBOTICS_FOUNDATION_CONSUMER_ROOT:-${root}}" "${run_dir}/release"
+  local mode="${ROBOTICS_RUNTIME_MODE:-source}"
+  if [[ "${mode}" == released ]]; then
+    foundation_prepare_released_image "${EDGE_IMAGE}"
+    compose=(docker compose -p "${project}" --env-file "${ROBOTICS_RELEASE_LOCK_SNAPSHOT}"
+      -f compose.yaml -f compose.playback.yaml -f compose.released.yaml
+      --profile playback --profile test --profile acceptance)
+  fi
   export ROS_DOMAIN_ID="${domain_id}"
   if ((expect_failure)); then
     export ROBOTICS_PLAYBACK_READINESS_TOPIC=/never_present
@@ -118,9 +173,9 @@ run_case() (
   fi
   "${compose[@]}" config --format json >"${run_dir}/compose-original.json"
   retain_inputs "${run_dir}/compose-original.json" "${run_dir}"
-  ci_image_identity "$(jq -er '.services.playback.image' "${run_dir}/compose-original.json")" source \
+  ci_image_identity "$(jq -er '.services.playback.image' "${run_dir}/compose-original.json")" "${mode}" \
     >"${run_dir}/playback-image.json"
-  ci_image_identity "$(jq -er '.services["playback-probe"].image' "${run_dir}/compose-original.json")" source \
+  ci_image_identity "$(jq -er '.services["playback-probe"].image' "${run_dir}/compose-original.json")" "${mode}" \
     >"${run_dir}/probe-image.json"
   local playback_image probe_image version run_id
   playback_image="$(jq -er '.local_image_id' "${run_dir}/playback-image.json")"
@@ -129,7 +184,9 @@ run_case() (
   docker run --rm --pull never "${playback_image}" ros2 pkg xml rosbag2_transport --tag version \
     >"${run_dir}/configuration/rosbag2-version.txt"
   version="$(cat "${run_dir}/configuration/rosbag2-version.txt")"
-  export SIMULATION_IMAGE="${playback_image}" EDGE_IMAGE="${probe_image}"
+  if [[ "${mode}" == source ]]; then
+    export SIMULATION_IMAGE="${playback_image}" EDGE_IMAGE="${probe_image}"
+  fi
   export ROBOTICS_RUN_DIR="${run_dir}" ROBOTICS_DATASET_DIR="${run_dir}/source"
   export ROBOTICS_PLAYBACK_BAG=/datasets/bag ROBOTICS_PLAYBACK_CONFIG_DIR="${run_dir}/source/qos"
   export ROBOTICS_SIMULATION_OCI_REFERENCE ROBOTICS_SIMULATION_OCI_DIGEST
@@ -141,6 +198,7 @@ run_case() (
     --slurpfile sources "${run_dir}/configuration/sources.jsonl" \
     '{version: $version, expected_playback_image_id: $playback, expected_probe_image_id: $probe,
       playback_command: $model[0].services.playback.command,
+      terminal_observation: "native-player-exit",
       gate_command: $model[0].services["playback-gate"].command,
       probe_command: $model[0].services["playback-probe"].command, sources: $sources}' \
     >"${run_dir}/configuration/provider.json"
@@ -152,6 +210,7 @@ print(json.dumps({"os": values["ID"], "os_version": values["VERSION_ID"],
                   "architecture": platform.machine(), "kernel": platform.release()}))
 PY
   run_id="$(python3 -c 'import uuid; print("run-" + str(uuid.uuid4()))')"
+  acquired=true
   "${compose[@]}" up --no-build --pull never --detach playback playback-gate playback-probe
   "${compose[@]}" wait playback-gate playback-probe || true
   local playback_id gate_id probe_id gate_status probe_status actual_playback actual_gate actual_probe
@@ -192,6 +251,7 @@ PY
     printf 'playback timeout fixture failed closed\n'
   else
     grep -Eq '^data:' "${run_dir}/logs/playback-probe.log"
+    observe_player_exit "${playback_id}" "${run_dir}" "${project}" "${playback_image}" "${ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC:-75}"
     publish_manifest "${run_dir}" "${run_id}" "${ROBOTICS_SIMULATION_OCI_DIGEST}"
   fi
 )
