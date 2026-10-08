@@ -348,6 +348,28 @@
       "files": [
         "compose.isaac-provider.yaml"
       ]
+    },
+    {
+      "name": "native-ust-diagnostic",
+      "files": [
+        "compose.yaml",
+        "compose.observability.yaml",
+        "compose.native-trace.yaml"
+      ]
+    },
+    {
+      "name": "native-ust-diagnostic-playback",
+      "files": [
+        "compose.yaml",
+        "compose.foundation.yaml",
+        "compose.record.yaml",
+        "compose.evidence.yaml",
+        "compose.observability.yaml",
+        "compose.playback.yaml",
+        "compose.foundation-playback.yaml",
+        "compose.native-trace.yaml",
+        "compose.native-trace-playback.yaml"
+      ]
     }
   ]
 }

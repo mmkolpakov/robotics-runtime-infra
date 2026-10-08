@@ -7,6 +7,11 @@ source "${script_dir}/lib.sh"
 
 readonly evidence_metrics_segment_index=900000
 observer_mode="${ROBOTICS_FOUNDATION_OBSERVER:-embedded}"
+native_trace="${ROBOTICS_NATIVE_UST_TRACE:-0}"
+case "${native_trace}" in
+  0|1) ;;
+  *) printf 'native UST tracing must be 0 or 1\n' >&2; exit 64 ;;
+esac
 case "${observer_mode}" in
   embedded|edge-attach) ;;
   *) printf 'unknown foundation observer: %s\n' "${observer_mode}" >&2; exit 64 ;;
@@ -250,6 +255,12 @@ fi
 if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
   foundation_files+=(compose.released.yaml)
 fi
+if [[ "${native_trace}" == 1 ]]; then
+  foundation_files+=(compose.native-trace.yaml)
+  if [[ "${data_source}" == recording_playback ]]; then
+    foundation_files+=(compose.native-trace-playback.yaml)
+  fi
+fi
 foundation_compose=(docker compose "${compose_environment[@]}" -p "${project}")
 foundation_paths=()
 for file in "${foundation_files[@]}"; do
@@ -375,6 +386,75 @@ publish_acceptance_results() {
   mkdir -p "${artifact_dir}/acceptance-results"
   sudo cp -a "${run_dir}/results/." "${artifact_dir}/acceptance-results/"
   sudo chown -R "$(id -u):$(id -g)" "${artifact_dir}/acceptance-results"
+}
+capture_native_ros_trace() {
+  [[ "${native_trace}" == 1 ]] || return 0
+  local service container destination running status=0 current_status
+  local services=(runtime-metrics runtime-probe-publisher)
+  [[ "${data_source}" != recording_playback ]] || services=(runtime-metrics playback)
+  local -A trace_containers=()
+
+  # Check every actor before any session-control side effect. The image identity
+  # was admitted before producers started; markers come from the issued run.
+  for service in "${services[@]}"; do
+    container="$(timeout 10 "${compose[@]}" ps --all --quiet "${service}")" || return
+    [[ "${container}" =~ ^[a-f0-9]{64}$ ]] || return 65
+    destination="${artifact_dir}/native-ust/${service}"
+    mkdir -p "${destination}"
+    timeout 10 docker inspect "${container}" |
+      jq -e --arg project "${project}" --arg service "${service}" \
+        --arg container "${container}" --arg image "${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID}" \
+        --arg run "${ROBOTICS_RUN_ID}" --arg domain "${ROBOTICS_DOMAIN_ID}" \
+        --arg ros_domain "${ROS_DOMAIN_ID:-0}" --arg partition "${GZ_PARTITION:-robotics-runtime}" '
+        .[0] |
+        def marker($name):
+          [.Config.Env[] | select(startswith($name + "=")) | ltrimstr($name + "=")] |
+          if length == 1 then .[0] else error("ambiguous or missing run marker") end;
+        select(.Id == $container and .Image == $image and
+          .Config.Labels["com.docker.compose.project"] == $project and
+          .Config.Labels["com.docker.compose.service"] == $service and
+          marker("ROBOTICS_RUN_ID") == $run and marker("ROBOTICS_DOMAIN_ID") == $domain and
+          marker("ROS_DOMAIN_ID") == $ros_domain and marker("GZ_PARTITION") == $partition) |
+        {container_id: .Id, image_id: .Image, project: $project, service: $service,
+         run_id: $run, domain_id: $domain, ros_domain_id: $ros_domain, partition: $partition,
+         state: (.State | {Status, Running, StartedAt, FinishedAt, ExitCode}),
+         command: .Config.Cmd}
+      ' >"${destination}/identity.json" || return
+    trace_containers["${service}"]="${container}"
+  done
+
+  # Salvage all admitted actors while retaining the first diagnostic refusal.
+  for service in "${services[@]}"; do
+    container="${trace_containers[${service}]}"
+    destination="${artifact_dir}/native-ust/${service}"
+    current_status=0
+    running="$(jq -r '.state.Running' "${destination}/identity.json")"
+    if [[ "${running}" == true ]]; then
+      timeout 10 docker exec "${container}" env \
+        LTTNG_HOME=/tmp/robotics-native-lttng lttng stop robotics-native-diagnostic \
+        >"${destination}/stop.log" 2>&1 || current_status=$?
+      if ((current_status == 0)); then
+        timeout 10 docker exec "${container}" env \
+          LTTNG_HOME=/tmp/robotics-native-lttng lttng --mi xml list robotics-native-diagnostic \
+          >"${destination}/session.xml" 2>"${destination}/session-errors.log" || current_status=$?
+      fi
+      if ((current_status == 0)); then
+        timeout 10 docker exec "${container}" env \
+          LTTNG_HOME=/tmp/robotics-native-lttng lttng destroy robotics-native-diagnostic \
+          >"${destination}/destroy.log" 2>&1 || current_status=$?
+      fi
+    else
+      printf 'producer already exited; session loss statistics unavailable\n' \
+        >"${destination}/partial-trace.log"
+      current_status=68
+    fi
+    if ((status == 0 && current_status != 0)); then status=${current_status}; fi
+    timeout 15 docker cp "${container}:/tmp/robotics-native-ust/trace" \
+      "${destination}/trace" || current_status=$?
+    printf '%s\n' "${current_status}" >"${destination}/capture.exit"
+    if ((status == 0 && current_status != 0)); then status=${current_status}; fi
+  done
+  return "${status}"
 }
 capture_runtime_metrics_diagnostics() {
   local phase="$1"
@@ -742,6 +822,13 @@ if [[ "${data_source}" == recording_playback ]]; then
 fi
 "${compose[@]}" --profile record stop recorder
 capture_runtime_metrics_diagnostics before_metrics_stop || true
+native_trace_capture_status=0
+capture_native_ros_trace || native_trace_capture_status=$?
+if [[ "${native_trace}" == 1 ]]; then
+  mkdir -p "${artifact_dir}/native-ust"
+  printf '%s\n' "${native_trace_capture_status}" \
+    >"${artifact_dir}/native-ust/capture.exit"
+fi
 if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile observability stop runtime-metrics
   "${compose[@]}" --profile playback stop playback

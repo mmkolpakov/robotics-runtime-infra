@@ -1,0 +1,37 @@
+---
+# Preserve every option of the trusted foundation player.
+services:
+  playback:
+    command:
+      - /bin/bash
+      - /tmp/ros-native-trace.sh
+      - ros2
+      - bag
+      - play
+      - --input
+      - /datasets/bag
+      - mcap
+      - --topics
+      - "${ROBOTICS_METRICS_TOPIC:?ROBOTICS_METRICS_TOPIC is required}"
+      - --clock
+      - "${ROBOTICS_PLAYBACK_CLOCK_HZ:?ROBOTICS_PLAYBACK_CLOCK_HZ is required}"
+      - --rate
+      - "${ROBOTICS_PLAYBACK_RATE:?ROBOTICS_PLAYBACK_RATE is required}"
+      - --start-offset
+      - "${ROBOTICS_PLAYBACK_START_OFFSET:?ROBOTICS_PLAYBACK_START_OFFSET is required}"
+      - --read-ahead-queue-size
+      - "8"
+      - --start-paused
+      - --qos-profile-overrides-path
+      - /etc/robotics/playback/qos-overrides.yaml
+      - --wait-for-all-acked
+      - "5000"
+      - --disable-keyboard-controls
+    volumes:
+      - type: bind
+        source: ./scripts/ci/diagnostics/ros-native-trace.sh
+        target: /tmp/ros-native-trace.sh
+        read_only: true
+    environment:
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
+      ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID:?ROBOTICS_DOMAIN_ID is required}"
