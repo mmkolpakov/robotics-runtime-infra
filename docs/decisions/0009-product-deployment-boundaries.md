@@ -21,8 +21,8 @@ Consumer repositories own their models, control and vision behavior.
 
 Use product-owned Ansible roles for declared VM and edge-node configuration.
 Reuse the existing samplers, systemd units and configuration through standard
-modules. The private home-infra project is outside this architecture: no role
-imports, configuration dependencies or changes to its managed systems.
+modules. Developer workstation administration is outside this architecture;
+product roles target only explicitly enrolled product nodes.
 
 Keep Compose and Dockerode as the local execution provider. The cloud target
 uses Terraform for AWS resources, Helm for workloads and the official Kubernetes

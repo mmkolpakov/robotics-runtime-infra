@@ -115,7 +115,7 @@ tag-scoped within the account and is not proof of cross-cluster volume isolation
 Real IAM denial and storage isolation must be qualified before support.
 
 Run `scripts/ci/check-product-terraform.sh` from the repository root. Docker is
-the default CI engine; HOME uses the explicit
+the default CI engine; rootless Podman uses the explicit
 `ROBOTICS_IMAGE_ENGINE=podman scripts/ci/check-product-terraform.sh` selection.
 Only docker/podman are accepted. The check command builds a pinned project
 container, initializes modules/provider packages with

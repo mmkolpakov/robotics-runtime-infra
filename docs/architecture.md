@@ -185,5 +185,5 @@ verified bytes in an isolated POSIX root for the existing harness.
 Offline Terraform/Helm checks are distinct from real EKS/IAM/CSI credential,
 storage, node-loss, drain/export and cleanup acceptance. Storage encryption,
 PVC retention and signature verification do not qualify a workload.
-Product Ansible handles enrolled product nodes independently; private
-home-infra and developer-machine rules are not product dependencies.
+Product Ansible targets enrolled product nodes. Workstation administration
+remains outside the product deployment boundary.

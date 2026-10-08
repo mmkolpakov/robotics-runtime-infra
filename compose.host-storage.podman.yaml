@@ -1,5 +1,5 @@
 ---
-# Verify the native child -> rootless parent -> HOME UID/GID mapping chain.
+# Verify the native child -> rootless parent -> host UID/GID mapping chain.
 services:
   storage-init:
     userns_mode: keep-id:uid=1000,gid=1000

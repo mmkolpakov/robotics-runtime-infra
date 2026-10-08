@@ -1,5 +1,5 @@
 {
-  "scope": "source candidate; no release, hardware, Spiral, mission or rendering qualification",
+  "scope": "source candidate; no release, hardware, application-specific airframe, mission or rendering qualification",
   "px4": {
     "tag": "v1.17.0",
     "commit": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
