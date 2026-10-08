@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 cd "${root}"
+# shellcheck source=scripts/ci/lib.sh
+source "${root}/scripts/ci/lib.sh"
 # shellcheck source=scripts/ci/image-identity.sh
 source "${root}/scripts/ci/image-identity.sh"
 # shellcheck source=scripts/ci/foundation/released-mode.sh
