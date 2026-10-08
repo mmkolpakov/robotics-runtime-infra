@@ -469,6 +469,25 @@ def main() -> int:
                 observe_clock=True,
                 node_name="nav2_public_graph_observer",
             )
+            nomotion_client = navigator.create_client(Empty, "/request_nomotion_update")
+            nomotion_deadline = min(ready_deadline, time.monotonic() + 2)
+            while not nomotion_client.wait_for_service(timeout_sec=0.1):
+                if time.monotonic() >= nomotion_deadline:
+                    raise TimeoutError(
+                        "the upstream AMCL nomotion service is unavailable"
+                    )
+            finite_future(
+                navigator,
+                nomotion_client.call_async(Empty.Request()),
+                nomotion_deadline,
+            )
+            record(
+                "initial-nomotion-response",
+                {
+                    "service": "/request_nomotion_update",
+                    "type": "std_srvs/srv/Empty",
+                },
+            )
             graph_ready = wait_for_readiness(
                 expected_graph,
                 observer,
@@ -509,28 +528,6 @@ def main() -> int:
             while not client.wait_for_server(timeout_sec=0.1):
                 if time.monotonic() >= ready_deadline:
                     raise TimeoutError("NavigateToPose action server is unavailable")
-            if args.already_initialized:
-                nomotion_client = navigator.create_client(
-                    Empty, "/request_nomotion_update"
-                )
-                nomotion_deadline = time.monotonic() + 2
-                while not nomotion_client.wait_for_service(timeout_sec=0.1):
-                    if time.monotonic() >= nomotion_deadline:
-                        raise TimeoutError(
-                            "the upstream AMCL nomotion service is unavailable"
-                        )
-                finite_future(
-                    navigator,
-                    nomotion_client.call_async(Empty.Request()),
-                    nomotion_deadline,
-                )
-                record(
-                    "initial-nomotion-response",
-                    {
-                        "service": "/request_nomotion_update",
-                        "type": "std_srvs/srv/Empty",
-                    },
-                )
             observation_deadline = time.monotonic() + 10
             while any(
                 counts[key] < minimum
