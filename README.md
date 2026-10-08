@@ -119,9 +119,15 @@ profiles; [WSL2](docs/wsl2.md) records host limitations. Image builds and
 accelerator imports are not device qualification. Real actuation is outside
 the retained profile's supported scope.
 
-[AWS foundation](terraform/README.md) and [Helm packaging](helm/README.md)
-separate infrastructure, retained storage and attempt workloads. These source
-manifests have no Kubernetes or AWS runtime qualification.
+## Deployment roadmap
+
+[Terraform](terraform/README.md) and [Helm](helm/README.md) define infrastructure,
+retained storage and finite workloads. The next execution provider uses the
+[official Kubernetes client and sealed-attempt recovery design](docs/architecture.md#kubernetes-and-aws-responsibilities).
+Native Kubernetes execution/recovery and AWS workload qualification are not
+supported by the existing local providers.
+
+## Source development
 
 Build and verify the source checkout:
 
