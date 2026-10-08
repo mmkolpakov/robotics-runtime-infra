@@ -1,0 +1,32 @@
+---
+# An admitted immutable profile and inputs are prepared in the named input volume.
+# Host and run workers use separate Compose projects and separate resource owners.
+services:
+  host:
+    image: "${HOST_IMAGE:?digest-pinned host image required}"
+    user: "1000:1000"
+    init: true
+    read_only: true
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    working_dir: /run/robotics/input/profile
+    environment:
+      ROBOTICS_ENGINE_SOCKET: /run/robotics-engine.sock
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?run owner required}"
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input
+      - type: bind
+        source: "${ROBOTICS_ENGINE_HOST_SOCKET:?actual host Unix socket required}"
+        target: /run/robotics-engine.sock
+    tmpfs: [/tmp]
+    labels:
+      org.robotics.runtime.host-id: "${ROBOTICS_HOST_ID:?host owner required}"
+volumes:
+  run-data:
+    external: true
+    name: "${ROBOTICS_RUN_ID:?run owner required}-data"
+  run-input:
+    external: true
+    name: "${ROBOTICS_RUN_ID:?run owner required}-input"

@@ -1,0 +1,4 @@
+---
+services:
+  installed-postprocessor:
+    group_add: ["${C18_SOCKET_GID:?actual socket group required}"]

@@ -1,0 +1,8 @@
+---
+services:
+  legacy-coordinator:
+    volumes:
+      - type: bind
+        source: "${LEGACY_SOURCE_ROOT:?qualification source root required}"
+        target: /source
+        read_only: true

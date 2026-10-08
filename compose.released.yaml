@@ -1,0 +1,17 @@
+---
+# Apply only after rejecting consumer builds; these are trusted base services.
+services:
+  simulation:
+    build: !reset null
+  test:
+    build: !reset null
+  edge-smoke:
+    build: !reset null
+  sensor-smoke:
+    build: !reset null
+  provider-conformance-cpu:
+    build: !reset null
+  acceptance-observer:
+    build: !reset null
+  runtime-manifest:
+    build: !reset null

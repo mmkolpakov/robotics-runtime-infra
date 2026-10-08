@@ -1,0 +1,5 @@
+---
+# Native UID/GID maps and actual 0600 project socket access qualify this mapping.
+services:
+  host:
+    userns_mode: keep-id:uid=1000,gid=1000

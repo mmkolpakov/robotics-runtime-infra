@@ -38,7 +38,7 @@ services:
       - reliable
       - --qos-depth
       - "100"
-      - /robotics/runtime_probe
+      - "${ROBOTICS_METRICS_TOPIC:-/robotics/runtime_probe}"
       - std_msgs/msg/UInt64
       - "{data: 1}"
     environment:
@@ -53,6 +53,7 @@ services:
     environment:
       <<: *observability-environment
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://otel-collector:4318/v1/metrics
+      OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED: "${OTEL_PYTHON_SDK_INTERNAL_METRICS_ENABLED:-false}"
       ROBOTICS_METRICS_EXPORT_INTERVAL_MS: "${ROBOTICS_METRICS_EXPORT_INTERVAL_MS:-100}"
       ROBOTICS_METRICS_TOPIC: "${ROBOTICS_METRICS_TOPIC:-/robotics/runtime_probe}"
       ROBOTICS_TIME_TOPIC: "${ROBOTICS_TIME_TOPIC:-/clock}"
@@ -65,7 +66,7 @@ services:
 
   otel-collector:
     image: >-
-      otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+      ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa}
     profiles: [observability]
     command: [--config=/etc/otelcol-contrib/config.yaml]
     environment:

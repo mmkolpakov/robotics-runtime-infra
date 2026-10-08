@@ -100,6 +100,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=rknn-source --chown=robotics:robotics \
     rknn-toolkit2/examples/functions/onnx_edit/ \
     /opt/rknn-verification/
+COPY --chmod=0444 probes/rknn_simulator_conformance.py \
+    /opt/rknn-verification/rknn_simulator_conformance.py
 
 USER robotics
 WORKDIR /opt/rknn-verification
@@ -116,9 +118,18 @@ RUN --network=none printf '%s  %s\n' \
       52f58253ab74736f2d4439ad2c2f1e3e3b4130fa0845d245a673b5e74b0f97c7 \
       test.py \
       | sha256sum --check --strict \
+    && python3 -B -c \
+      "from google.protobuf.internal import api_implementation; assert api_implementation.Type() == 'upb'; print('protobuf-backend-upb')" \
     && python3 test.py \
     && test -s concat_block.rknn \
     && test -s concat_block_edited.rknn \
+    && python3 rknn_simulator_conformance.py \
+      concat_block.onnx concat_block_input_0.npy concat_block_input_1.npy \
+      --report /tmp/rknn-simulator-fp16.json \
+    && python3 rknn_simulator_conformance.py \
+      concat_block.onnx concat_block_input_0.npy concat_block_input_1.npy \
+      --quantization-dataset dataset.txt --rtol 0.05 --atol 0.05 \
+      --report /tmp/rknn-simulator-int8.json \
     && sha256sum concat_block.rknn concat_block_edited.rknn \
       > /tmp/converter-output.sha256
 

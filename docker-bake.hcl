@@ -31,12 +31,18 @@ variable "LINUX_LIBC_DEV_VERSION" {
 }
 
 variable "ROS_SNAPSHOT" {
-  default = "2026-06-18"
+  default = "2026-09-11"
 }
 
 variable "ROSDISTRO_INDEX_REVISION" {
-  default = "9f76014b84955f757306270d6860fa3bc1c30b57"
+  default = "8e9a99d200fd312f106418b2b497b0cc5146e6a7"
 }
+
+# FOUNDATION_GENERATED_START
+variable "FOUNDATION_SOURCE" {
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=efeac712ea512b19523ce41be40752f703fa782b&checksum=efeac712ea512b19523ce41be40752f703fa782b"
+}
+# FOUNDATION_GENERATED_END
 
 variable "ONNXRUNTIME_SOURCE" {
   default = "https://github.com/microsoft/onnxruntime.git?tag=v1.27.0&checksum=8f0278c77bf44b0cc83c098c6c722b92a36ac4b5"
@@ -54,7 +60,7 @@ variable "COSIGN_IMAGE" {
   default = "cgr.dev/chainguard/cosign:latest@sha256:e7ef547a42e52b877a9069ee49e2caa6287c30bcb97d27df3ec5d22c0afdbb6f"
   validation {
     condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
-    error_message = "COSIGN_IMAGE must pin the qualified Chainguard image by digest."
+    error_message = "COSIGN_IMAGE must pin the publisher-verified Chainguard image."
   }
 }
 
@@ -117,6 +123,7 @@ group "release" {
     "benchmark-runtime",
     "evidence-sink",
     "permit-preflight",
+    "policy-tooling",
   ]
 }
 
@@ -167,6 +174,9 @@ group "rknn" {
 target "_common" {
   context    = "."
   dockerfile = "Dockerfile"
+  contexts = {
+    "foundation-source" = FOUNDATION_SOURCE
+  }
   args = {
     IMAGE_CREATED = IMAGE_CREATED
     IMAGE_SOURCE  = IMAGE_SOURCE
@@ -497,6 +507,10 @@ target "evidence-sink" {
   target    = "evidence-sink"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/evidence-sink:${VERSION}"]
+  args = {
+    COSIGN_IMAGE = COSIGN_IMAGE
+    COSIGN_VERSION = COSIGN_VERSION
+  }
 }
 
 target "policy-tooling" {
@@ -512,7 +526,7 @@ target "permit-preflight" {
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight:${VERSION}"]
   args = {
-    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_IMAGE = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
 }
@@ -523,7 +537,47 @@ target "permit-preflight-ci" {
   platforms = ["linux/amd64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/permit-preflight-ci:${VERSION}"]
   args = {
-    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_IMAGE = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
+}
+
+# The compiled host asset is supplied independently from the Python foundation pin.
+# C20/C21 provide its released H identity; this target is not in the release group.
+variable "HOST_ASSET_CONTEXT" {
+  default = "host/.tools/host-asset"
+}
+variable "HOST_ASSET_SHA256" {
+  default = ""
+}
+variable "HOST_INFRA_ASSET_SHA256" {
+  default = ""
+}
+group "host" {
+  targets = ["cordis-host"]
+}
+target "cordis-host" {
+  context = "."
+  dockerfile = "docker/host.Dockerfile"
+  contexts = { "host-asset" = HOST_ASSET_CONTEXT }
+  args = {
+    HOST_ASSET_SHA256 = HOST_ASSET_SHA256
+    HOST_INFRA_ASSET_SHA256 = HOST_INFRA_ASSET_SHA256
+    IMAGE_CREATED = IMAGE_CREATED
+    VCS_REF = VCS_REF
+  }
+  platforms = ["linux/amd64"]
+  tags = ["${REGISTRY}/robotics-runtime-infra/host:${VERSION}"]
+}
+
+# Independent finite GI worker. Source candidate until C21 image inventory gates.
+group "media" {
+  targets = ["media-worker"]
+}
+target "media-worker" {
+  context = "."
+  dockerfile = "docker/media.Dockerfile"
+  args = { UBUNTU_SNAPSHOT = UBUNTU_SNAPSHOT }
+  platforms = ["linux/amd64"]
+  tags = ["${REGISTRY}/robotics-runtime-infra/media:${VERSION}"]
 }

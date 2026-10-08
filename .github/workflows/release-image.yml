@@ -56,6 +56,36 @@ jobs:
       id-token: write
     uses: ./.github/workflows/foundation-integration.yml
 
+  arm64-layers:
+    needs: verify-source
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Require the native ARM64 runner
+        run: test "$(uname -m)" = aarch64
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
+      - name: Plan the ARM64 release layers
+        id: plan
+        run: scripts/ci/release/plan-arm64-layers.sh
+      - name: Build the ARM64 release layers natively
+        uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b  # v7.3.0
+        with:
+          source: .
+          files: ./docker-bake.hcl
+          targets: ${{ steps.plan.outputs.targets }}
+          pull: true
+          vars: |
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            VERSION=${{ steps.plan.outputs.version }}
+          set: ${{ steps.plan.outputs.set }}
+
   prepare:
     needs:
       - quality-gates
@@ -81,7 +111,9 @@ jobs:
           retention-days: 30
 
   candidate:
-    needs: prepare
+    needs:
+      - prepare
+      - arm64-layers
     name: candidate-${{ matrix.id }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -101,6 +133,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
+      # ARM64 layers come from the native arm64-layers job through its cache
+      # scope; emulation only runs steps that are missing from that cache.
       - uses: ./.github/actions/setup-buildx
         with:
           qemu: ${{ contains(matrix.platforms, 'linux/arm64') }}
@@ -136,6 +170,7 @@ jobs:
             ${{ matrix.target }}.platform=${{ join(matrix.platforms, ',') }}
             ${{ matrix.target }}.tags=${{ env.IMAGE_NAME }}
             ${{ matrix.target }}.output=type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+            ${{ matrix.target }}.cache-from=type=gha,scope=release-${{ matrix.target }}-arm64
           # yamllint enable rule:line-length
       - name: Resolve the candidate digest
         id: digest

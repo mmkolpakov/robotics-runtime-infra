@@ -1,0 +1,38 @@
+{
+  "owner_id": "c14-5577de9995644fa5a54e73bcc43131b6",
+  "native_world": {
+    "path": "/opt/robotics/webots/worlds/native.wbt",
+    "source_ref": {
+      "uri": "file:///run/robotics/output/inputs/native.wbt",
+      "sha256": "71d46273c8e096a17ed27432522156783f5bf6f50a2314edf88654b635842f8b",
+      "size_bytes": 999
+    },
+    "title": "robotics-runtime Webots native fixture v1",
+    "random_seed": 1,
+    "optimal_thread_count": 1,
+    "coordinate_system": "ENU",
+    "basic_time_step_ms": 16.0
+  },
+  "robot": {
+    "name": "rr-native-probe",
+    "model": "robotics-runtime-webots-native-v1",
+    "node_id": 16,
+    "synchronization": true,
+    "synchronization_native_value": 1
+  },
+  "initial_state": {
+    "time_seconds": 0.0,
+    "body_position_m": [
+      0.0,
+      0.0,
+      1.0
+    ]
+  },
+  "camera": {
+    "enabled": false,
+    "timestamp_origin": "controller Supervisor.getTime observation after step; no camera timestamp API",
+    "sampling_period_ms": 0
+  },
+  "ready": true,
+  "step_writer": "single external native Python Supervisor"
+}

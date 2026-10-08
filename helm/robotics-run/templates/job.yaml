@@ -1,0 +1,119 @@
+{{- if .Values.enabled }}
+{{- if ne .Values.identity.namespace .Release.Namespace }}{{ fail "Pod Identity namespace must match release namespace" }}{{ end }}
+{{- $reserved := list "ROBOTICS_RUN_ID" "ROBOTICS_DOMAIN_ID" "ROBOTICS_PROFILE_ID" "ROBOTICS_PROFILE_SHA256" "ROBOTICS_K8S_PVC_UID" "ROBOTICS_K8S_POD_UID" "ROBOTICS_K8S_POD_NAME" "ROBOTICS_K8S_NAMESPACE" "ROBOTICS_K8S_JOB_UID" "AWS_DEFAULT_REGION" "EVIDENCE_BUCKET" "EVIDENCE_PREFIX" "RCLONE_S3_NO_CHECK_BUCKET" "RCLONE_CONFIG_EVIDENCE_REGION" "AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_SESSION_TOKEN" "AWS_PROFILE" "AWS_ENDPOINT_URL" "RCLONE_CONFIG_EVIDENCE_ENV_AUTH" "RCLONE_CONFIG" "RCLONE_CONFIG_EVIDENCE_TYPE" "RCLONE_CONFIG_EVIDENCE_PROVIDER" "RCLONE_CONFIG_EVIDENCE_FORCE_PATH_STYLE" "RCLONE_REMOTE" }}
+{{- range $k, $v := .Values.host.env }}{{ if has $k $reserved }}{{ fail "host env cannot replace identity or sink bindings" }}{{ end }}{{ end }}
+{{- range .Values.workers }}{{ range $k, $v := .env }}{{ if has $k $reserved }}{{ fail "worker env cannot replace identity bindings" }}{{ end }}{{ end }}{{ end }}
+{{- $names := dict "lifecycle-host" true "ownership-preflight" true }}
+{{- range .Values.workers }}{{ if hasKey $names .name }}{{ fail "container names must be unique" }}{{ end }}{{ $_ := set $names .name true }}{{ end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  annotations:
+    {{- include "roboticsRun.annotations" . | nindent 4 }}
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.deadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished }}
+  podReplacementPolicy: Failed
+  template:
+    metadata:
+      annotations:
+        {{- include "roboticsRun.annotations" . | nindent 8 }}
+    spec:
+      shareProcessNamespace: false
+      restartPolicy: Never
+      serviceAccountName: {{ .Values.identity.serviceAccount | quote }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: ownership-preflight
+          image: {{ .Values.preflightImage | quote }}
+          command: ["python3", "/opt/robotics/verify-kubernetes-binding.py"]
+          args: ["--job", {{ .Values.name | quote }}, "--claim", {{ .Values.spool.name | quote }}, "--spool-release", {{ .Values.spool.release | quote }}, "--storage-class", {{ .Values.spool.storageClassName | quote }}]
+          env:
+            {{- include "roboticsRun.env" . | nindent 12 }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: "50m", memory: "64Mi"}
+            limits: {cpu: "250m", memory: "128Mi"}
+          volumeMounts:
+            - {name: api-token, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+            - {name: scratch, mountPath: /tmp}
+      containers:
+        - name: lifecycle-host
+          image: {{ .Values.host.image | quote }}
+          command: {{ .Values.host.command | toJson }}
+          args: {{ .Values.host.args | toJson }}
+          env:
+            {{- include "roboticsRun.env" . | nindent 12 }}
+            {{- include "roboticsRun.sinkEnv" . | nindent 12 }}
+            {{- range $k, $v := .Values.host.env }}
+            - {name: {{ $k | quote }}, value: {{ $v | quote }}}
+            {{- end }}
+          securityContext:
+            runAsUser: {{ .Values.host.uid }}
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{ .Values.host.resources | toJson }}
+          volumeMounts:
+            {{- include "roboticsRun.mounts" . | nindent 12 }}
+            - {name: api-token, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+        {{- range .Values.workers }}
+        - name: {{ .name | quote }}
+          image: {{ .image | quote }}
+          command: {{ .command | toJson }}
+          args: {{ .args | toJson }}
+          ports: {{ .ports | toJson }}
+          lifecycle:
+            preStop:
+              exec:
+                command: {{ .terminationCommand | toJson }}
+          env:
+            {{- include "roboticsRun.env" $ | nindent 12 }}
+            {{- include "roboticsRun.sinkEnv" $ | nindent 12 }}
+            {{- range $k, $v := .env }}
+            - {name: {{ $k | quote }}, value: {{ $v | quote }}}
+            {{- end }}
+          securityContext:
+            runAsUser: {{ .uid }}
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{ .resources | toJson }}
+          volumeMounts:
+            {{- include "roboticsRun.mounts" $ | nindent 12 }}
+        {{- end }}
+      volumes:
+        - name: retained
+          persistentVolumeClaim: {claimName: {{ .Values.spool.name | quote }}}
+        - name: ipc
+          emptyDir: {sizeLimit: 64Mi}
+        - name: scratch
+          emptyDir: {sizeLimit: 128Mi}
+        - name: api-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 600}
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+              - downwardAPI:
+                  items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]
+{{- end }}

@@ -26,8 +26,57 @@
       </qos>
       <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
     </data_writer>
+    <!-- Use the ROS topic name to decouple routine DDS sends from the bridge callback. -->
+    <data_writer profile_name="/clock">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+        <publishMode>
+          <kind>ASYNCHRONOUS</kind>
+        </publishMode>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_writer>
+    <!-- Send the neutral example data through the asynchronous DDS writer. -->
+    <data_writer profile_name="/example/sequence">
+      <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+        <publishMode>
+          <kind>ASYNCHRONOUS</kind>
+        </publishMode>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_writer>
     <data_reader profile_name="robotics_udp_reader" is_default_profile="true">
       <qos>
+        <data_sharing>
+          <kind>OFF</kind>
+        </data_sharing>
+      </qos>
+      <historyMemoryPolicy>PREALLOCATED_WITH_REALLOC</historyMemoryPolicy>
+    </data_reader>
+    <data_reader profile_name="/clock">
+      <topic>
+        <historyQos>
+          <kind>KEEP_ALL</kind>
+        </historyQos>
+        <resourceLimitsQos>
+          <max_samples>1000</max_samples>
+          <max_instances>1</max_instances>
+          <max_samples_per_instance>1000</max_samples_per_instance>
+          <allocated_samples>100</allocated_samples>
+        </resourceLimitsQos>
+      </topic>
+      <qos>
+        <reliability>
+          <kind>RELIABLE</kind>
+        </reliability>
+        <durability>
+          <kind>VOLATILE</kind>
+        </durability>
         <data_sharing>
           <kind>OFF</kind>
         </data_sharing>

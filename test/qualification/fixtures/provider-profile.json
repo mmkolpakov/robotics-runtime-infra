@@ -1,0 +1,1 @@
+{"profile_id":"fixture-simulation-baseline","provider_kind":"simulator","requirements":[{"capability":"simulated_physics","required":true}],"schema_version":"qualification-profile.v1"}

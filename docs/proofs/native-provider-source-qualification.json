@@ -1,0 +1,138 @@
+{
+  "scope": "C16 native CPU source document producers; Isaac representative only",
+  "publicPackages": {
+    "contracts": "0.18.2",
+    "harness": "0.19.1"
+  },
+  "checksPassed": 14,
+  "nativeCaseRerun": false,
+  "publicApiCase": {
+    "passed": true,
+    "runId": "run-65b84841-91a5-4846-b382-d530cc667708",
+    "projectName": "rr-c16-e533ab5d",
+    "scope": "public writer/provider document source qualification; no native physics rerun and no Isaac execution"
+  },
+  "outputs": {
+    "gazebo": {
+      "status": "passed",
+      "capabilities": [
+        "simulated_physics",
+        "native-lifecycle",
+        "native-simulation-time",
+        "native-evidence"
+      ],
+      "nativeScope": "native-cpu-source",
+      "refs": [
+        {
+          "path": "artifacts/qualification/produced/gazebo/conformance-result.json",
+          "sha256": "760d34cbd53aa27023e75c7b3f495cd6e6fb04d45d51a56125e7483b26621ec9",
+          "size_bytes": 4802
+        },
+        {
+          "path": "artifacts/qualification/produced/gazebo/evidence-index.json",
+          "sha256": "4a524404b95a0c46619dabd42e362626144b0684e5dbd684c49e14a7988e5319",
+          "size_bytes": 1183
+        },
+        {
+          "path": "artifacts/qualification/produced/gazebo/qualification-profile.json",
+          "sha256": "58d3ea79df5cd7f1b3d33b1270b26b469b11d132e80b342ca273ab5dae7d6798",
+          "size_bytes": 336
+        },
+        {
+          "path": "artifacts/qualification/produced/gazebo/raw/independent-retained-review.json",
+          "sha256": "f9ffa5cc38a68667de4a89f48a7e470795c9d13e38f72d97fc07073a4829e514",
+          "size_bytes": 242499
+        },
+        {
+          "path": "artifacts/qualification/produced/gazebo/raw/native-reset-probe.json",
+          "sha256": "816051c3c03ddc25a4a7343bba02f9736ee0c1dba1f3041d066ed7b7c85d6e11",
+          "size_bytes": 23805
+        }
+      ]
+    },
+    "webots": {
+      "status": "passed",
+      "capabilities": [
+        "simulated_physics",
+        "native-lifecycle",
+        "native-simulation-time",
+        "native-evidence"
+      ],
+      "nativeScope": "native-cpu-source",
+      "refs": [
+        {
+          "path": "artifacts/qualification/produced/webots/conformance-result.json",
+          "sha256": "64b33349a9854aa6c522c9e89e7b4fb60248df5e4385211d1d06c9ce1ad29b7e",
+          "size_bytes": 13162
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/evidence-index.json",
+          "sha256": "80c2de0b57ed43299ed209ec0f42e42812871fa4292e0a8a8c5ae6f795b84074",
+          "size_bytes": 2567
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/qualification-profile.json",
+          "sha256": "3e87ccdff84a7b7fdbb9f13985136b5e6e93ceb7140f3490761147aa2ef9e0d4",
+          "size_bytes": 336
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/raw/controller-result.json",
+          "sha256": "aec825d2e9b00bcdfb8fe6167c575393f5f9a5144111726fb70bd61d991a322c",
+          "size_bytes": 3405
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/raw/last-native-state.json",
+          "sha256": "3099d0e5ecb6e737d87df1ecd8c297944459573469129d5fe05a1b02a996ac8b",
+          "size_bytes": 148
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/raw/measurement.json",
+          "sha256": "c949f63ddb898a6f8bb4daef9a7760c031183e41930fa160b4cf06d69fda04c0",
+          "size_bytes": 3224
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/raw/pre-reset.json",
+          "sha256": "909dfe9ef39c1513e2765fd9d16f07c7550ddad944d47d9b7baf3d0a61e61a8c",
+          "size_bytes": 3293
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/raw/ready.json",
+          "sha256": "c90f760e7bda9c92f08866d54b2ed9bc53f8dbd72bbf80a69746571ab9172a8d",
+          "size_bytes": 1058
+        },
+        {
+          "path": "artifacts/qualification/produced/webots/raw/worker-result.json",
+          "sha256": "f442a765eca44b113bb7ce79ee83d243346b25e8fec66d6ddd83c249a1fe2be0",
+          "size_bytes": 1890
+        }
+      ]
+    },
+    "isaac": {
+      "status": "skipped",
+      "capabilities": [],
+      "nativeScope": "representative",
+      "refs": [
+        {
+          "path": "artifacts/qualification/produced/isaac/conformance-result.json",
+          "sha256": "55e0c5ab8ec3ee6ce49ba90a6a7f2616c01c2ec96e0b415b40a4bbc25b592ed1",
+          "size_bytes": 3158
+        },
+        {
+          "path": "artifacts/qualification/produced/isaac/evidence-index.json",
+          "sha256": "1c8a30a600b59a309c1b4fc644457edd925910b71151efb1bd13c0e0d39383b8",
+          "size_bytes": 753
+        },
+        {
+          "path": "artifacts/qualification/produced/isaac/qualification-profile.json",
+          "sha256": "7c1ef7d96a68ea83b3ea09d4feefd724899a28c9882eb80c9dad12a6c2fda79f",
+          "size_bytes": 335
+        },
+        {
+          "path": "artifacts/qualification/produced/isaac/raw/representative.json",
+          "sha256": "0f171a0946a911535a433987be6ea5abdd29e316bdcbff88dfbcc110fce7236c",
+          "size_bytes": 561
+        }
+      ]
+    }
+  }
+}

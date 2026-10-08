@@ -63,6 +63,11 @@ services:
       LIBGL_ALWAYS_SOFTWARE: "1"
       QT_QPA_PLATFORM: "offscreen"
       ROS_DOMAIN_ID: "${ROS_TEST_DOMAIN_ID:-91}"
+    volumes:
+      - type: bind
+        source: ./config/fastdds/udp-only.xml
+        target: /etc/robotics/fastdds/udp-only.xml
+        read_only: true
     healthcheck:
       disable: true
 
@@ -149,15 +154,17 @@ services:
       - --runtime
       - /run/robotics/runtime-manifest.json
       - --run-id
-      - "${ROBOTICS_RUN_ID}"
+      - "${ROBOTICS_RUN_ID:-}"
       - --domain-id
-      - "${ROBOTICS_DOMAIN_ID}"
+      - "${ROBOTICS_DOMAIN_ID:-}"
       - --run-context
       - /run/robotics/acceptance-run.json
       - --evidence-index
       - /evidence/evidence-index.json
+      - --receipt-inventory
+      - /evidence/receipt-inventory.json
       - --otel-metrics
-      - /evidence/metrics.otlp.json
+      - /evidence/metrics.otlp.jsonl
       - --measurement-complete
       - /run/robotics/measurement-complete
       - --output
@@ -169,8 +176,10 @@ services:
         target: /run/robotics
       - type: bind
         source: "${ROBOTICS_BAG_DIR:-./runs/current/bags}"
-        target: /spool
+        target: /evidence/recordings
         read_only: true
+        # Create EVIDENCE_DIR/recordings before starting the observer: the parent
+        # /evidence mount is read-only and cannot create this nested mountpoint.
       - type: bind
         source: "${ROBOTICS_EVIDENCE_DIR:-./runs/current/evidence}"
         target: /evidence
@@ -187,17 +196,19 @@ services:
     environment:
       <<: *ros-environment
       ROBOTICS_DATA_PLANE_PROFILE: "${ROBOTICS_DATA_PLANE_PROFILE:-standard_isolated}"
-      ROBOTICS_DATA_SOURCE: "${ROBOTICS_DATA_SOURCE:-gazebo}"
-      ROBOTICS_HOST_OS: "${ROBOTICS_HOST_OS:-}"
-      ROBOTICS_HOST_OS_VERSION: "${ROBOTICS_HOST_OS_VERSION:-}"
+      ROBOTICS_DATA_SOURCE: "${ROBOTICS_DATA_SOURCE:-simulator}"
+      ROBOTICS_EVALUATOR_BINDINGS_FILE: "${ROBOTICS_EVALUATOR_BINDINGS_FILE:-}"
+      ROBOTICS_HOST_PLATFORM_FILE: "${ROBOTICS_HOST_PLATFORM_FILE:-/run/robotics/configuration/host-platform.json}"
       ROBOTICS_HOST_TOPOLOGY_CONFIG: "${ROBOTICS_HOST_TOPOLOGY_CONFIG:-}"
       ROBOTICS_INFERENCE_PROVIDER_CONFIG: "${ROBOTICS_INFERENCE_PROVIDER_CONFIG:-}"
       ROBOTICS_OCI_DIGEST: "${ROBOTICS_SIMULATION_OCI_DIGEST:-}"
       ROBOTICS_OCI_REFERENCE: "${ROBOTICS_SIMULATION_OCI_REFERENCE:-}"
-      ROBOTICS_PLANT_BACKEND: "${ROBOTICS_PLANT_BACKEND:-gazebo_physics}"
+      ROBOTICS_PLANT_BACKEND: "${ROBOTICS_PLANT_BACKEND:-simulated_physics}"
+      ROBOTICS_PROVIDER_BINDINGS_FILE: "${ROBOTICS_PROVIDER_BINDINGS_FILE:-/run/robotics/provider-bindings.json}"
       ROBOTICS_RENDER_MODE: "${ROBOTICS_RENDER_MODE:-software}"
       ROBOTICS_RENDERER: "${ROBOTICS_RENDERER:-software-forced}"
       ROBOTICS_RUNTIME_RESOURCES_CONFIG: "${ROBOTICS_RUNTIME_RESOURCES_CONFIG:-}"
+      ROBOTICS_ROBOT_DESCRIPTION_FILE: "${ROBOTICS_ROBOT_DESCRIPTION_FILE:-}"
       ROBOTICS_RUNTIME_ID: "${ROBOTICS_RUNTIME_ID:-org.example.local-runtime}"
       ROBOTICS_TARGET_ENVIRONMENT: "${ROBOTICS_TARGET_ENVIRONMENT:-simulation}"
       ROBOTICS_TIME_MODE: "${ROBOTICS_TIME_MODE:-simulation_realtime}"

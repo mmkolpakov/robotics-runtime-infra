@@ -1,0 +1,17 @@
+---
+services:
+  versions:
+    image: "${SOURCE_EVIDENCE_IMAGE:?exact source image required}"
+    user: "10001:1000"
+    userns_mode: keep-id:uid=1000,gid=1000
+    init: true
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
+    command: [versions]
+    environment:
+      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?canonical run required}"
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?canonical run required}"

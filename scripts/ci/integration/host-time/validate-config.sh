@@ -12,6 +12,8 @@ docker run --rm \
     systemd-analyze verify \
       /project/systemd/robotics-ptp-sample.service \
       /project/systemd/robotics-ptp-sample.timer \
+      /project/systemd/robotics-chrony-sample.service \
+      /project/systemd/robotics-chrony-sample.timer \
       /project/systemd/robotics-can-observation@.service
     systemd-tmpfiles --create /project/tmpfiles.d/robotics-time.conf
     test -f /run/robotics-time/pmc.log
@@ -19,3 +21,6 @@ docker run --rm \
 docker run --rm \
   --volume "${PWD}/config/time:/config:ro" \
   "${HOST_TIME_OTEL_IMAGE}" validate --config=/config/otel-ptp.yaml
+docker run --rm \
+  --volume "${PWD}/config/time:/config:ro" \
+  "${HOST_TIME_OTEL_IMAGE}" validate --config=/config/otel-chrony.yaml

@@ -1,0 +1,55 @@
+---
+services:
+  px4-native:
+    image: "${ROBOTICS_PX4_IMAGE:?immutable stock PX4 image required}"
+    pull_policy: never
+    init: true
+    user: "1000:1000"
+    read_only: true
+    mem_limit: 4g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,mode=1777,size=512m
+    command:
+      - -d
+      - /opt/px4/build/px4_sitl_default/etc
+      - -w
+      - "/run/robotics/output/px4/${ROBOTICS_PX4_SCOPE:?owned output scope required}/rootfs"
+    environment:
+      GZ_PARTITION: "${ROBOTICS_PX4_SCOPE:?owned native transport partition required}"
+    ports:
+      - "127.0.0.1:${ROBOTICS_PX4_GRPC_PORT:?owned local gRPC port required}:50051"
+    volumes:
+      - run-data:/run/robotics
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+      org.robotics.runtime.provider: px4-stock
+  mavsdk-native:
+    image: "${ROBOTICS_PX4_IMAGE:?immutable stock PX4 image required}"
+    pull_policy: never
+    init: true
+    user: "1000:1000"
+    read_only: true
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,mode=1777,size=32m
+    network_mode: service:px4-native
+    depends_on: [px4-native]
+    entrypoint: [/opt/robotics/mavsdk_server]
+    command: [-p, "50051", "udpin://0.0.0.0:14540"]
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+      org.robotics.runtime.provider: mavsdk-native
+volumes:
+  run-data:
+    external: true
+    name: "${ROBOTICS_RUN_VOLUME:?host-owned retained volume required}"
+networks:
+  default:
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+      org.robotics.runtime.provider: px4-stock

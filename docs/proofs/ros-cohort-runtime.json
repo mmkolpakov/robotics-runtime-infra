@@ -1,0 +1,74 @@
+{
+  "passed": true,
+  "runId": "run-33300996-6093-40db-81e7-fa5c9b2517bf",
+  "projectName": "rr-ros124-df7c86d5",
+  "image": "localhost/rr-ros124-source@sha256:679efb941fec0361ee014dd4a16e952dbed23b76df1d10709f78d90a1d9b8b5f",
+  "imageId": "sha256:440bad2fc6b911ea0e8664c04653cf1b540248d82688fcd2af3a1258677fab21",
+  "scope": "native installed package and stock file ownership; strict B3 remains separate",
+  "sourceRecipeRevision": "1ce02aae413fe0de6adb798b8701c1778d467e41",
+  "installedVersions": {
+    "contracts": "0.18.2",
+    "harness": "0.19.1",
+    "ros_gz_sim": "1.0.24",
+    "simulation_interfaces": "1.5.1",
+    "createSha256": "3ba763a850ef4503d908ef439a655db5deb92903c2307caa049b62e664f90e52"
+  },
+  "gazebo": "8.11.0",
+  "stockBinaryOwner": "ros-jazzy-ros-gz-sim: /opt/ros/jazzy/lib/ros_gz_sim/create",
+  "packageInventoryCount": 1622,
+  "exactDeltaCount": 85,
+  "allDeltaVersionsMatched": true,
+  "stockDpkgVerifyPassed": true,
+  "nativeMetadataStatus": "complete",
+  "observedApi": "1.41",
+  "actualProjectCleanupEmpty": true,
+  "strictSourceB3": {
+    "status": "passed",
+    "pipelineRevision": "d0113530814cc4139bf71d177850ef9c31ff7a98",
+    "runId": "run-8e1b2371-57e3-4882-a8f4-276ca0b3a837",
+    "independentReview": "docs/proofs/ros-cohort-independent-review.json",
+    "releasedEquivalence": "separate pending gate"
+  },
+  "rawRefs": [
+    {
+      "path": "artifacts/ros-cohort/native-facts/packages.txt",
+      "sha256": "c82a553fefd40d87ba4658d513fabd483e54ffb350850db53aa49e98c5ac0134",
+      "size_bytes": 76056
+    },
+    {
+      "path": "artifacts/ros-cohort/native-facts/gazebo.txt",
+      "sha256": "db67b891bb36d7d725155b26a872ba21840cac42283918d7c29fcb61a7d8738f",
+      "size_bytes": 6
+    },
+    {
+      "path": "artifacts/ros-cohort/native-facts/stockOwner.txt",
+      "sha256": "b2659d3f574d44b83aa286ab31d3b392de1bd323b3590f2adc7249ea27139fff",
+      "size_bytes": 58
+    },
+    {
+      "path": "artifacts/ros-cohort/native-facts/native-metadata.json",
+      "sha256": "2c036bd6cfa891acb7daf12538f6fb160bf2ad7d6e06b5569602fe6d5057fafc",
+      "size_bytes": 26612
+    },
+    {
+      "path": "artifacts/ros-cohort/native-facts/installed-versions.json",
+      "sha256": "a7f27c3461168ab0c6e0a28671d6d7ccce6e7800488271e51aa23786e4fec4fe",
+      "size_bytes": 751
+    },
+    {
+      "path": "artifacts/ros-cohort/native-facts/cleanup-before.json",
+      "sha256": "a049cf30cf024d88757453bbbd33bfdc7466bc7704cc7fd858f039b35984b833",
+      "size_bytes": 19829
+    },
+    {
+      "path": "artifacts/ros-cohort/native-facts/cleanup-after.json",
+      "sha256": "7810a2d542d88d191a1b8302ada50f7e3e5bae691eb3490094991812595904f6",
+      "size_bytes": 1872
+    },
+    {
+      "path": "artifacts/ros-cohort/native-facts/dpkg-verify.json",
+      "sha256": "5aa29e3f3e7804438c74b4e548fd1c7a89c712dceca67375a338ff5c1863bd2e",
+      "size_bytes": 545
+    }
+  ]
+}

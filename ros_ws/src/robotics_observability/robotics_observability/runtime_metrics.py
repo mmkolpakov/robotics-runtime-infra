@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Mapping
 from typing import Any, Callable
 
@@ -87,6 +88,21 @@ class RuntimeMetrics(Node):
             unit="ms",
             description="DDS source-to-reception latency for a ROS message.",
         )
+        self._callback_lag = meter.create_histogram(
+            "robotics.observation.callback_lag",
+            unit="ms",
+            description="DDS/RMW reception-to-callback-entry delay.",
+        )
+        self._callback_duration = meter.create_histogram(
+            "robotics.observation.callback_duration",
+            unit="ms",
+            description="ROS observation callback duration.",
+        )
+        self._publisher_count_duration = meter.create_histogram(
+            "robotics.observation.publisher_count_duration",
+            unit="ms",
+            description="Synchronous ROS publisher-count query duration.",
+        )
         self._messages_received = meter.create_counter(
             "robotics.message.received",
             unit="{message}",
@@ -128,72 +144,118 @@ class RuntimeMetrics(Node):
         _message: Clock,
         metadata: Mapping[str, Any],
     ) -> None:
-        latency_ms = source_to_reception_latency_ms(metadata)
-        if latency_ms is None:
-            if not self._missing_time_metadata_logged:
-                self.get_logger().error(
-                    "DDS source or reception timestamps are unavailable for the "
-                    "declared time authority; time-authority evidence will remain absent"
-                )
-                self._missing_time_metadata_logged = True
-            return
-        self._delivery_latency.record(
-            latency_ms,
-            {
-                **self._common_attributes,
-                "channel": self._time_topic,
-                "time.measurement.method": RMW_LATENCY_METHOD,
-                "time.source.id": self._source_id,
-            },
-        )
+        callback_started_ns = time.perf_counter_ns()
+        callback_entered_ns = time.time_ns()
+        diagnostic_attributes = {**self._common_attributes, "channel": self._time_topic}
+        self._record_callback_lag(metadata, callback_entered_ns, diagnostic_attributes)
+        try:
+            latency_ms = source_to_reception_latency_ms(metadata)
+            if latency_ms is None:
+                if not self._missing_time_metadata_logged:
+                    self.get_logger().error(
+                        "DDS source or reception timestamps are unavailable for the "
+                        "declared time authority; time-authority evidence will remain absent"
+                    )
+                    self._missing_time_metadata_logged = True
+                return
+            self._delivery_latency.record(
+                latency_ms,
+                {
+                    **self._common_attributes,
+                    "channel": self._time_topic,
+                    "time.measurement.method": RMW_LATENCY_METHOD,
+                    "time.source.id": self._source_id,
+                },
+            )
+        finally:
+            self._callback_duration.record(
+                (time.perf_counter_ns() - callback_started_ns) / 1_000_000,
+                diagnostic_attributes,
+            )
 
     def _observe_data(
         self,
         _message: UInt64,
         metadata: Mapping[str, Any],
     ) -> None:
-        measurement = self._stream.observe(
-            metadata,
-            publisher_count=self._publisher_count(),
-        )
-        channel_attributes = {
-            **self._common_attributes,
-            "channel": self._data_topic,
-        }
-        sequence_attributes = {
-            **channel_attributes,
-            "sequence.measurement.method": SINGLE_PUBLISHER_SEQUENCE_METHOD,
-        }
-        if measurement.age_ms is None:
-            if not self._missing_age_logged:
-                self.get_logger().error(
-                    "DDS source or reception timestamps are unavailable; "
-                    "message-age evidence will remain absent"
+        callback_started_ns = time.perf_counter_ns()
+        callback_entered_ns = time.time_ns()
+        diagnostic_attributes = {**self._common_attributes, "channel": self._data_topic}
+        self._record_callback_lag(metadata, callback_entered_ns, diagnostic_attributes)
+        try:
+            query_started_ns = time.perf_counter_ns()
+            try:
+                publisher_count = self._publisher_count()
+            finally:
+                self._publisher_count_duration.record(
+                    (time.perf_counter_ns() - query_started_ns) / 1_000_000,
+                    diagnostic_attributes,
                 )
-                self._missing_age_logged = True
-        else:
-            self._message_age.record(measurement.age_ms, channel_attributes)
+            measurement = self._stream.observe(
+                metadata,
+                publisher_count=publisher_count,
+            )
+            channel_attributes = {
+                **self._common_attributes,
+                "channel": self._data_topic,
+            }
+            sequence_attributes = {
+                **channel_attributes,
+                "sequence.measurement.method": SINGLE_PUBLISHER_SEQUENCE_METHOD,
+            }
+            if measurement.age_ms is None:
+                if not self._missing_age_logged:
+                    self.get_logger().error(
+                        "DDS source or reception timestamps are unavailable; "
+                        "message-age evidence will remain absent"
+                    )
+                    self._missing_age_logged = True
+            else:
+                self._message_age.record(measurement.age_ms, channel_attributes)
 
-        self._sequence_errors.add(
-            measurement.sequence_error_delta,
-            sequence_attributes,
-        )
-        if measurement.received_delta is None or measurement.lost_delta is None:
-            if not self._missing_sequence_logged:
-                self.get_logger().error(
-                    "DDS publication sequence numbers are unavailable or the "
-                    "measured channel does not have exactly one publisher; "
-                    "delivery evidence will remain absent"
-                )
-                self._missing_sequence_logged = True
+            self._sequence_errors.add(
+                measurement.sequence_error_delta,
+                sequence_attributes,
+            )
+            if measurement.received_delta is None or measurement.lost_delta is None:
+                if not self._missing_sequence_logged:
+                    self.get_logger().error(
+                        "DDS publication sequence numbers are unavailable or the "
+                        "measured channel does not have exactly one publisher; "
+                        "delivery evidence will remain absent"
+                    )
+                    self._missing_sequence_logged = True
+                return
+            self._messages_received.add(
+                measurement.received_delta,
+                sequence_attributes,
+            )
+            self._messages_lost.add(
+                measurement.lost_delta,
+                sequence_attributes,
+            )
+        finally:
+            self._callback_duration.record(
+                (time.perf_counter_ns() - callback_started_ns) / 1_000_000,
+                diagnostic_attributes,
+            )
+
+    def _record_callback_lag(
+        self,
+        metadata: Mapping[str, Any],
+        callback_entered_ns: int,
+        attributes: Mapping[str, Any],
+    ) -> None:
+        received_ns = metadata.get("received_timestamp")
+        if (
+            isinstance(received_ns, bool)
+            or not isinstance(received_ns, int)
+            or received_ns <= 0
+            or received_ns > callback_entered_ns
+        ):
             return
-        self._messages_received.add(
-            measurement.received_delta,
-            sequence_attributes,
-        )
-        self._messages_lost.add(
-            measurement.lost_delta,
-            sequence_attributes,
+        self._callback_lag.record(
+            (callback_entered_ns - received_ns) / 1_000_000, attributes
         )
 
 
@@ -220,6 +282,14 @@ def metric_views() -> tuple[View, ...]:
                 boundaries=LATENCY_BUCKETS_MS,
                 record_min_max=True,
             ),
+        ),
+        *(
+            View(instrument_name=name, aggregation=latency_aggregation)
+            for name in (
+                "robotics.observation.callback_lag",
+                "robotics.observation.callback_duration",
+                "robotics.observation.publisher_count_duration",
+            )
         ),
     )
 

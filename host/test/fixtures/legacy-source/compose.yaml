@@ -1,0 +1,101 @@
+---
+x-native: &native
+  image: "${LEGACY_SIMULATION_IMAGE:?exact source image required}"
+  user: "1000:1000"
+  init: true
+  userns_mode: keep-id:uid=1000,gid=1000
+  mem_limit: 512m
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment:
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:?domain required}"
+    GZ_PARTITION: "${GZ_PARTITION:?partition required}"
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    RCUTILS_COLORIZED_OUTPUT: "0"
+    FASTRTPS_DEFAULT_PROFILES_FILE: /run/robotics/input/config/fastdds/udp-only.xml
+    RMW_FASTRTPS_USE_QOS_FROM_XML: "1"
+  volumes:
+    - run-data:/run/robotics
+    - run-input:/run/robotics/input:ro
+  labels:
+    org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+services:
+  admission:
+    image: "${LEGACY_COORDINATOR_IMAGE:?source coordinator required}"
+    user: "0:0"
+    userns_mode: keep-id:uid=1000,gid=1000
+    network_mode: none
+    entrypoint: [/opt/contracts/bin/python]
+    command: [/source/host/workers/legacy/prepare-source.py, --source, /source, --destination, /run/robotics/input]
+    volumes:
+      - run-input:/run/robotics/input
+      - type: bind
+        source: "${LEGACY_SOURCE_ROOT:?actual coordinator source root required}"
+        target: /source
+        read_only: true
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+  simulation:
+    <<: *native
+    network_mode: none
+    ipc: shareable
+    command: [ros2, launch, robotics_runtime_infra, headless.launch.py]
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/robotics-entrypoint
+        - timeout
+        - "5"
+        - ros2
+        - service
+        - call
+        - /simulator/get_simulator_features
+        - simulation_interfaces/srv/GetSimulatorFeatures
+        - '{}'
+      interval: 2s
+      timeout: 6s
+      start_period: 15s
+      retries: 15
+  neutral-robot:
+    <<: *native
+    network_mode: service:simulation
+    ipc: service:simulation
+    command:
+      - ros2
+      - launch
+      - robotics_runtime_infra
+      - neutral_robot.launch.xml
+      - 'start_simulator:=false'
+      - 'description_file:=/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf'
+    depends_on:
+      simulation:
+        condition: service_healthy
+  simulation-stepper:
+    <<: *native
+    network_mode: service:simulation
+    ipc: service:simulation
+    command:
+      - python3
+      - -m
+      - robotics_runtime_infra.simulation_control
+      - --namespace
+      - /simulator
+      - step
+      - --steps
+      - "1"
+      - --step-size-ns
+      - "1000000"
+      - --interval-sec
+      - "0.01"
+    depends_on:
+      simulation:
+        condition: service_healthy
+volumes:
+  run-data:
+    name: "${ROBOTICS_RUN_ID:?owner required}-data"
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"
+  run-input:
+    name: "${ROBOTICS_RUN_ID:?owner required}-input"
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?owner required}"

@@ -1,0 +1,3 @@
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/ptp4l -f /etc/linuxptp/robotics-ptp4l.conf -i {{ robotics_node_ptp_interface }}

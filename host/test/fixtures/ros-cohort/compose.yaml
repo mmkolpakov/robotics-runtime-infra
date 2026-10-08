@@ -1,0 +1,21 @@
+---
+services:
+  facts:
+    image: "${ROS_COHORT_IMAGE:?exact image required}"
+    user: "1000:1000"
+    userns_mode: keep-id:uid=1000,gid=1000
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    network_mode: none
+    mem_limit: 256m
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=64m"]
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run required}"
+    command:
+      - /opt/contracts/bin/python
+      - '-c'
+      - >-
+        import importlib.metadata as m,xml.etree.ElementTree as
+        E,json,hashlib;print(json.dumps({'contracts':m.version('robotics-runtime-contracts'),'harness':m.version('robotics-acceptance-harness'),'ros_gz_sim':E.parse('/opt/ros/jazzy/share/ros_gz_sim/package.xml').getroot().findtext('version'),'simulation_interfaces':E.parse('/opt/ros/jazzy/share/simulation_interfaces/package.xml').getroot().findtext('version'),'createSha256':hashlib.sha256(open('/opt/ros/jazzy/lib/ros_gz_sim/create','rb').read()).hexdigest()}))

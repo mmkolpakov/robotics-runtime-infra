@@ -1,0 +1,26 @@
+---
+- name: Exercise real file modules in an isolated container directory
+  hosts: fixture
+  gather_facts: false
+  vars_files: [site.yml]
+  tasks:
+    - name: Validate site settings
+      ansible.builtin.import_role:
+        name: robotics_node
+        tasks_from: validate
+    - name: Install isolated product storage parent
+      ansible.builtin.import_role:
+        name: robotics_node
+        tasks_from: storage
+    - name: Install isolated physical attach permissions
+      ansible.builtin.import_role:
+        name: robotics_node
+        tasks_from: permissions
+    - name: Install isolated time files
+      ansible.builtin.import_role:
+        name: robotics_time
+        tasks_from: files
+    - name: Install isolated CAN files
+      ansible.builtin.import_role:
+        name: robotics_can
+        tasks_from: files

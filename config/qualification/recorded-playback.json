@@ -1,0 +1,11 @@
+{
+  "schema_version": "qualification-profile.v1",
+  "profile_id": "recorded-playback-probe",
+  "provider_kind": "recording_source",
+  "requirements": [
+    {
+      "capability": "playback_probe_delivery",
+      "required": true
+    }
+  ]
+}

@@ -23,14 +23,41 @@ env:
   HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
   # yamllint disable-line rule:line-length
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
-  ROBOTICS_CONTRACTS_REQUIREMENT: >-
-    robotics-runtime-contracts @
-    https://github.com/mmkolpakov/robotics-runtime-contracts/releases/download/v0.15.4/robotics_runtime_contracts-0.15.4-py3-none-any.whl#sha256=6a86e8ce96adcdf442b1680a7242282dbb33428458c5a8c7fc07952806971c1c
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
 
 jobs:
+  product-helm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Check product Helm packaging without cluster access
+        run: scripts/ci/check-product-helm.sh
+  product-terraform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Check product AWS configuration without account or backend access
+        run: scripts/ci/check-product-terraform.sh
+  product-ansible:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Check product node provisioning without applying host services
+        run: scripts/ci/check-product-ansible.sh
   static-analysis:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -46,15 +73,74 @@ jobs:
       - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43  # 4.0.0
         with:
           bats-version: "1.14.0"
+      - name: Check the pinned foundation workspace
+        run: bash scripts/ci/foundation/import-sources.sh
+      - name: Test foundation pin generation
+        run: python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
+      - name: Install the pinned foundation CLIs for producer tests
+        run: |
+          uv sync --project dependencies/robotics-runtime --locked \
+            --all-packages --extra mcap --no-default-groups --no-editable
+          contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
+          echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
+          echo "ROBOTICS_FOUNDATION_PYTHON=${PWD}/dependencies/robotics-runtime/.venv/bin/python" >> "$GITHUB_ENV"
+      - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
+        with:
+          version: v5.3.1
+      - name: Test installed consumer preparation and native document boundaries
+        run: |
+          bash scripts/ci/host/run-installed-legacy.sh --check-config
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover \
+            -s host/test/fixtures/installed-webots -p test_prepare.py -v
+          dependencies/robotics-runtime/.venv/bin/python \
+            host/test/fixtures/installed-webots/worker/test_document_checks.py -v
+      - name: Test simulation provider evidence
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_simulation_provider.py -v
+      - name: Test simulation control state and clock boundaries
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_simulation_control.py -v
+      - name: Test declared consumer topic configuration
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_consumer_configuration.py -v
+      - name: Test native provider qualification documents
+        run: |
+          NATIVE_PRODUCER_DIRECTORY="${PWD}/host/producers" \
+          NATIVE_FIXTURE_DIRECTORY="${PWD}/host/test/fixtures/provider-qualification" \
+          NATIVE_SCHEMA_DIRECTORY="${PWD}/config/qualification" \
+          ROBOTICS_FOUNDATION_LOCK="${PWD}/config/foundation-lock.json" \
+            dependencies/robotics-runtime/.venv/bin/python \
+            host/test/fixtures/provider-qualification/test_native_documents.py
+      - name: Test synthetic physical runtime observations
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_physical_runtime.py -v
+      - name: Test model manifest evidence binding
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_model_manifest.py -v
+      - name: Test the resolved attach verifier commands
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_attach_commands.py -v
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
           cosign-release: v3.1.3
+      - name: Test retained artifact signatures and version binding
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s test/ci -p test_retained_artifact.py -v
       - name: Verify the pinned Cosign publisher
         run: bash scripts/ci/static-analysis/verify-cosign-publisher.sh
       - name: Run repository hooks
         run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
       - name: Test CI workflow architecture
         run: bats test/ci
+      - name: Build and check the pinned host assets
+        run: bash scripts/ci/host/build-assets.sh
       - name: Validate Docker Bake definition
         run: scripts/ci/static-analysis/validate-docker-bake-definition.sh
       - name: Build the pinned policy engine
@@ -64,6 +150,8 @@ jobs:
         run: |
           docker buildx bake --file docker-bake.hcl policy-tooling --load --set '*.platform=linux/amd64'
           docker run --rm local/robotics-runtime-infra/policy-tooling:ci version
+      - name: Verify policies on consumer execution inputs
+        run: bats test/policy/run-policy.bats
       - name: Verify policy format and unit tests
         run: scripts/ci/static-analysis/verify-policy-format-and-tests.sh
       - name: Verify execution authorization policy
@@ -89,6 +177,7 @@ jobs:
           --workdir /work
           "${HADOLINT_IMAGE}"
           /bin/hadolint --config .hadolint.yaml Dockerfile docker/rknn.Dockerfile
+          docker/product-kubernetes-tools.Dockerfile
       - name: Validate Renovate configuration
         run: >-
           docker run --rm
@@ -96,6 +185,13 @@ jobs:
           --workdir /work
           "${RENOVATE_IMAGE}"
           renovate-config-validator --strict renovate.json
+      - name: Test Renovate foundation extraction and updates
+        run: >-
+          docker run --rm
+          --volume "${PWD}:/work:ro"
+          --workdir /work
+          "${RENOVATE_IMAGE}"
+          node test/renovate/check-pins.mjs /usr/local/renovate
       - name: Audit GitHub Actions
         env:
           GH_TOKEN: ${{ github.token }}
@@ -175,12 +271,21 @@ jobs:
           --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-amd64'
       - name: Verify portable runtime images
         run: scripts/ci/integration/verify-portable-runtime-images.sh
-      - name: Verify host time evidence
-        run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify Cosign DSSE boundary and tamper rejection
         env:
           COSIGN_PASSWORD: test-only
         run: scripts/ci/integration/verify-cosign-dsse-boundary-and-tamper-rejection.sh
+      - name: Verify logged permit authorization and denial boundaries
+        env:
+          COSIGN_PASSWORD: test-only
+        run: bash scripts/ci/integration/verify-logged-permit-preflight.sh
+      - name: Prepare synthetic physical attach prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            can-utils socat "linux-modules-extra-$(uname -r)"
+      - name: Verify host time evidence
+        run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify synthetic physical attach end to end
         env:
           COSIGN_PASSWORD: test-only
@@ -219,11 +324,13 @@ jobs:
           # Generated SROS2 keys and physical authorization inputs are never artifacts.
           path: |
             artifacts/benchmarks/
-            artifacts/evidence-s3/evidence-index.json
+            artifacts/evidence-s3/
+            artifacts/host-time/
             artifacts/provider-conformance/
             artifacts/runtime/
             artifacts/security/
             artifacts/test-results/
+            artifacts/zenoh/
           if-no-files-found: warn
           retention-days: 7
 
@@ -307,6 +414,8 @@ jobs:
       - uses: ./.github/actions/setup-buildx
       - name: Require the native ARM64 runner
         run: test "$(uname -m)" = aarch64
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the RK3588 runtime without publishing vendor artifacts
         run: >-
           docker buildx bake --file docker-bake.hcl
@@ -342,6 +451,8 @@ jobs:
         run: scripts/ci/amd-supply-chain/verify-the-signed-rocm-package-channel.sh
       - name: Verify the locked AMD wheel
         run: scripts/ci/amd-supply-chain/verify-the-locked-amd-wheel.sh
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
       - name: Build the AMD runtime and conformance images
         run: >-
           docker buildx bake --file docker-bake.hcl amd
@@ -423,7 +534,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   portable-arm64:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -433,8 +544,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-buildx
-        with:
-          qemu: "true"
+      - name: Require the native ARM64 runner
+        run: test "$(uname -m)" = aarch64
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
       - name: Build and scan every portable target for ARM64
@@ -458,11 +569,34 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-buildx
+      - name: Install the pinned OCI comparison tool
+        env:
+          DIFFOCI_VERSION: v0.1.8
+          DIFFOCI_SHA256: 01e6b50c1568c9d61c758ef6da81869f2c26c852698d73dca961b3617effe949
+        run: |
+          mkdir -p "${RUNNER_TEMP}/diffoci-bin"
+          binary="${RUNNER_TEMP}/diffoci-bin/diffoci"
+          curl --fail --location --retry 3 --output "${binary}" \
+            "https://github.com/reproducible-containers/diffoci/releases/download/${DIFFOCI_VERSION}/diffoci-${DIFFOCI_VERSION}.linux-amd64"
+          printf '%s  %s\n' "${DIFFOCI_SHA256}" "${binary}" | sha256sum --check --strict
+          chmod 0555 "${binary}"
+          printf '%s\n' "${RUNNER_TEMP}/diffoci-bin" >>"${GITHUB_PATH}"
       - name: Rebuild the same OCI image twice
         run: scripts/ci/reproducibility/rebuild-the-same-oci-image-twice.sh
+      - name: Upload OCI manifests and file differences
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: reproducibility-${{ github.sha }}
+          path: artifacts/reproducibility/
+          if-no-files-found: warn
+          retention-days: 7
   ci:
     if: always()
     needs:
+      - product-helm
+      - product-terraform
+      - product-ansible
       - static-analysis
       - compose-version
       - integration

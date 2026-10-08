@@ -1,0 +1,68 @@
+{
+  "name": "@robotics-runtime/infra-host",
+  "version": "0.1.0-rc.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.21.0",
+    "npm": "11.19.0"
+  },
+  "packageManager": "npm@11.19.0",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./plugins/gazebo-ros-v1": {
+      "types": "./dist/src/plugins/gazebo-ros-v1/index.d.ts",
+      "import": "./dist/src/plugins/gazebo-ros-v1/index.js"
+    },
+    "./plugins/legacy-inputs": {
+      "types": "./dist/src/plugins/gazebo-ros-v1/inputs.d.ts",
+      "import": "./dist/src/plugins/gazebo-ros-v1/inputs.js"
+    },
+    "./plugins/legacy-finalization": {
+      "types": "./dist/src/plugins/legacy-finalization/index.d.ts",
+      "import": "./dist/src/plugins/legacy-finalization/index.js"
+    },
+    "./plugins/legacy-finalization-inputs": {
+      "types": "./dist/src/plugins/legacy-finalization/inputs.d.ts",
+      "import": "./dist/src/plugins/legacy-finalization/inputs.js"
+    },
+    "./plugins/px4": {
+      "types": "./dist/src/plugins/px4-provider/index.d.ts",
+      "import": "./dist/src/plugins/px4-provider/index.js"
+    },
+    "./plugins/webots": {
+      "types": "./dist/src/plugins/webots-provider/index.d.ts",
+      "import": "./dist/src/plugins/webots-provider/index.js"
+    },
+    "./plugins/isaac": {
+      "types": "./dist/src/plugins/isaac-provider/index.d.ts",
+      "import": "./dist/src/plugins/isaac-provider/index.js"
+    },
+    "./plugins/isaac-inputs": {
+      "types": "./dist/src/plugins/isaac-provider/inputs.d.ts",
+      "import": "./dist/src/plugins/isaac-provider/inputs.js"
+    }
+  },
+  "files": [
+    "dist/src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js"
+  },
+  "dependencies": {
+    "dockerode": "5.0.1"
+  },
+  "devDependencies": {
+    "@types/dockerode": "4.0.1",
+    "@types/node": "24.19.1",
+    "typescript": "7.0.2",
+    "@robotics-runtime/host": "file:.tools/core-6945de48f3f72d553a8f2fed8649e98cee5b5ecf.tgz"
+  },
+  "peerDependencies": {
+    "@robotics-runtime/host": "0.1.0-rc.0"
+  }
+}

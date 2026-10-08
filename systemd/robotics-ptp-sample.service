@@ -5,8 +5,10 @@ ConditionPathExists=/run/robotics-time/ptp4lro
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/pmc -u -b 0 -s /run/robotics-time/ptp4lro "GET TIME_STATUS_NP"
-StandardOutput=append:/run/robotics-time/pmc.log
+ExecStart=/usr/bin/bash /usr/local/libexec/robotics-time/sample.sh ptp /run/robotics-time
+Group=_chrony
+ReadWritePaths=/run/robotics-time
+StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
 PrivateDevices=yes

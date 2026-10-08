@@ -1,0 +1,30 @@
+---
+services:
+  media-worker:
+    image: "${MEDIA_IMAGE:?immutable media worker image required}"
+    profiles: [media]
+    user: "1000:1000"
+    init: true
+    read_only: true
+    network_mode: none
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [python3]
+    command: [--version]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      XDG_CACHE_HOME: /tmp/gst-cache
+    tmpfs: [/tmp]
+    volumes:
+      - run-data:/run/robotics
+      - run-input:/run/robotics/input:ro
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+volumes:
+  run-data:
+    external: true
+    name: "${ROBOTICS_RUN_ID:?run owner required}-data"
+  run-input:
+    external: true
+    name: "${ROBOTICS_RUN_ID:?run owner required}-input"

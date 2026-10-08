@@ -8,6 +8,24 @@ on:
         description: Exact robotics-runtime-infra commit SHA.
         required: true
         type: string
+      execution_mode:
+        description: Source build or immutable released images.
+        required: false
+        default: source
+        type: string
+      release_lock:
+        description: >-
+          Canonical release.env path relative to the caller repository; blank
+          downloads the selected release tag's canonical asset in released mode.
+        required: false
+        default: ""
+        type: string
+      release_tag:
+        description: >-
+          Independently selected canonical release tag, required in released mode.
+        required: false
+        default: ""
+        type: string
       scenario:
         description: Scenario path relative to the caller repository.
         required: true
@@ -23,6 +41,14 @@ on:
         default: ""
         type: string
 
+      artifact_arguments_file:
+        description: >-
+          Optional caller file containing --artifact/--extension-schema arguments,
+          one per line.
+        required: false
+        default: ""
+        type: string
+
 permissions:
   contents: read
 
@@ -34,13 +60,6 @@ jobs:
   qualify:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    env:
-      EVIDENCE_IMAGE: local/robotics-runtime-infra/evidence-sink:foundation
-      OBSERVER_IMAGE: local/robotics-runtime-infra/acceptance-observer:foundation
-      POLICY_TOOLING_IMAGE: local/robotics-runtime-infra/policy-tooling:foundation
-      REGISTRY: local
-      SIMULATION_IMAGE: local/robotics-runtime-infra/simulation:foundation
-      VERSION: foundation
     steps:
       - name: Validate the immutable tooling reference
         env:
@@ -64,36 +83,83 @@ jobs:
         with:
           bats-version: "1.14.0"
       - uses: ./tooling/.github/actions/setup-buildx
+        with:
+          driver: ${{ inputs.execution_mode == 'released' && 'docker' || 'docker-container' }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
           cosign-release: v3.1.3
       - name: Resolve caller inputs
         env:
+          ARTIFACT_ARGUMENTS_FILE: ${{ inputs.artifact_arguments_file }}
           COMPOSE_PROJECT: ${{ inputs.compose_project }}
+          EXECUTION_MODE: ${{ inputs.execution_mode }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_LOCK: ${{ inputs.release_lock }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
           SCENARIO: ${{ inputs.scenario }}
           TOOLING_REF: ${{ inputs.tooling_ref }}
         run: |
           test "$(git -C tooling rev-parse HEAD)" = "${TOOLING_REF}"
+          source tooling/scripts/ci/foundation/released-mode.sh
           consumer_root="$(realpath consumer)"
-          scenario="$(realpath -e "${consumer_root}/${SCENARIO}")"
-          case "${scenario}" in "${consumer_root}"/*) ;; *) exit 64 ;; esac
+          if test "${EXECUTION_MODE}" = released && test -z "${RELEASE_LOCK}"; then
+            foundation_validate_execution_mode released release.env "${RELEASE_TAG}"
+            repository="$(jq -er '.infra.repository' tooling/config/trust/identities.json)"
+            lock_directory="$(mktemp -d "${consumer_root}/.release-lock.XXXXXX")"
+            gh release download "${RELEASE_TAG}" --repo "${repository}" \
+              --pattern release.env --dir "${lock_directory}" || {
+              status=$?
+              rm -f -- "${lock_directory}/release.env"
+              rmdir -- "${lock_directory}"
+              exit "${status}"
+            }
+            RELEASE_LOCK="${lock_directory}/release.env"
+          fi
+          foundation_validate_execution_mode "${EXECUTION_MODE}" "${RELEASE_LOCK}" "${RELEASE_TAG}"
+          printf 'ROBOTICS_RUNTIME_MODE=%s\n' "${EXECUTION_MODE}" >>"${GITHUB_ENV}"
+          if test "${EXECUTION_MODE}" = released; then
+            release_lock="$(foundation_consumer_file "${consumer_root}" "${RELEASE_LOCK}")"
+            printf 'ROBOTICS_FOUNDATION_RELEASE_LOCK=%s\n' "${release_lock}" >>"${GITHUB_ENV}"
+            printf 'ROBOTICS_FOUNDATION_RELEASE_TAG=%s\n' "${RELEASE_TAG}" >>"${GITHUB_ENV}"
+          else
+            printf '%s\n' \
+              'EVIDENCE_IMAGE=local/robotics-runtime-infra/evidence-sink:foundation' \
+              'OBSERVER_IMAGE=local/robotics-runtime-infra/acceptance-observer:foundation' \
+              'POLICY_TOOLING_IMAGE=local/robotics-runtime-infra/policy-tooling:foundation' \
+              'SIMULATION_IMAGE=local/robotics-runtime-infra/simulation:foundation' \
+              'REGISTRY=local' 'VERSION=foundation' >>"${GITHUB_ENV}"
+          fi
+          scenario="$(foundation_consumer_file "${consumer_root}" "${SCENARIO}")"
           printf 'ROBOTICS_FOUNDATION_SCENARIO=%s\n' \
             "${scenario}" >>"${GITHUB_ENV}"
           printf 'ROBOTICS_FOUNDATION_CONSUMER_ROOT=%s\n' \
             "${consumer_root}" >>"${GITHUB_ENV}"
+          if test -n "${ARTIFACT_ARGUMENTS_FILE}"; then
+            arguments_file="$(foundation_consumer_file "${consumer_root}" "${ARTIFACT_ARGUMENTS_FILE}")"
+            foundation_load_artifact_arguments "${consumer_root}" "${arguments_file}"
+            printf 'ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE=%s\n' \
+              "${arguments_file}" >>"${GITHUB_ENV}"
+          fi
           if test -n "${COMPOSE_PROJECT}"; then
-            compose_project="$(realpath -e "${consumer_root}/${COMPOSE_PROJECT}")"
-            case "${compose_project}" in "${consumer_root}"/*) ;; *) exit 64 ;; esac
+            compose_project="$(foundation_consumer_file "${consumer_root}" "${COMPOSE_PROJECT}")"
             printf 'ROBOTICS_FOUNDATION_COMPOSE_PROJECT=%s\n' \
               "${compose_project}" >>"${GITHUB_ENV}"
           fi
       - name: Import and validate exact foundation sources
         working-directory: tooling
         run: |
-          scripts/ci/set-build-metadata.sh
+          if test "${ROBOTICS_RUNTIME_MODE}" = source; then
+            scripts/ci/set-build-metadata.sh
+          fi
           bash scripts/ci/foundation/import-sources.sh
           bash scripts/ci/foundation/validate-foundation.sh
+      - name: Validate the caller scenario role before building
+        working-directory: tooling
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/robotics-contracts validate
+          --schema acceptance-scenario.v1 "${ROBOTICS_FOUNDATION_SCENARIO}"
       - name: Build and verify the foundation images
+        if: inputs.execution_mode == 'source'
         working-directory: tooling
         run: |
           bash scripts/ci/foundation/build-images.sh
@@ -101,9 +167,17 @@ jobs:
       - name: Qualify the caller scenario
         working-directory: tooling
         env:
+          GH_TOKEN: ${{ github.token }}
           ROBOTICS_FOUNDATION_ARTIFACT_DIR: ${{ github.workspace }}/artifacts
           ROBOTICS_FOUNDATION_EXTRA_SERVICES: ${{ inputs.services }}
         run: bash scripts/ci/foundation/run-acceptance.sh
+      - name: Verify released stock playback natural EOF
+        if: inputs.execution_mode == 'released'
+        working-directory: tooling
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROBOTICS_PLAYBACK_ARTIFACT_ROOT: ${{ github.workspace }}/artifacts/native-player-eof
+        run: bash scripts/ci/integration/verify-mcap-playback.sh
       - name: Upload qualification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

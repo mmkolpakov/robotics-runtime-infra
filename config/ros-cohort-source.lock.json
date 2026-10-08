@@ -1,0 +1,79 @@
+{
+  "schema": "stock-ros-cohort-source.v1",
+  "status": "native-availability-verified-runtime-pending",
+  "platform": "linux/amd64",
+  "rosDistro": "jazzy",
+  "gazeboDistribution": "harmonic",
+  "ubuntuSnapshot": "20260930T000000Z",
+  "rosSnapshot": "2026-09-11",
+  "rosdistroRevision": "8e9a99d200fd312f106418b2b497b0cc5146e6a7",
+  "snapshotKeySha256": "2917845bafcabbf651ed70e967beb61ee467ae29292288c7ccd5d7d76e5f2a2f",
+  "baseImageId": "sha256:1c227795630eb5d3a5069774031321f7aa48a47179af8345432bf1a0be6c7c60",
+  "sources": {
+    "ros_gz": {
+      "tag": "1.0.24",
+      "revision": "5912bfe7976a79d2cc9f373b2d40a8a3a3e33da2"
+    },
+    "simulation_interfaces": {
+      "tag": "1.5.1",
+      "revision": "a3c60ff2715dbe5e9d5cddce410d9a7ffe771960"
+    }
+  },
+  "packages": [
+    {
+      "Package": "ros-jazzy-ros-gz",
+      "Version": "1.0.24-1noble.20260905.090616",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz/ros-jazzy-ros-gz_1.0.24-1noble.20260905.090616_amd64.deb",
+      "SHA256": "2cd2470a85fb17cb7cfff847c824e005aabf96f2843a52fff8517704d1520fb6"
+    },
+    {
+      "Package": "ros-jazzy-ros-gz-bridge",
+      "Version": "1.0.24-1noble.20260905.070149",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz-bridge/ros-jazzy-ros-gz-bridge_1.0.24-1noble.20260905.070149_amd64.deb",
+      "SHA256": "85ba2e525644fdc9c62ab5fe96040ed47661e93c41a2299fa9fc5fd56e9f60e0"
+    },
+    {
+      "Package": "ros-jazzy-ros-gz-image",
+      "Version": "1.0.24-1noble.20260905.072745",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz-image/ros-jazzy-ros-gz-image_1.0.24-1noble.20260905.072745_amd64.deb",
+      "SHA256": "bf3874d794159f54640d0b81d84316e9036c6b270d484a275b08bf77575ee8d7"
+    },
+    {
+      "Package": "ros-jazzy-ros-gz-interfaces",
+      "Version": "1.0.24-1noble.20260902.041547",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz-interfaces/ros-jazzy-ros-gz-interfaces_1.0.24-1noble.20260902.041547_amd64.deb",
+      "SHA256": "f9094db235ff2a3b778896f3bf421ae02b12f9da0c277db2d9096a2bddc966ed"
+    },
+    {
+      "Package": "ros-jazzy-ros-gz-sim",
+      "Version": "1.0.24-1noble.20260905.085151",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz-sim/ros-jazzy-ros-gz-sim_1.0.24-1noble.20260905.085151_amd64.deb",
+      "SHA256": "6fd95340cc7c75181127e14b731bec52ffdb4e40a6c0d258ce93ac90e44c9f41"
+    },
+    {
+      "Package": "ros-jazzy-ros-gz-sim-demos",
+      "Version": "1.0.24-1noble.20260905.085920",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-ros-gz-sim-demos/ros-jazzy-ros-gz-sim-demos_1.0.24-1noble.20260905.085920_amd64.deb",
+      "SHA256": "e8b5d5c7fe16394900bd95c25261cdaf8b53315b3950188e1c0af49404878a2c"
+    },
+    {
+      "Package": "ros-jazzy-simulation-interfaces",
+      "Version": "1.5.1-1noble.20260902.041638",
+      "Architecture": "amd64",
+      "Filename": "pool/main/r/ros-jazzy-simulation-interfaces/ros-jazzy-simulation-interfaces_1.5.1-1noble.20260902.041638_amd64.deb",
+      "SHA256": "f69ea252cf6872dce7783f04575e3e33c1fe1fd4c14f0da4d1587677e1032040"
+    }
+  ],
+  "availabilityImageId": "sha256:6bce5212b6df49d751418ac2273e0844f7d1548f963788a3c542f18127c58df9",
+  "resolverDelta": {
+    "count": 85,
+    "path": "docker/apt/ros-cohort-source-closure.packages",
+    "sha256": "642cbc8cef55ef73d20927a3e41b7cbd58bd869782ddd6cbc2d96da0c412187f"
+  }
+}

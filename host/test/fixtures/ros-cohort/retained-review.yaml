@@ -1,0 +1,20 @@
+services:
+  reader:
+    image: "${ROS_REVIEW_IMAGE:?exact image required}"
+    user: "1000:1000"
+    userns_mode: keep-id:uid=1000,gid=1000
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    network_mode: none
+    mem_limit: 256m
+    volumes:
+      - retained:/retained:ro
+      - "${ROS_REVIEW_SOURCE_ROOT:?source root required}/host/workers/ros-cohort-review:/review:ro"
+    labels:
+      org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run required}"
+    command: [/opt/contracts/bin/python, /review/retained.py, "${ROS_REVIEW_SUBJECT_RUN:?subject run required}"]
+volumes:
+  retained:
+    external: true
+    name: "${ROS_REVIEW_RETAINED_VOLUME:?retained volume required}"
