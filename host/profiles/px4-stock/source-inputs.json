@@ -1,5 +1,5 @@
 {
-  "scope": "source candidate: CPU stock x500 takeoff effect; no hardware, Spiral, full mission or released qualification",
+  "scope": "source candidate: CPU stock x500 takeoff effect; no hardware, application-specific airframe, full mission or released qualification",
   "px4_commit": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
   "models_commit": "b6127f4ec20de867e215fb5f78ae88b80f371909",
   "worker_image": "localhost/rr-c13-px4@sha256:39c184c711d698d8c434c608946e0713dd22ea9c60361557ad87d348ffb783fa",

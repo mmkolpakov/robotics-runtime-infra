@@ -37,7 +37,7 @@ scripts/ci/check-product-helm.sh
 
 This builds the pinned project tooling container and runs strict Helm lint/render,
 official Kubernetes API schema and identity fixtures without cluster access.
-HOME uses `ROBOTICS_IMAGE_ENGINE=podman` with the same command.
+For rootless Podman, use `ROBOTICS_IMAGE_ENGINE=podman` with the same command.
 
 CI is the release gate for the arm64 build, vulnerability policy, supply-chain
 checks, and the integration of contracts, acceptance harness, and runtime.

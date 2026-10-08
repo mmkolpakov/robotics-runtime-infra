@@ -53,7 +53,7 @@ The build fetches the official artifact and verifies its pinned SHA before extra
 The image's root filesystem is read-only at
 run time; temporary display/cache files use a bounded tmpfs. Production Compose uses worker UID
 10001/GID 1000 and the host-owned external shared volume at the same `/run/robotics` path.
-`compose.webots.podman.yaml` declares HOME's qualified parent namespace mapping separately.
+`compose.webots.podman.yaml` declares the recorded rootless profile's parent namespace mapping separately.
 
 The Cordis plugin in `host/src/plugins/webots-provider/` uses the existing Jobs and RunResources
 services. Compose 5.3.1 invokes the workers; EngineMetadata observes the actual image/container,
