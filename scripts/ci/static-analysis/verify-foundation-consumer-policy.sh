@@ -5,6 +5,8 @@ set -Eeuo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/../lib.sh"
 ci_enter_repo
 ci_set_compose_fixture_env
+# Select this syntax image before either foundation or caller rendering.
+export OBSERVER_IMAGE=local/robotics-runtime-infra/acceptance-observer:ci
 
 case_dir="${CI_REPO_ROOT}/tmp/foundation-consumer-policy"
 trap 'rm -rf "${case_dir}"' EXIT
@@ -92,3 +94,35 @@ ci_require_policy_allows \
   policy/compose.rego compose tmp/foundation-consumer-policy/resolved.json
 jq -e '.services.product.volumes[0].source | endswith("/consumer/src")' \
   "${case_dir}/resolved.json" >/dev/null
+
+# Admit the repository's generic caller through the same renderer and policies.
+# These are explicit Compose syntax fixture values, not native observations.
+# shellcheck source=scripts/ci/foundation/lib.sh
+source "${CI_REPO_ROOT}/scripts/ci/foundation/lib.sh"
+# The renderer consumes this fixed array by nameref.
+# shellcheck disable=SC2034
+generic_environment=()
+foundation_render_consumer_model "${CI_REPO_ROOT}" \
+  "${CI_REPO_ROOT}/examples/generic-consumer/compose.yaml" \
+  "${case_dir}/foundation.json" simulation generic_environment >"${case_dir}/generic.json"
+ci_require_model_paths_within_root "${case_dir}/generic.json" "${CI_REPO_ROOT}"
+ci_yq_from_root "${CI_REPO_ROOT}" \
+  -o=json /input/examples/generic-consumer/compose.yaml >"${case_dir}/generic-source.json"
+ci_require_policy_allows policy/consumer_compose_source.rego consumer_compose_source \
+  tmp/foundation-consumer-policy/generic-source.json
+ci_require_source_paths_within_root "${case_dir}/generic-source.json" "${CI_REPO_ROOT}"
+
+jq --arg consumer "${case_dir}/generic.json" --arg consumer_root "${CI_REPO_ROOT}" \
+  '.include[1] = {path:$consumer, project_directory:$consumer_root}' \
+  "${case_dir}/wrapper.json" >"${case_dir}/generic-wrapper.json"
+docker compose -p foundation-policy-smoke -f "${case_dir}/generic-wrapper.json" \
+  "${profiles[@]}" config --format json >"${case_dir}/generic-resolved.json"
+jq -n --slurpfile foundation "${case_dir}/foundation.json" \
+  --slurpfile consumer "${case_dir}/generic.json" \
+  --slurpfile resolved "${case_dir}/generic-resolved.json" \
+  --arg consumer_root "${CI_REPO_ROOT}" \
+  '{foundation:$foundation[0],consumer:$consumer[0],resolved:$resolved[0],
+    consumer_root:$consumer_root,allowed_services:["caller-probe"]}' \
+  >"${case_dir}/generic-input.json"
+ci_require_policy_allows policy/foundation.rego foundation tmp/foundation-consumer-policy/generic-input.json
+ci_require_policy_allows policy/compose.rego compose tmp/foundation-consumer-policy/generic-resolved.json

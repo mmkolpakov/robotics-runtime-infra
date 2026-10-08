@@ -41,6 +41,12 @@ on:
         default: ""
         type: string
 
+      settle_services:
+        description: Optional newline-delimited subset of admitted services to settle before packaging.
+        required: false
+        default: ""
+        type: string
+
       artifact_arguments_file:
         description: >-
           Optional caller file containing --artifact/--extension-schema arguments,
@@ -85,6 +91,9 @@ jobs:
       - uses: ./tooling/.github/actions/setup-buildx
         with:
           driver: ${{ inputs.execution_mode == 'released' && 'docker' || 'docker-container' }}
+      - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
+        with:
+          version: v5.3.1
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
           cosign-release: v3.1.3
@@ -155,9 +164,13 @@ jobs:
           bash scripts/ci/foundation/validate-foundation.sh
       - name: Validate the caller scenario role before building
         working-directory: tooling
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/robotics-contracts validate
-          --schema acceptance-scenario.v1 "${ROBOTICS_FOUNDATION_SCENARIO}"
+        run: |
+          source scripts/ci/foundation/lib.sh
+          foundation_load_artifact_arguments "${ROBOTICS_FOUNDATION_CONSUMER_ROOT}" \
+            "${ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE:-}"
+          dependencies/robotics-runtime/.venv/bin/robotics-contracts validate \
+            --schema acceptance-scenario.v1 "${ROBOTICS_FOUNDATION_SCENARIO}" \
+            "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
       - name: Build and verify the foundation images
         if: inputs.execution_mode == 'source'
         working-directory: tooling
@@ -170,6 +183,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ROBOTICS_FOUNDATION_ARTIFACT_DIR: ${{ github.workspace }}/artifacts
           ROBOTICS_FOUNDATION_EXTRA_SERVICES: ${{ inputs.services }}
+          ROBOTICS_FOUNDATION_SETTLE_SERVICES: ${{ inputs.settle_services }}
         run: bash scripts/ci/foundation/run-acceptance.sh
       - name: Verify released stock playback natural EOF
         if: inputs.execution_mode == 'released'
