@@ -94,11 +94,94 @@ class SimulationProviderTests(unittest.TestCase):
             self.args, now=datetime(2026, 9, 8, tzinfo=timezone.utc)
         )
 
-    def cli(self):
+    def cli(self, extension_schema_options=()):
         arguments = [sys.executable, str(SCRIPT)]
         for name, value in vars(self.args).items():
             arguments.extend(["--" + name.replace("_", "-"), str(value)])
+        for value in extension_schema_options:
+            arguments.extend(["--extension-schema", value])
         return subprocess.run(arguments, text=True, capture_output=True, check=False)
+
+    def extension_case(self):
+        scenario_path = ROOT / "examples/generic-consumer/scenario.yaml"
+        schema_path = self.root / "caller-schema.json"
+        schema_path.write_bytes(
+            (
+                ROOT / "examples/generic-consumer/inputs/extension.schema.json"
+            ).read_bytes()
+        )
+        self.scenario, raw = producer.read_mapping(scenario_path)
+        self.args.scenario.write_bytes(raw)
+        self.run.update(
+            scenario_id=self.scenario["scenario_id"],
+            scenario_sha256=producer.digest(raw),
+        )
+        self.save("run_context", self.run)
+        uri = self.scenario["extension_schemas"][0]["schema_uri"]
+        return uri, schema_path
+
+    def test_cli_registered_schema_preserves_actual_provider_bindings(self):
+        uri, schema = self.extension_case()
+        originals = {
+            path: path.read_bytes()
+            for path in [
+                self.args.scenario,
+                self.args.run_context,
+                self.args.profile,
+                self.args.configuration,
+                self.args.observation,
+                self.args.world,
+                schema,
+            ]
+        }
+        completed = self.cli([uri + "=" + str(schema)])
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result, _ = producer.read_mapping(self.args.output)
+        self.assertEqual(result["run_id"], self.run["run_id"])
+        self.assertEqual(result["checks"][0]["observed_value"], 5_000_000)
+        self.assertEqual(originals, {path: path.read_bytes() for path in originals})
+
+    def test_cli_schema_refusals_leave_no_output_or_input_changes(self):
+        uri, schema = self.extension_case()
+        original = schema.read_bytes()
+        for case in ("missing", "wrong-digest", "wrong-payload", "duplicate-uri"):
+            with self.subTest(case=case):
+                schema.write_bytes(original)
+                self.args.scenario.write_bytes(
+                    (ROOT / "examples/generic-consumer/scenario.yaml").read_bytes()
+                )
+                self.scenario, raw = producer.read_mapping(self.args.scenario)
+                options = [uri + "=" + str(schema)]
+                if case == "missing":
+                    options = []
+                elif case == "wrong-digest":
+                    schema.write_bytes(original + b"\n")
+                elif case == "wrong-payload":
+                    self.scenario["extensions"]["org.example.generic-consumer.probe"][
+                        "marker"
+                    ] = "wrong"
+                    self.args.scenario.write_text(json.dumps(self.scenario))
+                else:
+                    options *= 2
+                _, raw = producer.read_mapping(self.args.scenario)
+                self.run.update(scenario_sha256=producer.digest(raw))
+                self.save("run_context", self.run)
+                before = {
+                    path: path.read_bytes()
+                    for path in [schema, self.args.scenario, self.args.run_context]
+                }
+                completed = self.cli(options)
+                self.assertNotEqual(completed.returncode, 0, completed.stderr)
+                self.assertFalse(self.args.output.exists())
+                self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_cli_output_cannot_replace_selected_schema(self):
+        uri, schema = self.extension_case()
+        self.args.output = schema
+        before = schema.read_bytes()
+        completed = self.cli([uri + "=" + str(schema)])
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(schema.read_bytes(), before)
 
     def test_writer_binds_actual_retained_bytes(self):
         completed = self.cli()

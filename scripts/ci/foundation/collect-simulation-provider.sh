@@ -2,14 +2,23 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-[[ $# -eq 4 ]] || {
-  printf 'usage: collect-simulation-provider.sh CONTAINER RUN_DIR OUTPUT_DIR SUBJECT_DIGEST\n' >&2
+[[ $# -ge 4 ]] || {
+  printf 'usage: collect-simulation-provider.sh CONTAINER RUN_DIR OUTPUT_DIR SUBJECT_DIGEST [--extension-schema URI=PATH]...\n' >&2
   exit 64
 }
 container="$1"
 run_dir="$2"
 output="$3"
 subject_digest="$4"
+shift 4
+schema_arguments=("$@")
+while (($#)); do
+  [[ "$1" == --extension-schema && $# -ge 2 ]] || {
+    printf 'unsupported simulation provider schema argument\n' >&2
+    exit 64
+  }
+  shift 2
+done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 root="$(cd "${script_dir}/../../.." && pwd -P)"
 python="${ROBOTICS_FOUNDATION_PYTHON:-${root}/dependencies/robotics-runtime/.venv/bin/python}"
@@ -18,6 +27,9 @@ namespace="${ROBOTICS_SIMULATOR_SERVICE_NAMESPACE:-/simulator}"
   printf 'invalid simulator service namespace: %s\n' "${namespace}" >&2
   exit 64
 }
+# Reuse public admission before acquiring or probing any native producer.
+"${python}" -I -m robotics_runtime_contracts.cli validate --quiet \
+  --schema acceptance-scenario.v1 "${run_dir}/scenario.yaml" "${schema_arguments[@]}"
 # Compare Docker's opaque local ID with the selected image's local ID, not the
 # execution subject digest (which may be a registry manifest or another runtime).
 expected_image_id="${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID:-}"
@@ -92,5 +104,6 @@ cp "${root}/config/qualification/simulation-interfaces.json" "${output}/profile.
   --profile "${output}/profile.json" --configuration "${output}/configuration.json" \
   --observation "${output}/observation.json" --world "${output}/world.sdf" \
   --subject-digest "${subject_digest}" --output "${output}/conformance.json" \
+  "${schema_arguments[@]}" \
   >"${output}/bindings.pending.json"
 mv -- "${output}/bindings.pending.json" "${output}/bindings.json"

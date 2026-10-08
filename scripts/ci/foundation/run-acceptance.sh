@@ -59,6 +59,7 @@ if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
 fi
 foundation_load_artifact_arguments "${consumer_root}" \
   "${ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE:-}"
+foundation_stage_extension_schemas "${run_dir}"
 foundation_require_scenario_policy "${foundation_bin}/python" \
   "${run_dir}/scenario.yaml" "runs/${project}/scenario-policy-input.json"
 cp "${run_dir}/scenario-policy-input.json" "${artifact_dir}/"
@@ -129,7 +130,7 @@ case "${data_source}" in
     cp -- "${playback_inputs}/dataset-manifest.json" "${run_dir}/dataset-manifest.json"
     cp -- "${playback_inputs}/playback-inputs.json" "${run_dir}/configuration/playback-inputs.json"
     cp -- "${root}/config/qualification/recorded-playback.json" "${run_dir}/profile.json"
-    foundation_validate_document "${foundation_bin}/python" "${run_dir}/dataset-manifest.json"
+    foundation_validate_document "${foundation_bin}/python" "${run_dir}/dataset-manifest.json" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
     time_authority=playback_clock
     time_source=rosbag2-player-clock
     ;;
@@ -155,12 +156,12 @@ ROBOTICS_RUN_ID="$(
     --output "${run_dir}/acceptance-run.json" \
     --domain primary=observer \
     --time-authority "${time_authority}" \
-    --time-source "${time_source}"
+    --time-source "${time_source}" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 )"
 export ROBOTICS_DOMAIN_ID=primary
 foundation_validate_document \
   "${foundation_bin}/python" \
-  "${run_dir}/acceptance-run.json"
+  "${run_dir}/acceptance-run.json" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 
 export ROBOTICS_RUN_DIR="${run_dir}"
 export ROBOTICS_BAG_DIR="${run_dir}/bags"
@@ -228,6 +229,8 @@ if [[ -n "${ROBOTICS_FOUNDATION_EXTRA_SERVICES:-}" ]]; then
     extra_services+=("${service}")
   done <<<"${ROBOTICS_FOUNDATION_EXTRA_SERVICES}"
 fi
+foundation_load_settle_services "${ROBOTICS_FOUNDATION_SETTLE_SERVICES:-}" "${extra_services[@]}"
+foundation_bind_settlement_endpoint
 foundation_files=(
   compose.yaml
   compose.foundation.yaml
@@ -262,6 +265,14 @@ consumer_model="${run_dir}/consumer-compose.json"
 resolved_model="${run_dir}/resolved-compose.json"
 policy_input="${run_dir}/foundation-policy-input.json"
 "${foundation_compose[@]}" "${profiles[@]}" config --format json >"${foundation_model}"
+if ((${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]})); then
+  schema_override="${run_dir}/configuration/extension-observer-compose.json"
+  foundation_schema_observer_override "${foundation_model}" acceptance-observer \
+    /run/robotics "${schema_override}"
+  foundation_compose+=(-f "${schema_override}")
+  foundation_paths+=("${schema_override}")
+  "${foundation_compose[@]}" "${profiles[@]}" config --format json >"${foundation_model}"
+fi
 jq -n '{services: {}}' >"${consumer_model}"
 jq -n '{services: {}}' >"${consumer_source_model}"
 compose=("${foundation_compose[@]}")
@@ -293,15 +304,10 @@ if [[ -n "${ROBOTICS_FOUNDATION_COMPOSE_PROJECT:-}" ]]; then
     "${consumer_source_relative}"
   ci_require_source_paths_within_root \
     "${consumer_source_model}" "${consumer_root}"
-  env -i \
-    PATH="${PATH}" \
-    HOME="${HOME}" \
-    PWD="${CI_REPO_ROOT}" \
-    COMPOSE_DISABLE_ENV_FILE=1 \
-    docker compose "${compose_environment[@]}" \
-    --project-directory "${consumer_root}" \
-    -f "${consumer_file}" \
-    config --no-normalize --format json >"${consumer_model}"
+  consumer_provider=simulation
+  [[ "${data_source}" != recording_playback ]] || consumer_provider=playback
+  foundation_render_consumer_model "${consumer_root}" "${consumer_file}" \
+    "${foundation_model}" "${consumer_provider}" compose_environment >"${consumer_model}"
   ci_require_model_paths_within_root "${consumer_model}" "${consumer_root}"
   wrapper="${run_dir}/compose.json"
   jq -n \
@@ -435,7 +441,8 @@ publish_failure_evidence() {
     "${run_dir}/evidence/evidence-index.json" \
     "${run_dir}/evidence/summaries" \
     "${run_dir}/bags" \
-    "${run_dir}/scenario.yaml"; do
+    "${run_dir}/scenario.yaml" \
+    "${run_dir}/configuration/extension-schemas"; do
     if [[ -e "${source}" ]]; then
       sudo cp -a "${source}" "${destination}/"
     fi
@@ -580,7 +587,7 @@ else
   test -n "${simulation_container}"
   bash "${script_dir}/collect-simulation-provider.sh" \
     "${simulation_container}" "${run_dir}" "${artifact_dir}/provider" \
-    "${ROBOTICS_SIMULATION_OCI_DIGEST}"
+    "${ROBOTICS_SIMULATION_OCI_DIGEST}" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 fi
 sudo install -o 1000 -g 1000 -m 0644 \
   "${artifact_dir}/provider/bindings.json" "${run_dir}/provider-bindings.json"
@@ -607,7 +614,7 @@ rm "${runtime_resources}"
 "${compose[@]}" --profile acceptance run --rm runtime-manifest
 foundation_validate_document \
   "${foundation_bin}/python" \
-  "${run_dir}/runtime-manifest.json"
+  "${run_dir}/runtime-manifest.json" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 fastdds_profile="${root}/config/fastdds/udp-only.xml"
 fastdds_profile_sha256="$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)"
 jq -e --arg digest "${fastdds_profile_sha256}" \
@@ -696,6 +703,13 @@ if [[ "${observer_mode}" == edge-attach ]]; then
   attached_compose+=(--profile edge-attach)
   attached_model="${artifact_dir}/edge-attach-compose.json"
   "${attached_compose[@]}" config --format json >"${attached_model}"
+  if ((${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]})); then
+    schema_override="${run_dir}/configuration/extension-attach-compose.json"
+    foundation_schema_observer_override "${attached_model}" edge-attach-observer \
+      /input "${schema_override}"
+    attached_compose+=(-f "${schema_override}")
+    "${attached_compose[@]}" config --format json >"${attached_model}"
+  fi
   ci_require_policy_allows policy/compose.rego compose \
     "$(realpath --relative-to="${root}" "${attached_model}")"
   foundation_require_release_images_policy "${attached_model}" \
@@ -733,6 +747,12 @@ while [[ ! -f "${measurement_complete}" ]]; do
     exit 70
   fi
   sleep 1
+done
+FOUNDATION_CONTAINER_EXTENSION_SCHEMA_ARGUMENTS=()
+for ((index=1; index<${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}; index+=2)); do
+  specification="${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[index]}"
+  FOUNDATION_CONTAINER_EXTENSION_SCHEMA_ARGUMENTS+=(--extension-schema \
+    "${specification%%=*}=/run/robotics/configuration/extension-schemas/${specification##*/}")
 done
 # Seal native capture while observed publishers remain active.
 if [[ "${data_source}" == recording_playback ]]; then
@@ -775,8 +795,17 @@ fi
   --scenario /run/robotics/scenario.yaml \
   --run-context /run/robotics/acceptance-run.json \
   --result /run/robotics/results/acceptance-result.json \
-  --output /run/robotics/results/acceptance-aggregate.json
+  --output /run/robotics/results/acceptance-aggregate.json \
+  "${FOUNDATION_CONTAINER_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
+
+settlement_dir=""
+if ((${#FOUNDATION_SETTLE_SERVICES[@]})); then
+  settlement_dir="${run_dir}/results/caller-settlement"
+  settlement_provider=simulation
+  [[ "${data_source}" != recording_playback ]] || settlement_provider=playback
+  foundation_settle_caller_services compose "${project}" "${resolved_model}" "${settlement_dir}" "${settlement_provider}"
+fi
 
 mapfile -t mcap_summaries < <(
   find "${run_dir}/evidence/summaries" \
@@ -896,6 +925,12 @@ if [[ "${robot_selected}" == true ]]; then
   while IFS= read -r -d '' path; do
     qualification_inputs+=(--artifact "other_evidence:robot-readiness/${path##*/}=${path}")
   done < <(find "${artifact_dir}/robot-readiness" -maxdepth 1 -type f -print0 | sort -z)
+fi
+if [[ -n "${settlement_dir}" ]]; then
+  while IFS= read -r -d '' path; do
+    relative="${path#"${settlement_dir}/"}"
+    qualification_inputs+=(--artifact "other_evidence:consumer/settlement/${relative}=${path}")
+  done < <(find "${settlement_dir}" -type f -print0 | LC_ALL=C sort -z)
 fi
 qualification_inputs+=("${FOUNDATION_ARTIFACT_ARGUMENTS[@]}" "${FOUNDATION_RELEASE_ARTIFACT_ARGUMENTS[@]}")
 qualification_package="$(realpath -e "${artifact_dir}")/qualification"
