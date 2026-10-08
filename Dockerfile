@@ -1301,5 +1301,5 @@ USER ubuntu
 ENTRYPOINT ["/usr/local/bin/robotics-entrypoint"]
 CMD ["ros2", "launch", "robotics_runtime_infra", "headless.launch.py"]
 
-HEALTHCHECK --interval=10s --timeout=8s --start-period=30s --retries=6 \
+HEALTHCHECK --interval=30s --timeout=6s --start-period=30s --start-interval=2s --retries=3 \
   CMD ["/usr/local/bin/robotics-entrypoint", "timeout", "5", "ros2", "topic", "echo", "/clock", "--once"]

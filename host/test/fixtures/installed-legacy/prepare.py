@@ -22,6 +22,7 @@ DEPLOYMENT = [
     "config/recording/qos-overrides.yaml",
     "host/test/fixtures/legacy-live/mcap-writer-small-segment.yaml",
     "host/test/fixtures/legacy-live/compose.yaml",
+    "compose.simulation-health.yaml",
     "host/test/fixtures/legacy-live/evidence.yaml",
     "host/test/fixtures/legacy-live/otel-collector.yaml",
     "host/workers/legacy/prepare-source.py",

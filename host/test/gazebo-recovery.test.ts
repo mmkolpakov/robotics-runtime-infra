@@ -20,12 +20,12 @@ const child=()=>({...parent(),Id:childId,Config:{User:'1000:1000',Labels:labels(
   HostConfig:{NetworkMode:'container:'+parentId,IpcMode:'container:'+parentId}});
 type NativeContainer=ReturnType<typeof parent>;
 
-async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]=[parent(),child()],listedContainers:NativeContainer[]=containers,parentMetadata?:unknown,mounts:ContainerRequirement['mounts']=[]) {
+async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]=[parent(),child()],listedContainers:NativeContainer[]=containers,parentMetadata?:unknown,mounts:ContainerRequirement['mounts']=[],health?:{version:unknown;required:ContainerRequirement['healthcheck']}) {
   const root=await mkdtemp(join(tmpdir(),'rr-gazebo-recovery-')),ctx=new Context(),requests:string[]=[];
   const effects=join(root,'effects'),removed=join(root,'removed'),socketPath=join(root,'engine.sock');
   const api=createServer((request,response)=>{
-    const path=request.url!;requests.push(path);let value:unknown;
-    if(path==='/version')value={ApiVersion:'1.41',MinAPIVersion:'1.24'};
+    const path=request.url!.replace(/^\/v1\.\d+\//,'/v1.41/');requests.push(request.url!);let value:unknown;
+    if(path==='/version')value=health?.version??{ApiVersion:'1.41',MinAPIVersion:'1.24'};
     else if(path.startsWith('/v1.41/containers/json'))value=existsSync(removed)?[]:listedContainers.map(row=>({Id:row.Id,Labels:row.Config.Labels}));
     else if(path.startsWith('/v1.41/volumes'))value={Volumes:null};
     else if(path.startsWith('/v1.41/networks'))value=[];
@@ -49,7 +49,7 @@ async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]
   await ctx.plugin(Jobs,{timeoutMs:2000,maxBufferBytes:1048576}).await();
   const requirement={runId:'run1',projectName:'owned-1',imageId,user:'1000:1000',mounts,hostConfig:{}};
   const input:LegacyRunInput={runId:'run1',compose:{executable,socketPath,projectName:'owned-1',files:[join(root,'compose.yaml')],cwd:root,timeoutMs:1000},
-    artifactDirectory:join(root,'retained'),observationServices:[],simulationRequirement:requirement,stepperRequirement:requirement,
+    artifactDirectory:join(root,'retained'),observationServices:[],simulationRequirement:{...requirement,...(health?{healthcheck:health.required}:{})},stepperRequirement:requirement,
     entityWorkerPath:'/fixed/entity.py',clockWorkerPath:'/fixed/clock.py',readinessWorkerPath:'/fixed/readiness.py'};
   let provider!:GazeboRosV1,resources!:RunResources;
   const runFiber=ctx.plugin(async scope=>{
@@ -176,3 +176,47 @@ for(const [name,metadata,mounts] of [
     assert.deepEqual(await bytes('simulation-native-metadata'),failedMetadata);
   });
 }
+
+
+const healthPolicy={Test:['CMD','native-probe'],StartInterval:2000000000,Interval:30000000000,Timeout:6000000000,StartPeriod:15000000000,Retries:3};
+const dockerHealthVersion={ApiVersion:'1.48',MinAPIVersion:'1.24',Components:[{Name:'Engine',Version:'28.0.4'}]};
+for(const [name,version] of [
+  ['old Docker API',{...dockerHealthVersion,ApiVersion:'1.43'}],
+  ['Podman startup scheduling',{...dockerHealthVersion,Components:[{Name:'Podman Engine'}]}],
+  ['missing engine identity',{ApiVersion:'1.48',MinAPIVersion:'1.24'}],
+] as const) {
+  test('native health admission refuses '+name+' before acquisition',async t=>{
+    const {provider,runFiber,effects,requests}=await fixture(t,'complete',[],[],undefined,[],{version,required:healthPolicy});
+    await assert.rejects(provider.ready(AbortSignal.timeout(1000)),/Docker Engine API 1.44/);
+    assert.deepEqual((await commands(effects)).map(args=>args.at(-2)),['version']);
+    assert.deepEqual(requests,['/version']);
+    assert.throws(()=>provider.snapshot(),/incomplete/);
+    await runFiber.dispose();
+    assert.equal((await commands(effects)).some(args=>args.includes('up')||args.includes('down')),false);
+  });
+}
+for(const [name,acquired] of [
+  ['missing startup interval',Object.fromEntries(Object.entries(healthPolicy).filter(([field])=>field!=='StartInterval'))],
+  ['wrong startup interval',{...healthPolicy,StartInterval:0}],
+  ['disabled native probe',{...healthPolicy,Test:['NONE']}],
+] as const) {
+  test('native health admission refuses acquired '+name+' and retains owned cleanup',async t=>{
+    const actual={...parent(),Config:{...parent().Config,Healthcheck:acquired}};
+    const {root,provider,runFiber,resources,effects}=await fixture(t,'complete',[actual,child()],[actual,child()],undefined,[],{version:dockerHealthVersion,required:healthPolicy});
+    await assert.rejects(provider.ready(AbortSignal.timeout(1000)),/required observed simulation metadata incomplete/);
+    assert.throws(()=>provider.snapshot(),/incomplete/);
+    const names=await readdir(join(root,'retained'));
+    const evidence=JSON.parse(await readFile(join(root,'retained',names.find(name=>name.endsWith('-simulation-native-metadata.json'))!),'utf8'));
+    assert.equal(evidence.status,'incomplete');assert.deepEqual(evidence.container.Config.Healthcheck,acquired);
+    await runFiber.dispose();
+    assert.equal((await resources.verify(1000))[0]!.released,true);
+    assert.equal((await commands(effects)).filter(args=>args.includes('down')).length,1);
+  });
+}
+test('native health admission accepts the acquired Docker startup policy through normal readiness',async t=>{
+  const actual={...parent(),Config:{...parent().Config,Healthcheck:healthPolicy}};
+  const {provider,runFiber,resources}=await fixture(t,'complete',[actual,child()],[actual,child()],undefined,[],{version:dockerHealthVersion,required:healthPolicy});
+  assert.equal((await provider.ready(AbortSignal.timeout(1000))).ready,true);
+  assert.equal(provider.snapshot().simulationContainerId,parentId);
+  await runFiber.dispose();assert.equal((await resources.verify(1000))[0]!.released,true);
+});

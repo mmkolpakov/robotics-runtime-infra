@@ -100,7 +100,7 @@ export async function qualifyLegacyLive(argv,fixture={},afterMeasurement){
  fixture=validateLegacyLiveFixture(parameters,fixture);
  const {root,socket,executable,runId,sourceVolume,retainedVolume,simulationImage,simulationReference,coordinatorImage,evidenceImage,output,sourceRevision}=parameters;
  const {Context,Jobs,Admission,RunOwner,referenceFile,isDisposed}=await import('@robotics-runtime/host');
- const {ComposeExecution,EngineMetadata}=await import('@robotics-runtime/infra-host');
+ const {ComposeExecution,EngineMetadata,requireDockerHealthcheckStartInterval}=await import('@robotics-runtime/infra-host');
  const {default:LegacyInputs}=await import('@robotics-runtime/infra-host/plugins/legacy-inputs');
  const {default:FinalInputs}=await import('@robotics-runtime/infra-host/plugins/legacy-finalization-inputs');
  const ctx=new Context();
@@ -119,6 +119,7 @@ const expectedUsernsMode=fixture.engineProfile?.expectedUsernsMode??'private';
 const options=legacyLiveComposeOptions(parameters,fixture),env=options.env;
 const compose=new ComposeExecution(ctx.jobs,options);
 const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'});
+requireDockerHealthcheckStartInterval(engine.facts);
 if(fixture.hostRequirement){
  if(fixture.engineProfile){
   const components=engine.facts.versionResponse.Components;
@@ -162,7 +163,9 @@ try{
  await finite('admission',['run','--rm','--no-deps','admission']);
  const sourceRequirement={runId,projectName,imageId:simulationImage,user:'1000:1000',mounts:[{destination:'/run/robotics',readOnly:false,volumeName:sourceVolume},{destination:'/run/robotics/input',readOnly:true,volumeName:runId+'-input'}],hostConfig:{Memory:536870912,ReadonlyRootfs:false,Privileged:false,Init:true,UsernsMode:expectedUsernsMode}};
  ctx.get('legacyInputs').issue({runId,compose:options,artifactDirectory:output,observationServices:['otel-collector','evidence-sink'],
- simulationRequirement:{...sourceRequirement,hostConfig:{...sourceRequirement.hostConfig,IpcMode:'shareable'}},stepperRequirement:sourceRequirement,
+ simulationRequirement:{...sourceRequirement,hostConfig:{...sourceRequirement.hostConfig,IpcMode:'shareable'},
+ healthcheck:{Test:['CMD','/usr/local/bin/robotics-entrypoint','timeout','5','ros2','service','call','/simulator/get_simulator_features','simulation_interfaces/srv/GetSimulatorFeatures','{}'],
+ StartInterval:2000000000,Interval:30000000000,Timeout:6000000000,StartPeriod:15000000000,Retries:3}},stepperRequirement:sourceRequirement,
  admittedDescriptionPath:'/run/robotics/input/product/ros_ws/src/robotics_runtime_infra/description/neutral_robot.urdf',
  entityWorkerPath:'/run/robotics/input/helpers/check-entity.py',clockWorkerPath:'/run/robotics/input/helpers/observe-clock-owner.py',readinessWorkerPath:'/run/robotics/input/helpers/observe-robot-ready.py',
  preClockReadyJobs:[

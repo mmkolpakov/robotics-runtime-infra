@@ -1,22 +1,9 @@
 ---
 services:
   simulation:
-    healthcheck:
-      test:
-        - CMD
-        - /usr/local/bin/robotics-entrypoint
-        - timeout
-        - "5"
-        - ros2
-        - service
-        - call
-        - "${ROBOTICS_SIMULATOR_SERVICE_NAMESPACE:-/simulator}/get_simulator_features"
-        - simulation_interfaces/srv/GetSimulatorFeatures
-        - '{}'
-      interval: 2s
-      timeout: 6s
-      start_period: 20s
-      retries: 15
+    extends:
+      file: compose.simulation-health.yaml
+      service: simulation-health
 
   simulation-stepper:
     image: "${SIMULATION_IMAGE:-local/robotics-runtime-infra/simulation:dev}"

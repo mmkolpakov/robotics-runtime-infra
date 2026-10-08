@@ -132,6 +132,46 @@ class InstalledPreparation(unittest.TestCase):
         self.assertIn(
             "host/test/fixtures/legacy-live/compose.podman.yaml", docker["deployment"]
         )
+        env = {
+            **os.environ,
+            "ROBOTICS_RUN_ID": "run-fixture",
+            "ROS_DOMAIN_ID": "181",
+            "GZ_PARTITION": "fixture",
+            "LEGACY_SIMULATION_IMAGE": self.image,
+            "LEGACY_SOURCE_REVISION": "c" * 40,
+            "LEGACY_COORDINATOR_IMAGE": self.image,
+            "LEGACY_SOURCE_ROOT": "/deployment",
+            "LEGACY_SHARED_VOLUME": "rr-source",
+            "ROBOTICS_RETAINED_VOLUME": "rr-retained",
+            "LEGACY_SIMULATION_REFERENCE": self.reference,
+            "LEGACY_SIMULATION_DIGEST": "sha256:" + "b" * 64,
+        }
+        compose = (
+            self.directory
+            / "consumer/deployment/host/test/fixtures/legacy-live/compose.yaml"
+        )
+        model = json.loads(
+            subprocess.run(
+                [COMPOSE, "--file", str(compose), "config", "--format", "json"],
+                env=env,
+                check=True,
+                capture_output=True,
+            ).stdout
+        )
+        health = model["services"]["simulation"]["healthcheck"]
+        self.assertEqual(health["start_interval"], "2s")
+        self.assertEqual(health["interval"], "30s")
+        self.assertEqual(health["timeout"], "6s")
+        self.assertEqual(health["start_period"], "15s")
+        self.assertEqual(health["retries"], 3)
+        self.assertEqual(
+            health["test"][-3:],
+            [
+                "/simulator/get_simulator_features",
+                "simulation_interfaces/srv/GetSimulatorFeatures",
+                "{}",
+            ],
+        )
 
     @unittest.skipUnless(
         COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
@@ -140,6 +180,7 @@ class InstalledPreparation(unittest.TestCase):
         identity = self.prepare("docker")
         deployment = self.directory / "consumer/deployment"
         for worker in (
+            "compose.simulation-health.yaml",
             "host/workers/legacy/prepare-source.py",
             "host/workers/legacy-live/capture-provider.py",
             "host/workers/legacy-live/export-startup-failure.py",
@@ -147,6 +188,7 @@ class InstalledPreparation(unittest.TestCase):
             with self.subTest(worker=worker):
                 raw = (deployment / worker).read_bytes()
                 self.assertEqual(raw, (ROOT / worker).read_bytes())
+                self.assertEqual((deployment / worker).stat().st_mode & 0o777, 0o444)
                 self.assertEqual(
                     identity["deployment"][worker],
                     {
@@ -210,6 +252,47 @@ class InstalledPreparation(unittest.TestCase):
     COMPOSE, "ROBOTICS_COMPOSE selects the pinned local Compose binary"
 )
 class ComposeProfiles(unittest.TestCase):
+    def test_public_simulator_profiles_share_native_probe_and_startup_policy(self):
+        for overlay in ("compose.stepped.yaml", "compose.simulation-conformance.yaml"):
+            with self.subTest(overlay=overlay):
+                model = json.loads(
+                    subprocess.check_output(
+                        [
+                            COMPOSE,
+                            "--file",
+                            str(ROOT / "compose.yaml"),
+                            "--file",
+                            str(ROOT / overlay),
+                            "--profile",
+                            "*",
+                            "config",
+                            "--format",
+                            "json",
+                        ],
+                        env={
+                            **os.environ,
+                            "ROBOTICS_RUN_ID": "run-fixture",
+                            "ROBOTICS_DOMAIN_ID": "0",
+                            "ROBOTICS_SIMULATOR_SERVICE_NAMESPACE": "/custom",
+                        },
+                    )
+                )
+                health = model["services"]["simulation"]["healthcheck"]
+                self.assertEqual(health["start_interval"], "2s")
+                self.assertEqual(health["interval"], "30s")
+                self.assertEqual(health["timeout"], "6s")
+                self.assertEqual(health["start_period"], "20s")
+                self.assertEqual(health["retries"], 3)
+                self.assertEqual(
+                    health["test"][-3:],
+                    [
+                        "/custom/get_simulator_features",
+                        "simulation_interfaces/srv/GetSimulatorFeatures",
+                        "{}",
+                    ],
+                )
+                self.assertNotIn("simulation-health", model["services"])
+
     def test_engine_overlays_keep_native_namespace_and_socket_groups_explicit(self):
         self.assertEqual(
             hashlib.sha256(Path(COMPOSE).read_bytes()).hexdigest(),

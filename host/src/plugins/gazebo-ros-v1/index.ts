@@ -3,7 +3,7 @@ import type {BackendReadiness,ArtifactRef,JobResult} from '@robotics-runtime/hos
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {ComposeExecution} from '../../compose-execution.js';
-import {EngineMetadata} from '../../engine-metadata.js';
+import {EngineMetadata,requireDockerHealthcheckStartInterval} from '../../engine-metadata.js';
 import type {LegacyRunInput} from './inputs.js';
 
 declare module 'cordis' { interface Context { gazeboRosV1: GazeboRosV1; } }
@@ -63,7 +63,7 @@ export class GazeboRosV1 extends Service {
     if(!candidates.length)return;
     const id=candidates[0]!.Id;
     if(typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id))throw new Error('partial startup simulation exact ID absent');
-    const metadata=await engine.inspect(id,this.input.simulationRequirement,{cancelSignal:signal});
+    const metadata=await engine.inspect(id,{...this.input.simulationRequirement,healthcheck:undefined},{cancelSignal:signal});
     this.cleanupRefs.push(await this.retain('partial-start-simulation-native-metadata',metadata));
     const labels=(metadata.container as {Config?:{Labels?:Record<string,string>}}).Config?.Labels;
     if(metadata.status!=='complete'||labels?.['com.docker.compose.service']!=='simulation')
@@ -91,9 +91,10 @@ export class GazeboRosV1 extends Service {
   private async start(signal:AbortSignal):Promise<BackendReadiness> {
     signal.throwIfAborted();await this.compose.requireVersion(signal);
     signal.throwIfAborted();
+    const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
+    if(this.input.simulationRequirement.healthcheck?.StartInterval!==undefined) requireDockerHealthcheckStartInterval(engine.facts);
     this.acquired=true;
     await this.require('application-start',['up','--detach','--no-build','--wait','--wait-timeout','120','simulation',...this.input.observationServices],signal);
-    const engine=await EngineMetadata.connect({socketPath:this.input.compose.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},{cancelSignal:signal});
     const id=await this.require('simulation-id',['ps','--quiet','simulation'],signal);
     const simulationContainerId=id.stdout.trim();
     const metadata=await engine.inspect(simulationContainerId,this.input.simulationRequirement,{cancelSignal:signal});
