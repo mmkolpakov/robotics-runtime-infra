@@ -554,8 +554,9 @@ foundation_settle_caller_services() {
     if ((status != 0 && primary == 0)); then primary="${status}"; fi
     if [[ -s "${directory}/after.json" && -s "${directory}/native-wait.stdout" ]]; then
       if jq -e --rawfile wait "${directory}/native-wait.stdout" '
-        .state.running == false and ($wait | test("^[0-9]+\\n?$")) and
-        .state.exit_code == ($wait | tonumber) and
+        ($wait | rtrimstr("\n")) as $native_wait |
+        .state.running == false and ($native_wait | test("\\A[0-9]+\\z")) and
+        .state.exit_code == ($native_wait | tonumber) and
         .state.exit_code >= 0 and .state.exit_code <= 255' \
         "${directory}/after.json" >/dev/null; then
         native_exit="$(jq -r '.state.exit_code' "${directory}/after.json")"

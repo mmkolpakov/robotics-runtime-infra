@@ -18,7 +18,7 @@ setup() {
   printf '{"services":{"simulation":{"environment":{"ROS_DOMAIN_ID":"91","RMW_IMPLEMENTATION":"rmw_fastrtps_cpp"}},"probe-a":{"image":"fixture/image"},"probe-b":{"image":"fixture/image"}}}\n' >"${MODEL}"
   cat >"${BIN}/docker" <<'PY'
 #!/usr/bin/env python3
-import json,os,sys,time
+import base64,json,os,sys,time
 from pathlib import Path
 args=sys.argv[1:]
 with open(os.environ["CALLS"],"a") as stream: stream.write(json.dumps(args)+"\n")
@@ -59,7 +59,9 @@ elif args[0]=="stop":
     if mode=="late-inspect-refusal": sys.exit(71)
 elif args[0]=="wait":
     if mode=="wait-timeout": time.sleep(30)
-    print(7 if mode=="native-seven" else 0)
+    if "WAIT_STDOUT_B64" in os.environ:
+        sys.stdout.buffer.write(base64.b64decode(os.environ["WAIT_STDOUT_B64"],validate=True))
+    else: print(7 if mode=="native-seven" else 0)
 elif args[0]=="logs": print("observed ROS_DOMAIN_ID=91 opaque-sha="+"e"*64)
 else: sys.exit(66)
 PY
@@ -201,4 +203,45 @@ PY
   [ "${status}" -eq 0 ]
   jq -e '.environment == ["ROBOTICS_RUN_ID=run-fixture","ROBOTICS_DOMAIN_ID=primary"]' \
     "${OUTPUT}/probe-a/$(printf a%.0s {1..64})/after.json" >/dev/null
+}
+
+@test "native wait accepts a single integer with optional terminal newline and retains exact bytes" {
+  local encoded attempt=0 directory
+  for encoded in MA== MAo=; do
+    attempt=$((attempt + 1))
+    rm -f "${CALLS}" "${STATE}"
+    export WAIT_STDOUT_B64="${encoded}"
+    foundation_load_settle_services probe-a probe-a
+    foundation_bind_settlement_endpoint
+    run foundation_settle_caller_services compose owned "${MODEL}" "${OUTPUT}/${attempt}" simulation
+    [ "${status}" -eq 0 ]
+    directory="${OUTPUT}/${attempt}/probe-a/$(printf a%.0s {1..64})"
+    python3 - "${directory}/native-wait.stdout" "${encoded}" <<'PY'
+import base64,sys
+from pathlib import Path
+assert Path(sys.argv[1]).read_bytes() == base64.b64decode(sys.argv[2],validate=True)
+PY
+  done
+}
+
+@test "malformed extra or mismatched native wait lines refuse without rewriting diagnostics" {
+  local encoded attempt=0 directory
+  for encoded in MAo3Cg== MAoK MA0K MCAK LTEK MjU2Cg== Z2FyYmFnZQo= Nwo=; do
+    attempt=$((attempt + 1))
+    rm -f "${CALLS}" "${STATE}"
+    export WAIT_STDOUT_B64="${encoded}"
+    foundation_load_settle_services probe-a probe-a
+    foundation_bind_settlement_endpoint
+    run foundation_settle_caller_services compose owned "${MODEL}" "${OUTPUT}/${attempt}" simulation
+    [ "${status}" -eq 65 ]
+    directory="${OUTPUT}/${attempt}/probe-a/$(printf a%.0s {1..64})"
+    [ "$(cat "${directory}/native-wait.status")" = 0 ]
+    [ -s "${directory}/after.json" ]
+    [ -s "${directory}/logs-after.txt" ]
+    python3 - "${directory}/native-wait.stdout" "${encoded}" <<'PY'
+import base64,sys
+from pathlib import Path
+assert Path(sys.argv[1]).read_bytes() == base64.b64decode(sys.argv[2],validate=True)
+PY
+  done
 }
