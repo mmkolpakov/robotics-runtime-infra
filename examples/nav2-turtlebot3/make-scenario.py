@@ -74,7 +74,7 @@ def create(
             "data_source": "simulator",
             "plant_backend": "simulated_physics",
             "time_mode": "simulation_realtime",
-            "data_plane_profile": "fastdds-udp-private",
+            "data_plane_profile": "standard_isolated",
             "security_profile": "none",
         },
         "authorization": {"mode": "none"},

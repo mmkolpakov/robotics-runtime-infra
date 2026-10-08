@@ -59,7 +59,7 @@ export async function admitContext(jobs, {contextPath, scenarioPath, schemaPath,
   }
   const selectedExecution = {target_environment: 'simulation', data_source: 'simulator',
     plant_backend: 'simulated_physics', time_mode: 'simulation_realtime',
-    data_plane_profile: 'fastdds-udp-private', security_profile: 'none', physical_effect: 'none'};
+    data_plane_profile: 'standard_isolated', security_profile: 'none', physical_effect: 'none'};
   if (!Object.entries(selectedExecution).every(([key,value]) => declared.execution[key] === value) ||
       declared.authorization.mode !== 'none') {
     throw new Error('foreign execution route for the selected Nav2 consumer');

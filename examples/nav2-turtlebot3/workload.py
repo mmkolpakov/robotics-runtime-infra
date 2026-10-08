@@ -207,6 +207,9 @@ def main() -> int:
             name: importlib.metadata.version(name)
             for name in ("robotics-runtime-contracts", "robotics-acceptance-harness")
         },
+        "mcap_writer_header_sha256": hashlib.sha256(
+            Path("/opt/ros/jazzy/include/mcap_vendor/mcap/writer.hpp").read_bytes()
+        ).hexdigest(),
         "middleware_profile_sha256": hashlib.sha256(
             Path(os.environ["FASTRTPS_DEFAULT_PROFILES_FILE"]).read_bytes()
         ).hexdigest(),
@@ -406,51 +409,8 @@ def main() -> int:
 
             return received
 
-        subscriptions = [
-            navigator.create_subscription(
-                TFMessage,
-                "/tf_static",
-                message_callback("tf_static"),
-                QoSProfile(
-                    depth=1,
-                    reliability=ReliabilityPolicy.RELIABLE,
-                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                ),
-            ),
-            navigator.create_subscription(
-                PoseWithCovarianceStamped,
-                "/amcl_pose",
-                message_callback("amcl_pose"),
-                QoSProfile(
-                    depth=10,
-                    reliability=ReliabilityPolicy.RELIABLE,
-                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                ),
-            ),
-            navigator.create_subscription(
-                Odometry,
-                "/odom",
-                message_callback("odom"),
-                QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE),
-            ),
-            navigator.create_subscription(
-                TFMessage, "/tf", message_callback("tf"), qos_profile_sensor_data
-            ),
-            navigator.create_subscription(
-                Clock,
-                "/clock",
-                message_callback("clock"),
-                QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE),
-            ),
-        ]
-        subscriptions_by_kind.update(
-            zip(
-                ["tf_static", "amcl_pose", "odom", "tf", "clock"],
-                subscriptions,
-                strict=True,
-            )
-        )
-        client = ActionClient(navigator, NavigateToPose, "navigate_to_pose")
+        subscriptions = []
+        client = None
         nomotion_client = None
         observer = None
         try:
@@ -483,6 +443,57 @@ def main() -> int:
                 raise TimeoutError(
                     "published graph observation exceeded readiness deadline"
                 )
+            subscriptions = [
+                navigator.create_subscription(
+                    TFMessage,
+                    "/tf_static",
+                    message_callback("tf_static"),
+                    QoSProfile(
+                        depth=1,
+                        reliability=ReliabilityPolicy.RELIABLE,
+                        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                    ),
+                ),
+                navigator.create_subscription(
+                    PoseWithCovarianceStamped,
+                    "/amcl_pose",
+                    message_callback("amcl_pose"),
+                    QoSProfile(
+                        depth=10,
+                        reliability=ReliabilityPolicy.RELIABLE,
+                        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                    ),
+                ),
+                navigator.create_subscription(
+                    Odometry,
+                    "/odom",
+                    message_callback("odom"),
+                    QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE),
+                ),
+                navigator.create_subscription(
+                    TFMessage, "/tf", message_callback("tf"), qos_profile_sensor_data
+                ),
+                navigator.create_subscription(
+                    Clock,
+                    "/clock",
+                    message_callback("clock"),
+                    QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE),
+                ),
+            ]
+            subscriptions_by_kind.update(
+                zip(
+                    ["tf_static", "amcl_pose", "odom", "tf", "clock"],
+                    subscriptions,
+                    strict=True,
+                )
+            )
+            client = ActionClient(navigator, NavigateToPose, "navigate_to_pose")
+            record(
+                "measurement-start",
+                {
+                    "scope": "consumer observation after upstream and public graph readiness; startup remains separate"
+                },
+            )
             for topic in ("/odom", "/clock"):
                 offers = navigator.get_publishers_info_by_topic(topic)
                 if (
@@ -882,7 +893,8 @@ def main() -> int:
         finally:
             if observer is not None:
                 observer.close()
-            client.destroy()
+            if client is not None:
+                client.destroy()
             if nomotion_client is not None:
                 navigator.destroy_client(nomotion_client)
             for subscription in subscriptions:

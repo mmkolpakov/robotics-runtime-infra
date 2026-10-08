@@ -35,7 +35,19 @@ starting the world:
     .venv/bin/robotics-acceptance create-run --scenario results/scenario.json --output results/run-context.json --domain nav2=simulation --time-authority sim_clock --time-source gazebo-harmonic-clock --extension-schema "urn:nav2-turtlebot3:scenario:v1=$PWD/nav2.schema.json"
     podman build --tag nav2-turtlebot3-consumer .
     image=$(podman image inspect --format 'sha256:{{.Id}}' nav2-turtlebot3-consumer)
+    source_revision=$(git rev-parse HEAD)
     node native-check.mjs "$PWD/results/success" "$PWD" "$image" success "$PWD/results/run-context.json" "$PWD/results/scenario.json" "$PWD/.venv/bin/robotics-contracts"
+
+After native closure, build the runtime/evidence inputs and run the published offline evaluator:
+
+    .venv/bin/python finalize.py --capture "$PWD/results/success" --output "$PWD/results/evaluation" --qualification "$PWD/results/evaluator" --source-revision "$source_revision" --contracts "$PWD/.venv/bin/robotics-contracts" --harness "$PWD/.venv/bin/robotics-acceptance" --python "$PWD/.venv/bin/python"
+
+The output contains the public runtime, scoped capture/cleanup conformance, evidence index, OTLP
+derivation, acceptance-result JSON and JUnit. A nonzero acceptance exit retains the original failed
+error or incomplete verdict; a successful action cannot override transport failure or unevaluated
+coverage. The conformance profile
+covers topic capture and owned terminal cleanup, not delivery quality, physics or full RunOwner
+behavior. Use the actual committed source revision from before the capture.
 
 Use a new output directory for each invocation. Select cancel, timeout, or server-failure in both
 the scenario and driver, and issue a new context for each case. The driver admits the exact
@@ -67,11 +79,20 @@ matching installed ROS message types. GetResult is a separately labelled client 
 service response recorded by the topic bag. No message definitions are synthesized and no CDR codec
 is supplied.
 
+Own message observation begins after upstream navigation and public graph readiness. Startup
+events are retained separately. The recorder retains its complete bounded interval.
+
 derive-otlp.py projects immutable callback metadata into standard OTLP for offline evaluation. It
 requires the selected original SHA and preserves native integer publication sequences. Message age
 uses RMW reception minus source timestamps; ROS simulation time is never subtracted from wall time.
 Sequence gaps are measured only between observed single-publisher samples. Derived metrics are
 labelled offline and cannot establish live collector behavior.
+
+For the selected installed MCAP C++ 1.3.1 writer, the logical byte peak of one new append-only
+recording is deduced from its final file size. This excludes rotation, deletion, truncation and
+other spool files; metadata, JSON and CDR are retained separately. The installed writer header is
+fingerprinted before ROS initialization. This is not sampled high-water-time telemetry or disk
+quota enforcement.
 
 The consumer evaluator is installed from its built wheel and bound through a typed artifact receipt.
 qualify-evaluator.py checks installed wheel bytes, runs the consumer controls, and creates local-key
