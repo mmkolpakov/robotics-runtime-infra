@@ -137,5 +137,8 @@ try {
   GlobalConfig.reset();
   await rm(temporary, { recursive: true, force: true });
 }
+const { checkMaintenance } = await import("./check-maintenance.mjs");
+await checkMaintenance(root, renovate);
+
 // Renovate imports retain background handles; all work and cleanup above are awaited.
 process.exit(0);
