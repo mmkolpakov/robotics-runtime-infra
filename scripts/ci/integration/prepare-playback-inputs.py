@@ -9,7 +9,11 @@ import json
 import shutil
 import sys
 from pathlib import Path, PurePosixPath
+from collections.abc import Mapping, Sequence
 from typing import Any
+
+from robotics_acceptance_harness.errors import HarnessInputError
+from robotics_acceptance_harness.extension_schemas import load_extension_schemas
 
 from robotics_runtime_contracts import (
     loads_mapping,
@@ -115,13 +119,25 @@ def scan_recording(path: Path, topic: str) -> dict[str, Any]:
 
 def source_capture(
     root: Path,
+    *,
+    extension_schemas: Mapping[str, bytes] | None = None,
+    statement_sha256: str | None = None,
 ) -> tuple[dict[str, Any], list[tuple[Path, Path]], Path, str, dict[Path, str]]:
-    scenario, scenario_raw = captured_document(root / "scenario.yaml")
-    runtime, runtime_raw = captured_document(root / "runtime-manifest.json")
     statement, statement_raw = captured_document(
         root / "results/qualification-statement.json"
     )
-    validate_document(statement, schema="qualification-bundle.v1")
+    if (
+        statement_sha256 is not None
+        and hashlib.sha256(statement_raw).hexdigest() != statement_sha256
+    ):
+        raise ValueError(
+            "capture statement differs from the authenticated source package"
+        )
+    scenario, scenario_raw = captured_document(root / "scenario.yaml")
+    runtime, runtime_raw = captured_document(root / "runtime-manifest.json")
+    validate_document(
+        statement, schema="qualification-bundle.v1", extension_schemas=extension_schemas
+    )
     subjects = {item["name"]: item["digest"]["sha256"] for item in statement["subject"]}
     if (
         subjects["scenario.json"] != hashlib.sha256(scenario_raw).hexdigest()
@@ -144,8 +160,10 @@ def source_capture(
             "capture/mcap-writer.yaml"
         ],
     }
-    validate_document(scenario, schema="acceptance-scenario.v1")
-    validate_document(runtime)
+    validate_document(
+        scenario, schema="acceptance-scenario.v1", extension_schemas=extension_schemas
+    )
+    validate_document(runtime, extension_schemas=extension_schemas)
     if (
         scenario["execution"]["data_source"] != "simulator"
         or runtime["execution"]["data_source"] != "simulator"
@@ -165,7 +183,7 @@ def source_capture(
     )
     expected.update(raw_expected)
     context, context_raw = captured_document(root / "acceptance-run.json")
-    validate_document(context)
+    validate_document(context, extension_schemas=extension_schemas)
     if (
         subjects["acceptance-run.json"] != hashlib.sha256(context_raw).hexdigest()
         or context["run_id"] != statement["predicate"]["run_id"]
@@ -488,8 +506,22 @@ def dataset_document(output: Path, host: Path) -> dict[str, Any]:
     return dataset
 
 
-def prepare(root: Path, output: Path, host: Path) -> None:
-    _, members, metadata, topic, expected = source_capture(root)
+def prepare(
+    root: Path,
+    output: Path,
+    host: Path,
+    *,
+    extension_schema_options: Sequence[str] = (),
+    statement_sha256: str | None = None,
+) -> None:
+    schemas = load_extension_schemas(extension_schema_options)
+    schema_sources = {
+        value.partition("=")[0]: Path(value.partition("=")[2])
+        for value in extension_schema_options
+    }
+    _, members, metadata, topic, expected = source_capture(
+        root, extension_schemas=schemas, statement_sha256=statement_sha256
+    )
     output.mkdir(mode=0o700)
     selected = {
         metadata: Path("source/bag/metadata.yaml"),
@@ -514,11 +546,26 @@ def prepare(root: Path, output: Path, host: Path) -> None:
             metadata.parent
         )
         selected[summary] = Path("source/capture/summaries") / summary.name
+    retained_schemas = {}
+    for uri, raw in schemas.items():
+        relative = Path("source/capture/extension-schemas") / (
+            hashlib.sha256(raw).hexdigest() + ".json"
+        )
+        source = schema_sources[uri]
+        if read_document_bytes(source) != raw:
+            raise ValueError("selected schema changed after admission")
+        copy_input(source, output / relative)
+        if read_document_bytes(output / relative) != raw:
+            raise ValueError("retained schema differs from admitted original bytes")
+        retained_schemas[uri] = relative
     for source, relative in selected.items():
         copy_input(source, output / relative)
         if source in expected and sha256(output / relative) != expected[source]:
             raise ValueError("retained capture differs from the validated source bytes")
-    before = {relative: sha256(output / relative) for relative in selected.values()}
+    before = {
+        relative: sha256(output / relative)
+        for relative in [*selected.values(), *retained_schemas.values()]
+    }
     dataset = dataset_document(output, host)
     scan = scan_recording(output / "source/bag", topic)
     if any(sha256(output / relative) != digest for relative, digest in before.items()):
@@ -585,7 +632,23 @@ def prepare(root: Path, output: Path, host: Path) -> None:
         qos_overrides_sha256=sha256(replay_qos),
     )
     replay["dataset_manifest_sha256"] = sha256(output / "dataset-manifest.json")
-    write_document(replay, output / "scenario.json", schema="acceptance-scenario.v1")
+    write_document(
+        replay,
+        output / "scenario.json",
+        schema="acceptance-scenario.v1",
+        extension_schemas=schemas,
+    )
+    if retained_schemas:
+        arguments = [
+            argument
+            for uri, relative in retained_schemas.items()
+            for argument in ("--extension-schema", uri + "=" + str(host / relative))
+        ]
+        (output / "extension-schema-arguments.txt").write_text(
+            "\n".join(arguments) + "\n"
+        )
+        for relative in retained_schemas.values():
+            (output / relative).chmod(0o444)
     start_offset = (scan["first_ns"] - dataset["time"]["start_ns"]) / 1e9
     if start_offset < 0:
         raise ValueError("selected UInt64 begins before the finalized capture interval")
@@ -615,10 +678,22 @@ def main() -> int:
     parser.add_argument("--source-run-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--host-output", required=True, type=Path)
+    parser.add_argument("--extension-schema", action="append", default=[])
+    parser.add_argument("--source-statement-sha256", required=True)
     args = parser.parse_args()
     try:
-        prepare(args.source_run_dir, args.output, args.host_output)
-    except (OSError, ValueError, KeyError, TypeError) as error:
+        if len(args.source_statement_sha256) != 64 or any(
+            c not in "0123456789abcdef" for c in args.source_statement_sha256
+        ):
+            raise ValueError("authenticated source statement SHA256 is required")
+        prepare(
+            args.source_run_dir,
+            args.output,
+            args.host_output,
+            extension_schema_options=args.extension_schema,
+            statement_sha256=args.source_statement_sha256,
+        )
+    except (OSError, ValueError, KeyError, TypeError, HarnessInputError) as error:
         print(f"prepare playback inputs: {error}", file=sys.stderr)
         return 1
     return 0

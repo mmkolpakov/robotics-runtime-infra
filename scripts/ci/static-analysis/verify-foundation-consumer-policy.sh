@@ -115,7 +115,7 @@ ci_require_source_paths_within_root "${case_dir}/generic-source.json" "${CI_REPO
 jq --arg consumer "${case_dir}/generic.json" --arg consumer_root "${CI_REPO_ROOT}" \
   '.include[1] = {path:$consumer, project_directory:$consumer_root}' \
   "${case_dir}/wrapper.json" >"${case_dir}/generic-wrapper.json"
-docker compose -p foundation-policy-generic -f "${case_dir}/generic-wrapper.json" \
+docker compose -p foundation-policy-smoke -f "${case_dir}/generic-wrapper.json" \
   "${profiles[@]}" config --format json >"${case_dir}/generic-resolved.json"
 jq -n --slurpfile foundation "${case_dir}/foundation.json" \
   --slurpfile consumer "${case_dir}/generic.json" \

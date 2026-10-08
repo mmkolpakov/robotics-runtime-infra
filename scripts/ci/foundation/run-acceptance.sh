@@ -130,7 +130,7 @@ case "${data_source}" in
     cp -- "${playback_inputs}/dataset-manifest.json" "${run_dir}/dataset-manifest.json"
     cp -- "${playback_inputs}/playback-inputs.json" "${run_dir}/configuration/playback-inputs.json"
     cp -- "${root}/config/qualification/recorded-playback.json" "${run_dir}/profile.json"
-    foundation_validate_document "${foundation_bin}/python" "${run_dir}/dataset-manifest.json"
+    foundation_validate_document "${foundation_bin}/python" "${run_dir}/dataset-manifest.json" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
     time_authority=playback_clock
     time_source=rosbag2-player-clock
     ;;
@@ -161,7 +161,7 @@ ROBOTICS_RUN_ID="$(
 export ROBOTICS_DOMAIN_ID=primary
 foundation_validate_document \
   "${foundation_bin}/python" \
-  "${run_dir}/acceptance-run.json"
+  "${run_dir}/acceptance-run.json" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 
 export ROBOTICS_RUN_DIR="${run_dir}"
 export ROBOTICS_BAG_DIR="${run_dir}/bags"
@@ -441,7 +441,8 @@ publish_failure_evidence() {
     "${run_dir}/evidence/evidence-index.json" \
     "${run_dir}/evidence/summaries" \
     "${run_dir}/bags" \
-    "${run_dir}/scenario.yaml"; do
+    "${run_dir}/scenario.yaml" \
+    "${run_dir}/configuration/extension-schemas"; do
     if [[ -e "${source}" ]]; then
       sudo cp -a "${source}" "${destination}/"
     fi
@@ -586,7 +587,7 @@ else
   test -n "${simulation_container}"
   bash "${script_dir}/collect-simulation-provider.sh" \
     "${simulation_container}" "${run_dir}" "${artifact_dir}/provider" \
-    "${ROBOTICS_SIMULATION_OCI_DIGEST}"
+    "${ROBOTICS_SIMULATION_OCI_DIGEST}" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 fi
 sudo install -o 1000 -g 1000 -m 0644 \
   "${artifact_dir}/provider/bindings.json" "${run_dir}/provider-bindings.json"
@@ -613,7 +614,7 @@ rm "${runtime_resources}"
 "${compose[@]}" --profile acceptance run --rm runtime-manifest
 foundation_validate_document \
   "${foundation_bin}/python" \
-  "${run_dir}/runtime-manifest.json"
+  "${run_dir}/runtime-manifest.json" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 fastdds_profile="${root}/config/fastdds/udp-only.xml"
 fastdds_profile_sha256="$(sha256sum "${fastdds_profile}" | cut -d' ' -f1)"
 jq -e --arg digest "${fastdds_profile_sha256}" \

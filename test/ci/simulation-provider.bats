@@ -26,6 +26,7 @@ setup() {
   # Docker observations are fixtures here; the collector, retained files and
   # installed contracts writer are real. Live simulation remains a Linux gate.
   docker() {
+    printf '%s\n' "$1" >>"${PROVIDER_TEST_ROOT}/docker-calls.txt"
     if [[ "$1" == inspect ]]; then
       [[ "$2" == --format && "$3" == '{{.Image}}' && "$4" == simulation ]] || return 64
       printf '%s\n' "$PROVIDER_TEST_IMAGE_ID"
@@ -74,7 +75,7 @@ setup() {
 
 collect() {
   bash "${COLLECTOR}" simulation "${BATS_TEST_TMPDIR}/run" "${DESTINATION}" \
-    "sha256:$(printf '%064d' 1)"
+    "sha256:$(printf '%064d' 1)" "$@"
 }
 
 @test "simulation provider collector binds retained configuration and observations" {
@@ -183,4 +184,49 @@ collect() {
   [ "${status}" -ne 0 ]
   [ "$(cat "${DESTINATION}/bindings.json")" = previous ]
   [ ! -f "${PROVIDER_TEST_ROOT}/probed" ]
+}
+
+prepare_registered_provider() {
+  local schema="${BATS_TEST_TMPDIR}/registered-schema.json"
+  cp "${REPOSITORY_ROOT}/examples/generic-consumer/scenario.yaml" "${BATS_TEST_TMPDIR}/run/scenario.yaml"
+  cp "${REPOSITORY_ROOT}/examples/generic-consumer/inputs/extension.schema.json" "${schema}"
+  SCHEMA_OPTION="https://example.org/robotics/generic-consumer.schema.json=${schema}"
+  rm "${BATS_TEST_TMPDIR}/run/acceptance-run.json"
+  "$(dirname "${ROBOTICS_CONTRACTS_CLI}")/robotics-acceptance" create-run \
+    --scenario "${BATS_TEST_TMPDIR}/run/scenario.yaml" \
+    --output "${BATS_TEST_TMPDIR}/run/acceptance-run.json" \
+    --domain primary=observer --time-authority sim_clock --time-source gazebo-clock \
+    --extension-schema "${SCHEMA_OPTION}"
+}
+
+@test "registered collector forwards exact selected schema bytes into the real provider writer" {
+  prepare_registered_provider
+  run collect --extension-schema "${SCHEMA_OPTION}"
+  [ "${status}" -eq 0 ]
+  [ -s "${DESTINATION}/conformance.json" ]
+  [ -e "${PROVIDER_TEST_ROOT}/probed" ]
+  run "${ROBOTICS_CONTRACTS_CLI}" validate --quiet --schema conformance-result.v1 "${DESTINATION}/conformance.json"
+  [ "${status}" -eq 0 ]
+}
+
+@test "missing or changed registered schema refuses before any native collector effect" {
+  prepare_registered_provider
+  run collect
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *extension.validation_failed* ]]
+  [ ! -e "${PROVIDER_TEST_ROOT}/docker-calls.txt" ]
+  [ ! -e "${DESTINATION}" ]
+  printf '\n' >>"${SCHEMA_OPTION#*=}"
+  run collect --extension-schema "${SCHEMA_OPTION}"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *schema\ digest\ does\ not\ match* ]]
+  [ ! -e "${PROVIDER_TEST_ROOT}/docker-calls.txt" ]
+  [ ! -e "${DESTINATION}" ]
+}
+
+@test "collector schema options cannot replace the trusted output or scenario" {
+  run collect --output "${BATS_TEST_TMPDIR}/foreign"
+  [ "${status}" -eq 64 ]
+  [ ! -e "${PROVIDER_TEST_ROOT}/docker-calls.txt" ]
+  [ ! -e "${DESTINATION}" ]
 }

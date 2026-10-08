@@ -134,12 +134,9 @@ foundation_assert_project_clean() {
 }
 
 foundation_validate_document() {
-  local python="$1"
-  local document="$2"
-
-  "${python}" -c \
-    'import json, sys; from robotics_runtime_contracts import validate_document; validate_document(json.load(open(sys.argv[1], encoding="utf-8")))' \
-    "${document}"
+  local python="$1" document="$2"
+  shift 2
+  "${python}" -I -m robotics_runtime_contracts.cli validate --quiet "${document}" "$@"
 }
 
 foundation_recording_duration() {

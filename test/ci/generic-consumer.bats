@@ -67,3 +67,127 @@ PY
     [ ! -e "${OWNED}/refused-${mode}.json" ]
   done
 }
+
+@test "shared native document validator uses the selected public schema options" {
+  run foundation_validate_document "${PYTHON}" "${SCENARIO}" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
+  [ "${status}" -eq 0 ]
+  run foundation_validate_document "${PYTHON}" "${SCENARIO}"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *extension.validation_failed* ]]
+}
+
+@test "replay parent translates selected package schemas read-only and confines retained caller options" {
+  local consumer="${BATS_TEST_TMPDIR}/external caller"
+  local source_run="${BATS_TEST_TMPDIR}/source run"
+  local artifact_a="${BATS_TEST_TMPDIR}/original artifact"
+  local root="${BATS_TEST_TMPDIR}/tooling"
+  local project_a=registered-source
+  mkdir -p "${consumer}/inputs" "${source_run}/configuration/extension-schemas" \
+    "${artifact_a}/qualification/extension-schemas" "${root}/runs"
+  local package="${artifact_a}/qualification"
+  local uri=https://example.org/robotics/generic-consumer.schema.json
+  cp "${ROOT}/examples/generic-consumer/inputs/extension.schema.json" "${package}/extension-schemas/original schema.json"
+  printf '%s\n' --extension-schema "${uri}=extension-schemas/original schema.json" >"${package}/qualification-arguments.txt"
+  cp "${ROOT}/examples/generic-consumer/inputs/opaque.bin" "${consumer}/inputs/original.bin"
+  cp "${ROOT}/examples/generic-consumer/inputs/extension.schema.json" "${consumer}/inputs/mutable-schema.json"
+  printf '%s\n' --artifact 'other_evidence:consumer/opaque.bin=inputs/original.bin' \
+    --extension-schema "${uri}=inputs/mutable-schema.json" >"${consumer}/original-arguments.txt"
+  export ROBOTICS_FOUNDATION_CONSUMER_ROOT="${consumer}"
+  export ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE="${consumer}/original-arguments.txt"
+  local prepared="${root}/runs/${project_a}-playback-inputs"
+  local script="${ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
+  local selection="${BATS_TEST_TMPDIR}/actual-selection.sh"
+  awk '
+    /^  source_schema_arguments=\(\)/ {capture=1}
+    /^  # Reuse the exact coordinator/ {if(capture) exit}
+    capture {print}
+  ' "${script}" >"${selection}"
+  # These current production variables are consumed by the extracted call site.
+  # shellcheck disable=SC1090
+  source "${selection}"
+  # Variables are assigned by the actual extracted production source above.
+  # shellcheck disable=SC2154
+  [ "${source_schema_arguments[0]}" = --extension-schema ]
+  [ "${source_schema_arguments[1]}" = "${uri}=/source-package/extension-schemas/original schema.json" ]
+  # shellcheck disable=SC2154
+  [ "${source_schema_mounts[0]}" = --volume ]
+  [ "${source_schema_mounts[1]}" = "${package}:/source-package:ro" ]
+  [[ "${prepared}" == "${consumer}/"* ]]
+  mkdir -p "${prepared}/source/capture/extension-schemas"
+  cp "${package}/extension-schemas/original schema.json" "${prepared}/source/capture/extension-schemas/retained.json"
+  printf '%s\n' --extension-schema "${uri}=${prepared}/source/capture/extension-schemas/retained.json" \
+    >"${prepared}/extension-schema-arguments.txt"
+  printf 'changed after capture\n' >"${consumer}/inputs/mutable-schema.json"
+  local merge="${BATS_TEST_TMPDIR}/actual-merge.sh"
+  awk '
+    /^  if \(\(\$\{#source_schema_arguments/ {capture=1}
+    /^  ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE=/ {if(capture) exit}
+    capture {print}
+  ' "${script}" >"${merge}"
+  [ -s "${merge}" ]
+  # shellcheck source=/dev/null
+  source "${merge}"
+  [ "${FOUNDATION_ARTIFACT_ARGUMENTS[0]}" = --artifact ]
+  [ "${FOUNDATION_ARTIFACT_ARGUMENTS[1]}" = "other_evidence:consumer/opaque.bin=${consumer}/inputs/original.bin" ]
+  [ "${FOUNDATION_ARTIFACT_ARGUMENTS[2]}" = --extension-schema ]
+  [ "${FOUNDATION_ARTIFACT_ARGUMENTS[3]}" = "${uri}=${prepared}/source/capture/extension-schemas/retained.json" ]
+  # shellcheck disable=SC2154
+  [ "$(stat -c %a "${replay_argument_file}")" = 444 ]
+  cmp "${ROOT}/examples/generic-consumer/inputs/extension.schema.json" \
+    "${FOUNDATION_ARTIFACT_ARGUMENTS[3]#*=}"
+}
+
+@test "external playback nonce retains bytes and closes on success and original failure" {
+  local function_file="${BATS_TEST_TMPDIR}/cleanup.sh"
+  awk '/^cleanup_prepared_parent\(\) / {capture=1} /^if \[\[/ {if(capture) exit} capture {print}' \
+    "${ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh" >"${function_file}"
+  local status_code
+  for status_code in 0 17; do
+    local caller_root="${BATS_TEST_TMPDIR}/caller-${status_code}"
+    local artifact_a="${BATS_TEST_TMPDIR}/artifact-${status_code}"
+    mkdir -p "${caller_root}"
+    local prepared_parent
+    prepared_parent="$(mktemp -d "${caller_root}/.robotics-playback.XXXXXX")"
+    printf 'retained opaque bytes\n' >"${prepared_parent}/input.bin"
+    run bash -c 'set -Eeuo pipefail; source "$1"; caller_root=$2; artifact_a=$3; prepared_parent=$4; trap cleanup_prepared_parent EXIT; exit "$5"' \
+      cleanup "${function_file}" "${caller_root}" "${artifact_a}" "${prepared_parent}" "${status_code}"
+    [ "${status}" -eq "${status_code}" ]
+    [ ! -e "${prepared_parent}" ]
+    [ "$(cat "${artifact_a}/playback-preparation/input.bin")" = "retained opaque bytes" ]
+  done
+}
+
+@test "external playback cleanup refuses foreign directory and preserves original error" {
+  local function_file="${BATS_TEST_TMPDIR}/cleanup.sh"
+  awk '/^cleanup_prepared_parent\(\) / {capture=1} /^if \[\[/ {if(capture) exit} capture {print}' \
+    "${ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh" >"${function_file}"
+  local caller_root="${BATS_TEST_TMPDIR}/caller"
+  local foreign="${BATS_TEST_TMPDIR}/foreign"
+  mkdir -p "${caller_root}" "${foreign}"
+  printf 'foreign\n' >"${foreign}/keep"
+  local original_status
+  for original_status in 0 17; do
+    run bash -c 'set -Eeuo pipefail; source "$1"; caller_root=$2; artifact_a=$3; prepared_parent=$4; trap cleanup_prepared_parent EXIT; exit "$5"' \
+      cleanup "${function_file}" "${caller_root}" "${BATS_TEST_TMPDIR}/artifacts" "${foreign}" "${original_status}"
+    if ((original_status == 0)); then [ "${status}" -eq 65 ]; else [ "${status}" -eq 17 ]; fi
+    [ -f "${foreign}/keep" ]
+    [ ! -e "${BATS_TEST_TMPDIR}/artifacts/playback-preparation" ]
+  done
+}
+
+@test "external playback retention failure is nonzero and keeps issued input bytes" {
+  local function_file="${BATS_TEST_TMPDIR}/cleanup.sh"
+  awk '/^cleanup_prepared_parent\(\) / {capture=1} /^if \[\[/ {if(capture) exit} capture {print}' \
+    "${ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh" >"${function_file}"
+  local caller_root="${BATS_TEST_TMPDIR}/caller"
+  local artifact_a="${BATS_TEST_TMPDIR}/blocked-artifact"
+  mkdir -p "${caller_root}"
+  printf 'not a directory\n' >"${artifact_a}"
+  local prepared_parent
+  prepared_parent="$(mktemp -d "${caller_root}/.robotics-playback.XXXXXX")"
+  printf 'original input\n' >"${prepared_parent}/input.bin"
+  run bash -c 'set -Eeuo pipefail; source "$1"; caller_root=$2; artifact_a=$3; prepared_parent=$4; trap cleanup_prepared_parent EXIT; exit 0' \
+    cleanup "${function_file}" "${caller_root}" "${artifact_a}" "${prepared_parent}"
+  [ "${status}" -ne 0 ]
+  [ "$(cat "${prepared_parent}/input.bin")" = "original input" ]
+}

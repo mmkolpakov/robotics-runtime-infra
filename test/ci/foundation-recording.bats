@@ -1345,3 +1345,135 @@ SH
   [ "${status}" -eq 70 ]
   [ ! -e "${trace}" ]
 }
+
+@test "replay preserves declared schema bytes and payload with retained-only public validation" {
+  prepare_playback_capture_fixture
+  run "${FOUNDATION_PYTHON}" - "${REPOSITORY_ROOT}" "${CAPTURE}" "${PREPARED}" <<'PY'
+import hashlib
+import importlib.util
+import json
+import shutil
+import sys
+from pathlib import Path
+from robotics_acceptance_harness.extension_schemas import load_extension_schemas
+from robotics_runtime_contracts import load_mapping, validate_document
+from robotics_runtime_contracts.writers import write_document
+
+repository, source, output = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/ci/integration/prepare-playback-inputs.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+uri = "https://example.org/robotics/generic-consumer.schema.json"
+schema = source / "caller-schema.json"
+raw = (repository / "examples/generic-consumer/inputs/extension.schema.json").read_bytes()
+schema.write_bytes(raw)
+registry = [uri + "=" + str(schema)]
+schemas = load_extension_schemas(registry)
+scenario = dict(load_mapping(source / "scenario.yaml"))
+generic = load_mapping(repository / "examples/generic-consumer/scenario.yaml")
+scenario["extension_schemas"] = generic["extension_schemas"]
+scenario["extensions"] = generic["extensions"]
+write_document(scenario, source / "scenario.yaml", schema="acceptance-scenario.v1", extension_schemas=schemas)
+context = dict(load_mapping(source / "acceptance-run.json"))
+context["scenario_sha256"] = module.sha256(source / "scenario.yaml")
+write_document(context, source / "acceptance-run.json")
+statement = dict(load_mapping(source / "results/qualification-statement.json"))
+for subject in statement["subject"]:
+    if subject["name"] == "scenario.json":
+        subject["digest"]["sha256"] = module.sha256(source / "scenario.yaml")
+    if subject["name"] == "acceptance-run.json":
+        subject["digest"]["sha256"] = module.sha256(source / "acceptance-run.json")
+write_document(statement, source / "results/qualification-statement.json", schema="qualification-bundle.v1")
+originals = {path: path.read_bytes() for path in [schema, source / "scenario.yaml", source / "acceptance-run.json",
+                                                  source / "results/qualification-statement.json"]}
+# Existing absent ROS transport boundary only; all byte/MCAP/public role guards are real.
+module.scan_recording = lambda path, topic: {
+    "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3,
+    "clock_samples": 3, "total_message_count": 6}
+for options, reason in [
+    ([], "supplied"),
+    ([uri + "=" + str(schema)] * 2, "more than once"),
+]:
+    target = output.with_name(output.name + "-refused-" + str(len(options)))
+    try:
+        module.prepare(source, target, target, extension_schema_options=options)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid registry was admitted")
+    assert not target.exists()
+    assert originals == {path: path.read_bytes() for path in originals}
+schema.write_bytes(raw + b"\n")
+target = output.with_name(output.name + "-wrong")
+try:
+    module.prepare(source, target, target, extension_schema_options=registry)
+except ValueError as error:
+    assert "digest does not match" in str(error)
+else:
+    raise AssertionError("changed schema was admitted")
+assert not target.exists()
+schema.write_bytes(raw)
+authenticated_sha = module.sha256(source / "results/qualification-statement.json")
+# A coherent unsigned replacement passes old self-consistency, but not the
+# statement SHA authenticated by the parent from the real signed package.
+scenario["scenario_id"] = "org.example.changed-source"
+write_document(scenario, source / "scenario.yaml", schema="acceptance-scenario.v1", extension_schemas=schemas)
+context["scenario_sha256"] = module.sha256(source / "scenario.yaml")
+write_document(context, source / "acceptance-run.json")
+for subject in statement["subject"]:
+    if subject["name"] == "scenario.json":
+        subject["digest"]["sha256"] = module.sha256(source / "scenario.yaml")
+    if subject["name"] == "acceptance-run.json":
+        subject["digest"]["sha256"] = module.sha256(source / "acceptance-run.json")
+write_document(statement, source / "results/qualification-statement.json", schema="qualification-bundle.v1")
+module.source_capture(source, extension_schemas=schemas)
+target = output.with_name(output.name + "-unsigned-replacement")
+try:
+    module.prepare(source, target, target, extension_schema_options=registry, statement_sha256=authenticated_sha)
+except ValueError as error:
+    assert "authenticated source package" in str(error)
+else:
+    raise AssertionError("coherent unsigned source replacement was admitted")
+assert not target.exists()
+for path, original in originals.items():
+    path.write_bytes(original)
+original_copy = module.copy_input
+statement_path = source / "results/qualification-statement.json"
+def late_changed_statement(a, b):
+    # The native source capture has returned; change only its unsigned statement.
+    statement_path.write_bytes(originals[statement_path] + b" ")
+    return original_copy(a, b)
+module.copy_input = late_changed_statement
+target = output.with_name(output.name + "-late-statement")
+try:
+    module.prepare(source, target, target, extension_schema_options=registry, statement_sha256=authenticated_sha)
+except ValueError as error:
+    assert "retained capture differs" in str(error)
+else:
+    raise AssertionError("late statement replacement was admitted")
+finally:
+    module.copy_input = original_copy
+    statement_path.write_bytes(originals[statement_path])
+assert not (target / "dataset-manifest.json").exists()
+assert not (target / "scenario.json").exists()
+assert originals == {path: path.read_bytes() for path in originals}
+module.prepare(source, output, output, extension_schema_options=registry, statement_sha256=authenticated_sha)
+assert originals == {path: path.read_bytes() for path in originals}
+replay = load_mapping(output / "scenario.json")
+assert replay["extensions"] == scenario["extensions"]
+assert replay["extension_schemas"] == scenario["extension_schemas"]
+paths = (output / "extension-schema-arguments.txt").read_text().splitlines()
+assert paths[::2] == ["--extension-schema"]
+retained_option = paths[1]
+retained = Path(retained_option.partition("=")[2])
+assert retained.read_bytes() == raw
+assert retained.stat().st_mode & 0o777 == 0o444
+shutil.rmtree(source)
+retained_map = load_extension_schemas([retained_option])
+validate_document(replay, schema="acceptance-scenario.v1", extension_schemas=retained_map)
+validate_document(load_mapping(output / "source/capture/scenario.yaml"),
+                  schema="acceptance-scenario.v1", extension_schemas=retained_map)
+assert replay["dataset_manifest_sha256"] == module.sha256(output / "dataset-manifest.json")
+PY
+  [ "${status}" -eq 0 ]
+}

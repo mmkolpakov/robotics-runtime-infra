@@ -9,9 +9,11 @@ import sys
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from xml.etree import ElementTree
 
+from robotics_acceptance_harness.errors import HarnessInputError
+from robotics_acceptance_harness.extension_schemas import load_extension_schemas
 from robotics_runtime_contracts import loads_mapping, validate_document
 from robotics_runtime_contracts.providers import validate_provider_requirements
 from robotics_runtime_contracts.serialization import read_document_bytes
@@ -76,7 +78,10 @@ def checked_clock(report: dict[str, Any], world: bytes) -> int:
 
 
 def create_result(
-    arguments: argparse.Namespace, *, now: datetime
+    arguments: argparse.Namespace,
+    *,
+    now: datetime,
+    extension_schemas: Mapping[str, bytes] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     scenario, scenario_raw = read_mapping(arguments.scenario)
     run, _ = read_mapping(arguments.run_context)
@@ -84,9 +89,15 @@ def create_result(
     configuration, configuration_raw = read_mapping(arguments.configuration)
     report, report_raw = read_mapping(arguments.observation)
     world_raw = read_document_bytes(arguments.world)
-    validate_document(scenario, schema="acceptance-scenario.v1")
-    validate_document(run, schema="acceptance-run.v1")
-    validate_document(profile, schema="qualification-profile.v1")
+    validate_document(
+        scenario, schema="acceptance-scenario.v1", extension_schemas=extension_schemas
+    )
+    validate_document(
+        run, schema="acceptance-run.v1", extension_schemas=extension_schemas
+    )
+    validate_document(
+        profile, schema="qualification-profile.v1", extension_schemas=extension_schemas
+    )
     if run["scenario_sha256"] != digest(scenario_raw):
         raise ValueError("run context does not bind the supplied scenario bytes")
     if run["scenario_id"] != scenario["scenario_id"]:
@@ -188,8 +199,10 @@ def main() -> int:
     ):
         parser.add_argument(f"--{name}", type=Path, required=True)
     parser.add_argument("--subject-digest", required=True)
+    parser.add_argument("--extension-schema", action="append", default=[])
     args = parser.parse_args()
     try:
+        schemas = load_extension_schemas(args.extension_schema)
         protect_inputs(
             args.output,
             [
@@ -199,13 +212,22 @@ def main() -> int:
                 args.configuration,
                 args.observation,
                 args.world,
+                *(Path(value.partition("=")[2]) for value in args.extension_schema),
             ],
         )
-        result, binding = create_result(args, now=datetime.now(timezone.utc))
-        output = write_document(result, args.output)
+        result, binding = create_result(
+            args, now=datetime.now(timezone.utc), extension_schemas=schemas
+        )
+        output = write_document(result, args.output, extension_schemas=schemas)
         binding["conformance_result_sha256"] = digest(read_document_bytes(output))
         print(json.dumps([binding], allow_nan=False, sort_keys=True))
-    except (OSError, ValueError, InvalidOperation, ElementTree.ParseError) as error:
+    except (
+        OSError,
+        ValueError,
+        InvalidOperation,
+        ElementTree.ParseError,
+        HarnessInputError,
+    ) as error:
         print(f"simulation provider: {error}", file=sys.stderr)
         return 1
     return 0
