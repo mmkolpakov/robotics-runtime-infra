@@ -236,6 +236,8 @@ foundation_load_artifact_arguments() {
   local option specification header path
   FOUNDATION_ARTIFACT_ARGUMENTS=()
   FOUNDATION_ARTIFACT_SOURCE_ARGUMENTS=()
+  FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS=()
+  FOUNDATION_EXTENSION_SCHEMA_DIRECTORY=''
   [[ -n "${arguments_file}" ]] || return 0
   arguments_file="$(foundation_consumer_file "${consumer_root}" "${arguments_file}")" ||
     return 64
@@ -267,7 +269,62 @@ foundation_load_artifact_arguments() {
     fi
     path="$(foundation_consumer_file "${consumer_root}" "${path}")" || return 64
     FOUNDATION_ARTIFACT_ARGUMENTS+=("${option}" "${header}=${path}")
+    if [[ "${option}" == --extension-schema ]]; then
+      FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS+=(--extension-schema "${header}=${path}")
+    fi
   done <"${arguments_file}"
+}
+
+
+# Preserve caller schema bytes once for every host and container CLI invocation.
+foundation_stage_extension_schemas() {
+  local run_root="$1" index specification uri source digest destination
+  FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS=()
+  FOUNDATION_EXTENSION_SCHEMA_DIRECTORY=''
+  for ((index=0; index<${#FOUNDATION_ARTIFACT_ARGUMENTS[@]}; index+=2)); do
+    [[ "${FOUNDATION_ARTIFACT_ARGUMENTS[index]}" == --extension-schema ]] || continue
+    if [[ -z "${FOUNDATION_EXTENSION_SCHEMA_DIRECTORY}" ]]; then
+      run_root="$(realpath -e -- "${run_root}")" || return 64
+      FOUNDATION_EXTENSION_SCHEMA_DIRECTORY="${run_root}/configuration/extension-schemas"
+      mkdir -p -- "${FOUNDATION_EXTENSION_SCHEMA_DIRECTORY}" || return "$?"
+    fi
+    specification="${FOUNDATION_ARTIFACT_ARGUMENTS[index+1]}"
+    uri="${specification%%=*}"
+    source="${specification#*=}"
+    digest="$(sha256sum -- "${source}" | cut -d' ' -f1)" || return "$?"
+    destination="${FOUNDATION_EXTENSION_SCHEMA_DIRECTORY}/${digest}.json"
+    install -m 0444 -- "${source}" "${destination}" || return "$?"
+    [[ "$(sha256sum -- "${destination}" | cut -d' ' -f1)" == "${digest}" ]] || {
+      printf 'caller extension schema changed while staging\n' >&2
+      return 65
+    }
+    FOUNDATION_ARTIFACT_ARGUMENTS[index+1]="${uri}=${destination}"
+    FOUNDATION_ARTIFACT_SOURCE_ARGUMENTS[index+1]="${uri}=${destination}"
+    FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS+=(--extension-schema "${uri}=${destination}")
+  done
+}
+
+# Compose owns argv and read-only mount merging; no shell command is generated.
+foundation_schema_observer_override() {
+  local model="$1" service="$2" input_root="$3" output="$4" index specification
+  local -a arguments=()
+  [[ "${input_root}" == /run/robotics || "${input_root}" == /input ]] || return 64
+  [[ "${service}" == acceptance-observer || "${service}" == edge-attach-observer ]] || return 64
+  for ((index=1; index<${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}; index+=2)); do
+    specification="${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[index]}"
+    arguments+=(--extension-schema "${specification%%=*}=${input_root}/configuration/extension-schemas/${specification##*/}")
+  done
+  ((${#arguments[@]})) || return 0
+  jq -e --arg service "${service}" --arg source "${FOUNDATION_EXTENSION_SCHEMA_DIRECTORY}" \
+    --arg target "${input_root}/configuration/extension-schemas" --args '
+      .services[$service].command as $command |
+      if ($command | type) != "array" or $command[0:2] != ["robotics-acceptance", "verify"]
+      then error("observer must use the public verify argv")
+      else {services: {($service): {
+        command: ($command + $ARGS.positional),
+        volumes: [{type: "bind", source: $source, target: $target, read_only: true}]
+      }}} end' -- "${arguments[@]}" <"${model}" >"${output}" || return "$?"
+  chmod 0444 -- "${output}"
 }
 
 

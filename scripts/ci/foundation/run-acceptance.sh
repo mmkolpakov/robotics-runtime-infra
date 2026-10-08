@@ -59,6 +59,7 @@ if [[ "${ROBOTICS_RUNTIME_MODE}" == released ]]; then
 fi
 foundation_load_artifact_arguments "${consumer_root}" \
   "${ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE:-}"
+foundation_stage_extension_schemas "${run_dir}"
 foundation_require_scenario_policy "${foundation_bin}/python" \
   "${run_dir}/scenario.yaml" "runs/${project}/scenario-policy-input.json"
 cp "${run_dir}/scenario-policy-input.json" "${artifact_dir}/"
@@ -155,7 +156,7 @@ ROBOTICS_RUN_ID="$(
     --output "${run_dir}/acceptance-run.json" \
     --domain primary=observer \
     --time-authority "${time_authority}" \
-    --time-source "${time_source}"
+    --time-source "${time_source}" "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 )"
 export ROBOTICS_DOMAIN_ID=primary
 foundation_validate_document \
@@ -262,6 +263,14 @@ consumer_model="${run_dir}/consumer-compose.json"
 resolved_model="${run_dir}/resolved-compose.json"
 policy_input="${run_dir}/foundation-policy-input.json"
 "${foundation_compose[@]}" "${profiles[@]}" config --format json >"${foundation_model}"
+if ((${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]})); then
+  schema_override="${run_dir}/configuration/extension-observer-compose.json"
+  foundation_schema_observer_override "${foundation_model}" acceptance-observer \
+    /run/robotics "${schema_override}"
+  foundation_compose+=(-f "${schema_override}")
+  foundation_paths+=("${schema_override}")
+  "${foundation_compose[@]}" "${profiles[@]}" config --format json >"${foundation_model}"
+fi
 jq -n '{services: {}}' >"${consumer_model}"
 jq -n '{services: {}}' >"${consumer_source_model}"
 compose=("${foundation_compose[@]}")
@@ -696,6 +705,13 @@ if [[ "${observer_mode}" == edge-attach ]]; then
   attached_compose+=(--profile edge-attach)
   attached_model="${artifact_dir}/edge-attach-compose.json"
   "${attached_compose[@]}" config --format json >"${attached_model}"
+  if ((${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]})); then
+    schema_override="${run_dir}/configuration/extension-attach-compose.json"
+    foundation_schema_observer_override "${attached_model}" edge-attach-observer \
+      /input "${schema_override}"
+    attached_compose+=(-f "${schema_override}")
+    "${attached_compose[@]}" config --format json >"${attached_model}"
+  fi
   ci_require_policy_allows policy/compose.rego compose \
     "$(realpath --relative-to="${root}" "${attached_model}")"
   foundation_require_release_images_policy "${attached_model}" \
@@ -733,6 +749,12 @@ while [[ ! -f "${measurement_complete}" ]]; do
     exit 70
   fi
   sleep 1
+done
+FOUNDATION_CONTAINER_EXTENSION_SCHEMA_ARGUMENTS=()
+for ((index=1; index<${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}; index+=2)); do
+  specification="${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[index]}"
+  FOUNDATION_CONTAINER_EXTENSION_SCHEMA_ARGUMENTS+=(--extension-schema \
+    "${specification%%=*}=/run/robotics/configuration/extension-schemas/${specification##*/}")
 done
 # Seal native capture while observed publishers remain active.
 if [[ "${data_source}" == recording_playback ]]; then
@@ -775,7 +797,8 @@ fi
   --scenario /run/robotics/scenario.yaml \
   --run-context /run/robotics/acceptance-run.json \
   --result /run/robotics/results/acceptance-result.json \
-  --output /run/robotics/results/acceptance-aggregate.json
+  --output /run/robotics/results/acceptance-aggregate.json \
+  "${FOUNDATION_CONTAINER_EXTENSION_SCHEMA_ARGUMENTS[@]}"
 sudo chown -R "$(id -u):$(id -g)" "${run_dir}"
 
 mapfile -t mcap_summaries < <(

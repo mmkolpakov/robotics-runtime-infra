@@ -155,9 +155,13 @@ jobs:
           bash scripts/ci/foundation/validate-foundation.sh
       - name: Validate the caller scenario role before building
         working-directory: tooling
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/robotics-contracts validate
-          --schema acceptance-scenario.v1 "${ROBOTICS_FOUNDATION_SCENARIO}"
+        run: |
+          source scripts/ci/foundation/lib.sh
+          foundation_load_artifact_arguments "${ROBOTICS_FOUNDATION_CONSUMER_ROOT}" \
+            "${ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE:-}"
+          dependencies/robotics-runtime/.venv/bin/robotics-contracts validate \
+            --schema acceptance-scenario.v1 "${ROBOTICS_FOUNDATION_SCENARIO}" \
+            "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}"
       - name: Build and verify the foundation images
         if: inputs.execution_mode == 'source'
         working-directory: tooling

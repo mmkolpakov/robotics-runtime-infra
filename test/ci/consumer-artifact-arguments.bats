@@ -168,3 +168,59 @@ PY
   [ "${status}" -ne 0 ]
   [ ! -e 'reports relative/rejected.json' ]
 }
+
+@test "staged registry retains caller bytes and feeds both read-only observer layouts" {
+  printf '%s\n' --extension-schema 'https://example.org/schema.json=inputs/schema.json' >"${ARGUMENTS}"
+  foundation_load_artifact_arguments "${CONSUMER}" "${ARGUMENTS}"
+  local owned="${BATS_TEST_TMPDIR}/owned run" model="${BATS_TEST_TMPDIR}/observer.json"
+  mkdir -p "${owned}"
+  local digest
+  digest="$(sha256sum "${CONSUMER}/inputs/schema.json" | cut -d' ' -f1)"
+  foundation_stage_extension_schemas "${owned}"
+  local staged="${owned}/configuration/extension-schemas/${digest}.json"
+  [ "$(stat -c %a "${staged}")" = 444 ]
+  [ "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[1]}" = "https://example.org/schema.json=${staged}" ]
+  [ "${FOUNDATION_ARTIFACT_SOURCE_ARGUMENTS[1]}" = "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[1]}" ]
+  [ "${FOUNDATION_ARTIFACT_ARGUMENTS[1]}" = "${FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[1]}" ]
+  printf 'changed caller bytes\n' >"${CONSUMER}/inputs/schema.json"
+  [ "$(sha256sum "${staged}" | cut -d' ' -f1)" = "${digest}" ]
+  jq -n '{services: {
+    "acceptance-observer": {command: ["robotics-acceptance", "verify"]},
+    "edge-attach-observer": {command: ["robotics-acceptance", "verify"]}
+  }}' >"${model}"
+  local pair service input_root output
+  for pair in acceptance-observer:/run/robotics edge-attach-observer:/input; do
+    service="${pair%%:*}"
+    input_root="${pair#*:}"
+    output="${BATS_TEST_TMPDIR}/${service}.json"
+    foundation_schema_observer_override "${model}" "${service}" "${input_root}" "${output}"
+    jq -e --arg service "${service}" --arg input "${input_root}" \
+      --arg source "${FOUNDATION_EXTENSION_SCHEMA_DIRECTORY}" '
+      (.services | keys) == [$service] and
+      .services[$service].command[0:3] == ["robotics-acceptance", "verify", "--extension-schema"] and
+      (.services[$service].command[3] | startswith("https://example.org/schema.json=" + $input + "/configuration/extension-schemas/")) and
+      .services[$service].volumes == [{
+        type: "bind", source: $source,
+        target: $input + "/configuration/extension-schemas", read_only: true
+      }]' "${output}" >/dev/null
+  done
+}
+
+@test "registry overrides reject shell observers and clear stale empty inputs" {
+  printf '%s\n' --extension-schema 'https://example.org/schema.json=inputs/schema.json' >"${ARGUMENTS}"
+  foundation_load_artifact_arguments "${CONSUMER}" "${ARGUMENTS}"
+  local owned="${BATS_TEST_TMPDIR}/owned" model="${BATS_TEST_TMPDIR}/shell.json"
+  mkdir -p "${owned}"
+  foundation_stage_extension_schemas "${owned}"
+  jq -n '{services: {"acceptance-observer": {command: "robotics-acceptance verify"}}}' >"${model}"
+  run foundation_schema_observer_override "${model}" acceptance-observer \
+    /run/robotics "${BATS_TEST_TMPDIR}/rejected.json"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"observer must use the public verify argv"* ]]
+  [ ! -s "${BATS_TEST_TMPDIR}/rejected.json" ]
+  foundation_load_artifact_arguments "${CONSUMER}" ""
+  [ "${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]}" -eq 0 ]
+  [ -z "${FOUNDATION_EXTENSION_SCHEMA_DIRECTORY}" ]
+  foundation_stage_extension_schemas "${BATS_TEST_TMPDIR}/absent-owned-run"
+  [ ! -e "${BATS_TEST_TMPDIR}/absent-owned-run" ]
+}
