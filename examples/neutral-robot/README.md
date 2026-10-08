@@ -1,11 +1,9 @@
 # Neutral robot foundation fixture
 
-The selected target is architecture C. This fixture is the retained ROS v1
-qualification profile; [the baseline](../../docs/qualification-baseline.md)
-records its separate source, caller, tooling and published-image identities.
-The released B3 run `37157837270` failed: native entity checks passed, Clock
-overshot by 107 ms, and qualifying JointState readiness reached its 90-second
-deadline. TF and the independent consumer did not run. These gates remain open.
+This fixture exercises the retained ROS profile with native entity, Clock,
+JointState and TF observations, followed by live evaluation and independent
+consumption. The [qualification reference](../../docs/qualification-baseline.md)
+defines accepted image, package and environment scopes.
 
 Run the existing foundation source import, validation and image build, then:
 
@@ -38,19 +36,20 @@ filesystem readmission use the portable subjects alone. The trusted CI consumer
 repeats this with the published contracts and harness versions in the foundation
 lock.
 
-The released workflow uses the same fixture with `v0.10.0-rc.1` images, pinned
-by the unchanged release lock. It verifies the release and selected image
-provenance before execution; it does not build images. Run it from this repository:
+For released execution, choose the canonical tag and exact tooling commit:
 
 ```sh
-gh workflow run qualify-released.yml --repo mmkolpakov/robotics-runtime-infra --ref main
+gh workflow run qualify-released.yml --repo mmkolpakov/robotics-runtime-infra --ref v0.11.0-rc2 \
+  -f release_tag=v0.11.0-rc2 \
+  -f tooling_ref=95cbb8e21e4132f07252e2d8dc1c2c421a472c25
 ```
 
-A successful workflow retains the qualification package and a separate consumer
-report. Failed readiness retains diagnostics and raw observations; it does not
-produce a signed success. The workflow below is a strict candidate entrypoint,
-not a claim that R10 or the current caller passed B3.
-That consumer installs contracts 0.18.2 and harness 0.19.1 from PyPI, verifies
-the retained bytes under the included ephemeral key and readmits the robot
-without a producer snapshot. Image provenance and package integrity are
-separate checks; this fixture does not qualify physical joint motion or hardware.
+The workflow verifies the unchanged release lock and selected image provenance
+before execution and does not build images. A successful attempt retains its
+qualification package and a separate published-consumer report. Failed readiness
+retains diagnostics; it does not produce a signed success.
+
+The consumer installs the exact contracts/harness pair in the foundation lock,
+verifies retained bytes and readmits the robot without a producer snapshot.
+Image provenance and package integrity remain separate checks. This fixture
+does not qualify physical joint motion or hardware.
