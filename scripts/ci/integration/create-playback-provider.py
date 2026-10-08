@@ -30,6 +30,82 @@ FACT_FILES = (
     "compose.json",
 )
 
+TERMINAL_FACT_FILES = (
+    "player-terminal.json",
+    "player-before-wait.json",
+    "player-after-wait.json",
+    "player-wait.stdout",
+    "player-wait.stderr",
+    "logs/playback-player.log",
+)
+
+
+def checked_terminal(root: Path, configuration: dict[str, Any]) -> tuple[str, ...]:
+    requested = configuration.get("terminal_observation")
+    if requested is None:
+        return ()
+    if requested != "native-player-exit":
+        raise ValueError("unsupported native player terminal observation")
+    receipt = load_mapping(root / "player-terminal.json")
+    snapshots = [
+        json.loads(read_document_bytes(root / name))
+        for name in ("player-before-wait.json", "player-after-wait.json")
+    ]
+    if any(
+        not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict)
+        for rows in snapshots
+    ):
+        raise ValueError("native player inspection must contain exactly one container")
+    before, after = (rows[0] for rows in snapshots)
+    identifier = receipt.get("container_id")
+    if not isinstance(identifier, str) or not re.fullmatch(r"[a-f0-9]{64}", identifier):
+        raise ValueError("native player terminal proof needs its exact acquired ID")
+    expected_command = configuration["playback_command"]
+    if "--loop" in expected_command:
+        raise ValueError("looping playback cannot qualify natural terminal completion")
+    for facts in (before, after):
+        labels = facts["Config"]["Labels"]
+        if (
+            facts["Id"] != identifier
+            or facts["Image"] != configuration["expected_playback_image_id"]
+            or labels["com.docker.compose.project"] != receipt["project"]
+            or labels["com.docker.compose.service"] != "playback"
+            or facts["Config"]["Cmd"] != expected_command
+            or type(facts["RestartCount"]) is not int
+            or facts["RestartCount"] != 0
+            or facts["State"]["OOMKilled"] is not False
+        ):
+            raise ValueError("native player terminal identity or execution differs")
+    if (
+        after["Config"] != before["Config"]
+        or after["State"]["Status"] != "exited"
+        or after["State"]["Running"] is not False
+        or after["State"]["Dead"] is not False
+        or type(after["State"]["ExitCode"]) is not int
+        or after["State"]["ExitCode"] != 0
+        or type(receipt.get("wait_client_exit_code")) is not int
+        or receipt.get("wait_client_exit_code") != 0
+        or type(receipt.get("player_logs_exit_code")) is not int
+        or receipt.get("player_logs_exit_code") != 0
+        or receipt.get("reported_player_exit_code") != "0"
+        or receipt.get("stop_requested_before_wait") is not False
+        or read_document_bytes(root / "player-wait.stdout").strip() != b"0"
+    ):
+        raise ValueError("native player did not terminate successfully before cleanup")
+    deadline = receipt.get("deadline_seconds")
+    if type(deadline) is not int or not 1 <= deadline <= 300:
+        raise ValueError("native player wait requires its finite observed deadline")
+    if receipt.get("command") != [
+        "timeout",
+        "--foreground",
+        str(deadline),
+        "docker",
+        "wait",
+        identifier,
+    ]:
+        raise ValueError("native player wait differs from the acquired process")
+    return TERMINAL_FACT_FILES
+
 
 def reference(root: Path, relative: str, host_root: Path) -> dict[str, Any]:
     path = root / relative
@@ -166,9 +242,11 @@ def create_result(
         loads_mapping(configuration_raw, source_name="configuration/provider.json")
     )
     checked_observation(root, configuration)
+    terminal_files = checked_terminal(root, configuration)
     evidence = retained_sources(root, configuration, arguments.host_run_dir)
     evidence.extend(
-        reference(root, name, arguments.host_run_dir) for name in FACT_FILES
+        reference(root, name, arguments.host_run_dir)
+        for name in (*FACT_FILES, *terminal_files)
     )
     result = {
         "schema_version": "conformance-result.v1",
@@ -219,7 +297,9 @@ def main() -> int:
     parser.add_argument("--subject-digest", required=True)
     args = parser.parse_args()
     try:
-        sources = load_mapping(args.run_dir / "configuration/provider.json")["sources"]
+        configuration = load_mapping(args.run_dir / "configuration/provider.json")
+        sources = configuration["sources"]
+        terminal_files = checked_terminal(args.run_dir, configuration)
         protect_inputs(
             args.output,
             [
@@ -227,6 +307,7 @@ def main() -> int:
                 for name in (
                     "profile.json",
                     *FACT_FILES,
+                    *terminal_files,
                     *(item["path"] for item in sources),
                 )
             ],
