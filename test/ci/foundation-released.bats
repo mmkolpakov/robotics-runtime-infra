@@ -408,3 +408,31 @@ SH
   [[ "${output}" == *"requires completed provenance preparation"* ]]
   [ ! -s "${trace}" ]
 }
+
+@test "released playback initializes trusted library root before provenance refusal" {
+  export -f gh
+  export trace GH_IMAGE_STATUS=31
+  export ROBOTICS_FOUNDATION_CONSUMER_ROOT="${consumer}"
+  local variant
+  for variant in unset wrong; do
+    : >"${trace}"
+    export ROBOTICS_PLAYBACK_ARTIFACT_ROOT="${BATS_TEST_TMPDIR}/playback-${variant}"
+    if [[ "${variant}" == unset ]]; then
+      run env -u CI_REPO_ROOT bash scripts/ci/integration/verify-mcap-playback.sh
+    else
+      run env CI_REPO_ROOT="${BATS_TEST_TMPDIR}/untrusted-root" \
+        bash scripts/ci/integration/verify-mcap-playback.sh
+    fi
+    if [[ "${status}" -ne 31 ]]; then
+      printf '%s\n' "${output}" >&2
+    fi
+    [ "${status}" -eq 31 ]
+    [ "$(grep -c '^gh release verify ' "${trace}")" -eq 1 ]
+    [ "$(grep -c '^gh release verify-asset ' "${trace}")" -eq 1 ]
+    [ "$(grep -c '^gh attestation verify ' "${trace}")" -eq 1 ]
+    grep -F -- '--source-ref refs/tags/v0.8.0' "${trace}"
+    [ -z "$(find "${ROBOTICS_PLAYBACK_ARTIFACT_ROOT}" \
+      -name player-before-wait.json -o -name conformance-result.json)" ]
+    [[ "${output}" != *'unbound variable'* ]]
+  done
+}
