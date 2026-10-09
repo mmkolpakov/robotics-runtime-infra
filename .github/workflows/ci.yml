@@ -28,7 +28,7 @@ env:
   TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
 
 jobs:
-  nav2-consumer-unit:
+  consumer-examples:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -78,6 +78,12 @@ jobs:
           NAV2_CONTEXT_FIXTURE="${PWD}/results" \
             NAV2_CONTRACTS_CLI="${PWD}/.venv/bin/robotics-contracts" \
             node --test admit-context.test.mjs
+      - name: Test portable X500 consumer interfaces without simulation
+        working-directory: examples/px4-x500
+        run: |
+          npm ci --ignore-scripts --no-fund
+          npm test
+          ../nav2-turtlebot3/.venv/bin/python ../../host/tools/test_px4_proof_selector.py
   product-helm:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -648,7 +654,7 @@ jobs:
       - product-terraform
       - product-ansible
       - static-analysis
-      - nav2-consumer-unit
+      - consumer-examples
       - compose-version
       - integration
       - amd-supply-chain
