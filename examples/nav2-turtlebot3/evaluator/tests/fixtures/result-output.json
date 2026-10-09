@@ -1,0 +1,99 @@
+{
+  "assertion_results": [
+    {
+      "assertion_id": "synthetic-functional-control",
+      "observed_value": true,
+      "source": "core",
+      "status": "passed",
+      "unit": "1"
+    },
+    {
+      "assertion_id": "synthetic-delivery-control",
+      "message": "Synthetic loss with a zero-loss policy",
+      "observed_value": 0.1,
+      "source": "core",
+      "status": "failed",
+      "unit": "1"
+    }
+  ],
+  "authorization": {
+    "mode": "none"
+  },
+  "clock_observation": {
+    "deadline_miss_ratio": 0.0,
+    "drift_ppm": 0.0,
+    "monotonic": false,
+    "offset_ms": 0.0,
+    "real_time_factor": 0.0
+  },
+  "domain_id": "nav2",
+  "evaluation_mode": "offline",
+  "evaluators": [],
+  "evidence": [],
+  "execution": {
+    "data_plane_profile": "standard_isolated",
+    "data_source": "simulator",
+    "plant_backend": "simulated_physics",
+    "target_environment": "simulation",
+    "time_mode": "simulation_realtime"
+  },
+  "finished_at": "2026-01-01T00:00:01Z",
+  "forbidden_graph_observation": {
+    "checked_actions": [],
+    "checked_services": [],
+    "checked_topics": [],
+    "passed": true,
+    "violations": []
+  },
+  "lifecycle_states": [],
+  "monotonic_duration_sec": 1.0,
+  "observed_ros_graph": {
+    "actions": [],
+    "services": [],
+    "stable_for_sec": 0.0,
+    "topics": []
+  },
+  "result_id": "result-00000000-0000-4000-8000-000000000001",
+  "run_id": "run-00000000-0000-4000-8000-000000000001",
+  "runtime_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "runtime_observation": {
+    "execution_subject_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "middleware_configuration_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rmw_implementation": "rmw_fastrtps_cpp",
+    "rmw_version": "8.4.4",
+    "ros_domain_id": 191,
+    "security_enabled": false,
+    "security_strategy": "none"
+  },
+  "scenario_id": "synthetic-output-control",
+  "scenario_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "schema_version": "acceptance-result.v1",
+  "shutdown": {
+    "evidence_index_finalized": true,
+    "observer_detached": true,
+    "recorders_closed": true
+  },
+  "started_at": "2026-01-01T00:00:00Z",
+  "status": "failed",
+  "time_authority_observation": {
+    "max_delivery_latency_ms": 0.0,
+    "p50_delivery_latency_ms": 0.0,
+    "p95_delivery_latency_ms": 0.0,
+    "sample_count": 0,
+    "source_id": "synthetic-clock",
+    "window_end_ns": 0,
+    "window_start_ns": 0,
+    "within_policy": false
+  },
+  "unevaluated": [
+    "$.clock_observation",
+    "$.forbidden_graph_observation",
+    "$.observed_ros_graph",
+    "$.shutdown",
+    "$.time_authority_observation"
+  ],
+  "verdict_scope": "domain",
+  "workload": {
+    "kind": "none"
+  }
+}
