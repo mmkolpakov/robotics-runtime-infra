@@ -136,6 +136,16 @@ class NativePlayerTerminal(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "looping"):
             self.inspect()
 
+    def test_wait_requires_one_canonical_zero_line(self):
+        for raw in (b"0", b"0\n"):
+            (self.root / "player-wait.stdout").write_bytes(raw)
+            self.assertEqual(self.inspect(), PROVIDER.TERMINAL_FACT_FILES)
+        for raw in (b"0\n\n", b"0\r\n", b"00\n", b"0\n1\n", b" 0\n"):
+            with self.subTest(raw=raw):
+                (self.root / "player-wait.stdout").write_bytes(raw)
+                with self.assertRaises(ValueError):
+                    self.inspect()
+
     def test_controlled_stop_profile_without_terminal_request_makes_no_eof_claim(self):
         self.assertEqual(PROVIDER.checked_terminal(self.root, {}), ())
 

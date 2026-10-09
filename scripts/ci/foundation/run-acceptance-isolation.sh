@@ -14,6 +14,18 @@ if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 &&
   exit 64
 fi
 
+playback_completion="${ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION:-controlled-stop}"
+case "${playback_completion}" in
+  controlled-stop|natural-eof) ;;
+  *) printf 'playback completion must be controlled-stop or natural-eof\n' >&2; exit 64 ;;
+esac
+
+if [[ "${playback_completion}" == natural-eof &&
+  "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" != 1 ]]; then
+  printf 'natural EOF requires the recorded-playback qualification route\n' >&2
+  exit 64
+fi
+
 base_run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 run_a="${base_run_id}-acceptance-a"
@@ -30,12 +42,13 @@ run_acceptance() (
   export ROBOTICS_FOUNDATION_ARTIFACT_DIR="$2"
   export ROS_DOMAIN_ID="$3"
   export GZ_PARTITION="$4"
+  export ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION="${5:?playback completion mode is required}"
   bash "${script_dir}/run-acceptance.sh"
 )
 
-run_acceptance "${run_a}" "${artifact_a}" 51 "${project_a}" &
+run_acceptance "${run_a}" "${artifact_a}" 51 "${project_a}" controlled-stop &
 pid_a=$!
-run_acceptance "${run_b}" "${artifact_b}" 52 "${project_b}" &
+run_acceptance "${run_b}" "${artifact_b}" 52 "${project_b}" controlled-stop &
 pid_b=$!
 
 status_a=0
@@ -174,5 +187,6 @@ if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 ]]; then
   ROBOTICS_FOUNDATION_SCENARIO="${prepared}/scenario.json" \
     ROBOTICS_FOUNDATION_PLAYBACK_INPUTS="${prepared}" \
     run_acceptance "${base_run_id}-recorded-playback" \
-      "${root}/artifacts/playback" 54 "${base_run_id}-recorded-playback"
+      "${root}/artifacts/playback" 54 "${base_run_id}-recorded-playback" \
+      "${playback_completion}"
 fi

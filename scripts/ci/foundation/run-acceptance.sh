@@ -8,6 +8,11 @@ source "${script_dir}/lib.sh"
 readonly evidence_metrics_segment_index=900000
 observer_mode="${ROBOTICS_FOUNDATION_OBSERVER:-embedded}"
 native_trace="${ROBOTICS_NATIVE_UST_TRACE:-0}"
+playback_completion="${ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION:-controlled-stop}"
+case "${playback_completion}" in
+  controlled-stop|natural-eof) ;;
+  *) printf 'playback completion must be controlled-stop or natural-eof\n' >&2; exit 64 ;;
+esac
 case "${native_trace}" in
   0|1) ;;
   *) printf 'native UST tracing must be 0 or 1\n' >&2; exit 64 ;;
@@ -124,6 +129,17 @@ PY
 )"
 time_authority=sim_clock
 time_source=gazebo-clock
+if [[ "${playback_completion}" == natural-eof ]]; then
+  [[ "${data_source}" == recording_playback ]] || {
+    printf 'natural EOF requires declared recorded playback\n' >&2; exit 64;
+  }
+  playback_eof_deadline="${ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC:-75}"
+  if ! [[ "${playback_eof_deadline}" =~ ^[1-9][0-9]{0,2}$ ]] ||
+    ((playback_eof_deadline > 300)); then
+    printf 'natural EOF wait must be 1..300 seconds\n' >&2
+    exit 64
+  fi
+fi
 case "${data_source}" in
   simulator) ;;
   recording_playback)
@@ -851,7 +867,33 @@ if [[ "${native_trace:-0}" == 1 ]]; then
 fi
 if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile observability stop runtime-metrics
-  "${compose[@]}" --profile playback stop playback
+  if [[ "${playback_completion:-controlled-stop}" == natural-eof ]]; then
+    player_terminal_dir="${artifact_dir}/player-terminal"
+    mkdir -p "${player_terminal_dir}/logs"
+    foundation_observe_player_exit "${simulation_container}" "${player_terminal_dir}" \
+      "${project}" "${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID}" "${playback_eof_deadline}"
+    # Reuse the existing terminal validator against the actual selected command.
+    "${compose[@]}" --profile acceptance run --rm --no-deps --pull never -T \
+      --volume "${player_terminal_dir}:/terminal:ro" \
+      --volume "${root}/scripts/ci/integration/create-playback-provider.py:/tmp/create-playback-provider.py:ro" \
+      runtime-manifest /opt/contracts/bin/python - \
+      >"${player_terminal_dir}/validation.json" <<'PY'
+import importlib.util
+import json
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping
+
+spec = importlib.util.spec_from_file_location("playback_provider", "/tmp/create-playback-provider.py")
+provider = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(provider)
+configuration = dict(load_mapping("/run/robotics/configuration/provider.json"))
+configuration["terminal_observation"] = "native-player-exit"
+print(json.dumps({"terminal_files": provider.checked_terminal(Path("/terminal"), configuration)}))
+PY
+  else
+    # Short playback intentionally stops; this route makes no natural EOF claim.
+    "${compose[@]}" --profile playback stop playback
+  fi
 else
   "${compose[@]}" --profile acceptance --profile observability stop runtime-metrics runtime-probe-publisher
 fi
@@ -997,6 +1039,13 @@ else
     esac
     append_playback_raw other_evidence "playback/${relative}" "${run_dir}/${relative}"
   done
+  if [[ "${playback_completion}" == natural-eof ]]; then
+    # Preserve each terminal pathname, including an empty original wait stderr.
+    for relative in player-terminal.json player-before-wait.json player-after-wait.json \
+      player-wait.stdout player-wait.stderr logs/playback-player.log validation.json; do
+      qualification_inputs+=(--evidence "other_evidence:playback/terminal/${relative}=${player_terminal_dir}/${relative}")
+    done
+  fi
 fi
 for index in "${!mcap_summaries[@]}"; do
   qualification_inputs+=(
