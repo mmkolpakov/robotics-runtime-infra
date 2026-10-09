@@ -14,7 +14,7 @@ function fixture(options = {}) {
         if (options.armError) throw new Error('original arm transport error');
       }
       if (method === 'takeoff') {
-        if (!armed) return { action_result: { result: options.refusal ?? 'RESULT_COMMAND_DENIED' } };
+        if (!armed) return { action_result: { result: 'RESULT_SUCCESS' } };
         phase = 'flight'; altitude = options.noAscent ? 0 : 1.5;
         if (options.cancelAfterTakeoff) options.cancelAfterTakeoff.abort(new Error('operator cancel'));
       }
@@ -52,10 +52,11 @@ test('normal flight observes ascent then land/ground/disarm', async () => {
   assert.deepEqual(f.actions, ['arm', 'takeoff', 'land']);
   assert.equal(f.reads.at(-1), 'armed');
 });
-test('unarmed denial is a vehicle response plus no-ascent observations', async () => {
+test('unarmed caller precondition refuses before any RPC and observes no ascent', async () => {
   const f = fixture();const result = await flightCase(f.io, 'unarmed-refusal', f.config);
-  assert.equal(result.observed, 'unarmed-command-denied');
-  assert.deepEqual(f.actions, ['takeoff']);
+  assert.equal(result.observed, 'caller-refused-unarmed');
+  assert.deepEqual(result.refusal, { method: 'takeoff', boundary: 'caller-precondition', reason: 'unarmed' });
+  assert.deepEqual(f.actions, []);
   assert.equal(f.reads.filter(x => x === 'position').length, 4);
 });
 test('application deadline uses actual land settlement, not handle disposal', async () => {
@@ -89,10 +90,26 @@ test('operator cancellation still attempts independent land then retains cancell
   assert.equal(f.actions.at(-1), 'land');
   assert.equal(f.landSignals[0], null);
 });
-test('transport timeout is not genuine unarmed command denial', async () => {
-  const f = fixture({ refusal: 'RESULT_TIMEOUT' });
-  await assert.rejects(flightCase(f.io, 'unarmed-refusal', f.config), /RESULT_TIMEOUT/);
-  assert.equal(f.actions.at(-1), 'land');
+test('missing observation is not a successful caller-precondition refusal', async () => {
+  const f = fixture();
+  const read = f.io.read;
+  f.io.read = async (kind, signal) => {
+    if (kind === 'position') throw new Error('original position observation timeout');
+    return read(kind, signal);
+  };
+  await assert.rejects(flightCase(f.io, 'unarmed-refusal', f.config), /original position observation timeout/);
+  assert.deepEqual(f.actions, []);
+});
+test('unexpected ascent in the caller-negative preserves failure after independent settlement', async () => {
+  const f = fixture();const read = f.io.read;let positions = 0;
+  f.io.read = async (kind, signal) => {
+    const value = await read(kind, signal);
+    if (kind === 'position' && ++positions > 1) return { position: { relative_altitude_m: 1.0 } };
+    return value;
+  };
+  await assert.rejects(flightCase(f.io, 'unarmed-refusal', f.config), /refusal must have observed no ascent/);
+  assert.deepEqual(f.actions, ['land']);
+  assert.equal(f.landSignals[0], null);
 });
 test('discovery failure precedes all flight effects', async () => {
   const f = fixture({ disconnected: true });
@@ -161,4 +178,55 @@ test('cancel requests native cancellation but independent land waits for the una
   await ending;
   assert.deepEqual(requested, ['arm', 'land']);
   assert.equal(abort.signal.reason.message, 'original operator cancellation');
+});
+
+test('positive path waits for actual armed telemetry before the shared takeoff guard', async () => {
+  const f = fixture();const read = f.io.read;let afterArm = 0;
+  f.io.read = async (kind, signal) => {
+    if (kind === 'armed' && f.actions.at(-1) === 'arm' && ++afterArm === 1) return { is_armed: false };
+    return read(kind, signal);
+  };
+  const result = await flightCase(f.io, 'land', f.config);
+  assert.equal(result.observed, 'takeoff-then-grounded-disarmed');
+  assert(afterArm >= 3); // false, then wait true, then independent guard's fresh read
+  assert.deepEqual(f.actions, ['arm', 'takeoff', 'land']);
+});
+test('armed state lost after positive wait blocks the shared takeoff path and lands', async () => {
+  const f = fixture();const read = f.io.read;let afterArm = 0;
+  f.io.read = async (kind, signal) => {
+    if (kind === 'armed' && f.actions.at(-1) === 'arm' && ++afterArm === 2) return { is_armed: false };
+    return read(kind, signal);
+  };
+  await assert.rejects(flightCase(f.io, 'land', f.config), /armed state lost before takeoff dispatch/);
+  assert.deepEqual(f.actions, ['arm', 'land']);
+});
+test('secondary landing failure is visible while the original error stays primary', async t => {
+  const logged = [];
+  t.mock.method(console, 'error', (...args) => logged.push(args));
+  const f = fixture({ armError: true, landError: true });
+  await assert.rejects(flightCase(f.io, 'land', f.config), /original arm transport error/);
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0][0], 'independent flight settlement failed:');
+  assert.match(String(logged[0][1]), /later land error/);
+});
+
+test('missing/nonboolean armed observations cannot become a successful local refusal', async () => {
+  for (const invalid of [{}, { is_armed: 'false' }, { is_armed: null }]) {
+    const f = fixture();const read = f.io.read;let armedReads = 0;
+    f.io.read = async (kind, signal) => {
+      if (kind === 'armed' && ++armedReads === 2) return invalid;
+      return read(kind, signal);
+    };
+    await assert.rejects(flightCase(f.io, 'unarmed-refusal', f.config), /actual armed state required/);
+    assert.deepEqual(f.actions, ['land']);
+  }
+});
+test('ARM acknowledgement without armed telemetry never dispatches takeoff', async () => {
+  const f = fixture();const read = f.io.read;
+  f.io.read = async (kind, signal) => {
+    if (kind === 'armed' && f.actions.at(-1) === 'arm') return { is_armed: false };
+    return read(kind, signal);
+  };
+  await assert.rejects(flightCase(f.io, 'land', f.config), /armed observation deadline/);
+  assert.deepEqual(f.actions, ['arm', 'land']);
 });

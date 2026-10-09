@@ -38,8 +38,12 @@ Other cases are `unarmed-refusal` and `application-deadline`. The latter reaches
 real takeoff, then a two-second application deadline requests `Action.land`;
 it does not prove a native deadlock timeout. Every successful flight settlement
 requires actual grounded and disarmed telemetry; command success alone is
-insufficient. A refused unarmed takeoff must report vehicle command denial and
-remain unarmed/grounded without observed ascent. No force-arm or kill is used.
+insufficient. Both paths use the same takeoff guard, which checks actual armed
+telemetry before dispatch. The positive path waits for armed telemetry after ARM.
+The unarmed case receives that guard's caller precondition refusal: it dispatches
+no takeoff or arm RPC and observes grounded/disarmed telemetry and no ascent.
+It does not claim firmware command denial; a takeoff mode ACK is not evidence
+of ascent. No force-arm or kill is used.
 
 Unary action cancellation waits for the native callback before independent
 landing. SDK child disposal does not prove remote telemetry-stream quiescence.

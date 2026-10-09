@@ -47,6 +47,13 @@ export async function flightCase(io, name, {
     assert.equal(value.action_result?.result, 'RESULT_SUCCESS', method + ' rejected');
     return value;
   };
+  const takeoffIfArmed = async () => {
+    const armed = await read('armed');
+    if (armed.is_armed === false) return { dispatched: false,
+      refusal: { method: 'takeoff', boundary: 'caller-precondition', reason: 'unarmed' } };
+    assert.equal(armed.is_armed, true, 'actual armed state required before takeoff');
+    return { dispatched: true, response: await success('takeoff') };
+  };
   assert.equal((await read('connection')).connection_state?.is_connected, true);
   assert.equal((await read('armed')).is_armed, false, 'start only on genuinely unarmed vehicle');
   assert.equal((await read('landed')).landed_state, 'LANDED_STATE_ON_GROUND');
@@ -54,8 +61,8 @@ export async function flightCase(io, name, {
     const baseline = (await read('position')).position?.relative_altitude_m;
     assert(Number.isFinite(baseline));
     try {
-    const denied = await io.action('takeoff', signal);
-    assert.equal(denied.action_result?.result, 'RESULT_COMMAND_DENIED');
+    const takeoff = await takeoffIfArmed();
+    assert.equal(takeoff.dispatched, false, 'unarmed caller must not dispatch takeoff');
     for (let i = 0; i < 3; i++) {
       assert.equal((await read('armed')).is_armed, false);
       assert.equal((await read('landed')).landed_state, 'LANDED_STATE_ON_GROUND');
@@ -64,14 +71,17 @@ export async function flightCase(io, name, {
         'refusal must have observed no ascent');
       await sleep(100);
     }
-    return { case: name, observed: 'unarmed-command-denied' };
+    return { case: name, observed: 'caller-refused-unarmed',
+      refusal: takeoff.refusal };
     } catch (firstError) {
-      // A lost/refused response must not hide a possibly applied command.
+      // Unexpected state changes still require independent settlement on these owned actors.
       try {
         await success('land', null);
         await wait('landed', v => v.landed_state === 'LANDED_STATE_ON_GROUND', settlementMs, null);
         await wait('armed', v => v.is_armed === false, settlementMs, null);
-      } catch { /* Preserve the first refusal; producer owner retains failed settlement. */ }
+      } catch (settlementError) {
+        console.error('independent flight settlement failed:', settlementError);
+      }
       throw firstError;
     }
   }
@@ -85,7 +95,9 @@ export async function flightCase(io, name, {
   try {
     commandMayHaveArmed = true;
     await success('arm');
-    await success('takeoff');
+    await wait('armed', value => value.is_armed === true, readinessMs);
+    const takeoff = await takeoffIfArmed();
+    assert.equal(takeoff.dispatched, true, 'armed state lost before takeoff dispatch');
     effect = await wait('position', value =>
       Number.isFinite(value.position?.relative_altitude_m) && value.position.relative_altitude_m >= 1.2,
     ascentMs);
@@ -113,7 +125,10 @@ export async function flightCase(io, name, {
         await success('land', null);
         await wait('landed', v => v.landed_state === 'LANDED_STATE_ON_GROUND', settlementMs, null);
         await wait('armed', v => v.is_armed === false, settlementMs, null);
-      } catch (error) { firstError ??= error; }
+      } catch (error) {
+        if (firstError) console.error('independent flight settlement failed:', error);
+        firstError ??= error;
+      }
     }
   }
   if (firstError) throw firstError;
