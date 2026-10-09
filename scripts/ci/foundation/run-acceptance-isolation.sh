@@ -14,6 +14,17 @@ if [[ "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" == 1 &&
   exit 64
 fi
 
+case "${ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION:-controlled-stop}" in
+  controlled-stop|natural-eof) ;;
+  *) printf 'playback completion must be controlled-stop or natural-eof\n' >&2; exit 64 ;;
+esac
+
+if [[ "${ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION:-controlled-stop}" == natural-eof &&
+  "${ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK:-0}" != 1 ]]; then
+  printf 'natural EOF requires the recorded-playback qualification route\n' >&2
+  exit 64
+fi
+
 base_run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 run_a="${base_run_id}-acceptance-a"

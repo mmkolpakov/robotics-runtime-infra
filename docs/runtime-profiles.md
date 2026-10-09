@@ -403,3 +403,27 @@ physical CAN; WSL2 kernels without `vcan` can validate only the static profile.
 The container has no CAN network interface or transmit utility. Command-capable
 CAN belongs to a separately authorized control profile and is not provided by
 this repository.
+
+### Recorded playback completion
+
+The foundation runner defaults to `controlled-stop`: it seals the observation
+recorder and intentionally stops the player after measurement. This route does
+not claim natural EOF.
+
+For the source isolation recipe, select natural completion for its recorded
+playback phase:
+
+```bash
+ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK=1 \
+ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION=natural-eof \
+bash scripts/ci/foundation/run-acceptance-isolation.sh
+```
+
+The live capture phases keep controlled shutdown. Recorded playback waits for
+the same admitted player to exit after measurement and recorder drain, using
+`ROBOTICS_PLAYBACK_PROBE_TIMEOUT_SEC` (default 75 seconds, maximum 300).
+The runner retains the original inspect/wait/log bytes and validates successful
+exit without OOM or restart before adding them to the signed qualification.
+Timeout or changed identity fails qualification; cleanup preserves the failure.
+This option does not define a large-recording profile or prove multi-member
+coverage on its own.

@@ -571,3 +571,50 @@ foundation_settle_caller_services() {
   find "${output}" -type f -exec chmod 0444 -- {} +
   return "${primary}"
 }
+
+# Observe the exact admitted player reaching natural EOF, before any cleanup stop.
+foundation_observe_player_exit() {
+  local id="$1" run_dir="$2" project="$3" image="$4" deadline="$5"
+  local started settled client_status log_status=0
+  [[ "$id" =~ ^[a-f0-9]{64}$ && "$deadline" =~ ^[1-9][0-9]{0,2}$ ]] || return 64
+  ((deadline <= 300)) || return 64
+  docker inspect "$id" >"$run_dir/player-before-wait.json" || return
+  jq -e --arg id "$id" --arg project "$project" --arg image "$image" '
+    length == 1 and (.[0] | .Id == $id and .Image == $image and
+      .Config.Labels["com.docker.compose.project"] == $project and
+      .Config.Labels["com.docker.compose.service"] == "playback" and
+      .RestartCount == 0 and .State.OOMKilled == false and
+      (.Config.Cmd | index("--loop")) == null and
+      (.State.Status == "running" or .State.Status == "exited"))
+  ' "$run_dir/player-before-wait.json" >/dev/null || return
+  started="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  if timeout --foreground "$deadline" docker wait "$id" >"$run_dir/player-wait.stdout" 2>"$run_dir/player-wait.stderr"; then
+    client_status=0
+  else
+    client_status=$?
+  fi
+  settled="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  docker inspect "$id" >"$run_dir/player-after-wait.json" || return
+  docker logs "$id" >"$run_dir/logs/playback-player.log" 2>&1 || log_status=$?
+  jq -n --arg id "$id" --arg project "$project" --arg mode "${ROBOTICS_RUNTIME_MODE:-source}" \
+    --arg tooling "$(git rev-parse HEAD)" --arg started "$started" --arg settled "$settled" \
+    --argjson deadline "$deadline" --argjson client "$client_status" --argjson logs "$log_status" \
+    --arg output "$(cat "$run_dir/player-wait.stdout")" \
+    '{container_id:$id,project:$project,runtime_mode:$mode,tooling_revision:$tooling,
+      started_at:$started,settled_at:$settled,deadline_seconds:$deadline,
+      command:["timeout","--foreground",($deadline|tostring),"docker","wait",$id],
+      wait_client_exit_code:$client,reported_player_exit_code:$output,
+      player_logs_exit_code:$logs,stop_requested_before_wait:false}' >"$run_dir/player-terminal.json"
+  ((client_status == 0)) || return "$client_status"
+  ((log_status == 0)) || return "$log_status"
+  # Admit one native integer line; command substitution alone strips surplus LFs.
+  cmp -s "$run_dir/player-wait.stdout" <(printf '0\n') ||
+    cmp -s "$run_dir/player-wait.stdout" <(printf '0') || return 1
+  jq -e --arg id "$id" --arg image "$image" \
+    --slurpfile before "$run_dir/player-before-wait.json" '
+      length == 1 and (.[0] | .Id == $id and .Image == $image and
+        .Config == $before[0][0].Config and .RestartCount == 0 and
+        .State.Status == "exited" and .State.Running == false and
+        .State.ExitCode == 0 and .State.OOMKilled == false and .State.Dead == false)
+    ' "$run_dir/player-after-wait.json" >/dev/null
+}
