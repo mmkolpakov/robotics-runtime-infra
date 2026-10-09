@@ -510,8 +510,14 @@ for member in json.load(open(sys.argv[2]))["bag"]["members"]:
  print(member["recording"]["sha256"])' "$2" "$3"
 }
 """
+        completion = next(
+            line
+            for line in script.splitlines(keepends=True)
+            if line.startswith("playback_completion=")
+        )
         shell = (
             "set -Eeuo pipefail\n"
+            + completion
             + jq
             + """
 run_dir="$1"

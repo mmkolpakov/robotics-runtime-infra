@@ -1287,9 +1287,24 @@ sealed_marker="${trace}.sealed"
 run_dir="${trace}.run"
 artifact_dir="${trace}.artifacts"
 project=fixture-seal
+playback_completion="${EOF_ROUTE:-controlled-stop}"
+playback_eof_deadline=75
+ROBOTICS_SIMULATION_LOCAL_IMAGE_ID=fixture-image
+root=fixture-tooling
+foundation_observe_player_exit() {
+  [[ "$1" == fixture-playback && "$3" == fixture-seal && "$4" == fixture-image && "$5" == 75 ]]
+  [[ -f "${sealed_marker}" ]]
+  printf 'natural-eof\n' >>"${trace}"
+  return "${EOF_WAIT_STATUS:-0}"
+}
 mkdir -p "${run_dir}" "${artifact_dir}"
 export trace sealed_marker
 compose_leaf() {
+  if [[ " $* " == *' run '* ]]; then
+    [[ "${playback_completion}" == natural-eof && -f "${sealed_marker}" ]]
+    printf 'terminal-validation\n' >>"${trace}"
+    return "${EOF_VALIDATION_STATUS:-0}"
+  fi
   if [[ "$*" == 'ps --all --quiet runtime-metrics' ]]; then
     return 0
   fi
@@ -1340,6 +1355,18 @@ SH
     [ "${status}" -eq 31 ]
     [ "$(cat "${trace}")" = recorder ]
   done
+  trace="${BATS_TEST_TMPDIR}/natural-eof.events"
+  run env EOF_ROUTE=natural-eof bash "${boundary}" recording_playback "${trace}"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${trace}")" = $'recorder\nruntime-metrics\nnatural-eof\nterminal-validation' ]
+  trace="${BATS_TEST_TMPDIR}/natural-timeout.events"
+  run env EOF_ROUTE=natural-eof EOF_WAIT_STATUS=124 bash "${boundary}" recording_playback "${trace}"
+  [ "${status}" -eq 124 ]
+  [ "$(cat "${trace}")" = $'recorder\nruntime-metrics\nnatural-eof' ]
+  trace="${BATS_TEST_TMPDIR}/natural-invalid.events"
+  run env EOF_ROUTE=natural-eof EOF_VALIDATION_STATUS=62 bash "${boundary}" recording_playback "${trace}"
+  [ "${status}" -eq 62 ]
+  [ "$(cat "${trace}")" = $'recorder\nruntime-metrics\nnatural-eof\nterminal-validation' ]
   trace="${BATS_TEST_TMPDIR}/ended-playback.events"
   run env PLAYBACK_RUNNING=false bash "${boundary}" recording_playback "${trace}"
   [ "${status}" -eq 70 ]
@@ -1476,4 +1503,157 @@ validate_document(load_mapping(output / "source/capture/scenario.yaml"),
 assert replay["dataset_manifest_sha256"] == module.sha256(output / "dataset-manifest.json")
 PY
   [ "${status}" -eq 0 ]
+}
+
+prepare_player_terminal_fixture() {
+  TERMINAL_ROOT="${BATS_TEST_TMPDIR}/terminal"
+  TERMINAL_CID="$(printf '%064d' 1)"
+  TERMINAL_IMAGE="sha256:$(printf '%064d' 2)"
+  export TERMINAL_ROOT TERMINAL_CID TERMINAL_IMAGE
+  mkdir -p "${TERMINAL_ROOT}/bin" "${TERMINAL_ROOT}/facts/logs"
+  "${FOUNDATION_PYTHON}" - <<'PY'
+import copy
+import json
+import os
+from pathlib import Path
+root = Path(os.environ["TERMINAL_ROOT"])
+before = {"Id": os.environ["TERMINAL_CID"], "Image": os.environ["TERMINAL_IMAGE"],
+          "Config": {"Cmd": ["ros2", "bag", "play"], "Labels": {
+              "com.docker.compose.project": "owned",
+              "com.docker.compose.service": "playback"}},
+          "RestartCount": 0, "State": {"Status": "running", "Running": True, "OOMKilled": False}}
+after = copy.deepcopy(before)
+after["State"].update(Status="exited", Running=False, ExitCode=0, Dead=False)
+for name, value in (("before.json", before), ("after.json", after)):
+    (root / name).write_text(json.dumps([value]))
+PY
+  cat >"${TERMINAL_ROOT}/bin/docker" <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "${*: -1}" == "${TERMINAL_CID}" ]]
+printf '%s\n' "$1" >>"${TERMINAL_ROOT}/events"
+case "$1" in
+  inspect)
+    if [[ -e "${TERMINAL_ROOT}/waited" ]]; then
+      cat "${TERMINAL_ROOT}/after.json"
+    else
+      cat "${TERMINAL_ROOT}/before.json"
+    fi ;;
+  wait)
+    touch "${TERMINAL_ROOT}/waited"
+    if [[ "${NATIVE_WAIT_OUTPUT+x}" == x ]]; then
+      printf '%s' "${NATIVE_WAIT_OUTPUT}"
+    else
+      printf '0\n'
+    fi
+    exit "${NATIVE_WAIT_STATUS:-0}" ;;
+  logs) printf 'natural player end\n' ;;
+  *) exit 89 ;;
+esac
+SH
+  chmod +x "${TERMINAL_ROOT}/bin/docker"
+  export PATH="${TERMINAL_ROOT}/bin:${PATH}"
+}
+
+@test "shared native EOF wait retains exact originals and rejects timed out client" {
+  prepare_player_terminal_fixture
+  run foundation_observe_player_exit "${TERMINAL_CID}" "${TERMINAL_ROOT}/facts" owned "${TERMINAL_IMAGE}" 75
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${TERMINAL_ROOT}/events")" = $'inspect\nwait\ninspect\nlogs' ]
+  cmp "${TERMINAL_ROOT}/before.json" "${TERMINAL_ROOT}/facts/player-before-wait.json"
+  cmp "${TERMINAL_ROOT}/after.json" "${TERMINAL_ROOT}/facts/player-after-wait.json"
+  rm "${TERMINAL_ROOT}/events" "${TERMINAL_ROOT}/waited"
+  export NATIVE_WAIT_STATUS=124
+  run foundation_observe_player_exit "${TERMINAL_CID}" "${TERMINAL_ROOT}/facts" owned "${TERMINAL_IMAGE}" 75
+  [ "${status}" -eq 124 ]
+  jq -e '.wait_client_exit_code == 124 and .stop_requested_before_wait == false' \
+    "${TERMINAL_ROOT}/facts/player-terminal.json"
+}
+
+@test "shared native EOF wait refuses foreign or looping player before wait" {
+  prepare_player_terminal_fixture
+  for change in foreign loop; do
+    cp "${TERMINAL_ROOT}/before.json" "${TERMINAL_ROOT}/original.json"
+    if [[ "${change}" == foreign ]]; then
+      jq '.[0].Config.Labels["com.docker.compose.project"] = "foreign"' \
+        "${TERMINAL_ROOT}/original.json" >"${TERMINAL_ROOT}/before.json"
+    else
+      jq '.[0].Config.Cmd += ["--loop"]' \
+        "${TERMINAL_ROOT}/original.json" >"${TERMINAL_ROOT}/before.json"
+    fi
+    : >"${TERMINAL_ROOT}/events"
+    run foundation_observe_player_exit "${TERMINAL_CID}" "${TERMINAL_ROOT}/facts" owned "${TERMINAL_IMAGE}" 75
+    [ "${status}" -ne 0 ]
+    [ "$(cat "${TERMINAL_ROOT}/events")" = inspect ]
+    mv "${TERMINAL_ROOT}/original.json" "${TERMINAL_ROOT}/before.json"
+  done
+}
+
+@test "natural EOF policy refuses non-playback and missing isolation replay before effects" {
+  prepare_orchestration_fixture
+  write_orchestration_scenario '{"evidence_policy":{"max_segment_duration_sec":7}}'
+  run env ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION=natural-eof \
+    bash "${FIXTURE}/scripts/ci/foundation/run-acceptance.sh"
+  [ "${status}" -eq 64 ]
+  [[ "${output}" == *'natural EOF requires declared recorded playback'* ]]
+  [ ! -e "${FOUNDATION_RECORDING_ENV}" ]
+
+  run env ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION=unknown \
+    bash "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
+  [ "${status}" -eq 64 ]
+  [[ "${output}" == *'playback completion must be controlled-stop or natural-eof'* ]]
+  run env ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION=natural-eof \
+    ROBOTICS_FOUNDATION_QUALIFY_PLAYBACK=0 \
+    bash "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
+  [ "${status}" -eq 64 ]
+  [[ "${output}" == *'natural EOF requires the recorded-playback qualification route'* ]]
+}
+
+@test "isolation actual callsites issue controlled LIVE and caller-selected replay completion" {
+  local fixture="${BATS_TEST_TMPDIR}/isolation-wire"
+  mkdir -p "${fixture}/child" "${fixture}/observed"
+  cat >"${fixture}/child/run-acceptance.sh" <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "${ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION}" \
+  >"${WIRE_OUTPUT}/${ROBOTICS_FOUNDATION_RUN_ID}"
+SH
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+script_dir="$1/child"
+export WIRE_OUTPUT="$1/observed"
+ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION="$2"
+playback_completion="$2"
+base_run_id=wire
+run_a=wire-a run_b=wire-b
+artifact_a=unused-a artifact_b=unused-b
+project_a=owned-a project_b=owned-b
+root=unused-root prepared=unused-prepared
+replay_argument_file=unused-arguments
+SH
+    # Run the real function and BOTH real LIVE callsites; only their child I/O is replaced.
+    awk '
+      /^run_acceptance\(\) \(/ { emit = 1 }
+      emit { print }
+      /^pid_b=\$!/ { exit }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
+    printf 'wait "$pid_a"; wait "$pid_b"\n'
+    # The final call uses the untouched parent caller selection.
+    awk '
+      /^  ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE=/ { emit = 1 }
+      emit && /^fi$/ { exit }
+      emit { print }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
+    printf '[[ "$ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION" == "$2" ]]\n'
+  } >"${fixture}/wire.sh"
+  local selected
+  for selected in controlled-stop natural-eof; do
+    run bash "${fixture}/wire.sh" "${fixture}" "${selected}"
+    [ "${status}" -eq 0 ]
+    [ "$(cat "${fixture}/observed/wire-a")" = controlled-stop ]
+    [ "$(cat "${fixture}/observed/wire-b")" = controlled-stop ]
+    [ "$(cat "${fixture}/observed/wire-recorded-playback")" = "${selected}" ]
+  done
 }

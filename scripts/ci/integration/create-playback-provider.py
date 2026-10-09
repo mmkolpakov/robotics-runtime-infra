@@ -89,7 +89,7 @@ def checked_terminal(root: Path, configuration: dict[str, Any]) -> tuple[str, ..
         or receipt.get("player_logs_exit_code") != 0
         or receipt.get("reported_player_exit_code") != "0"
         or receipt.get("stop_requested_before_wait") is not False
-        or read_document_bytes(root / "player-wait.stdout").strip() != b"0"
+        or read_document_bytes(root / "player-wait.stdout") not in (b"0", b"0\n")
     ):
         raise ValueError("native player did not terminate successfully before cleanup")
     deadline = receipt.get("deadline_seconds")
