@@ -1,0 +1,14 @@
+{
+  "scope": "stock simulated x500 source worker; not a published/admitted release producer",
+  "px4_commit": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+  "px4_version": "1.17.0",
+  "models_commit": "b6127f4ec20de867e215fb5f78ae88b80f371909",
+  "gazebo": "Jetty 10.5.0",
+  "mavsdk_server": "4.0.3",
+  "mavsdk_proto_commit": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670",
+  "worker_manifest_sha256": "39c184c711d698d8c434c608946e0713dd22ea9c60361557ad87d348ffb783fa",
+  "worker_image_id": "sha256:8d2c29dea9f47360bca25a889d810dc3474a416934a8a538826c1ead9536cfcb",
+  "host_tgz_sha256": "51c919953f6b761e20c89eee22e7dfe2c7aacb221329b61a99a52cf13ccf1e57",
+  "public_contracts": "0.19.0",
+  "public_harness": "0.20.1"
+}
