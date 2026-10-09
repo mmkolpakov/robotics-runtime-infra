@@ -111,6 +111,11 @@ consumer inputs. [Evidence producers](docs/evidence-producers.md) describes the
 native formats and authorities. Workflow success is scoped to its actual
 source, image, workload and environment.
 
+Agilicious is a planned external consumer using an operator-provided licensed
+installation. Its native C++ controller/simulator and ROS binding have separate
+integration scopes; [Agilicious integration](docs/agilicious-integration.md)
+defines the execution boundary and qualification requirements.
+
 ## Platforms and development
 
 [Compatibility](docs/compatibility.md) records software and hardware boundaries.
