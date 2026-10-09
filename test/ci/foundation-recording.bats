@@ -1608,3 +1608,52 @@ SH
   [ "${status}" -eq 64 ]
   [[ "${output}" == *'natural EOF requires the recorded-playback qualification route'* ]]
 }
+
+@test "isolation actual callsites issue controlled LIVE and caller-selected replay completion" {
+  local fixture="${BATS_TEST_TMPDIR}/isolation-wire"
+  mkdir -p "${fixture}/child" "${fixture}/observed"
+  cat >"${fixture}/child/run-acceptance.sh" <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "${ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION}" \
+  >"${WIRE_OUTPUT}/${ROBOTICS_FOUNDATION_RUN_ID}"
+SH
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+script_dir="$1/child"
+export WIRE_OUTPUT="$1/observed"
+ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION="$2"
+playback_completion="$2"
+base_run_id=wire
+run_a=wire-a run_b=wire-b
+artifact_a=unused-a artifact_b=unused-b
+project_a=owned-a project_b=owned-b
+root=unused-root prepared=unused-prepared
+replay_argument_file=unused-arguments
+SH
+    # Run the real function and BOTH real LIVE callsites; only their child I/O is replaced.
+    awk '
+      /^run_acceptance\(\) \(/ { emit = 1 }
+      emit { print }
+      /^pid_b=\$!/ { exit }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
+    printf 'wait "$pid_a"; wait "$pid_b"\n'
+    # The final call uses the untouched parent caller selection.
+    awk '
+      /^  ROBOTICS_FOUNDATION_ARTIFACT_ARGUMENTS_FILE=/ { emit = 1 }
+      emit && /^fi$/ { exit }
+      emit { print }
+    ' "${REPOSITORY_ROOT}/scripts/ci/foundation/run-acceptance-isolation.sh"
+    printf '[[ "$ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION" == "$2" ]]\n'
+  } >"${fixture}/wire.sh"
+  local selected
+  for selected in controlled-stop natural-eof; do
+    run bash "${fixture}/wire.sh" "${fixture}" "${selected}"
+    [ "${status}" -eq 0 ]
+    [ "$(cat "${fixture}/observed/wire-a")" = controlled-stop ]
+    [ "$(cat "${fixture}/observed/wire-b")" = controlled-stop ]
+    [ "$(cat "${fixture}/observed/wire-recorded-playback")" = "${selected}" ]
+  done
+}
