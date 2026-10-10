@@ -30,6 +30,10 @@ VALUES = {
         "release": "spool-configuration-only",
         "storageClassName": "retained-gp3",
     },
+    "effectLease": {
+        "name": "run-effect",
+        "uid": "22222222-2222-4222-8222-222222222222",
+    },
     "identity": {
         "serviceAccount": "evidence-sink",
         "namespace": NAMESPACE,
@@ -142,6 +146,7 @@ spool = render(
         "name": VALUES["spool"]["name"],
         "storageClassName": "retained-gp3",
         "capacity": "20Gi",
+        "effectLeaseName": VALUES["effectLease"]["name"],
         "binding": BINDING,
     },
 )
@@ -184,7 +189,11 @@ assert (sc["provisioner"], sc["reclaimPolicy"], sc["parameters"]) == (
     "Retain",
     {"type": "gp3", "encrypted": "true"},
 )
-pvc = spool[0]
+pvc = next(obj for obj in spool if obj["kind"] == "PersistentVolumeClaim")
+lease = next(obj for obj in spool if obj["kind"] == "Lease")
+assert lease["metadata"]["annotations"]["helm.sh/resource-policy"] == "keep"
+assert not lease["metadata"].get("ownerReferences")
+assert lease["spec"] == {}
 assert pvc["metadata"]["annotations"]["helm.sh/resource-policy"] == "keep"
 assert not pvc["metadata"].get("ownerReferences")
 assert pvc["spec"]["accessModes"] == ["ReadWriteOncePod"]
@@ -229,7 +238,12 @@ assert (
 for obj in run:
     if obj["kind"] in ["Role", "ClusterRole"]:
         for rule in obj["rules"]:
-            assert rule["verbs"] == ["get"] and "secrets" not in rule["resources"]
+            if rule["resources"] == ["leases"]:
+                assert rule["verbs"] == ["get", "update"]
+                assert rule["resourceNames"] == [VALUES["effectLease"]["name"]]
+            else:
+                assert rule["verbs"] == ["get"]
+            assert "secrets" not in rule["resources"]
             assert "*" not in rule["resources"] and "*" not in rule["apiGroups"]
 
 negatives = [
@@ -237,6 +251,8 @@ negatives = [
     {"host": {"command": "echo unsupported"}},
     {"mode": "physical-control"},
     {"spool": {"uid": ""}},
+    {"effectLease": {"uid": ""}},
+    {"host": {"env": {"ROBOTICS_K8S_LEASE_UID": "foreign"}}},
     {"binding": {"profileSha256": "incorrect"}},
     {"identity": {"namespace": "foreign"}},
     {"identity": {"prefix": "retained/"}},

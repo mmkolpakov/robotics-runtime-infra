@@ -3,6 +3,7 @@ robotics-runtime.dev/run-id: {{ .Values.binding.runId | quote }}
 robotics-runtime.dev/domain-id: {{ .Values.binding.domainId | quote }}
 robotics-runtime.dev/profile-id: {{ .Values.binding.profileId | quote }}
 robotics-runtime.dev/profile-sha256: {{ .Values.binding.profileSha256 | quote }}
+robotics-runtime.dev/effect-lease-uid: {{ .Values.effectLease.uid | quote }}
 robotics-runtime.dev/spool-uid: {{ .Values.spool.uid | quote }}
 {{- end -}}
 
@@ -15,6 +16,10 @@ robotics-runtime.dev/spool-uid: {{ .Values.spool.uid | quote }}
   value: {{ .Values.binding.profileId | quote }}
 - name: ROBOTICS_PROFILE_SHA256
   value: {{ .Values.binding.profileSha256 | quote }}
+- name: ROBOTICS_K8S_LEASE_NAME
+  value: {{ .Values.effectLease.name | quote }}
+- name: ROBOTICS_K8S_LEASE_UID
+  value: {{ .Values.effectLease.uid | quote }}
 - name: ROBOTICS_K8S_PVC_UID
   value: {{ .Values.spool.uid | quote }}
 - name: ROBOTICS_K8S_POD_UID
