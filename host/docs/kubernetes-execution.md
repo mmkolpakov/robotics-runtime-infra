@@ -11,7 +11,8 @@ An operator creates an empty, separately retained `coordination.k8s.io/v1` Lease
 before the Job. The consumer records its UID. A call to `initiate(callback, signal)`
 changes that Lease once, using its observed resource version, and invokes the
 callback only after the API acknowledges the exact claim and fresh identity checks
-pass. Objects that have begun deletion are refused. A replacement Pod or a second call from the same Pod cannot reclaim it.
+pass. Objects that have begun deletion are refused. A replacement Pod or a second call
+from the same Pod cannot reclaim it.
 
 The consumer puts **all native startup effects inside the callback**. Workers that
 are started independently must remain passive until the admitted initiation.
@@ -36,9 +37,11 @@ the API token. Operators retain separate permissions for provisioning and cleanu
 
 `exportAndDelete` runs an explicit finite export through the existing `Jobs`
 interface and verifies the retained file bytes before deleting the exact Job with
-UID and resource-version preconditions. It waits for the Job and its Pods to disappear, then checks that
+UID and resource-version preconditions. It waits for the Job and its Pods to disappear,
+then checks that
 the original PVC, Lease and exported files still exist. A failed export leaves the
-Job and retained objects available. A finalizer-held Job cannot be reported as released when its Pods are gone.
+Job and retained objects available. A finalizer-held Job cannot be reported as released
+when its Pods are gone.
 The consumer supplies the native exporter;
 this module does not invent a simulator-specific archive conversion.
 
