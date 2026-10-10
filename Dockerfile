@@ -227,13 +227,13 @@ ADD --checksum=sha256:a6adb750d17c8eb3c50a5b063115c762ffe57724cfbd45cc38e5abe823
   https://github.com/intel/compute-runtime/releases/download/24.48.31907.7/libigdgmm12_22.5.4_amd64.deb \
   /packages/libigdgmm12_22.5.4_amd64.deb
 
-# The latest release still contains golang.org/x/text below the fixed version.
+# Build the exact upstream yq release with verified dependency versions.
 FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS yq
 ARG TARGETOS
 ARG TARGETARCH
-ARG YQ_REVISION=0520a6fc904f2acdc188477e99d3720949268a1e
-ARG YQ_BASE_VERSION=v4.53.3
-ARG YQ_X_TEXT_VERSION=v0.40.0
+ARG YQ_REVISION=504fc38780cc46be8444ea1b72fb55919fc0bfb0
+ARG YQ_BASE_VERSION=v4.54.1
+ARG YQ_X_TEXT_VERSION=v0.42.0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     YQ_MODULE="github.com/mikefarah/yq/v4"; \
