@@ -1,0 +1,14 @@
+{{- if .Values.enabled }}
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: {{ .Values.effectLeaseName | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  annotations:
+    helm.sh/resource-policy: keep
+    robotics-runtime.dev/run-id: {{ .Values.binding.runId | quote }}
+    robotics-runtime.dev/domain-id: {{ .Values.binding.domainId | quote }}
+    robotics-runtime.dev/profile-id: {{ .Values.binding.profileId | quote }}
+    robotics-runtime.dev/profile-sha256: {{ .Values.binding.profileSha256 | quote }}
+spec: {}
+{{- end }}

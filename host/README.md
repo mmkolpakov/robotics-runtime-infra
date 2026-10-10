@@ -111,3 +111,10 @@ exact attempt and OS ownership before native effects. It exports and verifies
 retained bytes before owned Compose cleanup, reuses completed export receipts
 and refuses unknown coordinators or foreign resources. Resource release leaves
 native cancellation, final state and robot stop unknown.
+
+## Kubernetes execution
+
+The optional [Kubernetes execution adapter](docs/kubernetes-execution.md) uses
+the official client for exact Job/Pod/PVC/Lease identities, one-shot native
+initiation and export-before-cleanup. A retained claim prevents initiation
+replay; resource deletion does not acknowledge native completion or robot stop.
