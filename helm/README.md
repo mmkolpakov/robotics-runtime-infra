@@ -5,7 +5,7 @@ These three standard Helm charts deliberately have separate release lifetimes:
 - `robotics-storage-class`: long-lived product prerequisites, including the
   encrypted gp3 CSI StorageClass with Retain and the product service account.
   Its namespace/service account must match the Terraform Pod Identity association.
-- `robotics-retained-spool`: one namespaced retained PVC per admitted run,
+- `robotics-retained-spool`: one namespaced retained PVC and one effect Lease per admitted run,
   ReadWriteOncePod, with exact run/domain/profile annotations. It has no Job
   ownerReference and a Helm keep policy.
 - `robotics-run`: one finite attempt Job referencing an existing claim by its
@@ -28,8 +28,10 @@ service or new physics API.
 The Job sets Never/zero backoff/one completion and delays replacement until the
 old Pod is Failed. Kubernetes can still start a program twice. ReadWriteOncePod
 and these settings do not prove exactly-once effects, fencing, sealed bytes or
-recovery. The T10 provider must bind actual Job/Pod/PVC UIDs, enforce the existing
-admitted lifecycle, and leave ambiguous/unsealed attempts incomplete. Export
+recovery. The consumer binds actual Job/Pod/PVC/Lease UIDs and puts native initiation
+inside the one-shot Lease claim described in [Kubernetes execution](../host/docs/kubernetes-execution.md).
+Workers remain passive until this callback; the Helm preflight does not enforce
+a worker startup-effect boundary. Ambiguous attempts remain incomplete. Export
 recovery preserves the original measurement and accepts no native worker list.
 Physical/control profiles are unsupported by this initial chart. Native workers
 are regular Never containers with explicit termination argv. The lifecycle host
@@ -45,9 +47,10 @@ It creates no ledger or retained journal and does not prove that a former
 writer has been fenced. The runtime provider remains responsible for those
 separate guarantees.
 
-RBAC grants only get: the named Job/PVC, Pods in the product namespace (their
+RBAC grants get for the named Job/PVC, Pods in the product namespace (their
 generated names are unknown while rendering), and the named StorageClass.
-No secrets, exec, writes, deletion or wildcard permissions are granted.
+The separately retained named Lease also permits update for a resource-version
+claim. No creation, deletion, secrets, exec or wildcard permissions are granted.
 Only the preflight/lifecycle host mounts the projected API token; native workers
 do not. AWS Pod Identity binds the whole Pod's service account; native workers
 can receive the same AWS role. The API token mount does not isolate AWS credentials.
@@ -62,7 +65,10 @@ VersionId/SHA-256/size/Cosign protocol and independent signing trust. Image,
 entrypoint, namespace, claim UID and signer inputs require separate deployment
 review; this chart does not fabricate them.
 
-The retained StorageClass/PVC keep annotations are not a recovery certificate
+Set the retained release's effectLeaseName before provisioning. Read that Lease's
+actual UID into robotics-run.effectLease.uid; name reuse cannot re-arm an old binding.
+
+The retained StorageClass/PVC/Lease keep annotations are not a recovery certificate
 or permission to delete bytes. Explicit retained-storage reclamation requires
 verified exact-version export, complete recovery and owner-bound observation.
 Manual administration can still remove data. Helm keep behavior, CSI encryption,

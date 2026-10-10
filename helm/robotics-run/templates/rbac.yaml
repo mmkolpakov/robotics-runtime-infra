@@ -5,6 +5,10 @@ metadata:
   name: {{ .Values.name | quote }}
   namespace: {{ .Release.Namespace | quote }}
 rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: [{{ .Values.effectLease.name | quote }}]
+    verbs: ["get", "update"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
     resourceNames: [{{ .Values.name | quote }}]

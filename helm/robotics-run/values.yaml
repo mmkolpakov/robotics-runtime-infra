@@ -12,6 +12,9 @@ spool:
   uid: ""
   release: ""
   storageClassName: ""
+effectLease:
+  name: ""
+  uid: ""
 identity:
   serviceAccount: ""
   namespace: ""
