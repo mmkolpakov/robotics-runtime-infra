@@ -24,7 +24,7 @@
       "recorder": {
         "implementation": "px4-x500-controller",
         "version": "0.1.0",
-        "transformation": "SDK-decoded JSON"
+        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
       }
     },
     {
@@ -42,7 +42,7 @@
       "recorder": {
         "implementation": "px4-x500-controller",
         "version": "0.1.0",
-        "transformation": "SDK-decoded JSON"
+        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
       }
     },
     {
@@ -60,7 +60,7 @@
       "recorder": {
         "implementation": "px4-x500-controller",
         "version": "0.1.0",
-        "transformation": "SDK-decoded JSON"
+        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
       }
     },
     {
@@ -78,7 +78,7 @@
       "recorder": {
         "implementation": "px4-x500-controller",
         "version": "0.1.0",
-        "transformation": "SDK-decoded JSON"
+        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
       }
     }
   ],

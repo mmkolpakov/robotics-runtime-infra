@@ -229,15 +229,24 @@ def facts(records, configuration, cleanup):
     grounded = final("telemetry-landed", "landed_state", "LANDED_STATE_ON_GROUND")
     disarmed = final("telemetry-armed", "is_armed", False)
     positions = []
+    unknown_positions = 0
+    baseline_unknown = False
     for record, reference in kinds.get("telemetry-position", []):
         if not refusal and (
             takeoff_phase is None or record["sequence"] <= takeoff_phase
         ):
             continue
         position = decoded(record).get("position")
-        altitude = (
-            position.get("relative_altitude_m") if isinstance(position, dict) else None
-        )
+        if position is not None and not isinstance(position, dict):
+            raise ValueError("malformed known PositionResponse position")
+        altitude = position.get("relative_altitude_m") if position is not None else None
+        # The recorder preserves stock non-finite scalars using ProtoJSON names.
+        # Unset/NaN cannot prove an observed physical violation; infinities remain errors.
+        if altitude is None or altitude == "NaN":
+            if not positions:
+                baseline_unknown = True
+            unknown_positions += 1
+            continue
         if (
             isinstance(altitude, bool)
             or not isinstance(altitude, (float, int))
@@ -249,20 +258,29 @@ def facts(records, configuration, cleanup):
         if refusal:
             initial = positions[0][0]
             excursion = max(abs(value - initial) for value, _ref in positions)
-            condition = (
-                False
-                if excursion > configuration["max_refusal_ascent_m"]
-                else (True if len(positions) >= 4 else None)
-            )
+            if baseline_unknown:
+                condition = None
+            elif excursion > configuration["max_refusal_ascent_m"]:
+                condition = False
+            else:
+                condition = (
+                    True if len(positions) >= 4 and not unknown_positions else None
+                )
             condition_ref = positions[-1][1]
         else:
             maximum, condition_ref = max(positions, key=lambda item: item[0])
-            condition = maximum >= configuration["min_ascent_m"]
+            condition = (
+                True
+                if maximum >= configuration["min_ascent_m"]
+                else None
+                if unknown_positions
+                else False
+            )
         postcondition = (
             condition,
             condition_ref,
             (
-                "required refusal position sample count was not captured"
+                "required finite position coverage was not captured"
                 if condition is None
                 else None
             ),

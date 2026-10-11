@@ -27,7 +27,8 @@ export function controllerJournal(output, {runId, domainId}, {
       const raw = Buffer.from(JSON.stringify({
         run_id: runId, domain_id: domainId, sequence, kind,
         receiver_unix_ns: unixNs(), receiver_monotonic_ms: monotonicMs(), value,
-      }) + '\n');
+      }, (_key, scalar) => typeof scalar === 'number' && !Number.isFinite(scalar)
+        ? String(scalar) : scalar) + '\n');
       assert(raw.length <= MAX_RECORD_BYTES && total + raw.length <= MAX_TOTAL_BYTES,
         'controller journal byte budget exceeded');
       await writeFile(join(output, name), raw, {flag: 'wx', mode: 0o600});
