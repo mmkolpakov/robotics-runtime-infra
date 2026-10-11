@@ -2,7 +2,6 @@
 
 import copy
 import hashlib
-import importlib.util
 import json
 import tempfile
 import unittest
@@ -11,11 +10,8 @@ from pathlib import Path
 
 from nav2_turtlebot3_evaluator import NAMESPACE, evaluate
 from robotics_acceptance_harness import EvaluationContext
-from robotics_acceptance_harness.documents import (
-    DocumentBundle,
-    LoadedDocument,
-    load_document,
-)
+from robotics_acceptance_harness.archive import load_assessment_controls
+from robotics_acceptance_harness.documents import DocumentBundle, LoadedDocument
 from robotics_acceptance_harness.evidence import VerifiedEvidence
 
 
@@ -33,10 +29,12 @@ class NativeCaseControls(unittest.TestCase):
         links = {
             path: {
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "size_bytes": path.stat().st_size,
                 "media_type": "application/json",
             },
             cdr: {
                 "sha256": hashlib.sha256(cdr.read_bytes()).hexdigest(),
+                "size_bytes": cdr.stat().st_size,
                 "media_type": "application/octet-stream",
             },
         }
@@ -78,38 +76,83 @@ class NativeCaseControls(unittest.TestCase):
                     ["passed", "passed"],
                 )
 
-    def test_actual_public_loader_immutable_context(self):
-        root = Path(__file__).parent
-        specification = importlib.util.spec_from_file_location(
-            "nav2_requirements", root / "make-scenario.py"
-        )
-        constructor = importlib.util.module_from_spec(specification)
-        specification.loader.exec_module(constructor)
+    def test_selected_calibration_refuses_before_raw_payload_access(self):
+        context = self.context()
         directory = Path(self.temporary.name)
-        # A syntactic requirements header for this predicate fixture, not a verified receipt.
-        header = directory / "requirements-header.json"
-        header.write_text(json.dumps({"artifact": {"sha256": "0" * 64}}))
-        scenario = directory / "public-scenario.json"
-        constructor.create(
-            "success", header, root / "fastdds.xml", root / "nav2.schema.json", scenario
+        calibration = directory / "calibration.json"
+        calibration.write_text('{"offset": 0}')
+        controls = directory / "controls.json"
+        controls.write_text(
+            json.dumps(
+                {
+                    "metric_definitions": [],
+                    "assertions": [],
+                    "evaluator_requirements": [
+                        {
+                            "namespace": NAMESPACE,
+                            "entry_point": "nav2_turtlebot3_evaluator:evaluate",
+                            "distribution": "nav2-turtlebot3-evaluator",
+                            "version": "0.3.0",
+                            "artifact_sha256": "0" * 64,
+                            "receipt_sha256": "0" * 64,
+                        }
+                    ],
+                    "evidence_policy": {
+                        "max_artifact_size_bytes": 1048576,
+                        "max_archive_size_bytes": 4194304,
+                        "max_upload_lag_sec": 0,
+                        "upload_mode": "local_only",
+                        "retention_class": "test-evidence",
+                        "remote_sink_allowed": False,
+                    },
+                    "calibration": {
+                        "state": "selected",
+                        "artifacts": [
+                            {
+                                "uri": calibration.as_uri(),
+                                "sha256": hashlib.sha256(
+                                    calibration.read_bytes()
+                                ).hexdigest(),
+                                "size_bytes": calibration.stat().st_size,
+                                "media_type": "application/json",
+                            }
+                        ],
+                    },
+                }
+            )
         )
-        loaded = load_document(
-            scenario,
-            expected_role="acceptance_scenario",
-            extension_schemas={
-                constructor.SCHEMA_URI: (root / "nav2.schema.json").read_bytes()
-            },
-        )
-        original = self.context()
-        context = replace(
-            original, bundle=DocumentBundle(loaded, original.bundle.runtime)
-        )
-        self.assertIsInstance(
-            context.scenario["extensions"][NAMESPACE]["required_tf_edges"], tuple
-        )
-        self.assertEqual(
-            [value.status for value in evaluate(context)], ["passed", "passed"]
-        )
+        selected = load_assessment_controls(controls)
+        from unittest.mock import patch
+
+        with (
+            patch.object(
+                VerifiedEvidence,
+                "read_local",
+                side_effect=AssertionError("unexpected raw access"),
+            ),
+            self.assertRaisesRegex(ValueError, "does not consume selected calibration"),
+        ):
+            list(evaluate(replace(context, assessment_controls=selected)))
+
+    def test_payload_is_parsed_from_one_verified_snapshot(self):
+        from unittest.mock import patch
+
+        context = self.context()
+        original_reader = VerifiedEvidence.read_local
+        captured = []
+
+        def read(evidence, path, **keywords):
+            payload = original_reader(evidence, path, **keywords)
+            captured.append(path.name)
+            if path.name == "workload.json":
+                path.write_text('{"mutated_after_capture": true}')
+            return payload
+
+        with patch.object(VerifiedEvidence, "read_local", read):
+            self.assertEqual(
+                [value.status for value in evaluate(context)], ["passed", "passed"]
+            )
+        self.assertEqual(captured, ["workload.json", "get-result-response.cdr"])
 
     def test_stale_required_dynamic_tf_refuses(self):
         def stale(report):
@@ -220,7 +263,7 @@ class NativeCaseControls(unittest.TestCase):
         next(
             p for p in context.evidence.local_files if p.name == "workload.json"
         ).write_text("{}")
-        with self.assertRaisesRegex(ValueError, "changed"):
+        with self.assertRaisesRegex(ValueError, "expected.*observed"):
             list(evaluate(context))
 
     def test_mutated_cdr_refuses(self):
@@ -228,7 +271,7 @@ class NativeCaseControls(unittest.TestCase):
         next(
             p for p in context.evidence.local_files if p.name.endswith(".cdr")
         ).write_bytes(b"bad")
-        with self.assertRaisesRegex(ValueError, "CDR"):
+        with self.assertRaisesRegex(ValueError, "expected.*observed"):
             list(evaluate(context))
 
 

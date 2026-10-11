@@ -1,3 +1,8 @@
 *
 !Dockerfile
-!producer-requirements.lock
+!inputs.lock.json
+!requirements.lock
+!check-sdk-wheels.py
+!sdk-cohort/
+!sdk-cohort/wheels/
+!sdk-cohort/wheels/**

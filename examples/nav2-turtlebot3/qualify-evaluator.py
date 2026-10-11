@@ -1,279 +1,174 @@
-"""Qualify a locally built consumer wheel with explicit, local-key provenance."""
+"""Verify the Nav2 wheel with an explicit external Cosign key-only policy."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
+import base64
 import json
-import os
-import subprocess
-import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from hashlib import sha256
+from importlib.metadata import distribution
 from pathlib import Path
+
+from robotics_acceptance_harness.evaluator_trust import (
+    CosignKeyVerifierProfile,
+    CosignKeyWheelPolicy,
+    authenticate_wheel_with_cosign_key,
+    read_once,
+    validate_evaluator_wheel,
+    verify_installed_wheel,
+)
+from robotics_runtime_contracts import dumps_canonical, loads_mapping
+from robotics_runtime_contracts.writers import (
+    create_artifact_receipt,
+    write_bytes_atomically,
+    write_document,
+)
+
+NAMESPACE = "org.example.nav2-turtlebot3"
+DISTRIBUTION = "nav2-turtlebot3-evaluator"
+VERSION = "0.3.0"
+
+
+def write(path: Path, value: object) -> Path:
+    return write_bytes_atomically(dumps_canonical(value), path)
 
 
 def digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return sha256(read_once(path, 16 * 1024 * 1024)).hexdigest()
 
 
-def document(path: Path, value: dict) -> None:
-    path.write_text(json.dumps(value, indent=2) + "\n")
-
-
-def command(argv: list[str], output: Path) -> None:
-    result = subprocess.run(argv, capture_output=True, timeout=30, check=False)
-    output.write_bytes(result.stdout + result.stderr)
-    if result.returncode:
-        raise RuntimeError(f"{Path(argv[0]).name} verification command refused")
-
-
-def qualify(
-    wheel: Path,
-    tests: Path,
-    native_cases: Path,
-    python: str,
-    output: Path,
-    contracts: str,
-    openssl: str,
-) -> None:
-    if output.exists():
-        raise FileExistsError("qualification output must be new")
-    output.mkdir(mode=0o700, parents=True)
-    inputs = []
-    for case in ("success", "cancel", "timeout", "server-failure"):
-        for name in ("workload.json", "get-result-response.cdr"):
-            path = native_cases / case / name
-            if (
-                path.is_symlink()
-                or not path.is_file()
-                or path.stat().st_size > 1024 * 1024
-            ):
-                raise ValueError("bounded regular predicate fixture required")
-            inputs.append((path, "fixtures/" + case + "/" + name))
-    for name in ("make-scenario.py", "fastdds.xml", "nav2.schema.json"):
-        path = tests.parent / name
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
-            raise ValueError("bounded regular public-context test input required")
-        inputs.append((path, "public-context-inputs/" + name))
-    input_hashes = {path: digest(path) for path, _name in inputs}
-    inputs_manifest = output / "qualification-inputs.json"
-    document(
-        inputs_manifest,
-        {
-            "scope": "predicate test inputs, not fresh runtime qualification",
-            "inputs": [
-                {
-                    "path": name,
-                    "sha256": digest(path),
-                    "size_bytes": path.stat().st_size,
-                }
-                for path, name in inputs
-            ],
-        },
+def qualify(profile_path: Path, output: Path, *, installed: bool = True) -> dict:
+    """The external operator input, never the bundle, chooses the approved key/tool."""
+    if profile_path.stat().st_mode & 0o022:
+        raise ValueError("operator trust profile must not be group/other writable")
+    values = loads_mapping(
+        read_once(profile_path, 1024 * 1024), source_name=str(profile_path)
     )
-    installed = output / "installed-wheel-check.log"
-    byte_check = (
-        "import importlib.metadata as m,zipfile,pathlib,sys,hashlib,json;"
-        "d=m.distribution('nav2-turtlebot3-evaluator');"
-        "z=zipfile.ZipFile(sys.argv[1]);"
-        "names=[n for n in z.namelist() if not n.endswith('/') and not n.endswith('/RECORD')];"
-        "assert all(not pathlib.Path(d.locate_file(n)).is_symlink() and pathlib.Path(d.locate_file(n)).read_bytes()==z.read(n) for n in names);"
-        "print(json.dumps({'distribution':d.metadata['Name'],'version':d.version,'byte_equal_files':len(names),'wheel_sha256':hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()}))"
+    if (
+        set(values) != {"profile_version", "verifier", "evaluators"}
+        or values["profile_version"] != 1
+    ):
+        raise ValueError("an explicit public operator trust profile is required")
+    verifier = dict(values["verifier"])
+    if verifier.pop("kind", None) != "cosign_key_no_tlog":
+        raise ValueError(
+            "this local publisher recipe requires explicit Cosign key-only mode"
+        )
+    for key in ("executable", "public_key", "trusted_root"):
+        verifier[key] = Path(verifier[key])
+    profile = CosignKeyVerifierProfile(**verifier)
+    if len(values["evaluators"]) != 1:
+        raise ValueError("one exact Nav2 evaluator policy is required")
+    selected = values["evaluators"][0]
+    if (
+        set(selected) != {"namespace", "wheel", "bundle", "publisher"}
+        or selected["namespace"] != NAMESPACE
+    ):
+        raise ValueError("one exact Nav2 namespace policy is required")
+    policy = CosignKeyWheelPolicy(**selected["publisher"])
+    bundle_path = Path(selected["bundle"])
+    bundle_raw = read_once(bundle_path, 16 * 1024 * 1024)
+    authenticated = authenticate_wheel_with_cosign_key(
+        selected["wheel"], bundle_path, profile=profile, policy=policy
     )
-    command([python, "-I", "-B", "-c", byte_check, str(wheel.resolve())], installed)
-    selected_wheel_sha = digest(wheel)
-    controls = output / "qualification-controls.log"
-    env = {
-        **os.environ,
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "NAV2_NATIVE_CASES": str(native_cases.resolve()),
+    if sha256(bundle_raw).hexdigest() != authenticated.bundle_sha256:
+        raise ValueError("signature bundle changed during verification")
+    validate_evaluator_wheel(authenticated)
+    if authenticated.filename != "nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl":
+        raise ValueError(
+            "authenticated wheel filename is not the selected Nav2 release"
+        )
+    if installed:
+        binding = verify_installed_wheel(authenticated, distribution(DISTRIBUTION))
+        if binding.version != VERSION or binding.entry_points != (
+            (
+                "robotics_acceptance.evaluators",
+                NAMESPACE,
+                "nav2_turtlebot3_evaluator:evaluate",
+            ),
+        ):
+            raise ValueError("authenticated wheel is not the selected Nav2 evaluator")
+    output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    wheel = output / authenticated.filename
+    write_bytes_atomically(authenticated.wheel_bytes, wheel)
+    statement = output / "statement.json"
+    write_bytes_atomically(
+        base64.b64decode(
+            json.loads(bundle_raw)["dsseEnvelope"]["payload"], validate=True
+        ),
+        statement,
+    )
+    report = output / "verified-report.txt"
+    write_bytes_atomically(authenticated.verification_report, report)
+    expectations = write(output / "publisher.json", selected["publisher"])
+    verified_at = datetime.now(UTC).isoformat()
+    artifact = {
+        "uri": wheel.resolve().as_uri(),
+        "sha256": authenticated.sha256,
+        "size_bytes": len(authenticated.wheel_bytes),
+        "media_type": "application/vnd.python.wheel",
+        "immutable_revision": "sha256:" + authenticated.sha256,
     }
-    env.pop("PYTHONPATH", None)
-    tested = subprocess.run(
-        [python, "-I", "-B", str(tests.resolve())],
-        env=env,
-        capture_output=True,
-        timeout=30,
-        check=False,
+    identity = "key-sha256:" + policy.public_key_sha256
+    verification = output / "verification.json"
+    write_document(
+        {
+            "schema_version": "artifact-verification.v1",
+            "verification_id": "nav2-key-only-wheel",
+            "artifact": artifact,
+            "statement_sha256": digest(statement),
+            "producer_identity": identity,
+            "producer_implementation": "cosign-key-blob-attestation",
+            "trust_policy_sha256": digest(expectations),
+            "verification_evidence_sha256": digest(report),
+            "verifier": {
+                "identity": identity,
+                "implementation": "cosign",
+                "version": profile.version,
+            },
+            "verified_at": verified_at,
+            "status": "passed",
+        },
+        verification,
     )
-    controls.write_bytes(tested.stdout + tested.stderr)
-    if tested.returncode:
-        raise RuntimeError("installed evaluator qualification controls refused")
-    secrets = output / "private"
-    secrets.mkdir(mode=0o700)
-    key, public = secrets / "signer.pem", output / "trust-policy.pem"
-    try:
-        command(
-            [openssl, "genpkey", "-algorithm", "ED25519", "-out", str(key)],
-            output / "key-generation.log",
-        )
-        key.chmod(0o600)
-        command(
-            [openssl, "pkey", "-in", str(key), "-pubout", "-out", str(public)],
-            output / "public-key.log",
-        )
-        descriptor = {
-            "uri": wheel.resolve().as_uri(),
-            "sha256": digest(wheel),
-            "size_bytes": wheel.stat().st_size,
-            "media_type": "application/zip",
-            "immutable_revision": "sha256:" + digest(wheel),
-        }
-        producer = "key-sha256:" + digest(public)
-        statement = output / "statement.json"
-        document(
-            statement,
-            {
-                "_type": "https://in-toto.io/Statement/v1",
-                "subject": [{"name": wheel.name, "digest": {"sha256": digest(wheel)}}],
-                "predicateType": "urn:nav2-turtlebot3:consumer-evaluator-qualification:v1",
-                "predicate": {
-                    "artifact": descriptor,
-                    "producer": producer,
-                    "qualification_controls": {
-                        "sha256": digest(controls),
-                        "size_bytes": controls.stat().st_size,
-                    },
-                    "controls_source_sha256": digest(tests),
-                    "controls_inputs_sha256": digest(inputs_manifest),
-                    "installed_wheel_check_sha256": digest(installed),
-                    "scope": "Consumer predicates on original four-case observations and explicit negative controls; no core ROS policy verdict",
-                },
-            },
-        )
-        if any(digest(path) != value for path, value in input_hashes.items()):
-            raise ValueError("predicate inputs changed during qualification")
-        if digest(wheel) != selected_wheel_sha:
-            raise ValueError("selected evaluator wheel changed during qualification")
-        signature = output / "statement.signature"
-        command(
-            [
-                openssl,
-                "pkeyutl",
-                "-sign",
-                "-rawin",
-                "-inkey",
-                str(key),
-                "-in",
-                str(statement),
-                "-out",
-                str(signature),
-            ],
-            output / "sign.log",
-        )
-        proof_log = output / "signature-verification.log"
-        command(
-            [
-                openssl,
-                "pkeyutl",
-                "-verify",
-                "-rawin",
-                "-pubin",
-                "-inkey",
-                str(public),
-                "-in",
-                str(statement),
-                "-sigfile",
-                str(signature),
-            ],
-            proof_log,
-        )
-        proof = output / "verification-evidence.zip"
-        with zipfile.ZipFile(proof, "x", compression=zipfile.ZIP_DEFLATED) as archive:
-            for member in (
-                signature,
-                proof_log,
-                controls,
-                installed,
-                tests,
-                inputs_manifest,
-            ):
-                archive.write(member, member.name)
-            for path, name in inputs:
-                archive.write(path, name)
-        version = (
-            subprocess.run(
-                [openssl, "version"], capture_output=True, timeout=5, check=True
-            )
-            .stdout.decode()
-            .strip()
-        )
-        verified_at = datetime.now(timezone.utc).isoformat()
-        verification = output / "verification.json"
-        document(
+    receipt = output / "receipt.json"
+    write_document(
+        create_artifact_receipt(
+            {"receipt_id": "nav2-key-only-wheel", "created_at": verified_at},
+            wheel,
             verification,
-            {
-                "schema_version": "artifact-verification.v1",
-                "verification_id": "nav2-evaluator-local-key",
-                "statement_sha256": digest(statement),
-                "artifact": descriptor,
-                "producer_identity": producer,
-                "producer_implementation": "nav2-turtlebot3-consumer",
-                "trust_policy_sha256": digest(public),
-                "verification_evidence_sha256": digest(proof),
-                "verifier": {
-                    "identity": "urn:nav2-turtlebot3:openssl-local-key-verifier",
-                    "implementation": "openssl-ed25519",
-                    "version": version,
-                },
-                "verified_at": verified_at,
-                "status": "passed",
-            },
-        )
-        template = output / "receipt-template.json"
-        document(
-            template,
-            {
-                "schema_version": "artifact-receipt.v1",
-                "receipt_id": "nav2-evaluator-local-key",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        command(
-            [
-                contracts,
-                "artifact-receipt",
-                "create",
-                "--template",
-                str(template),
-                "--source",
-                str(wheel),
-                "--verification",
-                str(verification),
-                "--dependency",
-                str(statement),
-                "--dependency",
-                str(public),
-                "--dependency",
-                str(proof),
-                "--output",
-                str(output / "receipt.json"),
-            ],
-            output / "receipt-create.log",
-        )
-    finally:
-        key.unlink(missing_ok=True)
-        secrets.rmdir()
+            [statement, expectations, report],
+        ),
+        receipt,
+    )
+    binding = {
+        "namespace": NAMESPACE,
+        "entry_point": "nav2_turtlebot3_evaluator:evaluate",
+        "distribution": DISTRIBUTION,
+        "version": VERSION,
+        "artifact_sha256": authenticated.sha256,
+        "receipt_sha256": digest(receipt),
+    }
+    write(output / "binding.json", binding)
+    return binding
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--wheel", type=Path, required=True)
-    parser.add_argument("--tests", type=Path, required=True)
-    parser.add_argument("--native-cases", type=Path, required=True)
-    parser.add_argument("--python", required=True)
+    parser.add_argument("--trust-profile", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--contracts", required=True)
-    parser.add_argument("--openssl", default="openssl")
+    parser.add_argument(
+        "--preinstall",
+        action="store_true",
+        help="validate and capture the authenticated wheel before pip installation",
+    )
     args = parser.parse_args()
-    qualify(
-        args.wheel,
-        args.tests,
-        args.native_cases,
-        args.python,
-        args.output,
-        args.contracts,
-        args.openssl,
+    print(
+        json.dumps(
+            qualify(args.trust_profile, args.output, installed=not args.preinstall),
+            sort_keys=True,
+        )
     )
 
 

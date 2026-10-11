@@ -14,13 +14,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-gz-sim-vendor=0.0.13-1noble.20260905.073557 \
         python3-venv \
     && rm -rf /var/lib/apt/lists/*
-COPY producer-requirements.lock /opt/consumer-requirements.lock
-RUN python3 -m venv --system-site-packages /opt/consumer \
+ARG SDK_COHORT=__exact_sdk_cohort_required__
+COPY ${SDK_COHORT}/wheels/ /opt/sdk-cohort/wheels/
+COPY inputs.lock.json requirements.lock check-sdk-wheels.py /opt/sdk-policy/
+RUN python3 /opt/sdk-policy/check-sdk-wheels.py /opt/sdk-cohort/wheels \
+    && python3 -m venv --system-site-packages /opt/consumer \
     && /opt/consumer/bin/pip install --disable-pip-version-check --only-binary=:all: \
-       --require-hashes --no-cache-dir -r /opt/consumer-requirements.lock
+       --require-hashes --no-cache-dir --no-index --find-links=/opt/sdk-cohort/wheels \
+       -r /opt/sdk-policy/requirements.lock
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
     LIBGL_ALWAYS_SOFTWARE=1
 STOPSIGNAL SIGINT
 # Upstream launch/model/world/map are selected from the unmodified ROS packages.
-CMD ["ros2", "launch", "nav2_bringup", "tb3_simulation_launch.py", "headless:=True", "use_rviz:=False", "slam:=False", "use_composition:=False", "use_respawn:=False"]
+CMD ["/opt/consumer/bin/python", "-c", "raise SystemExit('native launch requires an admitted v2 SDK/image composition')"]

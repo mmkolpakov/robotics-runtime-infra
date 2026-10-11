@@ -105,18 +105,19 @@
     }
   },
   "public_packages": {
-    "contracts": {
-      "version": "0.20.0",
-      "sha256": "e761c1f7a8a36180419f71988cd1c4320233de68156ba4dfe0f026058f1a8b6c"
-    },
-    "harness": {
-      "version": "0.21.0",
-      "sha256": "da70f267d263407fca551aaef658b7fc76b421c68f58577934c700ccca72d2a3"
-    },
     "host": {
       "version": "0.1.0-rc.0",
       "release": "host-v0.1.0-rc.0",
       "sha256": "51c919953f6b761e20c89eee22e7dfe2c7aacb221329b61a99a52cf13ccf1e57"
     }
+  },
+  "sdk_test_cohort": {
+    "repository": "https://github.com/mmkolpakov/robotics-runtime",
+    "revision": "00735515f71e53bbea9f8761f76db81dcea73299",
+    "wheels": {
+      "robotics_acceptance_harness-0.22.0-py3-none-any.whl": "4b377da4e792969f9f838b46319523a842d0fae1b7a8a54aca09cd272a752fc4",
+      "robotics_runtime_contracts-0.21.0-py3-none-any.whl": "f41f2efc92bbdc24dec7ea1a0852d4cd4ccb00cfa4def5a8dc47fd4cec076701"
+    },
+    "scope": "source SDK document/consumer controls; no native execution admission"
   }
 }
