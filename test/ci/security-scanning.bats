@@ -34,6 +34,7 @@ EOF
   [ "$(wc -l <"${DOCKER_LOG}")" -eq 4 ]
   [ "$(grep -Fc -- '--vex /work/security/vex/linux-libc-dev.openvex.json' "${DOCKER_LOG}")" -eq 2 ]
   [ "$(grep -Fc -- '--vex /work/security/vex/go-modules.openvex.json' "${DOCKER_LOG}")" -eq 2 ]
+  [ "$(grep -Fc -- '--show-suppressed' "${DOCKER_LOG}")" -eq 2 ]
   run grep -F -- '--platform linux/amd64' "${DOCKER_LOG}"
   [ "${status}" -eq 0 ]
   run grep -F -- '--platform linux/arm64' "${DOCKER_LOG}"
@@ -111,8 +112,8 @@ EOF
       ["CVE-2024-46742", "CVE-2024-46833", "CVE-2024-52560", "CVE-2024-56591"];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 11
-    and (.statements | length == 193)
+    and .version == 12
+    and (.statements | length == 194)
     and ([.statements[] | select(.products == reviewed_headers)] | length == 138)
     and (
       [.statements[].vulnerability.name]
@@ -139,6 +140,13 @@ EOF
               and contains("another package version/architecture")
               and contains("any other vulnerability")
           )
+        elif .vulnerability.name == "CVE-2025-22043" then
+          .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"}]
+          and (.impact_statement | contains("binary-exclude:linux-libc-dev"))
+          and (.impact_statement | contains("https://ubuntu.com/security/cves/CVE-2025-22043.json"))
+          and (.impact_statement | contains("does not qualify the host kernel"))
+          and (.impact_statement | contains("another version/architecture/distribution"))
+          and (.impact_statement | contains("no exception for OPA, yq or x/net"))
         else
           .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
           or (
