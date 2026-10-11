@@ -3,5 +3,6 @@ jsonschema[format-nongpl]>=4.26,<5
 junitparser>=5.0.1,<6
 opentelemetry-proto>=1.43,<2
 packaging>=24
+protobuf>=5,<8
 PyYAML>=6.0.3,<7
 referencing>=0.37,<1

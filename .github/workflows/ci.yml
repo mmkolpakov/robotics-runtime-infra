@@ -131,8 +131,13 @@ jobs:
           bats-version: "1.14.0"
       - name: Check the pinned foundation workspace
         run: bash scripts/ci/foundation/import-sources.sh
-      - name: Test foundation pin generation
-        run: python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
+      - name: Test foundation pin generation and complete package origins
+        run: |
+          uv venv --python 3.12 artifacts/foundation-build-venv
+          uv pip install --python artifacts/foundation-build-venv/bin/python \
+            --require-hashes --no-deps -r docker/python/foundation-build.lock
+          ROBOTICS_FOUNDATION_BUILD_PYTHON="${PWD}/artifacts/foundation-build-venv/bin/python" \
+            python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
       - name: Install the pinned foundation CLIs for producer tests
         run: |
           uv sync --project dependencies/robotics-runtime --locked \

@@ -41,6 +41,9 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 # The named context is pinned by both Git ref and checksum in Docker Bake.
 # hadolint ignore=DL3022
 COPY --from=foundation-source / /src/foundation/
+# The contracts package keeps its complete independent release origin.
+# hadolint ignore=DL3022
+COPY --from=contracts-source / /src/contracts/
 COPY docker/python/foundation-build.lock /tmp/foundation-build.lock
 COPY config/foundation-lock.json /tmp/foundation-lock.json
 COPY scripts/ci/foundation/build-workspace-wheels.py /tmp/build-workspace-wheels.py
@@ -48,7 +51,8 @@ RUN uv venv --no-cache --python /usr/bin/python3 /opt/build \
     && uv pip install --python /opt/build/bin/python --require-hashes --no-deps \
       --requirement /tmp/foundation-build.lock \
     && python3 /tmp/build-workspace-wheels.py \
-      --source /src/foundation --metadata /tmp/foundation-lock.json \
+      --source /src/foundation --contracts-source /src/contracts \
+      --metadata /tmp/foundation-lock.json \
       --python /opt/build/bin/python --output /out
 
 FROM ca-bootstrap AS foundation-contracts

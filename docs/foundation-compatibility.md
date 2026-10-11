@@ -1,20 +1,24 @@
 # Foundation Compatibility Lock
 
-Generated from the single workspace revision in `foundation.repos`.
+Generated from the common workspace pin in `foundation.repos` and each package release tag.
 
-| Component | Version | Workspace commit |
+| Component | Version | Build input commit |
 | --- | --- | --- |
-| `robotics-runtime-contracts` | `0.19.0` | `efeac712ea512b19523ce41be40752f703fa782b` |
-| `robotics-acceptance-harness` | `0.20.0` | `efeac712ea512b19523ce41be40752f703fa782b` |
+| `robotics-runtime-contracts` | `0.21.1` | `a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa` |
+| `robotics-acceptance-harness` | `0.22.1` | `c50215ee23e0e57ada671205ae70df7496c71855` |
 
-The pin is bound to the source tags `harness-v0.20.0` and `contracts-v0.19.0`.
-The pinned commit matches the harness tag, and its contracts source
-tree is identical to the contracts tag.
-This proves source identity, not completed package publication.
-Verify publication separately before release adoption.
-The images use a source-built package cohort from these immutable source trees.
-Package source trees and project metadata are bound by this compatibility lock.
-Whole wheel archive digests identify this source-built cohort.
+The pin is bound to the source tags `harness-v0.22.1` and `contracts-v0.21.1`.
+Each complete build input is bound to its own tag and commit.
+The common workspace's contracts `src` tree and `pyproject.toml`
+match the contracts tag; its documentation is not used to build contracts.
+Tag/source binding is separate from publication and image admission.
+The images build each package from its complete immutable Git context.
+The named Git context ref and checksum bind every supplied input byte.
+The build helper checks lock/project metadata; its uv.lock hash alone
+does not authenticate an arbitrary supplied source directory.
+Generated whole-wheel hashes identify each candidate build output.
+Compare them with authenticated published assets when asserting
+release-wheel equality.
 Build dependencies remain locked.
 CI checks the imported revision, workspace lock and installed image versions.
 Stable release adoption remains gated on completed publication and foundation qualification.

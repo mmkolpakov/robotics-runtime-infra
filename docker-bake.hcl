@@ -40,7 +40,10 @@ variable "ROSDISTRO_INDEX_REVISION" {
 
 # FOUNDATION_GENERATED_START
 variable "FOUNDATION_SOURCE" {
-  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=efeac712ea512b19523ce41be40752f703fa782b&checksum=efeac712ea512b19523ce41be40752f703fa782b"
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=c50215ee23e0e57ada671205ae70df7496c71855&checksum=c50215ee23e0e57ada671205ae70df7496c71855"
+}
+variable "CONTRACTS_SOURCE" {
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa&checksum=a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa"
 }
 # FOUNDATION_GENERATED_END
 
@@ -176,6 +179,7 @@ target "_common" {
   dockerfile = "Dockerfile"
   contexts = {
     "foundation-source" = FOUNDATION_SOURCE
+    "contracts-source"  = CONTRACTS_SOURCE
   }
   args = {
     IMAGE_CREATED = IMAGE_CREATED
