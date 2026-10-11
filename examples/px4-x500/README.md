@@ -6,7 +6,7 @@ then an observation and evidence index from retained decoded SDK records. The
 separate `px4-x500-evaluator` method reads each registered payload once through
 `VerifiedEvidence.read_local`; the public acceptance CLI writes JSON and JUnit.
 
-The Python document path uses published contracts 0.21.1/harness 0.22.1.
+The Python document path uses published contracts 0.21.1/harness 0.22.2.
 [input-pins.json](input-pins.json) records their exact release tags, source revisions,
 wheel sizes and SHA-256 values. [requirements.lock](requirements.lock) fixes those
 wheels and their dependency closure. A storage directory does not replace the
@@ -49,7 +49,7 @@ wheel against an operator policy outside the evidence archive. A receipt or
 verification JSON cannot establish publisher authentication.
 
 Use the SDK's
-[operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.1/packages/harness/docs/evaluator-trust.md)
+[operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.2/packages/harness/docs/evaluator-trust.md)
 with an approved publisher/key, exact wheel and verifier identities, and limits.
 The explicit Cosign key-only mode can support a private publisher without sending
 its code to GitHub. It proves the pinned key's signature and subject/predicate;
