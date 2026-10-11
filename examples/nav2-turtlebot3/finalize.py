@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from robotics_acceptance_harness.evaluator_trust import read_once
-from robotics_runtime_contracts import loads_mapping, validate_document
+from robotics_runtime_contracts import dumps_canonical, loads_mapping, validate_document
 from robotics_runtime_contracts.writers import (
     add_evidence_artifact,
     create_evidence_index,
@@ -169,6 +169,14 @@ def complete(prepared: Path, capture: Path) -> dict:
     for field in ("measurement_window", "native_model"):
         if field in facts:
             observation[field] = facts[field]
+    validate_document(observation)
+    final_sizes = [artifact["size_bytes"] for artifact in draft["index"]["artifacts"]]
+    final_sizes.append(len(dumps_canonical(observation)))
+    if (
+        any(size > policy["max_artifact_size_bytes"] for size in final_sizes)
+        or sum(final_sizes) > policy["max_archive_size_bytes"]
+    ):
+        raise ValueError("completed index exceeds its admitted evidence byte budget")
     write_document(observation, output)
     draft = add_evidence_artifact(
         draft,

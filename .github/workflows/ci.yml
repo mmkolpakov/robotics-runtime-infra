@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: mmkolpakov/robotics-runtime
-          ref: c39739684300b329192dd424ba623bbef7a396ca
+          ref: 00735515f71e53bbea9f8761f76db81dcea73299
           path: .sdk-source
           persist-credentials: false
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
@@ -76,9 +76,6 @@ jobs:
           uv pip install --python .venv/bin/python --require-hashes --find-links=sdk-wheels -r requirements.lock
           .venv/bin/python -I -m ensurepip --upgrade
           uv build --wheel --out-dir dist evaluator
-          .venv/bin/python -I -m pip install --no-index --no-deps \
-            dist/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl
-          .venv/bin/python -I -m pip check
       - name: Extract the pinned vendor Cosign executable
         run: |
           mkdir -p results
@@ -97,12 +94,21 @@ jobs:
               "version": "v3.1.3+dirty",
           }))
           PY
+      - name: Authenticate the wheel before installation or consumer imports
+        run: |
+          ROBOTICS_COSIGN_PROFILE="$PWD/results/cosign-profile.json" \
+            NAV2_EVALUATOR_WHEEL="$PWD/dist/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl" \
+            .venv/bin/python -I test_installed_cli.py --preinstall-output results/authenticated-installer
+          .venv/bin/python -I -m pip install --no-index --no-deps \
+            results/authenticated-installer/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl
+          .venv/bin/python -I -m pip check
       - name: Test installed document and native-boundary controls without simulation
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           node --test native-identity.test.mjs native-check.test.mjs
-          ROBOTICS_COSIGN_PROFILE="$PWD/results/cosign-profile.json" \
+          NAV2_SDK_WHEELS="$PWD/sdk-wheels" \
+            ROBOTICS_COSIGN_PROFILE="$PWD/results/cosign-profile.json" \
             NAV2_EVALUATOR_WHEEL="$PWD/dist/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl" \
             .venv/bin/python -I -m unittest discover -s . -p 'test_*.py'
       - name: Test portable X500 consumer interfaces without simulation
