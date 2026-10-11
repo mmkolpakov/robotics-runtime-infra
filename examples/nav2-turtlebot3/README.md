@@ -1,29 +1,36 @@
 # Nav2 TurtleBot3 consumer
 
-This source consumer separates immutable inputs, completed native observations, and offline
+This consumer separates immutable inputs, completed native observations, and offline
 assessment. The evaluator 0.3.0 uses public contracts v2, the verified evidence reader, and the
-external evaluator admission profile. Its minimum SDK versions are contracts 0.21.0 and
-acceptance harness 0.22.0. These are release targets; the source test cohort is the exact runtime
-revision and wheel SHA-256 values in [inputs.lock.json](inputs.lock.json), installed through
-[requirements.lock](requirements.lock). This source lock does not claim a published package or
-an admitted native composition.
+external evaluator admission profile. It uses published contracts 0.21.1 and acceptance harness
+0.22.0. The exact release tags, source revision, wheel sizes and SHA-256 values are in
+[inputs.lock.json](inputs.lock.json); [requirements.lock](requirements.lock) fixes the SDK and
+dependency closure. Native execution additionally requires an admitted composition.
 
 The retained native client code uses stock Nav2 Commander, ROS actions/services, rosbag2,
 and Gazebo APIs. It does not supply a robot controller or a new transport abstraction.
 `native-check.mjs` and the worker bootstrap refuse launch until a matching v2 SDK/image
 composition has actual execution admission. The document recipe below does not start a world.
 
-## Install the source test cohort
+## Install the published SDK cohort
 
-Build contracts and harness wheels from the exact runtime Git revision in `inputs.lock.json`.
-Their filenames and SHA-256 values must match that file before installation. Use Python 3.12
-and the ordinary pip installer for the evaluator:
+Use Python 3.12 and a POSIX shell. Download the exact wheels and locked dependencies with stock
+pip, check their bytes against the committed policy, then install from that wheelhouse:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install --require-hashes --find-links sdk-wheels -r requirements.lock
+.venv/bin/python -I -m pip download --index-url https://pypi.org/simple \
+  --require-hashes --only-binary=:all: --no-deps --dest sdk-wheels -r requirements.lock
+python3 check-sdk-wheels.py sdk-wheels
+.venv/bin/python -I -m pip install --no-index --find-links=sdk-wheels \
+  --require-hashes --only-binary=:all: -r requirements.lock
+.venv/bin/python -I -m pip check
 uv build --wheel --out-dir dist evaluator
 ```
+
+The policy check opens regular files without following symlinks, reads at most the committed
+size plus one byte, and verifies size, SHA-256 and unchanged file identity before SDK imports.
+A caller-supplied wheelhouse or lock cannot replace the policy bundled with this consumer.
 
 The self-contained purelib admission profile supports pip's documented installation transforms.
 An installer adding other distribution metadata, such as `uv_cache.json`, is outside that profile.
@@ -32,7 +39,7 @@ Use an explicit cohort wheel directory; a version number alone cannot substitute
 ## Admit the evaluator
 
 Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The
-[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/main/packages/harness/docs/evaluator-trust.md)
+[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.0/packages/harness/docs/evaluator-trust.md)
 defines those policies, wheel guards, and process boundaries. The operator profile and its
 approved verifier/key/root pins belong outside the evidence archive.
 
