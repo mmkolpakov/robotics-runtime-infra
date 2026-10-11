@@ -1,3 +1,4 @@
 *
 !Dockerfile
-!producer-requirements.lock
+!sdk-cohort/
+!sdk-cohort/**

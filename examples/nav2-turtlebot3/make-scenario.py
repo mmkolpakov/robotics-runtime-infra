@@ -1,196 +1,156 @@
-"""Write the consumer requirements through the published contracts API."""
+"""Write native Nav2 v2 inputs before execution through public document APIs."""
+
+from __future__ import annotations
 
 import argparse
-import hashlib
+import json
+from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 
-from robotics_runtime_contracts import load_mapping
-from robotics_runtime_contracts.writers import write_document
+from robotics_acceptance_harness.evaluator_trust import read_once
+from robotics_acceptance_harness.run_context import create_run_context
+from robotics_runtime_contracts import dumps_canonical, loads_mapping
+from robotics_runtime_contracts.writers import write_bytes_atomically, write_document
 
 NAMESPACE = "org.example.nav2-turtlebot3"
-SCHEMA_URI = "urn:nav2-turtlebot3:scenario:v1"
 
 
-def create(
-    case: str,
-    receipt_path: Path,
-    middleware_path: Path,
-    schema_path: Path,
-    output: Path,
-) -> None:
-    receipt = load_mapping(receipt_path)
-    schema = schema_path.read_bytes()
-    graph = {
-        "topics": [
-            {
-                "name": name,
-                "type": message_type,
-                "min_publishers": 1,
-                "min_subscribers": 1,
-                "first_message_timeout_sec": 10,
-                "qos_profile": "transient_local"
-                if name == "/amcl_pose"
-                else "system_default",
-            }
-            for name, message_type in (
-                ("/odom", "nav_msgs/msg/Odometry"),
-                ("/clock", "rosgraph_msgs/msg/Clock"),
-                ("/tf", "tf2_msgs/msg/TFMessage"),
-                ("/amcl_pose", "geometry_msgs/msg/PoseWithCovarianceStamped"),
-            )
-        ],
-        "services": [
-            {
-                "name": "/request_nomotion_update",
-                "type": "std_srvs/srv/Empty",
-                "server_required": True,
-            }
-        ],
-        "actions": [
-            {
-                "name": "/navigate_to_pose",
-                "type": "nav2_msgs/action/NavigateToPose",
-                "server_required": True,
-            }
-        ],
-        "lifecycle_nodes": [
-            {
-                "name": name,
-                "required_state": "active",
-                "timeout_sec": 10,
-                "stable_for_sec": 0.1,
-            }
-            for name in ("/amcl", "/bt_navigator")
-        ],
+def reference(path: Path, media_type: str = "application/json") -> dict:
+    raw = path.read_bytes()
+    return {
+        "uri": path.resolve().as_uri(),
+        "sha256": sha256(raw).hexdigest(),
+        "size_bytes": len(raw),
+        "media_type": media_type,
     }
+
+
+def prepare(
+    profile_path: Path,
+    requirements_path: Path,
+    output: Path,
+    *,
+    run_id: str | None = None,
+) -> dict:
+    """Consume the exact admitted native profile; never start a robot or simulator."""
+    profile_raw = read_once(profile_path, 1024 * 1024)
+    profile = loads_mapping(profile_raw, source_name=str(profile_path))
+    requirements = loads_mapping(
+        read_once(requirements_path, 1024 * 1024), source_name=str(requirements_path)
+    )
+    if profile["profile_id"] != NAMESPACE:
+        raise ValueError("the native profile must be the selected Nav2 consumer")
+    if set(requirements) != {"evaluator_requirement", "configuration", "case"}:
+        raise ValueError("closed Nav2 pre-execution requirements are required")
+    if requirements["case"] not in {"success", "cancel", "timeout", "server-failure"}:
+        raise ValueError("unknown Nav2 native case")
+    if requirements["configuration"].get("case") != requirements["case"]:
+        raise ValueError("Nav2 configuration differs from the selected native case")
+    if set(profile.get("executor", {})) != {"implementation", "version"}:
+        raise ValueError(
+            "exact admitted native executor implementation/version required"
+        )
+    if "clock" not in profile:
+        raise ValueError("the Nav2 profile requires its actual declared clock")
+    # The profile supplies native IDL/backend/encoding/recorder/executor/clock
+    # declarations from its composition, not invented defaults.
+    output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    configuration = output / "nav2-configuration.json"
+    schema_path = Path(__file__).with_name("nav2.schema.json")
+    write_bytes_atomically(
+        dumps_canonical(requirements["configuration"]), configuration
+    )
+    selected_profile = dict(profile)
+    selected_profile["executor"] = {
+        **profile["executor"],
+        "configuration": reference(configuration),
+    }
+    profile_snapshot = output / "native-profile.json"
+    write_bytes_atomically(profile_raw, profile_snapshot)
     scenario = {
-        "schema_version": "acceptance-scenario.v1",
-        "scenario_id": "nav2-turtlebot3-" + case,
+        "schema_version": "acceptance-scenario.v2",
+        "scenario_id": "nav2-turtlebot3-" + requirements["case"],
         "execution": {
             "target_environment": "simulation",
-            "hardware_scope": [],
-            "physical_effect": "none",
-            "test_intent": "functional",
-            "data_source": "simulator",
-            "plant_backend": "simulated_physics",
+            "data_source": "native-ros-nav2",
+            "plant_backend": "Gazebo-Harmonic",
             "time_mode": "simulation_realtime",
-            "data_plane_profile": "standard_isolated",
-            "security_profile": "none",
         },
-        "authorization": {"mode": "none"},
-        "forbidden_ros_graph": {"topics": [], "services": [], "actions": []},
-        "seed": 0,
-        "timeouts": {
-            "startup_sec": 180,
-            "graph_ready_sec": 10,
-            "stable_for_sec": 0.1,
-            "execution_sec": 120,
-            "shutdown_sec": 30,
-        },
-        "expected_ros_graph": graph,
-        "provider_requirements": {
-            "capabilities": ["ros-topic-capture", "owned-native-cleanup"]
-        },
-        "evaluator_requirements": [
-            {
-                "namespace": NAMESPACE,
-                "entry_point": "nav2_turtlebot3_evaluator:evaluate",
-                "distribution": "nav2-turtlebot3-evaluator",
-                "version": "0.2.1",
-                "artifact_sha256": receipt["artifact"]["sha256"],
-                "receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
-            }
-        ],
+        "profile": selected_profile,
         "metric_definitions": [],
         "assertions": [],
-        # Fixed public consumer baseline; never adjusted to make an observed run pass.
-        "time_policy": {
-            "min_realtime_factor": 0.8,
-            "max_deadline_miss_ratio": 0.01,
-            "time_authority_min_samples": 30,
-            "max_time_authority_delivery_latency_p50_ms": 2,
-            "max_time_authority_delivery_latency_p95_ms": 5,
-            "max_time_authority_delivery_latency_ms": 250,
-        },
-        "data_plane_policy": {
-            "max_message_age_ms": 100,
-            "max_loss_ratio": 0,
-            "shm_transport": False,
-            "data_sharing": False,
-            "private_ipc": True,
-            "middleware_configuration_sha256": hashlib.sha256(
-                middleware_path.read_bytes()
-            ).hexdigest(),
-        },
+        "evaluator_requirements": [requirements["evaluator_requirement"]],
         "evidence_policy": {
-            "topics": [
-                "/odom",
-                "/tf",
-                "/tf_static",
-                "/clock",
-                "/amcl_pose",
-                "/navigate_to_pose/_action/feedback",
-                "/navigate_to_pose/_action/status",
-            ],
-            "recording_mode": "bounded",
-            "compression": "zstd",
-            "max_segment_size_bytes": 64 * 1024**2,
-            "max_segment_duration_sec": 180,
-            "max_spool_size_bytes": 64 * 1024**2,
-            "spool_high_watermark_ratio": 1,
+            "max_artifact_size_bytes": 64 * 1024**2,
+            "max_archive_size_bytes": 128 * 1024**2,
             "max_upload_lag_sec": 0,
             "upload_mode": "local_only",
             "retention_class": "test-evidence",
             "remote_sink_allowed": False,
         },
-        "extension_schemas": [
-            {
-                "namespace": NAMESPACE,
-                "schema_uri": SCHEMA_URI,
-                "sha256": hashlib.sha256(schema).hexdigest(),
-            }
-        ],
-        "extensions": {
-            NAMESPACE: {
-                "case": case,
-                "goal": {"x": 1.0, "y": -0.5},
-                "action_budget_sec": 120.0,
-                "application_timeout_sec": 2.0,
-                "max_final_pose_error_m": 0.35,
-                "min_displacement_m": 0.5,
-                "max_observation_age_sec": 2.0,
-                "odometry_frame": "odom",
-                "required_tf_edges": [
-                    ["map", "odom"],
-                    ["odom", "base_footprint"],
-                    ["base_footprint", "base_link"],
-                ],
-            }
-        },
     }
-    if output.exists():
-        raise FileExistsError("scenario output must be new")
-    write_document(scenario, output, extension_schemas={SCHEMA_URI: schema})
+    schema_raw = read_once(schema_path, 1024 * 1024)
+    schema_snapshot = output / "nav2.schema.json"
+    write_bytes_atomically(schema_raw, schema_snapshot)
+    schema_uri = "urn:nav2-turtlebot3:scenario:v1"
+    scenario["extension_schemas"] = [
+        {
+            "namespace": NAMESPACE,
+            "schema_uri": schema_uri,
+            "sha256": sha256(schema_raw).hexdigest(),
+        }
+    ]
+    scenario["extensions"] = {NAMESPACE: requirements["configuration"]}
+    scenario_path, runtime_path = output / "scenario.json", output / "runtime.json"
+    write_document(scenario, scenario_path, extension_schemas={schema_uri: schema_raw})
+    runtime = {
+        "schema_version": "runtime-manifest.v2",
+        "runtime_id": "nav2-turtlebot3-native",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "scenario_sha256": reference(scenario_path)["sha256"],
+        "execution": scenario["execution"],
+        "profile": selected_profile,
+        "evaluator_bindings": scenario["evaluator_requirements"],
+    }
+    write_document(runtime, runtime_path)
+    context_path = output / "run.json"
+    issued = create_run_context(
+        scenario_path,
+        context_path,
+        domains={"nav2": "simulation"},
+        time_authority=selected_profile["clock"]["kind"],
+        time_source=selected_profile["clock"]["source_id"],
+        run_id=run_id,
+        extension_schemas={schema_uri: schema_raw},
+    )
+    manifest = {
+        "run_id": issued,
+        "domain_id": "nav2",
+        "scenario": reference(scenario_path),
+        "runtime": reference(runtime_path),
+        "run_context": reference(context_path),
+        "configuration": reference(configuration),
+        "native_profile": reference(profile_snapshot),
+        "extension_schema": reference(schema_snapshot),
+    }
+    write_bytes_atomically(
+        dumps_canonical(manifest), output / "pre-execution-inputs.json"
+    )
+    return manifest
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--case",
-        choices=["success", "cancel", "timeout", "server-failure"],
-        required=True,
-    )
-    parser.add_argument("--evaluator-receipt", type=Path, required=True)
-    parser.add_argument("--middleware-profile", type=Path, required=True)
-    parser.add_argument("--schema", type=Path, required=True)
+    parser.add_argument("--profile", type=Path, required=True)
+    parser.add_argument("--requirements", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--run-id")
     args = parser.parse_args()
-    create(
-        args.case,
-        args.evaluator_receipt,
-        args.middleware_profile,
-        args.schema,
-        args.output,
+    print(
+        json.dumps(
+            prepare(args.profile, args.requirements, args.output, run_id=args.run_id)
+        )
     )
 
 
