@@ -319,7 +319,7 @@ class NativeDocumentControls(unittest.TestCase):
     def test_storage_location_cannot_override_committed_sdk_wheel_policy(self):
         wheel_root = os.environ.get("NAV2_SDK_WHEELS")
         if not wheel_root:
-            self.skipTest("exact source SDK wheel storage required")
+            self.skipTest("exact published SDK wheel storage required")
         storage = self.root / "caller-storage"
         storage.mkdir()
         check_sdk = module("check-sdk-wheels")
