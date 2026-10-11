@@ -15,6 +15,11 @@ import subprocess
 import time
 from pathlib import Path
 
+if __name__ == "__main__":
+    raise SystemExit(
+        "native launch requires an admitted v2 SDK/image composition; the document profile does not authorize a worker"
+    )
+
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
@@ -907,7 +912,3 @@ def main() -> int:
                 report,
             )
     return 0 if report["expected_case_observed"] else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
