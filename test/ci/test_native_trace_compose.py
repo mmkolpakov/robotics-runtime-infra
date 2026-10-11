@@ -246,8 +246,12 @@ class NativeTraceComposeTests(unittest.TestCase):
             directory = Path(temporary)
             # Test-owned paths avoid touching the host's fixed diagnostic directories.
             source = (ROOT / "scripts/ci/diagnostics/ros-native-trace.sh").read_text()
-            source = source.replace("/tmp/robotics-lttng", str(directory / "lttng"))
+            source = source.replace(
+                "/tmp/robotics-native-lttng", str(directory / "lttng")
+            )
             source = source.replace("/tmp/robotics-native-ust", str(directory / "ust"))
+            for original in ("/tmp/robotics-native-lttng", "/tmp/robotics-native-ust"):
+                self.assertNotIn(original, source)
             wrapper = directory / "wrapper.sh"
             wrapper.write_text(source)
             binary = directory / "bin"
@@ -257,8 +261,10 @@ class NativeTraceComposeTests(unittest.TestCase):
             unavailable.chmod(0o755)
             program = directory / "program"
             output = directory / "argv.txt"
+            home_output = directory / "lttng-home.txt"
             program.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$@" >"$ARGV_OUTPUT"\nexit 42\n'
+                '#!/bin/sh\nprintf "%s\\n" "$@" >"$ARGV_OUTPUT"\n'
+                'printf "%s\\n" "$LTTNG_HOME" >"$LTTNG_HOME_OUTPUT"\nexit 42\n'
             )
             program.chmod(0o755)
             arguments = ["argument with spaces", "$literal", "$$", "${NAME}", ""]
@@ -268,6 +274,7 @@ class NativeTraceComposeTests(unittest.TestCase):
                     **os.environ,
                     "PATH": str(binary) + ":" + os.environ["PATH"],
                     "ARGV_OUTPUT": str(output),
+                    "LTTNG_HOME_OUTPUT": str(home_output),
                 },
                 capture_output=True,
                 text=True,
@@ -275,6 +282,9 @@ class NativeTraceComposeTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 42)
             self.assertEqual(output.read_text().splitlines(), arguments)
+            actual_home = Path(home_output.read_text().strip())
+            self.assertEqual(actual_home, directory / "lttng")
+            self.assertTrue(actual_home.is_relative_to(directory))
             self.assertIn("diagnostic native UST setup exit: 17", result.stderr)
 
 
