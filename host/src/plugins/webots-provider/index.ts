@@ -13,6 +13,7 @@ import type {MetadataObservation} from '../../engine-metadata.js';
 export interface WebotsConfig {
   composeExecutable: string; socketPath: string; composeFiles: readonly string[]; cwd: string;
   workerImage: string; runVolume: string; outputRoot: string;
+  worldSha256: string; protoSha256: string;
   mode: 'physics-only' | 'offscreen-camera';
   deadlineMs?: number;
   /** Caller-selected retention root; storage independence must be qualified separately. */
@@ -41,6 +42,7 @@ export class WebotsNative extends Service {
     const config = this.config = Object.freeze({...requestedConfig, composeFiles: Object.freeze([...requestedConfig.composeFiles])});
     if (![config.composeExecutable, config.socketPath, ...config.composeFiles, config.cwd, config.outputRoot, ...(config.artifactDirectory ? [config.artifactDirectory] : [])].every(isAbsolute)) throw new Error('native provider paths must be absolute');
     if (!/@sha256:[a-f0-9]{64}$/.test(config.workerImage)) throw new Error('immutable worker image digest is required');
+    if (![config.worldSha256, config.protoSha256].every(hash => /^[a-f0-9]{64}$/.test(hash))) throw new Error('reviewed native world and PROTO hashes are required');
     if (!['physics-only', 'offscreen-camera'].includes(config.mode)) throw new Error('unsupported native Webots mode');
     this.ownerId = ctx.runResources.ownerId;
     const scope = createHash('sha256').update(this.ownerId + randomUUID()).digest('hex').slice(0,24);
@@ -53,7 +55,8 @@ export class WebotsNative extends Service {
       executable: config.composeExecutable, socketPath: config.socketPath, projectName: this.project,
       files: config.composeFiles, cwd: config.cwd, timeoutMs: this.deadline, maxBufferBytes: 1048576,
       env: {ROBOTICS_WEBOTS_IMAGE: config.workerImage, ROBOTICS_RUN_VOLUME: config.runVolume,
-        ROBOTICS_RUN_ID: this.ownerId, ROBOTICS_WEBOTS_SCOPE: scope, ROBOTICS_WEBOTS_MODE: config.mode},
+        ROBOTICS_RUN_ID: this.ownerId, ROBOTICS_WEBOTS_SCOPE: scope, ROBOTICS_WEBOTS_MODE: config.mode,
+        ROBOTICS_WEBOTS_WORLD_SHA256: config.worldSha256, ROBOTICS_WEBOTS_PROTO_SHA256: config.protoSha256},
     };
     this.compose = new ComposeExecution(ctx.jobs, options);
     ctx.runResources.track({id: this.project, ownerId: this.ownerId,
@@ -73,10 +76,10 @@ export class WebotsNative extends Service {
         if (!this.engine) return {released: false, evidenceRefs: [], diagnostic: 'native Engine readiness was not observed'};
         const observed = await this.engine.projectOwnership({runId: this.ownerId, projectName: this.project}, {deadlineMs: Math.min(this.deadline, 120000), cancelSignal: signal});
         const volumes = record(observed.inventory.volumes).Volumes;
-        const released = observed.status === 'complete' && observed.inventory.containers.length === 0 && observed.inventory.networks.length === 0 && (!Array.isArray(volumes) || volumes.length === 0);
+        const released = observed.status === 'complete' && Array.isArray(observed.inventory.containers) && observed.inventory.containers.length === 0 && Array.isArray(observed.inventory.networks) && observed.inventory.networks.length === 0 && (volumes === null || (Array.isArray(volumes) && volumes.length === 0));
         await mkdir(this.retainedOutput, {recursive: true});
         const path = join(this.retainedOutput, 'engine-cleanup.json');
-        await writeFile(path, JSON.stringify({owner_id: this.ownerId, project: this.project, released,
+        await writeFile(path, JSON.stringify({owner_id: this.ownerId, project: this.project, observed_at: new Date().toISOString(), released,
           observation: observed, retained_host_volume: this.config.runVolume}));
         const before = join(this.retainedOutput, 'engine-cleanup-before.json');
         const refs = [await reference(path)];
@@ -126,7 +129,7 @@ export class WebotsNative extends Service {
     return {ready: true, evidenceRefs: await Promise.all(['ready.json', 'worker-identity.json', 'engine-readiness.json'].map(name => this.retain(name)))};
   }
   private async retain(name: string): Promise<ArtifactRef> {
-    const source = join(this.output, name), target = join(this.retainedOutput, name);
+    const source = join(this.output, name), target = join(this.retainedOutput, name.split("/").at(-1)!);
     await mkdir(this.retainedOutput, {recursive: true});
     if (target !== source) {
       const before = await reference(source);
@@ -155,7 +158,7 @@ export class WebotsNative extends Service {
     const result = await this.waitFile('worker-result.json', signal);
     if (result.evidence_exported_before_stop !== true) throw new Error('native payload export is not confirmed');
 
-    const names = ['worker-result.json', 'controller-result.json', 'measurement.json', 'last-native-state.json', 'ready.json', 'worker-identity.json', 'oci-init.json', 'engine-readiness.json', 'renderer.txt', 'packages.tsv', 'binaries.sha256', 'controller.log', 'webots.log', 'xvfb.log'];
+    const names = ['inputs/native.wbt', 'inputs/NativeProbe.proto', 'inputs/upstream.json', 'loaded-scene.wrl', 'worker-result.json', 'controller-result.json', 'measurement.json', 'last-native-state.json', 'ready.json', 'worker-identity.json', 'oci-init.json', 'engine-readiness.json', 'renderer.txt', 'packages.tsv', 'binaries.sha256', 'controller.log', 'webots.log', 'xvfb.log'];
     try {await stat(join(this.output, 'pre-reset.json')); names.push('pre-reset.json');} catch (error) {if (record(error).code !== 'ENOENT') throw error;}
     if (this.config.mode === 'offscreen-camera') names.push('camera.bgra', 'camera.png');
     return Promise.all(names.map(name => this.retain(name)));

@@ -6,10 +6,11 @@ import argparse
 import math
 import signal
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from common import reference, write_json
+from common import reference, write_json, write_bytes, model_inputs
 
 stopping = False
 
@@ -24,6 +25,8 @@ def arguments() -> argparse.Namespace:
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--owner-id", required=True)
     p.add_argument("--world", type=Path, required=True)
+    p.add_argument("--expected-world-sha256", required=True)
+    p.add_argument("--expected-proto-sha256", required=True)
     p.add_argument(
         "--mode", choices=("physics-only", "offscreen-camera"), required=True
     )
@@ -41,6 +44,11 @@ def main() -> int:
         raise ValueError("finite controller limits are invalid")
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, stop)
+    inputs = model_inputs(
+        Path(__file__).resolve().parent,
+        args.expected_world_sha256,
+        args.expected_proto_sha256,
+    )
     from controller import Supervisor
 
     robot = Supervisor()
@@ -53,6 +61,9 @@ def main() -> int:
         "owner_id": args.owner_id,
         "status": "error",
         "samples": [],
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "model_inputs": inputs,
+        "asset_manifest_ref": reference(Path(__file__).with_name("upstream.json")),
         "time": {
             "authority": "Webots Supervisor.getTime",
             "native_unit": "seconds",
@@ -78,6 +89,7 @@ def main() -> int:
             )
         if Path(robot.getWorldPath()).resolve() != args.world.resolve():
             raise ValueError("observed native world path differs")
+        report["observed_world_path"] = robot.getWorldPath()
         if (
             robot.getName() != "rr-native-probe"
             or robot.getModel() != "robotics-runtime-webots-native-v1"
@@ -106,6 +118,11 @@ def main() -> int:
             camera.enable(args.step_ms)
         else:
             camera.disable()
+        scene = robot.getRoot().exportString().encode("utf-8")
+        if not scene or len(scene) > 1024 * 1024:
+            raise ValueError("native scene export is absent or exceeds its bound")
+        write_bytes(args.output / "loaded-scene.wrl", scene)
+        report["loaded_scene_ref"] = reference(args.output / "loaded-scene.wrl")
         initial = {
             "time_seconds": robot.getTime(),
             "body_position_m": body.getPosition(),
@@ -139,6 +156,7 @@ def main() -> int:
             if time.monotonic() >= deadline:
                 raise TimeoutError("measurement admission deadline exceeded")
             time.sleep(0.01)
+        report["measurement_started_at"] = datetime.now(timezone.utc).isoformat()
         samples: list[dict[str, object]] = []
         for _ in range(args.steps):
             if stopping or (args.output / "cancel").exists():
@@ -153,7 +171,9 @@ def main() -> int:
                     "request_ms": args.step_ms,
                     "result": result,
                     "before_seconds": before,
+                    "before_seconds_hex": before.hex(),
                     "after_seconds": after,
+                    "after_seconds_hex": after.hex(),
                     "body_position_m": body.getPosition(),
                 }
             )
@@ -193,6 +213,7 @@ def main() -> int:
         report["last_native_state_ref"] = reference(
             args.output / "last-native-state.json"
         )
+        report["measurement_finished_at"] = datetime.now(timezone.utc).isoformat()
         write_json(args.output / "measurement.json", report)
         if args.probe_reset:
             previous_time = robot.getTime()
@@ -241,6 +262,7 @@ def main() -> int:
             report["last_native_state_ref"] = reference(
                 args.output / "last-native-state.json"
             )
+        report["finished_at"] = datetime.now(timezone.utc).isoformat()
         write_json(args.output / "controller-result.json", report)
         robot.simulationQuit(status)
         robot.step(0)

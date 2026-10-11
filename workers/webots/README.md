@@ -34,7 +34,7 @@ cleanup. Reset records request, native step result and observed clock regression
 Cancellation exports observed state/diagnostics and terminates each registered controller,
 Webots and Xvfb process group, including groups whose root PID already exited. Bounded cleanup
 observes disappearance with `killpg(pgid, 0)`; direct PID exit alone is insufficient. The worker
-requires the C08 stock catatonit asset as actual PID 1 and retains its observed executable hash.
+requires the pinned stock catatonit asset as actual PID 1 and retains its observed executable hash.
 Compose requests `init: true` and Engine readiness requires observed `HostConfig.Init: true`.
 Foreign owner markers are refused. ROS, PX4, simulation_interfaces and RTSP capabilities
 are not declared.
@@ -66,3 +66,40 @@ Run `host/tools/qualify-webots.mjs` in the pinned Node environment with an insta
 asset and shared volume. It checks real worker/Compose/Engine behavior, exports evidence, then
 disposes the provider and verifies acquired resource cleanup. This is a source CPU/Mesa fixture
 qualification, separate from released consumer or hardware/rendering acceptance.
+
+## Native v2 documents
+
+The physics-only source qualifier accepts an explicit Python interpreter with
+published contracts 0.21.1 and harness 0.22.1. It calls
+host/producers/webots_native.py before native readiness to issue scenario,
+runtime and run documents. After evidence export and independent Engine cleanup,
+it completes a separate captured observation and evidence index. These documents
+do not admit the image or execution composition; that is the operator's separate
+composition boundary.
+
+The supported model is exactly the reviewed native.wbt and NativeProbe.proto
+pair pinned in upstream.json. Both producer and worker verify the same sealed
+manifest and source bytes. Recomputed caller hashes cannot authorize another
+world, an extra EXTERNPROTO or a remote dependency. The host retains the input
+manifest SHA and size; issued input files are read-only. An SDK scene export is
+a separate observation, with no byte-equivalence assertion to the WBT.
+
+Execution provenance uses actual UTC observations. Supervisor.getTime remains
+binary64 seconds, with exact hexadecimal values and separate reset epochs.
+The producer does not invent nanosecond timestamps, clock offsets or delivery
+latency. Worker exit and step returns do not establish native terminal state;
+that observation remains unobserved. The first document path has no independent
+physics criterion, so the public evaluator correctly returns incomplete, with
+JSON and JUnit diagnostics.
+
+The source qualifier's final argument is the absolute published-SDK interpreter:
+
+```bash
+node host/tools/qualify-webots.mjs SOURCE SOCKET COMPOSE IMAGE VOLUME \
+  webots-physics /absolute/sdk-venv/bin/python
+```
+
+Native execution requires the separately accepted composition. Portable document
+controls exercise the public installed CLIs using explicitly synthetic captures;
+they do not qualify physics or rendering. Offscreen camera capture retains its
+separate Mesa/Xvfb scope and requires its own sensor/rendering qualification.

@@ -9,9 +9,10 @@ import shutil
 import signal
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-from common import reference, write_json
+from common import reference, write_json, model_inputs
 
 INIT_SHA256 = "43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba"
 ROOT = Path(__file__).resolve().parent
@@ -40,6 +41,7 @@ def parse() -> argparse.Namespace:
     p.add_argument("--auto-start", action="store_true")
     p.add_argument("--probe-reset", action="store_true")
     p.add_argument("--expected-world-sha256")
+    p.add_argument("--expected-proto-sha256")
     return p.parse_args()
 
 
@@ -95,6 +97,7 @@ def main() -> int:
         or not 0 < args.deadline_seconds <= 300
     ):
         raise ValueError("finite worker parameters are invalid")
+    model_inputs(ROOT, args.expected_world_sha256, args.expected_proto_sha256)
     if args.output.exists() and list(args.output.iterdir()):
         raise ValueError("worker output must be new and single-writer")
     args.output.mkdir(parents=True, exist_ok=True)
@@ -124,9 +127,6 @@ def main() -> int:
         shutil.copyfile(ROOT / name, destination)
         destination.chmod(0o444)
     world = ROOT / "worlds/native.wbt"
-    digest = reference(world)["sha256"]
-    if args.expected_world_sha256 and args.expected_world_sha256 != digest:
-        raise ValueError("native world bytes differ from the requested scene digest")
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, stop)
     environment = dict(os.environ)
@@ -152,6 +152,7 @@ def main() -> int:
         "display": "Xvfb :99",
         "renderer_policy": "Mesa software, LIBGL_ALWAYS_SOFTWARE=1",
         "children": [],
+        "started_at": datetime.now(timezone.utc).isoformat(),
         "evidence_exported_before_stop": False,
     }
     deadline = time.monotonic() + args.deadline_seconds
@@ -241,6 +242,10 @@ def main() -> int:
             args.owner_id,
             "--world",
             str(world),
+            "--expected-world-sha256",
+            args.expected_world_sha256,
+            "--expected-proto-sha256",
+            args.expected_proto_sha256,
             "--mode",
             args.mode,
             "--steps",
@@ -317,6 +322,7 @@ def main() -> int:
         result["log_refs"] = [
             reference(args.output / (name + ".log")) for name, _ in processes
         ]
+        result["finished_at"] = datetime.now(timezone.utc).isoformat()
         write_json(args.output / "worker-result.json", result)
     return code if result["status"] == "completed" else 1
 
