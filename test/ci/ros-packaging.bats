@@ -200,6 +200,7 @@ prepare_playback_transport() {
   export PLAYBACK_TRACE="${BATS_TEST_TMPDIR}/docker-trace"
   export PLAYBACK_LARGE_DOMAIN=87 PLAYBACK_NEGATIVE_DATA=0 PLAYBACK_LOG_FAILURE_DOMAIN=none
   export PLAYBACK_WRONG_IMAGE=0 PLAYBACK_PLAYER_EXIT=0 PLAYBACK_WAIT_FAILURE=0 PLAYBACK_PLAYER_OOM=false PLAYBACK_PLAYER_RESTARTS=0
+  export PLAYBACK_ENGINE_CASE=docker
   export ROBOTICS_FOUNDATION_LOCK="${REPO_ROOT}/config/foundation-lock.json" ROS_DISTRO=jazzy
   export GITHUB_SHA
   GITHUB_SHA="$(printf '%040d' 2)"
@@ -222,6 +223,25 @@ container_role() {
   exit 64
 }
 case "$1" in
+  version)
+    case "${PLAYBACK_ENGINE_CASE}" in
+      docker) printf '%s\n' '{"Components":[{"Name":"Engine","Version":"25.0.0"}]}' ;;
+      podman|podman-rootful) printf '%s\n' '{"Version":"4.9.3","ApiVersion":"1.41","Components":[{"Name":"Podman Engine","Version":"4.9.3","Details":{"APIVersion":"4.9.3"}},{"Name":"Engine","Version":"4.9.3","Details":{"ApiVersion":"1.41"}}]}' ;;
+      podman-unsupported) printf '%s\n' '{"Components":[{"Name":"Podman Engine","Version":"5.0.0","Details":{"APIVersion":"5.0.0"}}]}' ;;
+      ambiguous) printf '%s\n' '{"Components":[{"Name":"Engine","Version":"25.0.0"},{"Name":"Podman Engine","Details":{"APIVersion":"4.9.3"}}]}' ;;
+      wrong) printf '%s\n' '{"Components":[{"Name":"unknown","Version":"25.0.0"}]}' ;;
+      malformed) printf '%s\n' '{"Components":null}' ;;
+      refused) exit 42 ;;
+      *) exit 64 ;;
+    esac
+    ;;
+  info)
+    if [[ "${PLAYBACK_ENGINE_CASE}" == podman-rootful ]]; then
+      printf '%s\n' '["name=seccomp"]'
+    else
+      printf '%s\n' '["name=rootless","name=seccomp"]'
+    fi
+    ;;
   image)
     image_id="sha256:$(printf '%064d' 4)"
     [[ "${*: -1}" != *edge* ]] || image_id="sha256:$(printf '%064d' 5)"
@@ -502,4 +522,49 @@ PY
   [ "$status" -eq 64 ]
   [[ "$output" == *"requires a release lock"* ]]
   [ ! -s "$PLAYBACK_TRACE" ]
+}
+
+@test "MCAP playback keeps the Docker manifest namespace unchanged" {
+  prepare_playback_transport
+  run bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 0 ]
+  local ready
+  ready="$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -maxdepth 1 -name 'ready.*' -type d)"
+  run jq -e '.services["runtime-manifest"] | has("userns_mode") | not' "$ready/compose.json"
+  [ "$status" -eq 0 ]
+  ! grep -q 'compose.playback.podman.yaml' "$PLAYBACK_TRACE"
+}
+
+@test "MCAP playback selects keep-id only for an observed qualified rootless Podman Engine" {
+  prepare_playback_transport
+  run env PLAYBACK_ENGINE_CASE=podman bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 0 ]
+  local ready
+  ready="$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -maxdepth 1 -name 'ready.*' -type d)"
+  run jq -e '.services["runtime-manifest"].userns_mode == "keep-id" and
+    (.services.playback | has("userns_mode") | not) and
+    (.services["playback-probe"] | has("userns_mode") | not)' "$ready/compose.json"
+  [ "$status" -eq 0 ]
+  grep -q 'compose.playback.podman.yaml' "$PLAYBACK_TRACE"
+  run "$ROBOTICS_CONTRACTS_CLI" validate --quiet "$ready/runtime-manifest.json" "$ready/conformance-result.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "MCAP playback refuses unsupported wrong ambiguous or rootful engines before Compose effects" {
+  prepare_playback_transport
+  local engine
+  for engine in podman-unsupported podman-rootful ambiguous wrong malformed; do
+    : >"$PLAYBACK_TRACE"
+    run env PLAYBACK_ENGINE_CASE="$engine" bash scripts/ci/integration/verify-mcap-playback.sh
+    [ "$status" -eq 65 ]
+    ! grep -q '^compose ' "$PLAYBACK_TRACE"
+    [ -z "$(find "$ROBOTICS_PLAYBACK_ARTIFACT_ROOT" -name conformance-result.json)" ]
+  done
+}
+
+@test "MCAP playback preserves refused native metadata without fallback or Compose cleanup" {
+  prepare_playback_transport
+  run env PLAYBACK_ENGINE_CASE=refused bash scripts/ci/integration/verify-mcap-playback.sh
+  [ "$status" -eq 42 ]
+  ! grep -q '^compose ' "$PLAYBACK_TRACE"
 }
