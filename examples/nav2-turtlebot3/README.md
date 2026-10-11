@@ -1,108 +1,153 @@
 # Nav2 TurtleBot3 consumer
 
-This headless example runs the official Nav2 Jazzy TurtleBot3 Waffle simulation with Gazebo
-Harmonic, the supplied map/world/model, and AMCL. It uses the published runtime host package for
-bounded native commands, published contracts 0.20.0 and acceptance harness 0.21.0 for evaluation,
-and the upstream ROS APIs for navigation and recording.
+This source consumer separates immutable inputs, completed native observations, and offline
+assessment. The evaluator 0.3.0 uses public contracts v2, the verified evidence reader, and the
+external evaluator admission profile. Its minimum SDK versions are contracts 0.21.0 and
+acceptance harness 0.22.0. These are release targets; the source test cohort is the exact runtime
+revision and wheel SHA-256 values in [inputs.lock.json](inputs.lock.json), installed through
+[requirements.lock](requirements.lock). This source lock does not claim a published package or
+an admitted native composition.
 
-The scenario seed is consumer metadata; this recipe does not qualify Gazebo or AMCL engine-seed
-determinism.
+The retained native client code uses stock Nav2 Commander, ROS actions/services, rosbag2,
+and Gazebo APIs. It does not supply a robot controller or a new transport abstraction.
+`native-check.mjs` and the worker bootstrap refuse launch until a matching v2 SDK/image
+composition has actual execution admission. The document recipe below does not start a world.
 
-The selected ROS cohort is Nav2 1.3.13, minimal TurtleBot3 simulation 1.0.1, Gazebo Sim 8.15.0,
-rclpy 7.1.12, and rosbag2 0.26.11 on Ubuntu 24.04. Direct package pins are in inputs.lock.json and
-the Dockerfile; retained image identities and the installed package inventory identify each
-execution. These direct pins do not make future APT rebuilds byte reproducible. The ROS image uses
-producer-requirements.lock; requirements.lock adds the published MCAP reader extra for the separate
-offline processor.
+## Install the source test cohort
 
-## Run a case
+Build contracts and harness wheels from the exact runtime Git revision in `inputs.lock.json`.
+Their filenames and SHA-256 values must match that file before installation. Use Python 3.12
+and the ordinary pip installer for the evaluator:
 
-Use Node 24.21.0, npm 11.19.0, Python 3.12, uv, OpenSSL with Ed25519 support, and rootless Podman.
-Install the public Python inputs and build the consumer evaluator from this directory:
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install --require-hashes --find-links sdk-wheels -r requirements.lock
+uv build --wheel --out-dir dist evaluator
+```
 
-    npm ci
-    python3 -m venv .venv
-    .venv/bin/python -m pip install --require-hashes -r requirements.lock
-    uv build --wheel --out-dir dist evaluator
-    .venv/bin/python -m pip install --no-deps dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl
-    .venv/bin/python qualify-evaluator.py --wheel dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl --tests test_evaluator.py --native-cases evaluator/tests/fixtures --python "$PWD/.venv/bin/python" --contracts "$PWD/.venv/bin/robotics-contracts" --output results/evaluator
+The self-contained purelib admission profile supports pip's documented installation transforms.
+An installer adding other distribution metadata, such as `uv_cache.json`, is outside that profile.
+Use an explicit cohort wheel directory; a version number alone cannot substitute for its hash.
 
-The bundled observation fixtures are consumer predicate test inputs, not fresh execution receipts.
-Generate the requirements and issue a canonical run context through the public harness before
-starting the world:
+## Admit the evaluator
 
-    .venv/bin/python make-scenario.py --case success --evaluator-receipt results/evaluator/receipt.json --middleware-profile fastdds.xml --schema nav2.schema.json --output results/scenario.json
-    .venv/bin/robotics-acceptance create-run --scenario results/scenario.json --output results/run-context.json --domain nav2=simulation --time-authority sim_clock --time-source gazebo-harmonic-clock --extension-schema "urn:nav2-turtlebot3:scenario:v1=$PWD/nav2.schema.json"
-    podman build --tag nav2-turtlebot3-consumer .
-    image=$(podman image inspect --format 'sha256:{{.Id}}' nav2-turtlebot3-consumer)
-    source_revision=$(git rev-parse HEAD)
-    node native-check.mjs "$PWD/results/success" "$PWD" "$image" success "$PWD/results/run-context.json" "$PWD/results/scenario.json" "$PWD/.venv/bin/robotics-contracts"
+Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The
+[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/main/packages/harness/docs/evaluator-trust.md)
+defines those policies, wheel guards, and process boundaries. The operator profile and its
+approved verifier/key/root pins belong outside the evidence archive.
 
-After native closure, build the runtime/evidence inputs and run the published offline evaluator:
+The local publisher can sign its private wheel with stock Cosign without uploading code to
+GitHub. For the explicitly selected no-log policy, an empty signing configuration/root disables
+remote signing services:
 
-    .venv/bin/python finalize.py --capture "$PWD/results/success" --output "$PWD/results/evaluation" --qualification "$PWD/results/evaluator" --source-revision "$source_revision" --contracts "$PWD/.venv/bin/robotics-contracts" --harness "$PWD/.venv/bin/robotics-acceptance" --python "$PWD/.venv/bin/python"
+```sh
+cosign signing-config create --out offline-signing.json
+cosign trusted-root create --out offline-root.json
+cosign attest-blob --yes --key publisher.key --signing-config offline-signing.json \
+  --trusted-root offline-root.json --type urn:nav2-turtlebot3:consumer-evaluator-qualification:v1 \
+  --predicate predicate.json --bundle wheel.sigstore.json \
+  dist/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl
+```
 
-The output contains the public runtime, scoped capture/cleanup conformance, evidence index, OTLP
-derivation, acceptance-result JSON and JUnit. A nonzero acceptance exit retains the original failed,
-error or incomplete verdict; a successful action cannot override transport failure or unevaluated
-coverage. The conformance profile
-covers topic capture and owned terminal cleanup, not delivery quality, physics or full RunOwner
-behavior. Use the actual committed source revision from before the capture.
+The external operator chooses `kind="cosign_key_no_tlog"`, the exact approved executable,
+public-key/root hashes, wheel subject hash, predicate type, and `trust_mode="key_only_no_tlog"`.
+This verifies the selected key's signature and subject/predicate binding. It does not prove
+OIDC identity, transparency time, or build provenance. Private keys remain with the publisher;
+they are never copied into an evidence archive or container image.
 
-Use a new output directory for each invocation. Select cancel, timeout, or server-failure in both
-the scenario and driver, and issue a new context for each case. The driver admits the exact
-container identity and SIGINT behavior before starting it, retains the worker and recorder results,
-and verifies their absence before orderly native shutdown and removal. An unsettled producer or
-ambiguous native state retains the owned container for diagnosis; a stopped command client alone
-does not authorize cleanup.
+Authenticate and validate the complete wheel before installing it. The consumer helper captures
+the verified installer input and writes the structural receipt/evaluator requirement:
 
-The cases check:
+```sh
+.venv/bin/python qualify-evaluator.py --trust-profile /operator/nav2-trust.json \
+  --output evaluator-inputs --preinstall
+.venv/bin/python -m pip install --no-index --no-deps \
+  evaluator-inputs/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl
+.venv/bin/python -m pip check
+```
 
-- success: a real accepted NavigateToPose goal, SUCCEEDED result, odometry displacement, map-frame
-  arrival, fresh required TF edges, and a new AMCL pose after the public no-motion-update service.
-- cancel: an explicit cancel acknowledged for the same goal and a CANCELED result.
-- timeout: a two-second consumer application deadline followed by cancellation. This is not a hard
-  process timeout.
-- server-failure: controlled lifecycle shutdown and an unavailable action server. This does not
-  demonstrate a crash or deadlock.
+The preinstall phase invokes the public authentication and wheel-shape guard. Installed verification
+also uses the public installation binder and captured original entry points. Both select the exact
+Nav2 wheel. Its receipt is an audit document; the later CLI independently authenticates the
+wheel through the operator profile. JSON receipt fields cannot admit executable code.
 
-## Evidence and evaluation
+## Write inputs before execution
 
-Each run retains the original JSON observations, serialized client GetResult response, native
-process facts, and a rosbag2 MCAP recording. The recorder waits for actual subscriptions to all
-seven explicit topics, including hidden action feedback and status, and closes through the public
-Recorder API.
+Supply a native profile from the admitted composition, with exact original ROS types/type support,
+backend, wire envelope, encoding, recorder transformation, executor implementation/version, clock,
+and observation requirements. `make-scenario.py` binds the supplied executor to the consumer
+configuration; it does not infer those facts from a package name.
 
-In the checked rosbag2 0.26.11 cohort, action channels contain original CDR but empty message
-definitions. Sensor, TF, AMCL, and Clock definitions are self-contained; action CDR needs the
-matching installed ROS message types. GetResult is a separately labelled client observation, not a
-service response recorded by the topic bag. No message definitions are synthesized and no CDR codec
-is supplied.
+The requirements JSON contains exactly `evaluator_requirement` (the helper's `binding.json`),
+`case`, and `configuration`. Configuration follows [nav2.schema.json](nav2.schema.json), including
+the same case, goal, budgets, pose/freshness thresholds, odometry frame, and required TF edges.
+The extension's v1 schema names its consumer configuration format; the execution documents are v2.
 
-Own message observation begins after upstream navigation and public graph readiness. Startup
-events are retained separately. The recorder retains its complete bounded interval.
+```sh
+.venv/bin/python make-scenario.py --profile native-profile.json \
+  --requirements nav2-requirements.json --output archive/inputs
+```
 
-derive-otlp.py projects immutable callback metadata into standard OTLP for offline evaluation. It
-requires the selected original SHA and preserves native integer publication sequences. Message age
-uses RMW reception minus source timestamps; ROS simulation time is never subtracted from wall time.
-Sequence gaps are measured only between observed single-publisher samples. Derived metrics are
-labelled offline and cannot establish live collector behavior.
+This writes scenario/runtime v2, the issued run context, and captured configuration/profile/schema
+bytes. `pre-execution-inputs.json` records their exact hashes. There are no completed observations
+in the runtime manifest. Use a fresh archive for every admitted action.
 
-For the selected installed MCAP C++ 1.3.1 writer, the logical byte peak of one new append-only
-recording is deduced from its final file size. This excludes rotation, deletion, truncation and
-other spool files; metadata, JSON and CDR are retained separately. The installed writer header is
-fingerprinted before ROS initialization. This is not sampled high-water-time telemetry or disk
-quota enforcement.
+## Retain completed observations
 
-The consumer evaluator is installed from its built wheel and bound through a typed artifact receipt.
-qualify-evaluator.py checks installed wheel bytes, runs the consumer controls, and creates local-key
-provenance through actual Ed25519 signing and verification. This explicit local trust policy is
-separate from vendor or keyless provenance. Public robotics-acceptance evaluate produces JSON and
-JUnit for retained evidence. Its offline result explicitly leaves native Clock timing, graph, and
-shutdown unevaluated; numeric placeholders are not measurements. Native graph and cleanup facts are
-retained separately. Expected application negatives cannot override an ERROR or FAILED core ROS
-policy result.
+Only after producers have settled, place their closed files under `archive/capture`.
+The completed-facts JSON contains exactly:
 
-Full action/service-event recording through native introspection requires a separately qualified
-maintained ROS cohort migration. This example does not claim that profile, hardware qualification,
-or complete runtime lifecycle coverage.
+- `started_at`, `finished_at`, and `observations` in the public observation v2 format.
+- `artifacts`: source paths relative to capture, each with `artifact_id`, `kind`, and `media_type`.
+- `policy_observation`: actual recorder/storage facts for the evidence index.
+- Optional `measurement_window` and `native_model` only when actually captured.
+
+Keep command acceptance, native final state, independent postcondition, and cleanup separate.
+An acknowledged cancel is not a terminal action result. A finished client is not proof that the
+robot stopped or that its recorder/container disappeared. Missing required QoS, clock, cleanup,
+or loaded-model facts remain unobserved; the producer does not synthesize them.
+
+```sh
+.venv/bin/python finalize.py --prepared archive/inputs --capture archive/capture \
+  > archive/evaluation-inputs.json
+```
+
+The producer rejects altered pre-execution inputs, escaped/duplicate capture paths, and the
+declared artifact/archive byte budgets. It writes a separate observation v2 and finalized index
+through public writers. Recorder peak/upload fields describe producer observations; these
+document checks do not enforce a live filesystem quota.
+
+The evaluator reads indexed `workload.json` and original `get-result-response.cdr` once each
+through `VerifiedEvidence.read_local`, with a one-MiB capture budget, then assesses those immutable
+snapshots. MCAP remains native retained recording data; this evaluator does not decode its action
+CDR or invent an unavailable ROS message definition.
+
+## Assess and inspect the public result
+
+Use the values emitted in `archive/evaluation-inputs.json` for run/domain/input paths, the actual
+captured assessment window, and the externally supplied evaluator receipts/profile:
+
+```sh
+.venv/bin/robotics-acceptance evaluate --scenario archive/inputs/scenario.json \
+  --runtime archive/inputs/runtime.json --run-context archive/inputs/run.json \
+  --run-id RUN_ID --domain-id nav2 --evidence-index archive/evidence-index.json \
+  --window-start-ns START_NS --window-end-ns END_NS --output assessment \
+  --extension-schema urn:nav2-turtlebot3:scenario:v1=archive/inputs/nav2.schema.json \
+  --evaluator-trust-profile /operator/nav2-trust.json \
+  --evaluator-receipt evaluator-inputs/receipt.json \
+  --evaluator-verification evaluator-inputs/verification.json \
+  --evaluator-receipt-dependency evaluator-inputs/statement.json \
+  --evaluator-receipt-dependency evaluator-inputs/publisher.json \
+  --evaluator-receipt-dependency evaluator-inputs/verified-report.txt
+```
+
+The output is public `acceptance-result.v2` JSON and JUnit. A matched action cannot override
+missing required evidence or an error. The source controls exercise passed, failed, and incomplete
+projections plus receipt-only/wrong-key refusal through the installed CLI; their generated records
+are synthetic controls, not observed robot performance.
+
+This method checks the configured action outcome and fresh odometry/TF/AMCL pose facts.
+It does not establish a planned-to-loaded native model chain, Gazebo ground truth,
+physics/localization accuracy, cross-clock offset,
+delivery quality, camera behavior, or complete recovery. Selected calibration is unsupported by
+this method. Those claims require their own captured inputs and native composition witnesses.

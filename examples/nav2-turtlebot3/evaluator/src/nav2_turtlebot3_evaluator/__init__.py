@@ -1,16 +1,19 @@
-"""Assess genuine action observations; ROS/DDS acceptance remains the harness's job."""
+"""Assess captured Nav2 action and pose facts through verified SDK snapshots."""
 
 import math
 from collections.abc import Mapping
 from hashlib import sha256
 
 from robotics_acceptance_harness import AssertionEvaluation, EvaluationContext
-from robotics_runtime_contracts import load_mapping
+from robotics_runtime_contracts import loads_mapping
 
 NAMESPACE = "org.example.nav2-turtlebot3"
 
 
 def evaluate(context: EvaluationContext):
+    controls = context.assessment_controls
+    if controls is not None and controls.data["calibration"]["state"] == "selected":
+        raise ValueError("the Nav2 method does not consume selected calibration")
     candidates = [
         (path, link)
         for path, link in context.evidence.local_files.items()
@@ -19,9 +22,8 @@ def evaluate(context: EvaluationContext):
     if len(candidates) != 1:
         raise ValueError("one verified Nav2 workload JSON artifact is required")
     path, link = candidates[0]
-    if sha256(path.read_bytes()).hexdigest() != link["sha256"]:
-        raise ValueError("Nav2 observation changed after evidence verification")
-    report = load_mapping(path)
+    raw = context.evidence.read_local(path, max_raw_evidence_bytes=1024 * 1024)
+    report = loads_mapping(raw, source_name=str(path))
     if (
         report.get("run_id") != context.run_id
         or report.get("domain_id") != context.domain_id
@@ -111,7 +113,7 @@ def evaluate(context: EvaluationContext):
     if len(cdr_candidates) != 1:
         raise ValueError("one verified original GetResult CDR artifact is required")
     cdr_path, cdr_link = cdr_candidates[0]
-    cdr_raw = cdr_path.read_bytes()
+    cdr_raw = context.evidence.read_local(cdr_path, max_raw_evidence_bytes=1024 * 1024)
     if (
         sha256(cdr_raw).hexdigest() != cdr_link["sha256"]
         or cdr_link["sha256"] != response.get("sha256")
