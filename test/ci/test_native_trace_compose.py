@@ -19,16 +19,25 @@ class NativeTraceComposeTests(unittest.TestCase):
             "PATH": os.environ["PATH"],
             "HOME": os.environ.get("HOME", "/tmp"),
             "ROBOTICS_RUN_ID": "render-control",
+            "SIMULATION_IMAGE": "local/source-render-control:fixture",
             "ROBOTICS_DOMAIN_ID": "primary",
             "ROS_DOMAIN_ID": "188",
             "GZ_PARTITION": "render-control",
+            "ROBOTICS_METRICS_TOPIC": "/example/sequence",
+            "ROBOTICS_PLAYBACK_CLOCK_HZ": "200",
+            "ROBOTICS_PLAYBACK_RATE": "1",
+            "ROBOTICS_PLAYBACK_START_OFFSET": "0",
         }
         files = [
             "compose.yaml",
-            "compose.simulation-health.yaml",
+            "compose.foundation.yaml",
             "compose.stepped.yaml",
+            "compose.record.yaml",
+            "compose.evidence.yaml",
             "compose.observability.yaml",
         ]
+
+        profiles = ["stepped", "record", "acceptance", "evidence", "observability"]
 
         def render(extra=()):
             args = list(renderer)
@@ -37,17 +46,9 @@ class NativeTraceComposeTests(unittest.TestCase):
                     "-f",
                     str(root / file) if not Path(file).is_absolute() else file,
                 ]
-            args += [
-                "--profile",
-                "stepped",
-                "--profile",
-                "observability",
-                "--profile",
-                "acceptance",
-                "config",
-                "--format",
-                "json",
-            ]
+            for profile in profiles:
+                args += ["--profile", profile]
+            args += ["config", "--format", "json"]
             result = subprocess.run(
                 args, cwd=root, env=env, capture_output=True, text=True, timeout=25
             )
@@ -55,7 +56,13 @@ class NativeTraceComposeTests(unittest.TestCase):
             return json.loads(result.stdout)
 
         baseline = render()
-        diagnostic = render(["compose.native-trace.yaml"])
+        diagnostic_overlays = [
+            "compose.native-trace.yaml",
+            "compose.native-trace-simulation.yaml",
+        ]
+        diagnostic = render(diagnostic_overlays)
+        self.assertEqual(set(diagnostic["services"]), set(baseline["services"]))
+        self.assertIn("simulation-stepper", diagnostic["services"])
         image_default = [
             "python3",
             "-m",
@@ -108,9 +115,7 @@ class NativeTraceComposeTests(unittest.TestCase):
             )
             original = json.loads((program / "program.json").read_text())
             assert original["command"] == image_default
-            resolved = render(
-                ["compose.native-trace.yaml", str(program / "compose.json")]
-            )
+            resolved = render(diagnostic_overlays + [str(program / "compose.json")])
             assert baseline["services"]["simulation"].get("command") is None
             resolved_model = directory / "resolved-model.json"
             resolved_model.write_text(json.dumps(resolved))
@@ -133,9 +138,7 @@ class NativeTraceComposeTests(unittest.TestCase):
             )
             comparable = json.loads((comparison / "program.json").read_text())
             assert comparable["command"] == image_default
-            roundtrip = render(
-                ["compose.native-trace.yaml", str(comparison / "compose.json")]
-            )
+            roundtrip = render(diagnostic_overlays + [str(comparison / "compose.json")])
             assert (
                 roundtrip["services"]["simulation"]["command"]
                 == resolved["services"]["simulation"]["command"]
@@ -167,7 +170,7 @@ class NativeTraceComposeTests(unittest.TestCase):
                 )
             )
             declared_baseline = render([str(declared)])
-            declared_diagnostic = render([str(declared), "compose.native-trace.yaml"])
+            declared_diagnostic = render([str(declared)] + diagnostic_overlays)
             assert (
                 declared_baseline["services"]["simulation"]["command"]
                 == declared_diagnostic["services"]["simulation"]["command"]
@@ -192,15 +195,50 @@ class NativeTraceComposeTests(unittest.TestCase):
                 text=True,
             )
             declared_resolved = render(
-                [
-                    str(declared),
-                    "compose.native-trace.yaml",
-                    str(declared_program / "compose.json"),
-                ]
+                [str(declared)]
+                + diagnostic_overlays
+                + [str(declared_program / "compose.json")]
             )
             assert (
                 declared_resolved["services"]["simulation"]["command"]
                 == declared_baseline["services"]["simulation"]["command"]
+            )
+
+        # Match the recording_playback branch's actual files and active profiles.
+        files = [
+            "compose.yaml",
+            "compose.foundation.yaml",
+            "compose.record.yaml",
+            "compose.evidence.yaml",
+            "compose.observability.yaml",
+            "compose.playback.yaml",
+            "compose.foundation-playback.yaml",
+        ]
+        profiles = [
+            "playback",
+            "test",
+            "record",
+            "acceptance",
+            "evidence",
+            "observability",
+        ]
+        playback_baseline = render()
+        playback_diagnostic = render(
+            ["compose.native-trace.yaml", "compose.native-trace-playback.yaml"]
+        )
+        self.assertEqual(
+            set(playback_diagnostic["services"]), set(playback_baseline["services"])
+        )
+        self.assertNotIn("simulation-stepper", playback_diagnostic["services"])
+        self.assertEqual(
+            playback_diagnostic["services"]["simulation"],
+            playback_baseline["services"]["simulation"],
+        )
+        for actor in ("playback", "runtime-metrics"):
+            self.assertEqual(
+                playback_diagnostic["services"][actor]["command"],
+                ["/bin/bash", "/tmp/ros-native-trace.sh"]
+                + playback_baseline["services"][actor]["command"],
             )
 
     def test_unavailable_ust_preserves_underlying_program_argv_and_exit(self):

@@ -41,25 +41,3 @@ services:
         source: ./scripts/ci/diagnostics/ros-native-trace.sh
         target: /tmp/ros-native-trace.sh
         read_only: true
-
-  simulation:
-    entrypoint: [/usr/local/bin/robotics-entrypoint, /bin/bash, /tmp/ros-native-trace.sh]
-    environment:
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
-      ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID:?ROBOTICS_DOMAIN_ID is required}"
-    volumes:
-      - type: bind
-        source: ./scripts/ci/diagnostics/ros-native-trace.sh
-        target: /tmp/ros-native-trace.sh
-        read_only: true
-  simulation-stepper:
-    entrypoint: [/usr/local/bin/robotics-entrypoint, /bin/bash, /tmp/ros-native-trace.sh]
-    environment:
-      ROBOTICS_RUN_ID: "${ROBOTICS_RUN_ID:?ROBOTICS_RUN_ID is required}"
-      ROBOTICS_DOMAIN_ID: "${ROBOTICS_DOMAIN_ID:?ROBOTICS_DOMAIN_ID is required}"
-      ROBOTICS_SIMULATION_DIAGNOSTICS: "1"
-    volumes:
-      - type: bind
-        source: ./scripts/ci/diagnostics/ros-native-trace.sh
-        target: /tmp/ros-native-trace.sh
-        read_only: true

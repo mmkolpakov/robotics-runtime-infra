@@ -353,8 +353,10 @@
       "name": "native-ust-diagnostic",
       "files": [
         "compose.yaml",
+        "compose.stepped.yaml",
         "compose.observability.yaml",
-        "compose.native-trace.yaml"
+        "compose.native-trace.yaml",
+        "compose.native-trace-simulation.yaml"
       ]
     },
     {

@@ -284,6 +284,8 @@ if [[ "${native_trace:-0}" == 1 ]]; then
   foundation_files+=(compose.native-trace.yaml)
   if [[ "${data_source}" == recording_playback ]]; then
     foundation_files+=(compose.native-trace-playback.yaml)
+  else
+    foundation_files+=(compose.native-trace-simulation.yaml)
   fi
 fi
 foundation_compose=(docker compose "${compose_environment[@]}" -p "${project}")
