@@ -112,9 +112,9 @@ EOF
       ["CVE-2024-46742", "CVE-2024-46833", "CVE-2024-52560", "CVE-2024-56591"];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 12
+    and .version == 13
     and (.statements | length == 194)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 138)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 139)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -141,7 +141,7 @@ EOF
               and contains("any other vulnerability")
           )
         elif .vulnerability.name == "CVE-2025-22043" then
-          .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"}]
+          .products == reviewed_headers
           and (.impact_statement | contains("binary-exclude:linux-libc-dev"))
           and (.impact_statement | contains("https://ubuntu.com/security/cves/CVE-2025-22043.json"))
           and (.impact_statement | contains("does not qualify the host kernel"))
