@@ -1,0 +1,70 @@
+---
+name: jetson-image
+
+# Builds the Jetson images, including ONNX Runtime from source, on a native
+# ARM64 runner. The build takes hours, so it runs nightly, on demand and for
+# pull requests that change Jetson-specific inputs; the Dockerfile and Bake
+# file are shared by every image and are covered by the nightly run.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/jetson-image.yml
+      - compose.nvidia-jetson.yaml
+      - docker/python/inference-nvidia-jetson.in
+      - docker/python/inference-nvidia-jetson.lock
+      - scripts/ci/nvidia-jetson-image/**
+      - scripts/ci/nvidia-jetson-supply-chain/**
+  schedule:
+    - cron: "23 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: jetson-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+
+jobs:
+  jetson-image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 355
+    env:
+      REGISTRY: local
+      VERSION: jetson-ci
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Require the native ARM64 runner
+        run: test "$(uname -m)" = aarch64
+      - name: Free disk space for the CUDA build image
+        run: scripts/ci/nvidia-jetson-image/free-disk-space.sh
+      - uses: ./.github/actions/setup-buildx
+      - name: Set reproducible build metadata
+        run: scripts/ci/set-build-metadata.sh
+      - name: Build ONNX Runtime from source and the Jetson Orin runtime
+        run: >-
+          docker buildx bake --file docker-bake.hcl
+          inference-nvidia-jetson-orin --load
+      - name: Verify the built ONNX Runtime providers
+        run: >-
+          scripts/ci/nvidia-jetson-image/verify-onnxruntime-providers.sh
+          "${REGISTRY}/robotics-runtime-infra/inference-nvidia-jetson-orin:${VERSION}"
+      - name: Scan the Jetson images
+        run: scripts/ci/security/scan-bake-group.sh nvidia-jetson linux/arm64
+      - name: Upload Jetson scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-nvidia-jetson-${{ github.sha }}
+          path: artifacts/security/
+          if-no-files-found: ignore
+          retention-days: 7
