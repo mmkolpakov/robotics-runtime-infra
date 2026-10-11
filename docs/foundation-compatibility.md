@@ -5,9 +5,9 @@ Generated from the common workspace pin in `foundation.repos` and each package r
 | Component | Version | Build input commit |
 | --- | --- | --- |
 | `robotics-runtime-contracts` | `0.21.1` | `a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa` |
-| `robotics-acceptance-harness` | `0.22.1` | `c50215ee23e0e57ada671205ae70df7496c71855` |
+| `robotics-acceptance-harness` | `0.22.2` | `4e8b008e36b84aafcc64edbc928c77bd02d62b4d` |
 
-The pin is bound to the source tags `harness-v0.22.1` and `contracts-v0.21.1`.
+The pin is bound to the source tags `harness-v0.22.2` and `contracts-v0.21.1`.
 Each complete build input is bound to its own tag and commit.
 The common workspace's contracts `src` tree and `pyproject.toml`
 match the contracts tag; its documentation is not used to build contracts.
