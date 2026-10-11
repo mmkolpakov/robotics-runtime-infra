@@ -45,7 +45,13 @@ def _shutdown_or_absent_result(report, config, observed):
             for value in values
         ):
             raise ValueError("malformed known shutdown receiver time")
-        if (
+        if available is True:
+            matched, status, reason = (
+                False,
+                "failed",
+                "Action server remained available after the requested shutdown",
+            )
+        elif (
             accepted is True
             and goal_id is not None
             and available is not None

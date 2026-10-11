@@ -326,6 +326,24 @@ class InstalledCliControls(unittest.TestCase):
         )
         self.assertEqual(row["status"], "failed")
 
+    def test_present_server_without_time_is_failed_in_public_json_and_junit(self):
+        self.shutdown_capture(present=True, missing_time=True)
+        result = self.assess(self.profile)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "failed")
+        document = json.loads(
+            (Path(self.case.name) / "assessment/acceptance-result.json").read_bytes()
+        )
+        row = next(
+            item
+            for item in document["assertion_results"]
+            if item["assertion_id"].endswith(".action-server-failure")
+        )
+        self.assertEqual(row["status"], "failed")
+        self.assertIs(row["observed_value"], False)
+        junit = ET.parse(Path(self.case.name) / "assessment/junit.xml")
+        self.assertGreater(len(junit.findall(".//failure")), 0)
+
     def test_missing_required_cleanup_remains_incomplete(self):
         del self.facts["observations"]["cleanup"]
         DOCUMENTS.dump(self.capture / "completed-facts.json", self.facts)
