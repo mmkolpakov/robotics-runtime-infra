@@ -52,7 +52,10 @@ generated names are unknown while rendering), and the named StorageClass.
 The separately retained named Lease also permits update for a resource-version
 claim. No creation, deletion, secrets, exec or wildcard permissions are granted.
 Only the preflight/lifecycle host mounts the projected API token; native workers
-do not. AWS Pod Identity binds the whole Pod's service account; native workers
+do not. Job cleanup runs in an external supervisor with its separately reviewed
+operator credentials, not through this Pod token. The required scoped permissions
+are listed in [Kubernetes execution](../host/docs/kubernetes-execution.md#export-and-cleanup).
+AWS Pod Identity binds the whole Pod's service account; native workers
 can receive the same AWS role. The API token mount does not isolate AWS credentials.
 Each container runs without extra capabilities, escalation, hostPath or
 host devices. Approved product images must contain their regular, immutable

@@ -35,6 +35,20 @@ the API token. Operators retain separate permissions for provisioning and cleanu
 
 ## Export and cleanup
 
+Run cleanup from an external supervisor, outside the managed Job, using its own
+operator-supplied KubeConfig. The chart's lifecycle-host token admits initiation
+and metadata reads; it cannot list Pods or delete Jobs. Calling cleanup with that
+token is refused. Granting it deletion permissions would let the managed Pod
+remove itself before it can observe completion.
+
+The supervisor needs get/delete for the named Job, get/list for Pods in the
+attempt's dedicated namespace, get for the named PVC and Lease, and get for the
+named StorageClass. Pod listing is namespace-wide; a label selector is not an
+RBAC authorization boundary. It needs no Pod deletion, secrets, exec or Lease
+deletion permission. Foreground Job deletion removes dependent Pods through the
+standard controller. Provisioning and the selected native exporter use separately
+reviewed credentials; this adapter does not provide a controller or grant them.
+
 `exportAndDelete` runs an explicit finite export through the existing `Jobs`
 interface and verifies the retained file bytes before deleting the exact Job with
 UID and resource-version preconditions. It waits for the Job and its Pods to disappear,

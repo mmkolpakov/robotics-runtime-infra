@@ -99,6 +99,84 @@ const exec = async (pod, code) => {
       .catch(finish);
   });
 };
+const accountConfig = async (name, rules) => {
+  const account = await core.createNamespacedServiceAccount({
+    namespace,
+    body: {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: { name, namespace, labels },
+      automountServiceAccountToken: false,
+    },
+  });
+  await rbac.createNamespacedRole({
+    namespace,
+    body: {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name, namespace, labels },
+      rules,
+    },
+  });
+  await rbac.createNamespacedRoleBinding({
+    namespace,
+    body: {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: { name, namespace, labels },
+      subjects: [{ kind: 'ServiceAccount', name, namespace }],
+      roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name },
+    },
+  });
+  const token = await core.createNamespacedServiceAccountToken({
+    namespace,
+    name,
+    body: {
+      apiVersion: 'authentication.k8s.io/v1',
+      kind: 'TokenRequest',
+      spec: { audiences: [], expirationSeconds: 600 },
+    },
+  });
+  const selected = new KubeConfig();
+  selected.loadFromOptions({
+    clusters: [config.getCurrentCluster()],
+    users: [{ name, token: token.status.token }],
+    contexts: [{ name, cluster: config.getCurrentCluster().name, user: name, namespace }],
+    currentContext: name,
+  });
+  return { config: selected, uid: account.metadata.uid };
+};
+const clusterBindings = [];
+const storageReaders = async (names) => {
+  const name = namespace + '-storage-read';
+  const role = await rbac.createClusterRole({
+    body: {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'ClusterRole',
+      metadata: { name, labels },
+      rules: [
+        {
+          apiGroups: ['storage.k8s.io'],
+          resources: ['storageclasses'],
+          resourceNames: [sc],
+          verbs: ['get'],
+        },
+      ],
+    },
+  });
+  clusterBindings.push({ kind: 'role', name, uid: role.metadata.uid });
+  const binding = await rbac.createClusterRoleBinding({
+    body: {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'ClusterRoleBinding',
+      metadata: { name, labels },
+      subjects: names.map((name) => ({ kind: 'ServiceAccount', name, namespace })),
+      roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name },
+    },
+  });
+  clusterBindings.push({ kind: 'binding', name, uid: binding.metadata.uid });
+};
+
 const podFor = async (job, excluded) =>
   await wait(async () => {
     const pods = await core.listNamespacedPod({
@@ -379,64 +457,45 @@ try {
     passed: true,
     uid: pendingLease.metadata.uid,
   });
-  const account = await core.createNamespacedServiceAccount({
-    namespace,
-    body: {
-      apiVersion: 'v1',
-      kind: 'ServiceAccount',
-      metadata: { name: 'consumer', namespace, labels },
-      automountServiceAccountToken: false,
+  const worker = await accountConfig('consumer', [
+    {
+      apiGroups: ['coordination.k8s.io'],
+      resources: ['leases'],
+      resourceNames: ['effect'],
+      verbs: ['get', 'update'],
     },
-  });
-  await rbac.createNamespacedRole({
-    namespace,
-    body: {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: { name: 'consumer', namespace, labels },
-      rules: [
-        {
-          apiGroups: ['coordination.k8s.io'],
-          resources: ['leases'],
-          resourceNames: ['effect'],
-          verbs: ['get', 'update'],
-        },
-      ],
+    { apiGroups: ['batch'], resources: ['jobs'], resourceNames: ['attempt'], verbs: ['get'] },
+    {
+      apiGroups: [''],
+      resources: ['persistentvolumeclaims'],
+      resourceNames: ['spool'],
+      verbs: ['get'],
     },
-  });
-  await rbac.createNamespacedRoleBinding({
-    namespace,
-    body: {
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'RoleBinding',
-      metadata: { name: 'consumer', namespace, labels },
-      subjects: [{ kind: 'ServiceAccount', name: 'consumer', namespace }],
-      roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'consumer' },
+    { apiGroups: [''], resources: ['pods'], verbs: ['get'] },
+  ]);
+  const supervisor = await accountConfig('supervisor', [
+    {
+      apiGroups: ['batch'],
+      resources: ['jobs'],
+      resourceNames: ['attempt', 'cleanup-control'],
+      verbs: ['get', 'delete'],
     },
-  });
-  const token = await core.createNamespacedServiceAccountToken({
-    namespace,
-    name: 'consumer',
-    body: {
-      apiVersion: 'authentication.k8s.io/v1',
-      kind: 'TokenRequest',
-      spec: { audiences: [], expirationSeconds: 600 },
+    { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] },
+    {
+      apiGroups: [''],
+      resources: ['persistentvolumeclaims'],
+      resourceNames: ['spool'],
+      verbs: ['get'],
     },
-  });
-  const restricted = new KubeConfig();
-  restricted.loadFromOptions({
-    clusters: [config.getCurrentCluster()],
-    users: [{ name: 'fixture-consumer', token: token.status.token }],
-    contexts: [
-      {
-        name: 'fixture-consumer',
-        cluster: config.getCurrentCluster().name,
-        user: 'fixture-consumer',
-        namespace,
-      },
-    ],
-    currentContext: 'fixture-consumer',
-  });
+    {
+      apiGroups: ['coordination.k8s.io'],
+      resources: ['leases'],
+      resourceNames: ['effect'],
+      verbs: ['get'],
+    },
+  ]);
+  await storageReaders(['consumer', 'supervisor']);
+  const restricted = worker.config;
   const permitted = restricted.makeApiClient(CoordinationV1Api),
     restrictedCore = restricted.makeApiClient(CoreV1Api);
   const readLease = await permitted.readNamespacedLease({ namespace, name: 'effect' });
@@ -458,11 +517,55 @@ try {
     })
   );
   await forbidden(() => restrictedCore.listNamespacedSecret({ namespace }));
+  const restrictedBatch = restricted.makeApiClient(BatchV1Api);
+  await forbidden(() => restrictedCore.listNamespacedPod({ namespace }));
+  await forbidden(() =>
+    restrictedBatch.deleteNamespacedJob({
+      namespace,
+      name: 'attempt',
+      body: { preconditions: { uid: job.metadata.uid } },
+    }),
+  );
+  assert.equal(
+    (await batch.readNamespacedJob({ namespace, name: 'attempt' })).metadata.uid,
+    job.metadata.uid,
+  );
+  const supervisorCore = supervisor.config.makeApiClient(CoreV1Api);
+  const supervisorBatch = supervisor.config.makeApiClient(BatchV1Api);
+  const supervisorLeases = supervisor.config.makeApiClient(CoordinationV1Api);
+  await forbidden(() =>
+    supervisorCore.deleteNamespacedPod({
+      namespace,
+      name: pod.metadata.name,
+      body: { preconditions: { uid: pod.metadata.uid } },
+    }),
+  );
+  await forbidden(() => supervisorCore.listNamespacedSecret({ namespace }));
+  await forbidden(() =>
+    supervisorLeases.deleteNamespacedLease({
+      namespace,
+      name: 'effect',
+      body: { preconditions: { uid: lease.metadata.uid } },
+    }),
+  );
+  await forbidden(() =>
+    supervisorBatch.deleteNamespacedJob({
+      namespace,
+      name: 'foreign',
+      body: { preconditions: { uid: 'foreign-uid' } },
+    }),
+  );
+  report.steps.push({
+    name: 'actual-worker-token-refuses-Pod-list-and-Job-delete-supervisor-has-no-Pod-delete-secrets-or-Lease-delete',
+    passed: true,
+    workerAccountUID: worker.uid,
+    supervisorAccountUID: supervisor.uid,
+  });
   assert.equal(pod.spec.automountServiceAccountToken, false);
   report.steps.push({
     name: 'actual-consumer-token-named-Lease-get-update-only-and-worker-token-disabled',
     passed: true,
-    accountUID: account.metadata.uid,
+    accountUID: worker.uid,
   });
   const exportPath = resolve(destination, 'original.bin'),
     expected = Buffer.from('native-original-bytes\n');
@@ -474,6 +577,71 @@ try {
   assert.equal(original, expected.toString());
   await writeFile(resolve(destination, 'native-export.bin'), original, { mode: 0o400 });
   const ref = await referenceFile(resolve(destination, 'native-export.bin'));
+  const workerExportPath = resolve(destination, 'worker-refused-export.bin');
+  const supervisorExportPath = resolve(destination, 'supervisor-export.bin');
+  const workerCleanup = new KubernetesExecution(restricted, currentBinding);
+  await assert.rejects(
+    () =>
+      workerCleanup.exportAndDelete(
+        context.jobs,
+        {
+          executable: '/bin/cp',
+          args: ['--', resolve(destination, 'native-export.bin'), workerExportPath],
+          timeoutMs: 2000,
+          maxBufferBytes: 1048576,
+        },
+        [{ ...ref, uri: new URL('file://' + workerExportPath).href }],
+        signal(),
+      ),
+    (error) => error.code === 403,
+  );
+  assert.equal(
+    (await batch.readNamespacedJob({ namespace, name: 'attempt' })).metadata.uid,
+    job.metadata.uid,
+  );
+  const passive = jobBody('cleanup-control');
+  passive.spec.backoffLimit = 0;
+  const cleanupJob = await batch.createNamespacedJob({ namespace, body: passive });
+  const cleanupPod = await podFor(cleanupJob);
+  const external = new KubernetesExecution(supervisor.config, {
+    ...currentBinding,
+    job: { name: cleanupJob.metadata.name, uid: cleanupJob.metadata.uid },
+    pod: { name: cleanupPod.metadata.name, uid: cleanupPod.metadata.uid },
+  });
+  const released = await external.exportAndDelete(
+    context.jobs,
+    {
+      executable: '/bin/cp',
+      args: ['--', resolve(destination, 'native-export.bin'), supervisorExportPath],
+      timeoutMs: 2000,
+      maxBufferBytes: 1048576,
+    },
+    [{ ...ref, uri: new URL('file://' + supervisorExportPath).href }],
+    signal(),
+  );
+  assert.equal(released.resources, 'released');
+  assert.equal(released.nativeFinalState, 'unknown');
+  assert.equal(
+    (await batch.readNamespacedJob({ namespace, name: 'attempt' })).metadata.uid,
+    job.metadata.uid,
+  );
+  assert.equal(
+    (await core.readNamespacedPersistentVolumeClaim({ namespace, name: 'spool' })).metadata.uid,
+    pvc.metadata.uid,
+  );
+  assert.equal(
+    (await leases.readNamespacedLease({ namespace, name: 'effect' })).metadata.uid,
+    lease.metadata.uid,
+  );
+  assert.deepEqual(await readFile(supervisorExportPath), expected);
+  report.steps.push({
+    name: 'external-supervisor-token-performs-normal-exact-Job-cleanup-while-in-Pod-profile-refuses',
+    passed: true,
+    outcome: released,
+    jobUID: cleanupJob.metadata.uid,
+    originalJobUID: job.metadata.uid,
+    supervisorAccountUID: supervisor.uid,
+  });
   const fail = await replacement.exportAndDelete(
     context.jobs,
     { executable: '/usr/bin/false', args: [], timeoutMs: 2000, maxBufferBytes: 1048576 },
@@ -731,6 +899,17 @@ try {
   } catch {}
 } finally {
   try {
+    for (const object of [...clusterBindings].reverse()) {
+      const actual =
+        object.kind === 'binding'
+          ? await rbac.readClusterRoleBinding({ name: object.name })
+          : await rbac.readClusterRole({ name: object.name });
+      assert.equal(actual.metadata.uid, object.uid);
+      assert.equal(actual.metadata.labels['robotics-runtime.dev/fixture-owner'], id);
+      const request = { name: object.name, body: { preconditions: { uid: object.uid } } };
+      if (object.kind === 'binding') await rbac.deleteClusterRoleBinding(request);
+      else await rbac.deleteClusterRole(request);
+    }
     if (namespaceUID) {
       const actual = await core.readNamespace({ name: namespace });
       assert.equal(actual.metadata.uid, namespaceUID);
