@@ -3,10 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import rclpy
 from rclpy.node import Node
@@ -25,12 +26,70 @@ class ConformanceError(RuntimeError):
     """The simulator does not satisfy the required standard interfaces."""
 
 
+MAX_DIAGNOSTIC_EVENTS = 4096
+MAX_DIAGNOSTIC_BYTES = 2 * 1024 * 1024
+MAX_DIAGNOSTIC_EVENT_BYTES = 512
+
+
+class _DiagnosticEvents:
+    """Bound optional JSON phase payloads; missing events never prove absence."""
+
+    def __init__(self, emit: Callable[[str], Any]) -> None:
+        self._emit = emit
+        self._events = 0
+        self._bytes = 0
+        self._truncated = False
+
+    def record(self, phase: str, **observations: Any) -> None:
+        if self._truncated:
+            return
+        record = {
+            "diagnostic": "simulation-control",
+            "phase": phase,
+            "timestamp_units": "ns",
+            "utc_ns": time.time_ns(),
+            "monotonic_ns": time.monotonic_ns(),
+            **observations,
+        }
+        raw = json.dumps(record, separators=(",", ":"), allow_nan=False)
+        size = len(raw.encode("utf-8")) + 1
+        if (
+            self._events >= MAX_DIAGNOSTIC_EVENTS
+            or size > MAX_DIAGNOSTIC_EVENT_BYTES
+            or self._bytes + size > MAX_DIAGNOSTIC_BYTES - MAX_DIAGNOSTIC_EVENT_BYTES
+        ):
+            self._truncated = True
+            self._emit(
+                json.dumps(
+                    {
+                        "diagnostic": "simulation-control",
+                        "phase": "diagnostics_truncated",
+                        "recorded_events": self._events,
+                        "recorded_json_bytes": self._bytes,
+                        "dropped_events_lower_bound": 1,
+                        "absence_proven": False,
+                    },
+                    separators=(",", ":"),
+                )
+            )
+            return
+        self._events += 1
+        self._bytes += size
+        self._emit(raw)
+
+
 class SimulationControl(Node):
-    def __init__(self, namespace: str, timeout_sec: float) -> None:
+    def __init__(
+        self, namespace: str, timeout_sec: float, *, diagnostics: bool = False
+    ) -> None:
         super().__init__("simulation_control")
         self._namespace = "/" + namespace.strip("/")
         self._timeout_sec = timeout_sec
         self._clock_ns: int | None = None
+        self._clock_callback_times: tuple[int, int] | None = None
+        self._diagnostics = (
+            _DiagnosticEvents(self.get_logger().info) if diagnostics else None
+        )
         self._service_clients = {
             "get_simulator_features": self.create_client(
                 GetSimulatorFeatures,
@@ -58,6 +117,12 @@ class SimulationControl(Node):
 
     def _on_clock(self, message: Clock) -> None:
         self._clock_ns = message.clock.sec * 1_000_000_000 + message.clock.nanosec
+        if self._diagnostics is not None:
+            self._clock_callback_times = (time.time_ns(), time.monotonic_ns())
+
+    def _diagnose(self, phase: str, **observations: Any) -> None:
+        if self._diagnostics is not None:
+            self._diagnostics.record(phase, **observations)
 
     def _service_name(self, suffix: str) -> str:
         return f"{self._namespace}/{suffix}"
@@ -65,11 +130,15 @@ class SimulationControl(Node):
     def _call(self, suffix: str, request: Any) -> Any:
         client = self._service_clients[suffix]
         if not client.wait_for_service(timeout_sec=self._timeout_sec):
+            self._diagnose("service_unavailable", service=client.srv_name)
             raise ConformanceError(f"service is unavailable: {client.srv_name}")
         future = client.call_async(request)
+        self._diagnose("request_issued", service=client.srv_name)
         rclpy.spin_until_future_complete(self, future, timeout_sec=self._timeout_sec)
         if not future.done() or future.result() is None:
+            self._diagnose("response_unavailable", service=client.srv_name)
             raise ConformanceError(f"service call timed out: {client.srv_name}")
+        self._diagnose("response_received", service=client.srv_name)
         return future.result()
 
     @staticmethod
@@ -117,6 +186,7 @@ class SimulationControl(Node):
                     f"before the timeout; last observed state {observed_state}"
                 )
             if observed_state == requested_state:
+                self._diagnose("state_observed", state=observed_state)
                 return
             rclpy.spin_once(self, timeout_sec=min(0.05, remaining))
             observed_state = self.state()
@@ -125,12 +195,22 @@ class SimulationControl(Node):
         request = StepSimulation.Request()
         request.steps = steps
         response = self._call("step_simulation", request)
+        self._diagnose("step_response", result_code=response.result.result)
         self._require_ok(response, "step_simulation")
 
     def step_and_wait(self, previous_ns: int, steps: int, step_size_ns: int) -> int:
         expected_ns = previous_ns + steps * step_size_ns
         self.step(steps)
         stepped_ns = self.wait_for_clock_at_least(expected_ns)
+        if self._diagnostics is not None and self._clock_callback_times is not None:
+            utc_ns, monotonic_ns = self._clock_callback_times
+            self._diagnose(
+                "clock_observed",
+                source_time_ns=stepped_ns,
+                callback_utc_ns=utc_ns,
+                callback_monotonic_ns=monotonic_ns,
+                observation_source="rclpy_subscription_callback",
+            )
         self.wait_for_state(SimulationState.STATE_PAUSED)
         if stepped_ns != expected_ns or self._clock_ns != expected_ns:
             raise ConformanceError(
@@ -261,13 +341,26 @@ def _parser() -> argparse.ArgumentParser:
     step.add_argument("--steps", default=1, type=_positive_int)
     step.add_argument("--step-size-ns", default=1_000_000, type=_positive_int)
     step.add_argument("--interval-sec", default=0.2, type=_positive_float)
+    diagnostic_environment = os.environ.get("ROBOTICS_SIMULATION_DIAGNOSTICS", "0")
+    if diagnostic_environment not in {"0", "1"}:
+        parser.error("ROBOTICS_SIMULATION_DIAGNOSTICS must be 0 or 1")
+    step.add_argument(
+        "--diagnostics",
+        action="store_true",
+        default=diagnostic_environment == "1",
+        help="Emit bounded phase diagnostics; this changes the diagnostic environment.",
+    )
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
     rclpy.init()
-    node = SimulationControl(args.namespace, args.timeout_sec)
+    node = SimulationControl(
+        args.namespace,
+        args.timeout_sec,
+        diagnostics=getattr(args, "diagnostics", False),
+    )
     try:
         if args.command == "verify":
             report = node.verify(args.steps, args.step_size_ns)
