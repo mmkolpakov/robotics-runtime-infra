@@ -1,9 +1,9 @@
 {
   "workspace": {
     "url": "https://github.com/mmkolpakov/robotics-runtime.git",
-    "revision": "c50215ee23e0e57ada671205ae70df7496c71855",
-    "source_date_epoch": 1791712177,
-    "uv_lock_sha256": "667f1f8f859da9904dc34b8da854ef5771e239622bf5db37696bbf9990bf0c71"
+    "revision": "4e8b008e36b84aafcc64edbc928c77bd02d62b4d",
+    "source_date_epoch": 1791747055,
+    "uv_lock_sha256": "61246c7261740d81e9e3406bbe95185d112186d8f6854b331b7fa6e94a6295f6"
   },
   "packages": {
     "contracts": {
@@ -18,13 +18,13 @@
     },
     "harness": {
       "distribution": "robotics-acceptance-harness",
-      "version": "0.22.1",
+      "version": "0.22.2",
       "path": "packages/harness",
-      "revision": "c50215ee23e0e57ada671205ae70df7496c71855",
-      "git_tree": "d3758d2c58a83f07f75f41987bc15a707ed88518",
-      "source_date_epoch": 1791712177,
-      "uv_lock_sha256": "667f1f8f859da9904dc34b8da854ef5771e239622bf5db37696bbf9990bf0c71",
-      "release": "harness-v0.22.1"
+      "revision": "4e8b008e36b84aafcc64edbc928c77bd02d62b4d",
+      "git_tree": "c2133376429f947e19d2119ce5e29abc182a0ddc",
+      "source_date_epoch": 1791747055,
+      "uv_lock_sha256": "61246c7261740d81e9e3406bbe95185d112186d8f6854b331b7fa6e94a6295f6",
+      "release": "harness-v0.22.2"
     }
   }
 }
