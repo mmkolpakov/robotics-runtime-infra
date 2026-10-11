@@ -15,6 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
+
 if __name__ == "__main__":
     raise SystemExit(
         "native launch requires an admitted v2 SDK/image composition; the document profile does not authorize a worker"
@@ -42,6 +43,28 @@ from rosgraph_msgs.msg import Clock
 from rosidl_runtime_py.convert import message_to_ordereddict
 from std_srvs.srv import Empty
 from tf2_msgs.msg import TFMessage
+
+
+def readiness_parameters(scenario):
+    """Read this consumer's closed v2 configuration without projecting legacy fields."""
+    if scenario.get("schema_version") != "acceptance-scenario.v2":
+        raise ValueError("the Nav2 workload requires explicit v2 inputs")
+    settings = scenario["extensions"]["org.example.nav2-turtlebot3"]["readiness"]
+    budget, stability = settings["timeout_sec"], settings["stable_for_sec"]
+    if (
+        any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in (budget, stability)
+        )
+        or not 0 < budget <= 10
+        or not 0 <= stability < budget
+    ):
+        raise ValueError(
+            "declared graph readiness must fit the existing ten-second budget"
+        )
+    return settings["graph"], budget, stability
 
 
 def native_octets(values, size: int) -> list[int]:
@@ -84,6 +107,7 @@ def pose(node, x: float, y: float) -> PoseStamped:
 
 
 def main() -> int:
+    raise SystemExit("native launch requires an admitted v2 SDK/image composition")
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--case",
@@ -154,14 +178,13 @@ def main() -> int:
         "max_observation_age_sec": args.max_observation_age_sec,
         "odometry_frame": args.odometry_frame,
         "required_tf_edges": args.required_tf_edges,
+        "readiness": configuration["readiness"],
     }
     if configuration != {**actual_parameters, "case": args.case}:
         parser.error("consumer parameters differ from the declared scenario")
-    expected_graph = declared_scenario["expected_ros_graph"]
-    graph_budget = declared_scenario["timeouts"]["graph_ready_sec"]
-    graph_stability = declared_scenario["timeouts"]["stable_for_sec"]
-    if not 0 < graph_budget <= 10 or not 0 <= graph_stability < graph_budget:
-        parser.error("declared graph readiness must fit the existing ten-second budget")
+    expected_graph, graph_budget, graph_stability = readiness_parameters(
+        declared_scenario
+    )
     package_format = (
         "-f="
         + chr(36)
@@ -249,6 +272,7 @@ def main() -> int:
             "max_observation_age_sec": args.max_observation_age_sec,
             "odometry_frame": args.odometry_frame,
             "required_tf_edges": args.required_tf_edges,
+            "readiness": configuration["readiness"],
         },
     }
     rclpy.init(args=["--ros-args", "-p", "use_sim_time:=true"])
@@ -658,6 +682,9 @@ def main() -> int:
                         # Genuine upstream lifecycle shutdown removes the action server; it is not a fabricated result.
                         navigator.lifecycleShutdown()
                         present = client.wait_for_server(timeout_sec=1.0)
+                        report["server_after_shutdown_monotonic_ns"] = (
+                            time.monotonic_ns()
+                        )
                         record(
                             "server-after-shutdown",
                             {

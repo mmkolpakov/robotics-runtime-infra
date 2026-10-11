@@ -88,6 +88,13 @@ configuration; it does not infer those facts from a package name.
 The requirements JSON contains exactly `evaluator_requirement` (the helper's `binding.json`),
 `case`, and `configuration`. Configuration follows [nav2.schema.json](nav2.schema.json), including
 the same case, goal, budgets, pose/freshness thresholds, odometry frame, and required TF edges.
+The required `readiness` object contains `graph`, `timeout_sec` and `stable_for_sec`.
+The self-contained graph definitions are copied from the pinned contracts 0.21.1
+with `python sync-readiness-schema.py`; `--check` verifies equality with that SDK.
+The graph is passed unchanged to `RosGraphObserver` and `wait_for_readiness`.
+Its deadline is at most ten seconds,
+with a shorter non-negative stability window. The v2 scenario carries this consumer
+configuration in its extension and does not require legacy root graph/timeout fields.
 The extension's v1 schema names its consumer configuration format; the execution documents are v2.
 
 ```sh
@@ -158,3 +165,12 @@ It does not establish a planned-to-loaded native model chain, Gazebo ground trut
 physics/localization accuracy, cross-clock offset,
 delivery quality, camera behavior, or complete recovery. Selected calibration is unsupported by
 this method. Those claims require their own captured inputs and native composition witnesses.
+
+For `server-failure`, the method scores the issued goal and the captured local
+post-shutdown server availability in its receiver time order/budget. GetResult CDR
+is required when assessing a captured result, and any present CDR remains bound to
+its original bytes and goal. Shutdown without GetResult is not a physical stop or
+arrival witness: missing physical postconditions remain incomplete. Missing local
+shutdown timing is skipped; malformed known data is an error and observed continued
+server presence is a failed local assertion. Direct `workload.main()` and command
+entry both refuse execution until native composition admission.

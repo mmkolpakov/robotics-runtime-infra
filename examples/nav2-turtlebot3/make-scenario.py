@@ -55,6 +55,19 @@ def prepare(
         raise ValueError("the Nav2 profile requires its actual declared clock")
     # The profile supplies native IDL/backend/encoding/recorder/executor/clock
     # declarations from its composition, not invented defaults.
+    readiness = requirements["configuration"].get("readiness")
+    if not isinstance(readiness, dict):
+        raise ValueError("explicit consumer graph readiness configuration is required")
+    budget, stable = readiness.get("timeout_sec"), readiness.get("stable_for_sec")
+    if (
+        isinstance(budget, bool)
+        or not isinstance(budget, (int, float))
+        or isinstance(stable, bool)
+        or not isinstance(stable, (int, float))
+        or not 0 < budget <= 10
+        or not 0 <= stable < budget
+    ):
+        raise ValueError("consumer readiness stability must fit its bounded deadline")
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     configuration = output / "nav2-configuration.json"
     schema_path = Path(__file__).with_name("nav2.schema.json")
