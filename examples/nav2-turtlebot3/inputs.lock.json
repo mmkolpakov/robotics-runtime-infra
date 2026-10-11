@@ -113,10 +113,10 @@
   },
   "sdk_test_cohort": {
     "repository": "https://github.com/mmkolpakov/robotics-runtime",
-    "revision": "c39739684300b329192dd424ba623bbef7a396ca",
+    "revision": "00735515f71e53bbea9f8761f76db81dcea73299",
     "wheels": {
       "robotics_acceptance_harness-0.22.0-py3-none-any.whl": "4b377da4e792969f9f838b46319523a842d0fae1b7a8a54aca09cd272a752fc4",
-      "robotics_runtime_contracts-0.21.0-py3-none-any.whl": "45f71899f74f2bafa295f60ecc5280cd70b35a578d0d42ee6f2bdec90cc5b55a"
+      "robotics_runtime_contracts-0.21.0-py3-none-any.whl": "f41f2efc92bbdc24dec7ea1a0852d4cd4ccb00cfa4def5a8dc47fd4cec076701"
     },
     "scope": "source SDK document/consumer controls; no native execution admission"
   }

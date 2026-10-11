@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,13 +30,18 @@ def module(name):
     return value
 
 
-DOCUMENTS = module("test_v2_documents")
 QUALIFY = module("qualify-evaluator")
+DOCUMENTS = None
+
+
+def dump(path, value):
+    path.write_text(json.dumps(value))
+    return path
 
 
 class InstalledCliControls(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls, preinstall_only=False):
         profile_path = os.environ.get("ROBOTICS_COSIGN_PROFILE")
         wheel_path = os.environ.get("NAV2_EVALUATOR_WHEEL")
         if not profile_path or not wheel_path:
@@ -80,7 +87,7 @@ class InstalledCliControls(unittest.TestCase):
         cosign("trusted-root", "create", "--out", "roots.json")
         cosign("generate-key-pair", "--output-key-prefix", "publisher")
         cosign("generate-key-pair", "--output-key-prefix", "other")
-        predicate = DOCUMENTS.dump(
+        predicate = dump(
             cls.root / "predicate.json",
             {"scope": "synthetic Nav2 document controls; no native performance claim"},
         )
@@ -126,25 +133,28 @@ class InstalledCliControls(unittest.TestCase):
             },
             "evaluators": [
                 {
-                    "namespace": DOCUMENTS.NAMESPACE,
+                    "namespace": QUALIFY.NAMESPACE,
                     "wheel": str(cls.wheel),
                     "bundle": str(cls.bundle),
                     "publisher": asdict(policy),
                 }
             ],
         }
-        cls.profile = DOCUMENTS.dump(
-            cls.root / "operator-profile.json", cls.profile_values
-        )
+        cls.profile = dump(cls.root / "operator-profile.json", cls.profile_values)
         cls.profile.chmod(0o400)
         cls.qualification = cls.root / "qualification"
         preinstall = cls.root / "preinstall"
         captured_binding = QUALIFY.qualify(cls.profile, preinstall, installed=False)
         if (preinstall / cls.wheel.name).read_bytes() != cls.wheel.read_bytes():
             raise ValueError("preinstall input differs from authenticated bytes")
+        if preinstall_only:
+            return
         cls.binding = QUALIFY.qualify(cls.profile, cls.qualification)
         if captured_binding["artifact_sha256"] != cls.binding["artifact_sha256"]:
             raise ValueError("preinstall and installed subjects differ")
+
+        global DOCUMENTS
+        DOCUMENTS = module("test_v2_documents")
 
     def setUp(self):
         self.case = tempfile.TemporaryDirectory(dir=self.root)
@@ -257,4 +267,22 @@ class InstalledCliControls(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    if "--preinstall-output" in sys.argv:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--preinstall-output", type=Path, required=True)
+        arguments = parser.parse_args()
+        try:
+            InstalledCliControls.setUpClass(preinstall_only=True)
+            arguments.preinstall_output.mkdir(mode=0o700, parents=True, exist_ok=False)
+            source = (
+                InstalledCliControls.root
+                / "preinstall"
+                / InstalledCliControls.wheel.name
+            )
+            target = arguments.preinstall_output / source.name
+            shutil.copyfile(source, target)
+            print(str(target.resolve()))
+        finally:
+            InstalledCliControls.doClassCleanups()
+    else:
+        unittest.main()
