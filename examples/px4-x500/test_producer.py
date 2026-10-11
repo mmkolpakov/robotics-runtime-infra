@@ -52,7 +52,7 @@ def inputs(root, case="land"):
                 "recorder": {
                     "implementation": "px4-x500-controller",
                     "version": "1",
-                    "transformation": "SDK-decoded JSON",
+                    "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars",
                 },
             }
         ],
@@ -387,6 +387,84 @@ class ProducerControls(unittest.TestCase):
             transform=lambda folder: rewrite_capture(folder, ordered)
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unknown_altitude_does_not_become_observed_no_ascent(self):
+        result, _output = self.assess(ascent=None)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
+
+    def test_unknown_initial_position_keeps_genuine_later_ascent(self):
+        def unknown_initial(records):
+            initial = next(
+                row for row in records if row["kind"] == "telemetry-position"
+            )
+            initial["value"]["value"]["position"]["relative_altitude_m"] = None
+
+        result, _output = self.assess(
+            transform=lambda folder: rewrite_capture(folder, unknown_initial)
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_malformed_known_altitude_remains_error(self):
+        result, _output = self.assess(ascent="not-a-number")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "error")
+
+    def test_stock_nan_altitude_is_incomplete(self):
+        result, _output = self.assess(ascent="NaN")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
+
+    def test_stock_infinite_altitude_is_domain_error(self):
+        for altitude in ("Infinity", "-Infinity"):
+            with self.subTest(altitude=altitude):
+                with tempfile.TemporaryDirectory() as temporary:
+                    original = self.root
+                    self.root = Path(temporary)
+                    try:
+                        result, _output = self.assess(ascent=altitude)
+                        self.assertEqual(result.returncode, 1, result.stderr)
+                        self.assertEqual(json.loads(result.stdout)["status"], "error")
+                    finally:
+                        self.root = original
+
+    def test_unknown_refusal_baseline_cannot_reanchor_a_known_violation(self):
+        def positions(records):
+            values = iter(("NaN", 0, 0.3, 0.15))
+            for row in records:
+                if row["kind"] == "telemetry-position":
+                    row["value"]["value"]["position"]["relative_altitude_m"] = next(
+                        values
+                    )
+
+        result, _output = self.assess(
+            case="unarmed-refusal",
+            transform=lambda folder: rewrite_capture(folder, positions),
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
+
+    def test_known_refusal_violation_survives_an_unknown_sample(self):
+        def positions(records):
+            values = iter((0, "NaN", 0.3, 0.15))
+            for row in records:
+                if row["kind"] == "telemetry-position":
+                    row["value"]["value"]["position"]["relative_altitude_m"] = next(
+                        values
+                    )
+
+        result, output = self.assess(
+            case="unarmed-refusal",
+            transform=lambda folder: rewrite_capture(folder, positions),
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        assertions = json.loads((output / "acceptance-result.json").read_bytes())[
+            "assertion_results"
+        ]
+        condition = next(
+            row for row in assertions if row["assertion_id"].endswith(".postcondition")
+        )
+        self.assertEqual(condition["status"], "failed")
 
     def test_unknown_takeoff_response_is_incomplete(self):
         result, _output = self.assess(

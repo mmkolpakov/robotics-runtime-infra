@@ -95,6 +95,10 @@ These files are captured before execution and are not rewritten by completion.
 
 The controller's journal retains original decoded SDK responses with issued
 run/domain, receiver sequence, receiver UTC nanoseconds and monotonic milliseconds.
+The declared recorder transformation uses the stock `JSON.stringify` replacer
+hook to preserve non-finite SDK numbers as `"NaN"`, `"Infinity"` and `"-Infinity"`,
+following the [ProtoJSON scalar representation](https://protobuf.dev/programming-guides/json/).
+It does not decode the protobuf wire or implement a complete ProtoJSON codec.
 Its UTC source has millisecond resolution; it does not measure sender time or
 cross-clock synchronization. A closed `controller-manifest.json` binds every
 record's name, SHA-256 and size, count/byte totals, and receiver window. The producer
@@ -135,9 +139,13 @@ contains the exact run/domain, input paths and receiver window arguments for:
 
 The method evaluates completion, command acceptance, terminal grounded/disarmed
 state, the case's captured position postcondition, and native owner cleanup.
-Missing required facts and unknown/transport outcomes yield skipped assertions
+Missing required facts and unknown/transport outcomes (including unset/`"NaN"`
+altitude) yield skipped assertions
 and `incomplete`; malformed known SDK data yields `error`; observed unmet
-conditions yield `failed`. Captured independent facts remain visible when the
+conditions yield `failed`. Infinite altitude and malformed scalar types yield
+`error`. A finite ascent can establish the existential positive condition;
+unknown positions prevent an unsupported negative or universal refusal pass.
+Captured independent facts remain visible when the
 controller summary is missing or interrupted. Exit codes are 0 for `passed`,
 1 for a completed non-passing result (including `error`), and 2 for input or
 admission refusal before evaluation. JSON and JUnit express the same

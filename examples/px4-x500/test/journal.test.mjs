@@ -40,3 +40,18 @@ test('oversized record refuses before a file or successful manifest is written',
     await assert.rejects(readFile(join(directory, 'controller-manifest.json')), {code: 'ENOENT'});
   } finally {await rm(directory, {recursive: true, force: true});}
 });
+
+test('stock non-finite SDK scalars retain ProtoJSON names without losing NaN/infinity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'px4-journal-'));
+  try {
+    const journal = controllerJournal(directory, identity);
+    await journal.retain('telemetry-position', {
+      value: {position: {relative_altitude_m: NaN, absolute_altitude_m: Infinity, longitude_deg: -Infinity}},
+    });
+    const manifest = await journal.close();
+    const record = JSON.parse(await readFile(join(directory, manifest.records[0].path)));
+    assert.deepEqual(record.value.value.position, {
+      relative_altitude_m: 'NaN', absolute_altitude_m: 'Infinity', longitude_deg: '-Infinity',
+    });
+  } finally {await rm(directory, {recursive: true, force: true});}
+});
