@@ -16,28 +16,34 @@ from robotics_acceptance_harness.evidence import VerifiedEvidence
 
 
 class NativeCaseControls(unittest.TestCase):
-    def context(self, case="success", mutate=None):
+    def context(self, case="success", mutate=None, *, include_cdr=True):
         source = self.root / case
         report = json.loads((source / "workload.json").read_bytes())
+        report["parameters"]["readiness"] = json.loads(
+            (
+                Path(__file__).parent / "evaluator/tests/readiness-control.json"
+            ).read_bytes()
+        )
         if mutate:
             mutate(report)
         directory = Path(self.temporary.name)
         path = directory / "workload.json"
         path.write_text(json.dumps(report))
-        cdr = directory / "get-result-response.cdr"
-        cdr.write_bytes((source / cdr.name).read_bytes())
         links = {
             path: {
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 "size_bytes": path.stat().st_size,
                 "media_type": "application/json",
             },
-            cdr: {
+        }
+        if include_cdr:
+            cdr = directory / "get-result-response.cdr"
+            cdr.write_bytes((source / cdr.name).read_bytes())
+            links[cdr] = {
                 "sha256": hashlib.sha256(cdr.read_bytes()).hexdigest(),
                 "size_bytes": cdr.stat().st_size,
                 "media_type": "application/octet-stream",
-            },
-        }
+            }
         scenario = {
             "extensions": {
                 NAMESPACE: {**copy.deepcopy(report["parameters"]), "case": case}
@@ -73,8 +79,104 @@ class NativeCaseControls(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertEqual(
                     [r.status for r in evaluate(self.context(case))],
-                    ["passed", "passed"],
+                    ["passed", "skipped"]
+                    if case == "server-failure"
+                    else ["passed", "passed"],
                 )
+
+    def test_readiness_parameters_preserve_all_graph_fields_and_original_bundle(self):
+        def populated(report):
+            graph = report["parameters"]["readiness"]["graph"]
+            graph["topics"][0]["qos_profile"] = "sensor_data"
+            graph["services"] = [
+                {
+                    "name": "/lifecycle_manager_navigation/manage_nodes",
+                    "type": "nav2_msgs/srv/ManageLifecycleNodes",
+                    "server_required": True,
+                }
+            ]
+            graph["lifecycle_nodes"] = [
+                {
+                    "name": "/bt_navigator",
+                    "required_state": "active",
+                    "timeout_sec": 2,
+                    "stable_for_sec": 0.5,
+                }
+            ]
+
+        context = self.context(mutate=populated)
+        original = copy.deepcopy(context.scenario)
+        self.assertEqual(
+            [item.status for item in evaluate(context)], ["passed", "passed"]
+        )
+        self.assertEqual(context.scenario, original)
+
+    def test_ordered_shutdown_without_getresult_can_pass_local_assertion(self):
+        def shutdown(report):
+            report.pop("result_observation", None)
+            report.pop("result_observed_monotonic_ns", None)
+            report.pop("action_result", None)
+            report.pop("action_status", None)
+            report["observation_status"] = "server-unavailable"
+            # Synthetic receiver sample, not a physical-stop/deadline witness.
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+
+        outcomes = list(
+            evaluate(self.context("server-failure", shutdown, include_cdr=False))
+        )
+        self.assertEqual([row.status for row in outcomes], ["passed", "passed"])
+
+    def test_missing_shutdown_time_is_incomplete(self):
+        outcomes = list(evaluate(self.context("server-failure", include_cdr=False)))
+        self.assertEqual(outcomes[1].status, "skipped")
+
+    def test_known_server_presence_after_shutdown_is_failed(self):
+        def present(report):
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+            report["server_available_after_shutdown"] = True
+
+        self.assertEqual(
+            list(evaluate(self.context("server-failure", present)))[1].status, "failed"
+        )
+
+    def test_malformed_known_shutdown_presence_is_error(self):
+        def malformed(report):
+            report["server_available_after_shutdown"] = "false"
+
+        with self.assertRaisesRegex(ValueError, "malformed known"):
+            list(evaluate(self.context("server-failure", malformed)))
+
+    def test_missing_result_for_success_is_incomplete(self):
+        self.assertEqual(
+            list(evaluate(self.context(include_cdr=False)))[1].status, "skipped"
+        )
+
+    def test_known_goal_rejection_is_failed_without_result(self):
+        def rejected(report):
+            report["goal_accepted"] = False
+            report.pop("result_observation", None)
+            report.pop("result_observed_monotonic_ns", None)
+            report["observation_status"] = "error"
+
+        self.assertEqual(
+            list(evaluate(self.context(mutate=rejected, include_cdr=False)))[1].status,
+            "failed",
+        )
+
+    def test_foreign_result_is_not_masked_by_expected_shutdown(self):
+        def foreign(report):
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+            report["result_observation"]["goal_id"][0] ^= 1
+
+        self.assertEqual(
+            list(evaluate(self.context("server-failure", foreign)))[1].status, "failed"
+        )
 
     def test_selected_calibration_refuses_before_raw_payload_access(self):
         context = self.context()
@@ -200,7 +302,13 @@ class NativeCaseControls(unittest.TestCase):
                 evaluate(
                     self.context(
                         "server-failure",
-                        lambda r: r.update(server_available_after_shutdown=True),
+                        lambda r: r.update(
+                            server_available_after_shutdown=True,
+                            server_after_shutdown_monotonic_ns=r[
+                                "goal_finished_monotonic_ns"
+                            ]
+                            - 1,
+                        ),
                     )
                 )
             )[1].status,

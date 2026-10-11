@@ -12,7 +12,8 @@
     "min_displacement_m",
     "max_observation_age_sec",
     "odometry_frame",
-    "required_tf_edges"
+    "required_tf_edges",
+    "readiness"
   ],
   "properties": {
     "case": {
@@ -86,6 +87,184 @@
           "pattern": "^[A-Za-z][A-Za-z0-9_/]{0,127}$"
         }
       }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "graph",
+        "timeout_sec",
+        "stable_for_sec"
+      ],
+      "properties": {
+        "graph": {
+          "$ref": "#/$defs/expectedRosGraph"
+        },
+        "timeout_sec": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10
+        },
+        "stable_for_sec": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    }
+  },
+  "$defs": {
+    "expectedRosGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topics",
+        "services",
+        "actions",
+        "lifecycle_nodes"
+      ],
+      "properties": {
+        "topics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/topicExpectation"
+          }
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/graphEndpoint"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/graphEndpoint"
+          }
+        },
+        "lifecycle_nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lifecycleNode"
+          }
+        }
+      }
+    },
+    "topicExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "min_publishers",
+        "min_subscribers",
+        "first_message_timeout_sec"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/rosName"
+        },
+        "type": {
+          "$ref": "#/$defs/rosMessageType"
+        },
+        "min_publishers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "min_subscribers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first_message_timeout_sec": {
+          "$ref": "#/$defs/positiveSeconds"
+        },
+        "qos_profile": {
+          "enum": [
+            "system_default",
+            "sensor_data",
+            "services_default",
+            "parameters",
+            "transient_local"
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "min_publishers": {
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "min_subscribers": {
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "graphEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "server_required"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/rosName"
+        },
+        "type": {
+          "$ref": "#/$defs/rosType"
+        },
+        "server_required": {
+          "const": true
+        }
+      }
+    },
+    "lifecycleNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "required_state",
+        "timeout_sec",
+        "stable_for_sec"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/rosName"
+        },
+        "required_state": {
+          "const": "active"
+        },
+        "timeout_sec": {
+          "$ref": "#/$defs/positiveSeconds"
+        },
+        "stable_for_sec": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "rosName": {
+      "type": "string",
+      "pattern": "^/[^\\s]+$"
+    },
+    "rosMessageType": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*/msg/[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "rosType": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*/(?:msg|srv|action)/[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "positiveSeconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
     }
   }
 }

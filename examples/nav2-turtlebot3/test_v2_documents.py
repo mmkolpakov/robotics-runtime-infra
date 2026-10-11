@@ -50,9 +50,12 @@ def reference(path):
     }
 
 
-def inputs(root, binding=None):
+def inputs(root, binding=None, *, case="success"):
     report = json.loads(
-        (ROOT / "evaluator/tests/fixtures/success/workload.json").read_bytes()
+        (ROOT / "evaluator/tests/fixtures" / case / "workload.json").read_bytes()
+    )
+    report["parameters"]["readiness"] = json.loads(
+        (ROOT / "evaluator/tests/readiness-control.json").read_bytes()
     )
     profile = {
         "profile_id": NAMESPACE,
@@ -98,8 +101,8 @@ def inputs(root, binding=None):
     requirements = dump(
         root / "requirements.json",
         {
-            "case": "success",
-            "configuration": {**report["parameters"], "case": "success"},
+            "case": case,
+            "configuration": {**report["parameters"], "case": case},
             "evaluator_requirement": binding,
         },
     )
@@ -116,13 +119,17 @@ def inputs(root, binding=None):
 def completed(prepared, manifest):
     capture = prepared.parent / "capture"
     capture.mkdir()
+    case = json.loads((prepared / "nav2-configuration.json").read_bytes())["case"]
     report = json.loads(
-        (ROOT / "evaluator/tests/fixtures/success/workload.json").read_bytes()
+        (ROOT / "evaluator/tests/fixtures" / case / "workload.json").read_bytes()
+    )
+    report["parameters"]["readiness"] = json.loads(
+        (ROOT / "evaluator/tests/readiness-control.json").read_bytes()
     )
     report["run_id"] = manifest["run_id"]
     workload = dump(capture / "workload.json", report)
     cdr = capture / "get-result-response.cdr"
-    cdr.write_bytes((ROOT / "evaluator/tests/fixtures/success" / cdr.name).read_bytes())
+    cdr.write_bytes((ROOT / "evaluator/tests/fixtures" / case / cdr.name).read_bytes())
     cleanup = dump(
         capture / "cleanup.json", {"remaining": [], "scope": "synthetic source control"}
     )

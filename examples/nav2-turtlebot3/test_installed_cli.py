@@ -238,6 +238,94 @@ class InstalledCliControls(unittest.TestCase):
         junit = ET.parse(Path(self.case.name) / "assessment/junit.xml")
         self.assertGreater(len(junit.findall(".//failure")), 0)
 
+    def shutdown_capture(self, *, missing_time=False, malformed=False, present=False):
+        # New current-context control archive; original captured fixture files stay untouched.
+        folder = Path(self.case.name) / "shutdown-control"
+        folder.mkdir()
+        self.prepared, self.manifest = DOCUMENTS.inputs(
+            folder, self.binding, case="server-failure"
+        )
+        self.capture, self.facts = DOCUMENTS.completed(self.prepared, self.manifest)
+        path = self.capture / "workload.json"
+        report = json.loads(path.read_bytes())
+        for key in (
+            "result_observation",
+            "result_observed_monotonic_ns",
+            "action_result",
+            "action_status",
+        ):
+            report.pop(key, None)
+        report["observation_status"] = "server-unavailable"
+        report["server_available_after_shutdown"] = "false" if malformed else present
+        if not missing_time:
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+        DOCUMENTS.dump(path, report)
+        (self.capture / "get-result-response.cdr").unlink()
+        self.facts["artifacts"] = [
+            item
+            for item in self.facts["artifacts"]
+            if item["source"] != "get-result-response.cdr"
+        ]
+        self.facts["observations"]["command"]["evidence"] = DOCUMENTS.reference(path)
+        # Local server disappearance does not establish physical stop/arrival.
+        for name in ("terminal", "condition"):
+            self.facts["observations"][name] = {
+                "state": "unobserved",
+                "reason": "physical postcondition was not captured",
+            }
+        DOCUMENTS.dump(self.capture / "completed-facts.json", self.facts)
+
+    def test_expected_shutdown_without_cdr_is_local_pass_with_physical_incomplete(self):
+        self.shutdown_capture()
+        result = self.assess(self.profile)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
+        document = json.loads(
+            (Path(self.case.name) / "assessment/acceptance-result.json").read_bytes()
+        )
+        row = next(
+            item
+            for item in document["assertion_results"]
+            if item["assertion_id"].endswith(".action-server-failure")
+        )
+        self.assertEqual(row["status"], "passed")
+
+    def test_missing_shutdown_order_is_skipped_in_public_result(self):
+        self.shutdown_capture(missing_time=True)
+        result = self.assess(self.profile)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        document = json.loads(
+            (Path(self.case.name) / "assessment/acceptance-result.json").read_bytes()
+        )
+        row = next(
+            item
+            for item in document["assertion_results"]
+            if item["assertion_id"].endswith(".action-server-failure")
+        )
+        self.assertEqual(row["status"], "skipped")
+
+    def test_malformed_known_server_flag_has_stable_error_diagnostic(self):
+        self.shutdown_capture(malformed=True)
+        result = self.assess(self.profile)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("malformed known action server presence", result.stderr)
+
+    def test_still_present_server_is_known_failed_local_assertion(self):
+        self.shutdown_capture(present=True)
+        result = self.assess(self.profile)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        document = json.loads(
+            (Path(self.case.name) / "assessment/acceptance-result.json").read_bytes()
+        )
+        row = next(
+            item
+            for item in document["assertion_results"]
+            if item["assertion_id"].endswith(".action-server-failure")
+        )
+        self.assertEqual(row["status"], "failed")
+
     def test_missing_required_cleanup_remains_incomplete(self):
         del self.facts["observations"]["cleanup"]
         DOCUMENTS.dump(self.capture / "completed-facts.json", self.facts)
