@@ -3,7 +3,7 @@
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-09-08",
   "author": "mmkolpakov",
   "timestamp": "2026-10-08T16:41:33Z",
-  "version": 11,
+  "version": 13,
   "statements": [
     {
       "vulnerability": {
@@ -3061,6 +3061,24 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "Review 2026-09-08, re-checked 2026-09-30 for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64/arm64 only. The Linux CNA identifies net/core/gro.c. These are kernel implementation/internal-header paths, not exported UAPI implementations. Both reviewed binary payloads contain only usr/include headers and two documentation files; the identified implementation is not supplied by linux-libc-dev. A similarly named installed UAPI header is not an internal kernel header. Host-kernel applicability remains separate. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/80xxx/CVE-2026-80725.json; https://git.kernel.org/stable/c/37a5dcd6837fc2afc44a7bc3ed8af4e983783d46. Package payload SHA256: amd64 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. This statement does not qualify the host kernel or hardware. Observed amd64 residual: https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401272. Observed arm64 residuals: https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401531, https://github.com/mmkolpakov/robotics-runtime-infra/actions/runs/34192891669/job/101954401828."
+    },
+    {
+      "timestamp": "2026-10-11T01:15:12Z",
+      "vulnerability": {
+        "name": "CVE-2025-22043"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64 only. Canonical advisory updated 2026-10-09T06:07:42.361586+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The Linux CNA fix changes parse_durable_handle_context() in fs/smb/server/smb2pdu.c; this kernel SMB implementation is absent from the exported UAPI-header package. Independently downloaded debs match the signed Ubuntu snapshot 20260930T000000Z index: amd64 SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. Their payloads contain respectively 990 and 962 regular files: 988 and 960 usr/include headers plus two documents, with no ELF, executable file or kernel module. All installed file paths, sizes, modes and SHA256 values in the inspected amd64 simulation and acceptance-observer images match the amd64 deb. The arm64 assessment covers the signed binary package payload. Sources: https://ubuntu.com/security/cves/CVE-2025-22043.json (SHA256 b38d4593a67d04c1f5cb5af49c20ba7e4707f7d71937180a4ba99080a3ba167e); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/22xxx/CVE-2025-22043.json; https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=542027e123fc0bfd61dd59e21ae0ee4ef2101b29; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-amd64/Packages.xz; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-arm64/Packages.xz. This statement does not qualify the host kernel, hardware, other packages, another version/architecture/distribution or any other vulnerability. It makes no exception for OPA, yq or x/net."
     }
-  ]
+  ],
+  "last_updated": "2026-10-11T01:15:12Z"
 }
