@@ -15,11 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-venv \
     && rm -rf /var/lib/apt/lists/*
 ARG SDK_COHORT=__exact_sdk_cohort_required__
-COPY ${SDK_COHORT}/ /opt/sdk-cohort/
-RUN python3 -m venv --system-site-packages /opt/consumer \
+COPY ${SDK_COHORT}/wheels/ /opt/sdk-cohort/wheels/
+COPY inputs.lock.json requirements.lock check-sdk-wheels.py /opt/sdk-policy/
+RUN python3 /opt/sdk-policy/check-sdk-wheels.py /opt/sdk-cohort/wheels \
+    && python3 -m venv --system-site-packages /opt/consumer \
     && /opt/consumer/bin/pip install --disable-pip-version-check --only-binary=:all: \
        --require-hashes --no-cache-dir --no-index --find-links=/opt/sdk-cohort/wheels \
-       -r /opt/sdk-cohort/requirements.lock
+       -r /opt/sdk-policy/requirements.lock
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
     LIBGL_ALWAYS_SOFTWARE=1

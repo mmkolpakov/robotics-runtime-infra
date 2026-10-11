@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
+import shutil
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -270,6 +272,65 @@ class NativeDocumentControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "input bytes changed"):
             FINALIZE.complete(prepared, capture)
         self.assertFalse((prepared.parent / "evidence-index.json").exists())
+
+    def test_exact_raw_archive_limit_cannot_omit_required_document_bytes(self):
+        prepared, manifest = inputs(self.root)
+        capture, facts = completed(prepared, manifest)
+        policy = json.loads((prepared / "scenario.json").read_bytes())[
+            "evidence_policy"
+        ]
+        one_size = policy["max_artifact_size_bytes"]
+        self.assertEqual(2 * one_size, policy["max_archive_size_bytes"])
+        facts["artifacts"] = []
+        evidence = []
+        for number in (1, 2):
+            source = capture / f"retained-{number}.bin"
+            with source.open("wb") as stream:
+                stream.truncate(one_size)
+            digest = hashlib.sha256()
+            with source.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+            evidence.append(
+                {
+                    "uri": source.as_uri(),
+                    "sha256": digest.hexdigest(),
+                    "size_bytes": one_size,
+                    "media_type": "application/octet-stream",
+                }
+            )
+            facts["artifacts"].append(
+                {
+                    "source": source.name,
+                    "artifact_id": f"retained-{number}",
+                    "kind": "other_evidence",
+                    "media_type": "application/octet-stream",
+                }
+            )
+        for observation in facts["observations"].values():
+            observation["evidence"] = evidence[0]
+        facts["policy_observation"]["spool_peak_size_bytes"] = 2 * one_size
+        dump(capture / "completed-facts.json", facts)
+        with self.assertRaisesRegex(ValueError, "completed index exceeds"):
+            FINALIZE.complete(prepared, capture)
+        self.assertFalse((prepared.parent / "observation.json").exists())
+        self.assertFalse((prepared.parent / "evidence-index.json").exists())
+
+    def test_storage_location_cannot_override_committed_sdk_wheel_policy(self):
+        wheel_root = os.environ.get("NAV2_SDK_WHEELS")
+        if not wheel_root:
+            self.skipTest("exact source SDK wheel storage required")
+        storage = self.root / "caller-storage"
+        storage.mkdir()
+        check_sdk = module("check-sdk-wheels")
+        for wheel in Path(wheel_root).glob("robotics_*.whl"):
+            shutil.copyfile(wheel, storage / wheel.name)
+        check_sdk.check(storage)
+        (storage / "requirements.lock").write_text("caller policy must be ignored")
+        path = next(storage.glob("robotics_runtime_contracts-*.whl"))
+        path.write_bytes(path.read_bytes() + b"modified storage")
+        with self.assertRaisesRegex(ValueError, "committed cohort policy"):
+            check_sdk.check(storage)
 
     def test_capture_path_escape_refuses_before_output(self):
         prepared, manifest = inputs(self.root)
