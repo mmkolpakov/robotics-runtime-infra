@@ -143,6 +143,19 @@ class NativeCaseControls(unittest.TestCase):
             list(evaluate(self.context("server-failure", present)))[1].status, "failed"
         )
 
+    def test_known_server_presence_without_time_remains_failed(self):
+        def present_without_time(report):
+            report["server_available_after_shutdown"] = True
+            report.pop("server_after_shutdown_monotonic_ns", None)
+
+        outcome = list(
+            evaluate(
+                self.context("server-failure", present_without_time, include_cdr=False)
+            )
+        )[1]
+        self.assertEqual(outcome.status, "failed")
+        self.assertIs(outcome.observed_value, False)
+
     def test_malformed_known_shutdown_presence_is_error(self):
         def malformed(report):
             report["server_available_after_shutdown"] = "false"
