@@ -9,6 +9,14 @@
   "worker_manifest_sha256": "39c184c711d698d8c434c608946e0713dd22ea9c60361557ad87d348ffb783fa",
   "worker_image_id": "sha256:8d2c29dea9f47360bca25a889d810dc3474a416934a8a538826c1ead9536cfcb",
   "host_tgz_sha256": "51c919953f6b761e20c89eee22e7dfe2c7aacb221329b61a99a52cf13ccf1e57",
-  "public_contracts": "0.19.0",
-  "public_harness": "0.20.1"
+  "sdk_test_cohort": {
+    "repository": "https://github.com/mmkolpakov/robotics-runtime",
+    "revision": "00735515f71e53bbea9f8761f76db81dcea73299",
+    "wheels": {
+      "robotics_acceptance_harness-0.22.0-py3-none-any.whl": "4b377da4e792969f9f838b46319523a842d0fae1b7a8a54aca09cd272a752fc4",
+      "robotics_runtime_contracts-0.21.0-py3-none-any.whl": "f41f2efc92bbdc24dec7ea1a0852d4cd4ccb00cfa4def5a8dc47fd4cec076701"
+    },
+    "scope": "source SDK document/consumer controls; no native execution admission"
+  },
+  "native_launch": "unsupported by the source document profile; admitted composition required"
 }
