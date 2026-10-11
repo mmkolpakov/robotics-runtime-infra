@@ -19,9 +19,9 @@
         "revision": "a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa"
       },
       "harness": {
-        "tag": "harness-v0.22.1",
-        "pypi": "https://pypi.org/project/robotics-acceptance-harness/0.22.1/",
-        "revision": "c50215ee23e0e57ada671205ae70df7496c71855"
+        "tag": "harness-v0.22.2",
+        "pypi": "https://pypi.org/project/robotics-acceptance-harness/0.22.2/",
+        "revision": "4e8b008e36b84aafcc64edbc928c77bd02d62b4d"
       }
     },
     "wheels": {
@@ -29,9 +29,9 @@
         "sha256": "34a476046ce3326384780224b4e40cad72f41ce756f627d63a6503e01349e015",
         "size_bytes": 152270
       },
-      "robotics_acceptance_harness-0.22.1-py3-none-any.whl": {
-        "sha256": "792421d08917dc5c5eef0cf01bc80bb0f71a6049af23b71e3c12bedafe4a974e",
-        "size_bytes": 126953
+      "robotics_acceptance_harness-0.22.2-py3-none-any.whl": {
+        "sha256": "91d76073ec915972908b4ea4df44af78d2da3f94c6c55c85eb82c03d059e5a48",
+        "size_bytes": 127195
       }
     },
     "scope": "published SDK document/consumer controls; native composition admission is separate"
