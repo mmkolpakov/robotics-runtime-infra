@@ -48,11 +48,11 @@ def reference(
 def require_sdk() -> None:
     expected = {
         "robotics-runtime-contracts": "0.21.1",
-        "robotics-acceptance-harness": "0.22.1",
+        "robotics-acceptance-harness": "0.22.2",
     }
     if {name: version(name) for name in expected} != expected:
         raise ValueError(
-            "Webots v2 documents require robotics-runtime-contracts 0.21.1 and robotics-acceptance-harness 0.22.1"
+            "Webots v2 documents require robotics-runtime-contracts 0.21.1 and robotics-acceptance-harness 0.22.2"
         )
 
 

@@ -70,7 +70,7 @@ qualification, separate from released consumer or hardware/rendering acceptance.
 ## Native v2 documents
 
 The physics-only source qualifier accepts an explicit Python interpreter with
-published contracts 0.21.1 and harness 0.22.1. It calls
+published contracts 0.21.1 and harness 0.22.2. It calls
 host/producers/webots_native.py before native readiness to issue scenario,
 runtime and run documents. After evidence export and independent Engine cleanup,
 it completes a separate captured observation and evidence index. These documents
