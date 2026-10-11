@@ -175,6 +175,10 @@ jobs:
           ROBOTICS_FOUNDATION_LOCK="${PWD}/config/foundation-lock.json" \
             dependencies/robotics-runtime/.venv/bin/python \
             host/test/fixtures/provider-qualification/test_native_documents.py
+      - name: Test fixed Webots native v2 document boundaries
+        run: >-
+          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
+          -s host/test/fixtures/provider-qualification -p test_webots_native_v2.py -v
       - name: Test synthetic physical runtime observations
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
