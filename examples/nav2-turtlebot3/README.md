@@ -3,7 +3,7 @@
 This consumer separates immutable inputs, completed native observations, and offline
 assessment. The evaluator 0.3.0 uses public contracts v2, the verified evidence reader, and the
 external evaluator admission profile. It uses published contracts 0.21.1 and acceptance harness
-0.22.1. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
+0.22.2. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
 [inputs.lock.json](inputs.lock.json); [requirements.lock](requirements.lock) fixes the SDK and
 dependency closure. Native execution additionally requires an admitted composition.
 
@@ -39,7 +39,7 @@ Use an explicit cohort wheel directory; a version number alone cannot substitute
 ## Admit the evaluator
 
 Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The
-[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.1/packages/harness/docs/evaluator-trust.md)
+[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.2/packages/harness/docs/evaluator-trust.md)
 defines those policies, wheel guards, and process boundaries. The operator profile and its
 approved verifier/key/root pins belong outside the evidence archive.
 
