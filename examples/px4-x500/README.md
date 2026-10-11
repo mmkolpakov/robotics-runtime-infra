@@ -6,36 +6,41 @@ then an observation and evidence index from retained decoded SDK records. The
 separate `px4-x500-evaluator` method reads each registered payload once through
 `VerifiedEvidence.read_local`; the public acceptance CLI writes JSON and JUnit.
 
-The Python document path uses the exact **source SDK cohort** in
-[input-pins.json](input-pins.json): contracts 0.21.0/harness 0.22.0 built from
-revision `00735515f71e53bbea9f8761f76db81dcea73299`. These are source-candidate
-wheels. [requirements.lock](requirements.lock) pins their actual hashes and
-dependency closure. A storage directory does not replace that committed policy.
+The Python document path uses published contracts 0.21.1/harness 0.22.0.
+[input-pins.json](input-pins.json) records their exact release tags, source revision,
+wheel sizes and SHA-256 values. [requirements.lock](requirements.lock) fixes those
+wheels and their dependency closure. A storage directory does not replace the
+committed policy.
 
 Native launch currently refuses before host imports or Engine/flight effects:
-this document profile does not admit a new SDK/image composition. The pinned
+this document profile requires separate SDK/image composition admission. The pinned
 PX4/Gazebo/MAVSDK and host inputs remain declarations requiring composition
-admission and native qualification. Installed synthetic controls verify the
+admission and native qualification. Portable synthetic controls verify the
 document and authentication boundaries; they do not qualify flight or hardware.
 
-## Install the source document path
+## Install the published document SDK
 
 Use a POSIX shell, Python 3.12, uv 0.11.28 and Node 24.21.0 for the portable Node
 controls. The Python prepare/complete/evaluate commands do not require Node.
-From this example directory, check out the exact SDK revision and build wheels:
+From this example directory, download the exact published wheels and locked
+dependencies, check the SDK policy, and install from that wheelhouse:
 
 ```sh
-git clone https://github.com/mmkolpakov/robotics-runtime.git sdk-source
-git -C sdk-source checkout --detach 00735515f71e53bbea9f8761f76db81dcea73299
-uv build --wheel --out-dir sdk-wheels sdk-source/packages/contracts
-uv build --wheel --out-dir sdk-wheels sdk-source/packages/harness
-python3 check-sdk-wheels.py sdk-wheels
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python --require-hashes \
-  --find-links=sdk-wheels -r requirements.lock
 .venv/bin/python -I -m ensurepip --upgrade
+.venv/bin/python -I -m pip download --index-url https://pypi.org/simple \
+  --require-hashes --only-binary=:all: --no-deps --dest sdk-wheels -r requirements.lock
+python3 check-sdk-wheels.py sdk-wheels
+.venv/bin/python -I -m pip install --no-index --find-links=sdk-wheels \
+  --require-hashes --only-binary=:all: -r requirements.lock
+.venv/bin/python -I -m pip check
 uv build --wheel --out-dir dist evaluator
 ```
+
+The SDK policy check opens regular files without following symlinks, captures at
+most their committed size plus one byte, and checks size, SHA-256 and unchanged
+file identity before SDK imports. Caller storage or a replacement lock cannot
+change the selected SDK bytes.
 
 The producer and its shared facts are operator-owned consumer application code.
 Authenticate and review the consumer's method wheel before installing it or
@@ -44,7 +49,7 @@ wheel against an operator policy outside the evidence archive. A receipt or
 verification JSON cannot establish publisher authentication.
 
 Use the SDK's
-[operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/00735515f71e53bbea9f8761f76db81dcea73299/packages/harness/docs/evaluator-trust.md)
+[operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.0/packages/harness/docs/evaluator-trust.md)
 with an approved publisher/key, exact wheel and verifier identities, and limits.
 The explicit Cosign key-only mode can support a private publisher without sending
 its code to GitHub. It proves the pinned key's signature and subject/predicate;

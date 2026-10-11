@@ -33,13 +33,6 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - name: Check out the exact source SDK candidate
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          repository: mmkolpakov/robotics-runtime
-          ref: 00735515f71e53bbea9f8761f76db81dcea73299
-          path: .sdk-source
-          persist-credentials: false
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
           version: "0.11.28"
@@ -48,14 +41,16 @@ jobs:
         with:
           node-version: "24.21.0"
           package-manager-cache: false
-      - name: Build and check committed SDK policy before installation
+      - name: Download and check the exact published SDK before installation
         run: |
-          uv build --wheel --out-dir sdk-wheels ../../.sdk-source/packages/contracts
-          uv build --wheel --out-dir sdk-wheels ../../.sdk-source/packages/harness
-          python3 check-sdk-wheels.py sdk-wheels
           uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python --require-hashes --find-links=sdk-wheels -r requirements.lock
           .venv/bin/python -I -m ensurepip --upgrade
+          .venv/bin/python -I -m pip download --index-url https://pypi.org/simple \
+            --require-hashes --only-binary=:all: --no-deps --dest sdk-wheels -r requirements.lock
+          python3 check-sdk-wheels.py sdk-wheels
+          .venv/bin/python -I -m pip install --no-index --find-links=sdk-wheels \
+            --require-hashes --only-binary=:all: -r requirements.lock
+          .venv/bin/python -I -m pip check
           uv build --wheel --out-dir dist evaluator
       - name: Extract the pinned vendor Cosign executable
         run: |
