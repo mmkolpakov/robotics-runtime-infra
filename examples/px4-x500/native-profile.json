@@ -1,0 +1,103 @@
+{
+  "profile_id": "org.example.px4-x500",
+  "executor": {
+    "implementation": "px4-x500-controller",
+    "version": "0.1.0"
+  },
+  "clock": {
+    "kind": "external",
+    "source_id": "controller-utc-ms"
+  },
+  "channels": [
+    {
+      "name": "mavsdk-takeoff",
+      "original_type": {
+        "name": "mavsdk.rpc.action.TakeoffResponse",
+        "type_support": {
+          "implementation": "MAVSDK-Proto",
+          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
+        }
+      },
+      "backend": "gRPC",
+      "wire_envelope": "protobuf",
+      "native_encoding": "protobuf",
+      "recorder": {
+        "implementation": "px4-x500-controller",
+        "version": "0.1.0",
+        "transformation": "SDK-decoded JSON"
+      }
+    },
+    {
+      "name": "mavsdk-position",
+      "original_type": {
+        "name": "mavsdk.rpc.telemetry.PositionResponse",
+        "type_support": {
+          "implementation": "MAVSDK-Proto",
+          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
+        }
+      },
+      "backend": "gRPC",
+      "wire_envelope": "protobuf",
+      "native_encoding": "protobuf",
+      "recorder": {
+        "implementation": "px4-x500-controller",
+        "version": "0.1.0",
+        "transformation": "SDK-decoded JSON"
+      }
+    },
+    {
+      "name": "mavsdk-landed",
+      "original_type": {
+        "name": "mavsdk.rpc.telemetry.LandedStateResponse",
+        "type_support": {
+          "implementation": "MAVSDK-Proto",
+          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
+        }
+      },
+      "backend": "gRPC",
+      "wire_envelope": "protobuf",
+      "native_encoding": "protobuf",
+      "recorder": {
+        "implementation": "px4-x500-controller",
+        "version": "0.1.0",
+        "transformation": "SDK-decoded JSON"
+      }
+    },
+    {
+      "name": "mavsdk-armed",
+      "original_type": {
+        "name": "mavsdk.rpc.telemetry.ArmedResponse",
+        "type_support": {
+          "implementation": "MAVSDK-Proto",
+          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
+        }
+      },
+      "backend": "gRPC",
+      "wire_envelope": "protobuf",
+      "native_encoding": "protobuf",
+      "recorder": {
+        "implementation": "px4-x500-controller",
+        "version": "0.1.0",
+        "transformation": "SDK-decoded JSON"
+      }
+    }
+  ],
+  "observations": {
+    "command": {
+      "kind": "command_acceptance",
+      "requirement": "required"
+    },
+    "terminal": {
+      "kind": "native_final_state",
+      "requirement": "required"
+    },
+    "postcondition": {
+      "kind": "postcondition",
+      "requirement": "required"
+    },
+    "cleanup": {
+      "kind": "shutdown",
+      "requirement": "required"
+    }
+  }
+}

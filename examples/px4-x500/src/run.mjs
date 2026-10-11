@@ -2,15 +2,22 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, lstat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { Context, Jobs, Mavsdk, isDisposed } from '@robotics-runtime/host';
+import {controllerJournal} from './journal.mjs';
+
+throw new Error('PX4 native launch requires an admitted C0.21/H0.22 SDK/image composition; the source document profile does not authorize launch');
+const {Context, Jobs, Mavsdk, isDisposed} = await import('@robotics-runtime/host');
 import { admitActors, inspectionArguments } from './admission.mjs';
 import { readOperatorInput } from './operator-input.mjs';
 import { flightCase, actionResponse, CASES } from './flight.mjs';
 
-const [name, configPath, output] = process.argv.slice(2);
+const [name, configPath, output, inputManifest] = process.argv.slice(2);
 assert(CASES.includes(name) && isAbsolute(configPath ?? '') && isAbsolute(output ?? ''),
-  'usage: node src/run.mjs CASE ABSOLUTE_OPERATOR_JSON NEW_ABSOLUTE_OUTPUT');
+  'usage: node src/run.mjs CASE ABSOLUTE_OPERATOR_JSON NEW_ABSOLUTE_OUTPUT ABSOLUTE_INPUT_MANIFEST');
+assert(isAbsolute(inputManifest ?? ''), 'issued pre-run input manifest required');
+const issued = await readOperatorInput(inputManifest);
+assert.equal(issued.domain_id, 'px4');
 const config = await readOperatorInput(configPath);
+assert.equal(config.ownerId, issued.run_id, 'native owner differs from issued SDK run');
 assert.equal(config.curlExecutable, '/usr/bin/curl', 'fixed stock curl executable required');
 assert(isAbsolute(config.engineSocket ?? ''));
 const socket = await lstat(config.engineSocket);
@@ -21,17 +28,14 @@ const ctx = new Context();
 const jobsFiber = ctx.plugin(Jobs, { timeoutMs: 10000, maxBufferBytes: 1048576 });
 await jobsFiber.await();
 let sdkFiber;
-let sequence = 0;
+const journal = controllerJournal(output, {runId: issued.run_id, domainId: issued.domain_id});
 let outcome;
 let firstError;
 const cancel = new AbortController();
 const requestCancel = () => cancel.abort(new Error('operator requested flight settlement'));
 process.on('SIGINT', requestCancel);
 process.on('SIGTERM', requestCancel);
-const retain = async (kind, value) => {
-  await writeFile(join(output, String(sequence++).padStart(4, '0') + '-' + kind + '.json'),
-    JSON.stringify(value, null, 2) + '\n', { flag: 'wx' });
-};
+const retain = (kind, value) => journal.retain(kind, value);
 const native = async (kind, id) => {
   const args = inspectionArguments(config, kind, id);
   const result = await ctx.jobs.run({
@@ -128,4 +132,5 @@ finally {
 await retain('controller-result', { complete: !firstError, outcome,
   error: firstError ? String(firstError) : null,
   scope: 'flight observations/SDK child settlement only; not producer cleanup or public evaluator verdict' });
+await journal.close();
 if (firstError) { console.error(firstError); process.exitCode = 1; }
