@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createServer} from 'node:http';
+import {once} from 'node:events';
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -17,72 +18,129 @@ function json(response:ServerResponse,value:unknown):void {response.setHeader('c
 async function server(work:(request:IncomingMessage,response:ServerResponse)=>void) {
   const root=await mkdtemp(join(tmpdir(),'rr-metadata-'));const socketPath=join(root,'engine.sock');
   const api=createServer(work);await new Promise<void>(resolve=>api.listen(socketPath,resolve));
-  return {endpoint:{socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},close:async()=>{
+  return {server:api,endpoint:{socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'},close:async()=>{
     api.closeAllConnections();await new Promise<void>((resolve,reject)=>api.close(error=>error?reject(error):resolve()));
     await rm(root,{recursive:true,force:true});
   }};
 }
 
-test('native discovery deadline aborts the actual Unix request and pre-cancellation makes no request',async()=>{
-  let requests=0,closed=false;
-  const api=await server((request)=>{requests++;request.once('close',()=>{closed=true})});
+function prematureClose(response:ServerResponse,signal:AbortSignal):Promise<void> {
+  return once(response,'close',{signal}).then(()=>{assert.equal(response.writableFinished,false)});
+}
+function timeoutRefusal(error:unknown):boolean {
+  return error instanceof Error&&(error.name==='TimeoutError'||
+    ('code' in error&&error.code==='ABORT_ERR'&&error.cause instanceof Error&&error.cause.name==='TimeoutError'));
+}
+function cancelledBy(reason:Error):(error:unknown)=>boolean {
+  return error=>error===reason||(error instanceof Error&&'code' in error&&error.code==='ABORT_ERR'&&error.cause===reason);
+}
+
+test('native discovery deadline rejects with its actual timeout reason', {timeout:2000}, async(t)=>{
+  let requests=0,closed:Promise<void>|undefined;
+  const api=await server((_request,response)=>{requests++;closed=prematureClose(response,t.signal)});
   try {
-    await assert.rejects(EngineMetadata.connect(api.endpoint,{deadlineMs:25}));
-    await new Promise(resolve=>setTimeout(resolve,20));assert.equal(closed,true);
-    const abort=new AbortController();abort.abort(new Error('test cancellation'));
-    await assert.rejects(EngineMetadata.connect(api.endpoint,{cancelSignal:abort.signal}),/test cancellation/);
-    assert.equal(requests,1);
-    await assert.rejects(EngineMetadata.connect(api.endpoint,{deadlineMs:0}),/finite/);
-    assert.equal(requests,1);
+    await assert.rejects(EngineMetadata.connect(api.endpoint,{deadlineMs:25}),timeoutRefusal);
+    // The deadline may expire before this server accepts the request.
+    if(closed)await closed;
+    assert.ok(requests<=1);
   } finally {await api.close()}
 });
 
-test('image metadata deadline prevents continuation to network reads',async()=>{
-  const requests:string[]=[];let imageClosed=false;
+test('native discovery cancellation closes an accepted Unix response before cleanup', {timeout:2000}, async(t)=>{
+  let requests=0,closed:Promise<void>|undefined;
+  const api=await server((_request,response)=>{requests++;closed=prematureClose(response,t.signal)});
+  try {
+    const arrived=once(api.server,'request',{signal:t.signal});
+    const abort=new AbortController(),reason=new Error('test cancellation');
+    const rejected=assert.rejects(EngineMetadata.connect(api.endpoint,{deadlineMs:1000,cancelSignal:abort.signal}),cancelledBy(reason));
+    await arrived;abort.abort(reason);await rejected;
+    assert.ok(closed);await closed;assert.equal(requests,1);
+  } finally {await api.close()}
+});
+
+test('pre-cancelled discovery and invalid deadline make no additional Unix request', {timeout:2000}, async()=>{
+  let requests=0;
+  const api=await server(()=>{requests++});
+  try {
+    const baseline=requests,abort=new AbortController();abort.abort(new Error('test cancellation'));
+    await assert.rejects(EngineMetadata.connect(api.endpoint,{cancelSignal:abort.signal}),/test cancellation/);
+    assert.equal(requests,baseline);
+    await assert.rejects(EngineMetadata.connect(api.endpoint,{deadlineMs:0}),/finite/);
+    assert.equal(requests,baseline);
+  } finally {await api.close()}
+});
+
+test('image metadata deadline prevents continuation to network reads', {timeout:2000}, async(t)=>{
+  const requests:string[]=[];let imageClosed:Promise<void>|undefined;
   const api=await server((request,response)=>{
     requests.push(request.url!);
     if(request.url==='/version')json(response,version);
     else if(request.url==='/v1.41/containers/'+id+'/json')json(response,container);
-    else if(request.url?.startsWith('/v1.41/images/'))request.once('close',()=>{imageClosed=true});
+    else if(request.url?.startsWith('/v1.41/images/'))imageClosed=prematureClose(response,t.signal);
     else json(response,[]);
   });
   try {
     const engine=await EngineMetadata.connect(api.endpoint);
-    await assert.rejects(engine.inspect(id,required,{deadlineMs:25}));
-    await new Promise(resolve=>setTimeout(resolve,20));assert.equal(imageClosed,true);
+    await assert.rejects(engine.inspect(id,required,{deadlineMs:25}),timeoutRefusal);
+    if(imageClosed)await imageClosed;
     assert.equal(requests.some(path=>path.startsWith('/v1.41/networks')),false);
   } finally {await api.close()}
 });
 
-test('canceled network metadata rejects rather than becoming a completed observation',async()=>{
-  let networkStarted!:()=>void;const started=new Promise<void>(resolve=>{networkStarted=resolve});let networkClosed=false;
+test('canceled network metadata rejects rather than becoming a completed observation', {timeout:2000}, async(t)=>{
+  let networkClosed:Promise<void>|undefined;
   const api=await server((request,response)=>{
     if(request.url==='/version')json(response,version);
     else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,HostConfig:{...container.HostConfig,NetworkMode:'bridge'},NetworkSettings:{Networks:{n:{NetworkID:'network-id'}}}});
     else if(request.url?.startsWith('/v1.41/images/'))json(response,{Id:imageId});
-    else {request.once('close',()=>{networkClosed=true});networkStarted()}
+    else {networkClosed=prematureClose(response,t.signal);api.server.emit('held-request')}
   });
   try {
-    const engine=await EngineMetadata.connect(api.endpoint),abort=new AbortController();
-    const read=engine.inspect(id,required,{deadlineMs:1000,cancelSignal:abort.signal});
-    const rejected=assert.rejects(read);await started;abort.abort(new Error('stop network observation'));await rejected;
-    await new Promise(resolve=>setTimeout(resolve,20));assert.equal(networkClosed,true);
+    const engine=await EngineMetadata.connect(api.endpoint),abort=new AbortController(),reason=new Error('stop network observation');
+    const arrived=once(api.server,'held-request',{signal:t.signal});
+    const rejected=assert.rejects(engine.inspect(id,required,{deadlineMs:1000,cancelSignal:abort.signal}),cancelledBy(reason));
+    await arrived;abort.abort(reason);await rejected;
+    assert.ok(networkClosed);await networkClosed;
   } finally {await api.close()}
 });
 
-test('owned inventory is bounded as one request group',async()=>{
-  const requests:string[]=[];let volumesClosed=false;
+test('owned inventory deadline bounds the whole request group', {timeout:2000}, async(t)=>{
+  const requests:string[]=[];let volumesClosed:Promise<void>|undefined;
   const api=await server((request,response)=>{
     requests.push(request.url!);
     if(request.url==='/version')json(response,version);
-    else if(request.url?.startsWith('/v1.41/volumes'))request.once('close',()=>{volumesClosed=true});
+    else if(request.url?.startsWith('/v1.41/volumes'))volumesClosed=prematureClose(response,t.signal);
     else json(response,[]);
   });
   try {
     const engine=await EngineMetadata.connect(api.endpoint);
-    await assert.rejects(engine.remainingOwned('run1',{deadlineMs:25}));
-    await new Promise(resolve=>setTimeout(resolve,20));assert.equal(volumesClosed,true);
+    await assert.rejects(engine.remainingOwned('run1',{deadlineMs:25}),timeoutRefusal);
+    if(volumesClosed)await volumesClosed;
+    assert.ok(requests.length>=1&&requests.length<=4);
+    const paths=requests.slice(1).map(path=>new URL('http://engine'+path).pathname);
+    assert.equal(new Set(paths).size,paths.length);
+    for(const path of paths)assert.ok(['/v1.41/containers/json','/v1.41/volumes','/v1.41/networks'].includes(path));
+    for(const path of requests.slice(1))assert.deepEqual(JSON.parse(new URL('http://engine'+path).searchParams.get('filters')!),{label:['org.robotics.runtime.run-id=run1']});
+  } finally {await api.close()}
+});
+
+test('owned inventory cancellation closes an accepted request group before cleanup', {timeout:2000}, async(t)=>{
+  const requests:string[]=[];let volumesClosed:Promise<void>|undefined;
+  const api=await server((request,response)=>{
+    requests.push(request.url!);
+    if(request.url==='/version')json(response,version);
+    else if(request.url?.startsWith('/v1.41/volumes'))volumesClosed=prematureClose(response,t.signal);
+    else json(response,[]);
+    if(requests.length===4)api.server.emit('inventory-ready');
+  });
+  try {
+    const engine=await EngineMetadata.connect(api.endpoint),abort=new AbortController(),reason=new Error('stop inventory observation');
+    const arrived=once(api.server,'inventory-ready',{signal:t.signal});
+    const rejected=assert.rejects(engine.remainingOwned('run1',{deadlineMs:1000,cancelSignal:abort.signal}),cancelledBy(reason));
+    await arrived;abort.abort(reason);await rejected;
+    assert.ok(volumesClosed);await volumesClosed;
     assert.equal(requests.length,4);
+    assert.deepEqual(new Set(requests.slice(1).map(path=>new URL('http://engine'+path).pathname)),new Set(['/v1.41/containers/json','/v1.41/volumes','/v1.41/networks']));
     for(const path of requests.slice(1))assert.deepEqual(JSON.parse(new URL('http://engine'+path).searchParams.get('filters')!),{label:['org.robotics.runtime.run-id=run1']});
   } finally {await api.close()}
 });
@@ -101,14 +159,14 @@ test('discovery endpoint and metadata requirements cannot change during an await
   } finally {await api.close()}
 });
 
-test('deployment info uses the selected SDK Unix endpoint and cancels its actual held request',async()=>{
-  let held=false,closed=false;const requests:string[]=[];
+test('deployment info uses the selected SDK Unix endpoint and cancels its actual held request', {timeout:2000}, async(t)=>{
+  let held=false,closed:Promise<void>|undefined;const requests:string[]=[];
   const raw={OperatingSystem:'Ubuntu 24.04.3 LTS',KernelVersion:'6.8.0-generic',Architecture:'x86_64',Runtimes:{nvidia:{path:'nvidia-container-runtime'}}};
   const api=await server((request,response)=>{
     requests.push(request.url!);
     if(request.url==='/version')json(response,version);
     else if(request.url==='/v1.41/info'){
-      if(held)request.once('close',()=>{closed=true});
+      if(held)closed=prematureClose(response,t.signal);
       else json(response,raw);
     }else json(response,{unexpected:true});
   });
@@ -118,11 +176,12 @@ test('deployment info uses the selected SDK Unix endpoint and cancels its actual
     assert.deepEqual(observed.info,raw);assert.equal(observed.engine.endpoint,'unix://'+api.endpoint.socketPath);
     assert.equal(observed.engine.clientApi,'1.41');
     held=true;
-    const abort=new AbortController();
-    const pending=engine.deploymentInfo({deadlineMs:1000,cancelSignal:abort.signal});
-    await new Promise(resolve=>setTimeout(resolve,20));abort.abort(new Error('deployment read cancelled'));
-    await assert.rejects(pending);await new Promise(resolve=>setTimeout(resolve,20));
-    assert.equal(closed,true);assert.deepEqual(requests,['/version','/v1.41/info','/v1.41/info']);
+    const arrived=once(api.server,'request',{signal:t.signal});
+    const abort=new AbortController(),reason=new Error('deployment read cancelled');
+    const rejected=assert.rejects(engine.deploymentInfo({deadlineMs:1000,cancelSignal:abort.signal}),cancelledBy(reason));
+    await arrived;abort.abort(reason);await rejected;
+    assert.ok(closed);await closed;
+    assert.deepEqual(requests,['/version','/v1.41/info','/v1.41/info']);
   }finally{await api.close()}
 });
 
@@ -200,20 +259,27 @@ test('native log EOF is required and over-limit streams are refused',async()=>{
   }
 });
 
-test('cancel and deadline abort actual zero-byte native log streams before EOF',async()=>{
+test('native log deadline and accepted zero-byte stream cancellation refuse without EOF', {timeout:4000}, async(t)=>{
   for(const mode of ['cancel','deadline']){
-    let started!:()=>void;const ready=new Promise<void>(resolve=>{started=resolve});let closed=false;
+    let closed:Promise<void>|undefined;
     const api=await server((request,response)=>{
       if(request.url==='/version')json(response,version);
       else if(request.url==='/v1.41/containers/'+id+'/json')json(response,{...container,Config:{...container.Config,Tty:false}});
-      else {response.writeHead(200,{'content-type':'application/vnd.docker.raw-stream'});response.flushHeaders();response.once('close',()=>{closed=true});started()}
+      else {
+        closed=prematureClose(response,t.signal);
+        response.writeHead(200,{'content-type':'application/vnd.docker.raw-stream'});response.flushHeaders();
+        api.server.emit('held-request');
+      }
     });
     try{
-      const engine=await EngineMetadata.connect(api.endpoint),abort=new AbortController();
+      const engine=await EngineMetadata.connect(api.endpoint),abort=new AbortController(),reason=new Error('stop native log read');
+      const arrived=mode==='cancel'?once(api.server,'held-request',{signal:t.signal}):undefined;
       const pending=engine.readLogs(id,{runId:'run1',projectName:'owned-1'},{tailLines:1,maxBytes:1024,deadlineMs:mode==='deadline'?50:1000},abort.signal);
-      const rejected=assert.rejects(pending);await ready;
-      if(mode==='cancel')abort.abort(new Error('stop native log read'));
-      await rejected;await new Promise(resolve=>setTimeout(resolve,20));assert.equal(closed,true);
+      const rejected=assert.rejects(pending,mode==='deadline'?timeoutRefusal:cancelledBy(reason));
+      if(mode==='cancel'){await arrived;abort.abort(reason)}
+      await rejected;
+      if(mode==='cancel')assert.ok(closed);
+      if(closed)await closed;
     }finally{await api.close()}
   }
 });
