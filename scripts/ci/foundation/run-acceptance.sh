@@ -1209,10 +1209,10 @@ jq -e '
   | contains(["application/x-ndjson"])
 ' "${run_dir}/evidence/evidence-index.json"
 contracts_revision="$(
-  git -C dependencies/robotics-runtime rev-parse HEAD
+  jq -er '.packages.contracts.revision' config/foundation-lock.json
 )"
 harness_revision="$(
-  git -C dependencies/robotics-runtime rev-parse HEAD
+  jq -er '.packages.harness.revision' config/foundation-lock.json
 )"
 jq -e \
   --arg contracts_revision "${contracts_revision}" \

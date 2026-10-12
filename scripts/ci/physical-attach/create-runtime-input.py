@@ -143,8 +143,8 @@ def create_documents(
             "digest": args.subject_digest,
         },
         components={
-            "contracts_revision": args.workspace_revision,
-            "harness_revision": args.workspace_revision,
+            "contracts_revision": args.contracts_revision,
+            "harness_revision": args.harness_revision,
             "infra_revision": args.infra_revision,
         },
         host_platform=host,
@@ -207,7 +207,8 @@ def main() -> int:
     for name in (
         "subject-digest",
         "subject-reference",
-        "workspace-revision",
+        "contracts-revision",
+        "harness-revision",
         "infra-revision",
     ):
         parser.add_argument(f"--{name}", required=True)

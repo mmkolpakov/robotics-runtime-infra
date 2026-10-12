@@ -45,9 +45,10 @@ print(json.dumps({"os": release["ID"], "os_version": release["VERSION_ID"],
 }
 
 run_runtime_manifest_writer() {
-  local runtime_dir="$1" image_identity="$2" workspace_revision
+  local runtime_dir="$1" image_identity="$2" contracts_revision harness_revision
   local -a run_arguments=()
-  workspace_revision="$(jq -er '.workspace.revision' "${REPOSITORY_ROOT}/config/foundation-lock.json")"
+  contracts_revision="$(jq -er '.packages.contracts.revision' "${REPOSITORY_ROOT}/config/foundation-lock.json")"
+  harness_revision="$(jq -er '.packages.harness.revision' "${REPOSITORY_ROOT}/config/foundation-lock.json")"
   if [[ -n "${ROBOTICS_RUN_ID:-}" ]]; then
     run_arguments+=(--run-id "$ROBOTICS_RUN_ID")
   fi
@@ -59,7 +60,8 @@ run_runtime_manifest_writer() {
     --inputs /runtime/inputs --output /runtime/provider \
     --subject-digest "$(jq -er '.digest' <<<"$image_identity")" \
     --subject-reference "$(jq -er '.reference' <<<"$image_identity")" \
-    --workspace-revision "$workspace_revision" \
+    --contracts-revision "$contracts_revision" \
+    --harness-revision "$harness_revision" \
     --infra-revision "$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)" \
     --domain-id "${ROS_DOMAIN_ID:-92}" "${run_arguments[@]}"
 }
