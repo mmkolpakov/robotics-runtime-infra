@@ -124,16 +124,58 @@ CASES
   if [[ "$(uname -s)" == Linux ]]; then
     [ "$(stat -c '%a' "${OUTPUT}")" = 444 ]
   fi
-  run jq -e --arg digest "${ROBOTICS_OCI_DIGEST}" '
+  run jq -e --arg digest "${ROBOTICS_OCI_DIGEST}" \
+    --slurpfile lock "${ROBOTICS_FOUNDATION_LOCK}" '
     .schema_version == "runtime-manifest.v1" and .execution_subject.digest == $digest and
     .host_platform.os == "fixture_host" and .execution_platform.os == "ubuntu" and
     .ros.domain_id == 42 and .ros.rmw_version == "8.4.1-fixture-package" and
-    .components.contracts_revision == .components.harness_revision and
+    .components.contracts_revision == $lock[0].packages.contracts.revision and
+    .components.harness_revision == $lock[0].packages.harness.revision and
     .provider_bindings[0].target_id == "simulation-primary" and
     .clock == {basis: "ros_time", sync_protocol: "sim_clock", offset_ms: 0, drift_ppm: 0} and
     (.data_plane.middleware_configuration_sha256 | length) == 64 and
     (has("oci_image") or has("gazebo") or has("host") | not)' "${OUTPUT}"
   [ "${status}" -eq 0 ]
+}
+
+@test "runtime producer preserves distinct package origins instead of the workspace revision" {
+  export ROBOTICS_FOUNDATION_LOCK="${BATS_TEST_TMPDIR}/distinct-origins.json"
+  jq --arg contracts "$(printf '%040d' 3)" --arg harness "$(printf '%040d' 4)" \
+    --arg workspace "$(printf '%040d' 5)" \
+    '.packages.contracts.revision = $contracts |
+     .packages.harness.revision = $harness | .workspace.revision = $workspace' \
+    "${REPOSITORY_ROOT}/config/foundation-lock.json" >"$ROBOTICS_FOUNDATION_LOCK"
+  run bash "$EMITTER" "$OUTPUT"
+  [ "$status" -eq 0 ]
+  run "$ROBOTICS_CONTRACTS_CLI" validate --quiet "$OUTPUT"
+  [ "$status" -eq 0 ]
+  run jq -e --slurpfile lock "$ROBOTICS_FOUNDATION_LOCK" '
+    .components.contracts_revision == $lock[0].packages.contracts.revision and
+    .components.harness_revision == $lock[0].packages.harness.revision and
+    .components.contracts_revision != $lock[0].workspace.revision and
+    .components.harness_revision != $lock[0].workspace.revision' "$OUTPUT"
+  [ "$status" -eq 0 ]
+}
+
+@test "runtime producer refuses missing null and short package origins before changing outputs" {
+  export ROBOTICS_FOUNDATION_LOCK="${BATS_TEST_TMPDIR}/invalid-origins.json"
+  export ROBOTICS_SDK_IDENTITY_OUTPUT="${BATS_TEST_TMPDIR}/sdk-identity.json"
+  local filter
+  while IFS= read -r filter; do
+    jq "$filter" "${REPOSITORY_ROOT}/config/foundation-lock.json" >"$ROBOTICS_FOUNDATION_LOCK"
+    printf 'previous\n' >"$OUTPUT"
+    printf 'previous-identity\n' >"$ROBOTICS_SDK_IDENTITY_OUTPUT"
+    run bash "$EMITTER" "$OUTPUT"
+    assert_previous_output_preserved
+    [ "$(cat "$ROBOTICS_SDK_IDENTITY_OUTPUT")" = previous-identity ]
+  done <<'CASES'
+del(.packages.contracts.revision)
+del(.packages.harness.revision)
+.packages.contracts.revision = null
+.packages.harness.revision = null
+.packages.contracts.revision = "short"
+.packages.harness.revision = "short"
+CASES
 }
 
 @test "runtime producer leaves existing output intact when bindings are missing" {
