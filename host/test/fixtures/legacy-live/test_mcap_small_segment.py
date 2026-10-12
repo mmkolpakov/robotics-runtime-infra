@@ -176,9 +176,39 @@ class StockMcapFileWriter(unittest.TestCase):
                 )
             finally:
                 writer.close()
+            files = sorted(bag.glob("*.mcap"))
             self.assertGreater(
-                max(path.stat().st_size for path in bag.glob("*.mcap")), FINAL_CAP_BYTES
+                max(path.stat().st_size for path in files), FINAL_CAP_BYTES
             )
+            from mcap.reader import make_reader
+
+            chunks = []
+            for path in files:
+                with path.open("rb") as stream:
+                    reader = make_reader(stream, validate_crcs=True)
+                    self.assertEqual(sum(1 for _ in reader.iter_messages()), 1)
+                    summary = reader.get_summary()
+                    self.assertIsNotNone(summary)
+                    self.assertTrue(summary.chunk_indexes)
+                    for chunk in summary.chunk_indexes:
+                        self.assertEqual(chunk.compression, "zstd")
+                        self.assertGreater(chunk.compressed_size, 0)
+                        self.assertLess(
+                            chunk.uncompressed_size / chunk.compressed_size, 1.02
+                        )
+                        chunks.append(
+                            {
+                                "compression": chunk.compression,
+                                "uncompressed_size": chunk.uncompressed_size,
+                                "compressed_size": chunk.compressed_size,
+                            }
+                        )
+                    print(
+                        {
+                            "writer_library": reader.get_header().library,
+                            "chunks": chunks,
+                        }
+                    )
 
 
 if __name__ == "__main__":
