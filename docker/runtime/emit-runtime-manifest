@@ -42,10 +42,14 @@ esac
 foundation_lock="${ROBOTICS_FOUNDATION_LOCK:-/usr/share/robotics-runtime/foundation-lock.json}"
 [[ -r "$foundation_lock" ]] || fail "foundation lock is not readable: $foundation_lock"
 
-workspace_revision="$(
-  jq -er '.workspace.revision' "$foundation_lock"
+contracts_revision="$(
+  jq -er '.packages.contracts.revision' "$foundation_lock"
 )"
-[[ "$workspace_revision" =~ ^[0-9a-f]{40}$ ]] || fail 'foundation revision must be a full Git SHA'
+harness_revision="$(
+  jq -er '.packages.harness.revision' "$foundation_lock"
+)"
+[[ "$contracts_revision" =~ ^[0-9a-f]{40}$ ]] || fail 'contracts source revision must be a full Git SHA'
+[[ "$harness_revision" =~ ^[0-9a-f]{40}$ ]] || fail 'harness source revision must be a full Git SHA'
 foundation_python="${ROBOTICS_FOUNDATION_PYTHON:-/opt/contracts/bin/python}"
 [[ -x "$foundation_python" ]] || fail 'installed foundation Python is unavailable'
 require_harness="$(boolean "${ROBOTICS_REQUIRE_HARNESS:-false}")"
@@ -239,7 +243,8 @@ jq -n \
   --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')" \
   --arg image_reference "${ROBOTICS_OCI_REFERENCE}" \
   --arg image_digest "${ROBOTICS_OCI_DIGEST}" \
-  --arg workspace_revision "$workspace_revision" \
+  --arg contracts_revision "$contracts_revision" \
+  --arg harness_revision "$harness_revision" \
   --arg infra_revision "${ROBOTICS_INFRA_REVISION}" \
   --arg execution_os "$execution_os" \
   --arg execution_os_version "$execution_os_version" \
@@ -278,8 +283,8 @@ jq -n \
     generated_at: $generated_at,
     execution_subject: {kind: "oci_image", locator: ("oci://" + $image_reference), digest: $image_digest},
     components: {
-      contracts_revision: $workspace_revision,
-      harness_revision: $workspace_revision,
+      contracts_revision: $contracts_revision,
+      harness_revision: $harness_revision,
       infra_revision: $infra_revision
     },
     host_platform: $host_platform[0],
