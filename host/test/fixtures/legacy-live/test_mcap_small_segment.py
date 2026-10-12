@@ -150,7 +150,7 @@ class StockMcapFileWriter(unittest.TestCase):
                     self.assertTrue(summary.schemas)
                     self.assertTrue(
                         all(
-                            chunk.compression in ("zstd", "")
+                            chunk.compression == "zstd"
                             for chunk in summary.chunk_indexes
                         )
                     )
