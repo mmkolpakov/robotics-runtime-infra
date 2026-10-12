@@ -45,6 +45,11 @@ if [[ "$1" == compose ]]; then
     down)
       [[ "$*" == '--volumes --remove-orphans' ]] || exit 64
       test "${FAKE_DOWN_STATUS:-0}" -eq 0 || exit "${FAKE_DOWN_STATUS}"
+      if [[ "${FAKE_REMOVE_RUN_INPUTS:-false}" == true ]]; then
+        rm -- "${FAKE_ACCEPTANCE_RUN_DIR}/runtime-manifest.json" \
+          "${FAKE_ACCEPTANCE_RUN_DIR}/acceptance-run.json" \
+          "${FAKE_ACCEPTANCE_RUN_DIR}/dataset-manifest.json"
+      fi
       for kind in container network volume; do
         [[ "${kind}" != "${FAKE_RETAIN_KIND:-}" ]] || continue
         for resource in "${FAKE_DOCKER_STATE}/${kind}/"*; do
@@ -381,6 +386,47 @@ EOF
   [ "${status}" -eq 17 ]
   [[ "${output}" == *"fixture publication jq failed"* ]]
   [[ "${output}" == *"Compose down failed (73)"* ]]
+  assert_retained_capture
+}
+
+@test "failed observer retains unchanged current-run inputs before producer cleanup" {
+  local name expected retained
+  expected="${BATS_TEST_TMPDIR}/expected-inputs"
+  retained="${FIXTURE}/artifacts/acceptance-evidence"
+  mkdir -p "${FIXTURE}/run" "${expected}"
+  for name in runtime-manifest.json acceptance-run.json dataset-manifest.json; do
+    printf '{ "input": "%s", "run": "current" }\n\n' "${name}" \
+      >"${FIXTURE}/run/${name}"
+    cp -a "${FIXTURE}/run/${name}" "${expected}/${name}"
+  done
+
+  run_acceptance_publication FAKE_DOWN_STATUS=0 FAKE_REMOVE_RUN_INPUTS=true
+
+  [ "${status}" -eq 17 ]
+  for name in runtime-manifest.json acceptance-run.json dataset-manifest.json; do
+    [ ! -e "${FIXTURE}/run/${name}" ]
+    cmp "${expected}/${name}" "${retained}/${name}"
+  done
+  assert_retained_capture
+}
+
+@test "startup failure does not synthesize missing inputs from a foreign run" {
+  local name foreign
+  foreign="${FIXTURE}/foreign-run"
+  mkdir -p "${foreign}"
+  for name in runtime-manifest.json acceptance-run.json dataset-manifest.json; do
+    printf '{ "input": "%s", "run": "foreign" }\n' "${name}" \
+      >"${foreign}/${name}"
+  done
+
+  run_acceptance_publication FAKE_PRE_OBSERVER_STATUS=23 FAKE_DOWN_STATUS=0
+
+  [ "${status}" -eq 23 ]
+  for name in runtime-manifest.json acceptance-run.json dataset-manifest.json; do
+    [ -s "${foreign}/${name}" ]
+    [ ! -e "${FIXTURE}/run/${name}" ]
+    [ ! -e "${FIXTURE}/artifacts/acceptance-evidence/${name}" ]
+  done
   assert_retained_capture
 }
 

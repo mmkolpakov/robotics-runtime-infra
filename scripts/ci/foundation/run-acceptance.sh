@@ -538,6 +538,9 @@ publish_failure_evidence() {
     "${run_dir}/evidence/summaries" \
     "${run_dir}/bags" \
     "${run_dir}/scenario.yaml" \
+    "${run_dir}/runtime-manifest.json" \
+    "${run_dir}/acceptance-run.json" \
+    "${run_dir}/dataset-manifest.json" \
     "${run_dir}/configuration/extension-schemas"; do
     if [[ -e "${source}" ]]; then
       sudo cp -a "${source}" "${destination}/"
