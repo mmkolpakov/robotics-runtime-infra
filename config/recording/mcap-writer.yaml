@@ -11,4 +11,4 @@ noChunkIndex: false
 chunkSize: 4194304
 compression: Zstd
 compressionLevel: Fast
-forceCompression: false
+forceCompression: true
