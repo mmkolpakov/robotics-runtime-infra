@@ -38,7 +38,8 @@ class PhysicalRuntimeTests(unittest.TestCase):
             output=self.root / "provider",
             subject_digest="sha256:" + "a" * 64,
             subject_reference="local/observer@sha256:" + "a" * 64,
-            workspace_revision="b" * 40,
+            contracts_revision="b" * 40,
+            harness_revision="d" * 40,
             infra_revision="c" * 40,
             run_id="run-aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
             domain_id=92,
@@ -146,7 +147,10 @@ class PhysicalRuntimeTests(unittest.TestCase):
             runtime["execution_subject"]["digest"], self.args.subject_digest
         )
         self.assertEqual(
-            runtime["components"]["contracts_revision"], self.args.workspace_revision
+            runtime["components"]["contracts_revision"], self.args.contracts_revision
+        )
+        self.assertEqual(
+            runtime["components"]["harness_revision"], self.args.harness_revision
         )
         self.assertNotIn("oci_image", runtime)
         self.assertNotIn("host", runtime)
