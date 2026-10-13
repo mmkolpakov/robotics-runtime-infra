@@ -36,8 +36,12 @@ if [[ "$1" == compose ]]; then
   case "${operation}" in
     logs) printf 'fixture Compose logs\n' ;;
     ps)
-      [[ "$*" == '--all --quiet runtime-metrics' ]] || exit 64
-      printf '%s\n' "${FAKE_METRICS_CONTAINER:-}"
+      case "$*" in
+        '--all --quiet runtime-metrics') printf '%s\n' "${FAKE_METRICS_CONTAINER:-}" ;;
+        '--all --quiet runtime-probe-publisher') printf '%s\n' "${FAKE_PUBLISHER_CONTAINER:-}" ;;
+        '--all --quiet playback') printf '%s\n' "${FAKE_PLAYBACK_CONTAINER:-}" ;;
+        *) exit 64 ;;
+      esac
       ;;
     up) exit "${FAKE_UP_STATUS:-0}" ;;
     exec) exit 0 ;;
@@ -49,6 +53,9 @@ if [[ "$1" == compose ]]; then
         rm -- "${FAKE_ACCEPTANCE_RUN_DIR}/runtime-manifest.json" \
           "${FAKE_ACCEPTANCE_RUN_DIR}/acceptance-run.json" \
           "${FAKE_ACCEPTANCE_RUN_DIR}/dataset-manifest.json"
+      fi
+      if [[ "${FAKE_REMOVE_ACTOR_INPUTS:-false}" == true ]]; then
+        rm -f -- "${FAKE_DOCKER_STATE}/actor-inventory/"*
       fi
       for kind in container network volume; do
         [[ "${kind}" != "${FAKE_RETAIN_KIND:-}" ]] || continue
@@ -92,8 +99,16 @@ elif [[ "$1" == inspect || "$1" == stats || "$1" == exec ]]; then
   printf '%s\n' "$*" >>"${FAKE_DOCKER_STATE}/metrics-requests"
   case "$1" in
     inspect)
-      [[ "$2" == "${FAKE_METRICS_CONTAINER}" && $# == 2 ]] || exit 64
-      cat "${FAKE_DOCKER_STATE}/metrics-inspect.json"
+      [[ $# == 2 ]] || exit 64
+      if [[ "$2" == "${FAKE_METRICS_CONTAINER:-}" ]]; then
+        cat "${FAKE_DOCKER_STATE}/metrics-inspect.json"
+      elif [[ "$2" == "${FAKE_PUBLISHER_CONTAINER:-}" ]]; then
+        cat "${FAKE_DOCKER_STATE}/publisher-inspect.json"
+      elif [[ "$2" == "${FAKE_PLAYBACK_CONTAINER:-}" ]]; then
+        cat "${FAKE_DOCKER_STATE}/playback-inspect.json"
+      else
+        exit 64
+      fi
       ;;
     stats)
       [[ "$*" == "stats --no-stream --format {{json .}} ${FAKE_METRICS_CONTAINER}" ]] || exit 64
@@ -113,7 +128,23 @@ elif [[ "$1" == wait ]]; then
 elif [[ "$1" == logs ]]; then
   printf 'fixture observer logs\n'
 elif [[ "$1" == cp ]]; then
-  exit "${FAKE_CP_STATUS:-0}"
+  if [[ "$2" == *:/usr/share/robotics-runtime/deb-packages.tsv && $# == 3 ]]; then
+    printf '%s\n' "$*" >>"${FAKE_DOCKER_STATE}/metrics-requests"
+    if [[ "${FAKE_INVENTORY_CP_STATUS:-0}" != 0 ]]; then
+      printf 'partial inventory\n' >"$3"
+      exit "${FAKE_INVENTORY_CP_STATUS}"
+    fi
+    container="${2%%:*}"
+    case "${FAKE_INVENTORY_PAYLOAD:-regular}" in
+      empty) : >"$3" ;;
+      directory) mkdir "$3"; printf 'unexpected payload\n' >"$3/child" ;;
+      symlink) ln -s "${FAKE_DOCKER_STATE}/actor-inventory/${container}.tsv" "$3" ;;
+      regular) cp -- "${FAKE_DOCKER_STATE}/actor-inventory/${container}.tsv" "$3" ;;
+      *) exit 64 ;;
+    esac
+  else
+    exit "${FAKE_CP_STATUS:-0}"
+  fi
 elif [[ "$1" == rm ]]; then
   exit 0
 else
@@ -162,6 +193,10 @@ EOF
   cat >"${FAKE_BIN}/jq" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+if [[ "${FAKE_INVENTORY_TOOL_FAIL:-}" == jq && "$1" == --arg && "$2" == digest ]]; then
+  printf 'fixture inventory jq failed\n' >&2
+  exit 62
+fi
 if [[ "$1" != . || $# != 2 ]]; then
   exec "${FAKE_REAL_JQ}" "$@"
 fi
@@ -182,6 +217,11 @@ compose=(docker compose -p "${project}")
 profiles=()
 attached_compose=()
 observer=fixture-observer
+ROBOTICS_SIMULATION_LOCAL_IMAGE_ID="sha256:$(printf '1%.0s' {1..64})"
+ROBOTICS_RUN_ID=fixture-run
+ROBOTICS_DOMAIN_ID=primary
+ROS_DOMAIN_ID=51
+GZ_PARTITION=fixture-partition
 EOF
     # Execute the real publication functions and EXIT trap, without ROS setup.
     sed -n '/^publish_acceptance_results() {/,/^trap cleanup EXIT/p' \
@@ -525,17 +565,20 @@ EOF
 
 
 write_metrics_inspect() {
-  local container="$1" project="$2" service="$3"
+  local container="$1" project="$2" service="$3" output=metrics-inspect.json
+  [[ "${service}" != runtime-probe-publisher ]] || output=publisher-inspect.json
+  [[ "${service}" != playback ]] || output=playback-inspect.json
   jq -n --arg container "${container}" --arg project "${project}" \
-    --arg service "${service}" '[{
+    --arg service "${service}" --arg image "sha256:$(printf '1%.0s' {1..64})" '[{
       Id: $container,
-      Image: "sha256:fixture-image",
+      Image: $image,
       Config: {
         Labels: {
           "com.docker.compose.project": $project,
           "com.docker.compose.service": $service
         },
-        Env: ["TOKEN=must-not-retain"],
+        Env: ["TOKEN=must-not-retain", "ROBOTICS_RUN_ID=fixture-run",
+          "ROBOTICS_DOMAIN_ID=primary", "ROS_DOMAIN_ID=51", "GZ_PARTITION=fixture-partition"],
         Cmd: ["private-argument"]
       },
       State: {Status: "running", Running: true, ExitCode: 0},
@@ -544,7 +587,13 @@ write_metrics_inspect() {
         CpuShares: 512, CpusetCpus: "0", CpusetMems: "",
         Binds: ["private-mount"]
       }
-    }]' >"${FAKE_DOCKER_STATE}/metrics-inspect.json"
+    }]' >"${FAKE_DOCKER_STATE}/${output}"
+}
+
+write_actor_inventory() {
+  mkdir -p "${FAKE_DOCKER_STATE}/actor-inventory"
+  printf 'ros-jazzy-rclpy\t9.1.0-1noble.20260901\tamd64\n' \
+    >"${FAKE_DOCKER_STATE}/actor-inventory/$1.tsv"
 }
 
 @test "failed acceptance retains actual owned metrics CPU snapshot before stop" {
@@ -561,7 +610,7 @@ write_metrics_inspect() {
     .cpu_limits.CpuQuota == 50000 and .cpu_limits.CpuPeriod == 100000 and
     .cpu_limits.NanoCpus == 500000000 and .cpu_limits.CpusetCpus == "0" and
     (has("Config") | not)' "${snapshot}/inspect.json"
-  cmp "${FIXTURE}/artifacts/.runtime-metrics-diagnostics/${container}/cpu.stat" "${snapshot}/cpu.stat"
+  cmp "${FIXTURE}/artifacts/runtime-metrics-diagnostics/${container}/cpu.stat" "${snapshot}/cpu.stat"
   grep -Fx 'nr_throttled 7' "${snapshot}/cpu.stat"
   grep -Fx '50000 100000' "${snapshot}/cpu.max"
   jq -e '.CPUPerc == "2.50%"' "${snapshot}/docker-stats.jsonl"
@@ -579,7 +628,7 @@ write_metrics_inspect() {
     service=runtime-metrics
     [[ "${project}" != "${PROJECT}" ]] || service=another-service
     write_metrics_inspect "${container}" "${project}" "${service}"
-    rm -rf -- "${FIXTURE}/artifacts/.runtime-metrics-diagnostics" \
+    rm -rf -- "${FIXTURE}/artifacts/runtime-metrics-diagnostics" \
       "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
 
     run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}"
@@ -592,16 +641,22 @@ write_metrics_inspect() {
   done
 }
 
-@test "successful acceptance does not publish the diagnostic snapshot as failure evidence" {
+@test "successful acceptance retains visible actor inventory without failure evidence" {
   local container
   container="$(printf 'c%.0s' {1..64})"
   write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+  write_actor_inventory "${container}"
 
   run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
     FAKE_METRICS_BEFORE_STOP=true FAKE_OBSERVER_STATUS=0 FAKE_DOWN_STATUS=0
 
   [ "${status}" -eq 0 ]
-  [ -s "${FIXTURE}/artifacts/.runtime-metrics-diagnostics/${container}/inspect.json" ]
+  local snapshot="${FIXTURE}/artifacts/runtime-metrics-diagnostics/${container}"
+  jq -e '.native_inventory.status == "captured" and
+    .native_inventory.path == "deb-packages.tsv" and .native_inventory.size_bytes > 0 and
+    (.native_inventory.sha256 | test("^[a-f0-9]{64}$"))' "${snapshot}/inspect.json"
+  cmp "${FAKE_DOCKER_STATE}/actor-inventory/${container}.tsv" "${snapshot}/deb-packages.tsv"
+  [ "$(cat "${snapshot}/inventory-capture.exit")" -eq 0 ]
   [ ! -e "${FIXTURE}/artifacts/acceptance-evidence" ]
 }
 
@@ -633,7 +688,7 @@ write_metrics_inspect() {
     FAKE_OBSERVER_STATUS=0 FAKE_DOWN_STATUS=0
 
   [ "${status}" -eq 0 ]
-  [ -s "${FIXTURE}/artifacts/.runtime-metrics-diagnostics/${container}/inspect.json" ]
+  [ -s "${FIXTURE}/artifacts/runtime-metrics-diagnostics/${container}/inspect.json" ]
   [ ! -e "${FIXTURE}/artifacts/acceptance-evidence" ]
   [ ! -e "${FIXTURE}/run/runtime-metrics-diagnostics" ]
 }
@@ -654,4 +709,176 @@ write_metrics_inspect() {
     "${snapshot}/inspect.json"
   grep -Fx 'nr_throttled 7' "${snapshot}/cpu.stat"
   assert_retained_capture
+}
+
+@test "failed acceptance retains each admitted actor inventory before owned cleanup" {
+  local metrics publisher snapshot expected container
+  metrics="$(printf '1%.0s' {1..64})"
+  publisher="$(printf '2%.0s' {1..64})"
+  write_metrics_inspect "${metrics}" "${PROJECT}" runtime-metrics
+  write_metrics_inspect "${publisher}" "${PROJECT}" runtime-probe-publisher
+  write_actor_inventory "${metrics}"
+  write_actor_inventory "${publisher}"
+  # Equal image IDs do not substitute for independently copied actor bytes.
+  printf 'ros-jazzy-ros2topic\t0.32.6-1noble.20260901\tamd64\n' \
+    >>"${FAKE_DOCKER_STATE}/actor-inventory/${publisher}.tsv"
+  expected="${BATS_TEST_TMPDIR}/expected-inventory"
+  cp -a "${FAKE_DOCKER_STATE}/actor-inventory" "${expected}"
+
+  run_acceptance_publication "FAKE_METRICS_CONTAINER=${metrics}" \
+    "FAKE_PUBLISHER_CONTAINER=${publisher}" FAKE_METRICS_BEFORE_STOP=true \
+    FAKE_REMOVE_ACTOR_INPUTS=true FAKE_DOWN_STATUS=0
+
+  [ "${status}" -eq 17 ]
+  for container in "${metrics}" "${publisher}"; do
+    snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}"
+    [ ! -e "${FAKE_DOCKER_STATE}/actor-inventory/${container}.tsv" ]
+    cmp "${expected}/${container}.tsv" "${snapshot}/deb-packages.tsv"
+    jq -e --arg container "${container}" \
+      --arg digest "$(sha256sum "${expected}/${container}.tsv" | cut -d' ' -f1)" \
+      --argjson size "$(stat -c '%s' "${expected}/${container}.tsv")" '
+      .container_id == $container and .run_id == "fixture-run" and
+      .domain_id == "primary" and .ros_domain_id == "51" and .partition == "fixture-partition" and
+      .native_inventory.status == "captured" and .native_inventory.sha256 == $digest and
+      .native_inventory.size_bytes == $size
+    ' "${snapshot}/inspect.json"
+    [ "$(cat "${snapshot}/inventory-capture.exit")" -eq 0 ]
+  done
+  [ ! -e "${FIXTURE}/artifacts/runtime-metrics-diagnostics/${publisher}/cpu.stat" ]
+  [ "$(grep -c '^cp ' "${FAKE_DOCKER_STATE}/metrics-requests")" -eq 2 ]
+  run grep -RqE 'must-not-retain|private-argument|private-mount' \
+    "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+  [ "${status}" -eq 1 ]
+  assert_retained_capture
+}
+
+@test "native inventory refuses wrong image and ambiguous or foreign run markers before copying" {
+  local container mutation source snapshot
+  container="$(printf '3%.0s' {1..64})"
+  source="${FAKE_DOCKER_STATE}/metrics-inspect.json"
+  for mutation in \
+    '.[0].Image = "sha256:foreign-image"' \
+    '.[0].Config.Env += ["ROBOTICS_RUN_ID=fixture-run"]' \
+    '.[0].Config.Env |= map(if startswith("ROBOTICS_RUN_ID=") then "ROBOTICS_RUN_ID=foreign" else . end)' \
+    '.[0].Config.Env |= map(if startswith("ROBOTICS_DOMAIN_ID=") then "ROBOTICS_DOMAIN_ID=foreign" else . end)' \
+    '.[0].Config.Env |= map(if startswith("ROS_DOMAIN_ID=") then "ROS_DOMAIN_ID=52" else . end)' \
+    '.[0].Config.Env |= map(if startswith("GZ_PARTITION=") then "GZ_PARTITION=foreign" else . end)'; do
+    write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+    write_actor_inventory "${container}"
+    jq "${mutation}" "${source}" >"${source}.tmp"
+    mv -- "${source}.tmp" "${source}"
+    rm -rf -- "${FIXTURE}/artifacts/runtime-metrics-diagnostics" \
+      "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+    rm -f -- "${FAKE_DOCKER_STATE}/metrics-requests"
+
+    run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" FAKE_DOWN_STATUS=0
+
+    [ "${status}" -eq 17 ]
+    snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+    [ ! -e "${snapshot}/${container}" ]
+    grep -F 'actor identity refused: runtime-metrics' "${snapshot}/capture-errors.log"
+    run grep -qE '^(cp|stats|exec) ' "${FAKE_DOCKER_STATE}/metrics-requests"
+    [ "${status}" -eq 1 ]
+  done
+}
+
+@test "missing or failed native inventory has no success digest and preserves original errors" {
+  local container snapshot original failure
+  container="$(printf '4%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+  for original in 17 124 137; do
+    for failure in 0 29; do
+      rm -rf -- "${FIXTURE}/artifacts/runtime-metrics-diagnostics" \
+        "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+      # Status zero exercises a genuine missing source, not an injected cp error.
+      run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+        "FAKE_OBSERVER_STATUS=${original}" "FAKE_INVENTORY_CP_STATUS=${failure}" FAKE_DOWN_STATUS=0
+
+      [ "${status}" -eq "${original}" ]
+      snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}"
+      jq -e '.native_inventory.status == "unavailable" and
+        (.native_inventory | has("sha256") | not) and
+        (.native_inventory | has("size_bytes") | not)' "${snapshot}/inspect.json"
+      [ "$(cat "${snapshot}/inventory-capture.exit")" -ne 0 ]
+      [ ! -e "${snapshot}/deb-packages.tsv" ]
+      [ ! -e "${snapshot}/.deb-packages.tsv" ]
+      assert_retained_capture
+    done
+  done
+}
+
+@test "successful observer keeps missing native inventory diagnostic without a new acceptance gate" {
+  local container snapshot
+  container="$(printf '5%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+
+  run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+    FAKE_METRICS_BEFORE_STOP=true FAKE_OBSERVER_STATUS=0 FAKE_DOWN_STATUS=0
+
+  [ "${status}" -eq 0 ]
+  snapshot="${FIXTURE}/artifacts/runtime-metrics-diagnostics/${container}"
+  jq -e '.native_inventory.status == "unavailable" and
+    (.native_inventory | has("sha256") | not)' "${snapshot}/inspect.json"
+  [ "$(cat "${snapshot}/inventory-capture.exit")" -ne 0 ]
+  [ ! -e "${FIXTURE}/artifacts/acceptance-evidence" ]
+}
+
+@test "native inventory rejects empty directory or symlink payload and discards partial timeout bytes" {
+  local container snapshot payload
+  container="$(printf '6%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+  write_actor_inventory "${container}"
+  for payload in empty directory symlink timeout; do
+    rm -rf -- "${FIXTURE}/artifacts/runtime-metrics-diagnostics" \
+      "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+    local copy_status=0
+    [[ "${payload}" != timeout ]] || copy_status=124
+
+    run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+      "FAKE_INVENTORY_PAYLOAD=${payload}" "FAKE_INVENTORY_CP_STATUS=${copy_status}" FAKE_DOWN_STATUS=0
+
+    [ "${status}" -eq 17 ]
+    snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}"
+    jq -e '.native_inventory.status == "unavailable" and
+      (.native_inventory | has("sha256") | not)' "${snapshot}/inspect.json"
+    [ "$(cat "${snapshot}/inventory-capture.exit")" -ne 0 ]
+    [ ! -e "${snapshot}/deb-packages.tsv" ]
+    [ ! -L "${snapshot}/deb-packages.tsv" ]
+    [ ! -e "${snapshot}/.deb-packages.tsv" ]
+    [ ! -L "${snapshot}/.deb-packages.tsv" ]
+  done
+}
+
+@test "native inventory hash size and receipt failures never leave a success receipt" {
+  local container snapshot tool actual pattern
+  container="$(printf '7%.0s' {1..64})"
+  write_metrics_inspect "${container}" "${PROJECT}" runtime-metrics
+  write_actor_inventory "${container}"
+  for tool in sha256sum stat mv; do
+    actual="$(command -v "${tool}")"
+    pattern='*.deb-packages.tsv*'
+    [[ "${tool}" != mv ]] || pattern='*.inspect.json*'
+    {
+      printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+      printf 'if [[ "${FAKE_INVENTORY_TOOL_FAIL:-}" == %q && "$*" == %s ]]; then exit 61; fi\n' "${tool}" "${pattern}"
+      printf 'exec %q "$@"\n' "${actual}"
+    } >"${FAKE_BIN}/${tool}"
+    chmod +x "${FAKE_BIN}/${tool}"
+  done
+  for tool in sha256sum stat jq mv; do
+    rm -rf -- "${FIXTURE}/artifacts/runtime-metrics-diagnostics" \
+      "${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics"
+
+    run_acceptance_publication "FAKE_METRICS_CONTAINER=${container}" \
+      "FAKE_INVENTORY_TOOL_FAIL=${tool}" FAKE_DOWN_STATUS=0
+
+    [ "${status}" -eq 17 ]
+    snapshot="${FIXTURE}/artifacts/acceptance-evidence/runtime-metrics-diagnostics/${container}"
+    jq -e '.native_inventory.status == "unavailable" and
+      (.native_inventory | has("sha256") | not) and
+      (.native_inventory | has("size_bytes") | not)' "${snapshot}/inspect.json"
+    [ "$(cat "${snapshot}/inventory-capture.exit")" -ne 0 ]
+    [ ! -e "${snapshot}/deb-packages.tsv" ]
+    [ ! -e "${snapshot}/.inspect.json" ]
+  done
 }
