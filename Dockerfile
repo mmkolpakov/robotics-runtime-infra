@@ -11,7 +11,7 @@ ARG GO_BUILDER_IMAGE=golang:1.27.2@sha256:2d658507a011f1eadc0114d7a421b312b2e77d
 # Policy and evidence targets receive the publisher-verified image from Bake.
 ARG COSIGN_IMAGE=scratch
 # Released binary module verification and platform digests: docker/opa/README.md.
-ARG OPA_IMAGE=openpolicyagent/opa:1.20.2-static@sha256:bb245e9e36be0d0ed486c240b606c56be7aba96014a4a87895fed4ba7a6dfa8d
+ARG OPA_IMAGE=openpolicyagent/opa:1.21.2-static@sha256:0843d2adce51655422e8b95a803629ab9f424803c4bd27876e7f44cce9a2b84d
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -78,7 +78,7 @@ ADD --checksum=sha256:8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f457
 
 FROM scratch AS opa-license
 ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
-  https://raw.githubusercontent.com/open-policy-agent/opa/b2c26708e9d55645d7f837db495031f7e4152594/LICENSE \
+  https://raw.githubusercontent.com/open-policy-agent/opa/3f7474e6b3c631821d8aac25ca444f7e75a56483/LICENSE \
   /LICENSE
 
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
