@@ -3,6 +3,7 @@ enabled: false
 name: ""
 storageClassName: ""
 capacity: ""
+effectLeaseName: ""
 binding:
   runId: ""
   domainId: ""

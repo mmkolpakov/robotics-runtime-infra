@@ -54,11 +54,13 @@
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {
+    "@kubernetes/client-node": "2.0.0",
     "dockerode": "5.0.1"
   },
   "devDependencies": {
     "@types/dockerode": "4.0.1",
     "@types/node": "24.19.1",
+    "@types/ws": "8.18.2",
     "typescript": "7.0.2",
     "@robotics-runtime/host": "file:.tools/core-6945de48f3f72d553a8f2fed8649e98cee5b5ecf.tgz"
   },
