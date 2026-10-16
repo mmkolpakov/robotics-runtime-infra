@@ -1305,7 +1305,9 @@ compose_leaf() {
     printf 'terminal-validation\n' >>"${trace}"
     return "${EOF_VALIDATION_STATUS:-0}"
   fi
-  if [[ "$*" == 'ps --all --quiet runtime-metrics' ]]; then
+  if [[ "$*" == 'ps --all --quiet runtime-metrics' ||
+    "$*" == 'ps --all --quiet runtime-probe-publisher' ||
+    "$*" == 'ps --all --quiet playback' ]]; then
     return 0
   fi
   [[ " $* " == *' stop '* ]]
@@ -1384,9 +1386,10 @@ import sys
 from pathlib import Path
 from robotics_acceptance_harness.extension_schemas import load_extension_schemas
 from robotics_runtime_contracts import load_mapping, validate_document
-from robotics_runtime_contracts.writers import write_document
+from robotics_runtime_contracts.writers import write_bytes_atomically, write_document
 
 repository, source, output = map(Path, sys.argv[1:])
+
 spec = importlib.util.spec_from_file_location("prepare", repository / "scripts/ci/integration/prepare-playback-inputs.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -1413,6 +1416,8 @@ for subject in statement["subject"]:
 write_document(statement, source / "results/qualification-statement.json", schema="qualification-bundle.v1")
 originals = {path: path.read_bytes() for path in [schema, source / "scenario.yaml", source / "acceptance-run.json",
                                                   source / "results/qualification-statement.json"]}
+original_modes = {path: path.stat().st_mode & 0o777 for path in originals}
+assert original_modes[source / "results/qualification-statement.json"] == 0o444
 # Existing absent ROS transport boundary only; all byte/MCAP/public role guards are real.
 module.scan_recording = lambda path, topic: {
     "first_ns": 10**9, "last_ns": 2 * 10**9, "message_count": 3,
@@ -1463,12 +1468,15 @@ else:
     raise AssertionError("coherent unsigned source replacement was admitted")
 assert not target.exists()
 for path, original in originals.items():
-    path.write_bytes(original)
+    write_bytes_atomically(original, path)
+assert originals == {path: path.read_bytes() for path in originals}
+assert original_modes == {path: path.stat().st_mode & 0o777 for path in originals}
 original_copy = module.copy_input
 statement_path = source / "results/qualification-statement.json"
 def late_changed_statement(a, b):
     # The native source capture has returned; change only its unsigned statement.
-    statement_path.write_bytes(originals[statement_path] + b" ")
+    write_bytes_atomically(originals[statement_path] + b" ", statement_path)
+    assert statement_path.stat().st_mode & 0o777 == original_modes[statement_path]
     return original_copy(a, b)
 module.copy_input = late_changed_statement
 target = output.with_name(output.name + "-late-statement")
@@ -1480,10 +1488,11 @@ else:
     raise AssertionError("late statement replacement was admitted")
 finally:
     module.copy_input = original_copy
-    statement_path.write_bytes(originals[statement_path])
+    write_bytes_atomically(originals[statement_path], statement_path)
 assert not (target / "dataset-manifest.json").exists()
 assert not (target / "scenario.json").exists()
 assert originals == {path: path.read_bytes() for path in originals}
+assert original_modes == {path: path.stat().st_mode & 0o777 for path in originals}
 module.prepare(source, output, output, extension_schema_options=registry, statement_sha256=authenticated_sha)
 assert originals == {path: path.read_bytes() for path in originals}
 replay = load_mapping(output / "scenario.json")

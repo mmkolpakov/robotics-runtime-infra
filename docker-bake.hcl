@@ -40,7 +40,10 @@ variable "ROSDISTRO_INDEX_REVISION" {
 
 # FOUNDATION_GENERATED_START
 variable "FOUNDATION_SOURCE" {
-  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=efeac712ea512b19523ce41be40752f703fa782b&checksum=efeac712ea512b19523ce41be40752f703fa782b"
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=4e8b008e36b84aafcc64edbc928c77bd02d62b4d&checksum=4e8b008e36b84aafcc64edbc928c77bd02d62b4d"
+}
+variable "CONTRACTS_SOURCE" {
+  default = "https://github.com/mmkolpakov/robotics-runtime.git?ref=a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa&checksum=a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa"
 }
 # FOUNDATION_GENERATED_END
 
@@ -57,7 +60,7 @@ variable "RKNN_SOURCE" {
 }
 
 variable "COSIGN_IMAGE" {
-  default = "cgr.dev/chainguard/cosign:latest@sha256:e7ef547a42e52b877a9069ee49e2caa6287c30bcb97d27df3ec5d22c0afdbb6f"
+  default = "cgr.dev/chainguard/cosign:latest@sha256:3fad8be83b93869051c08bb98f36612afe81dabe06c288e70e41ce09a037ba18"
   validation {
     condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
     error_message = "COSIGN_IMAGE must pin the publisher-verified Chainguard image."
@@ -176,6 +179,7 @@ target "_common" {
   dockerfile = "Dockerfile"
   contexts = {
     "foundation-source" = FOUNDATION_SOURCE
+    "contracts-source"  = CONTRACTS_SOURCE
   }
   args = {
     IMAGE_CREATED = IMAGE_CREATED

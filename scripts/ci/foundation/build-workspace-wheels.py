@@ -12,7 +12,9 @@ from hashlib import sha256
 from pathlib import Path
 
 
-def build(source: Path, metadata: Path, python: str, output: Path) -> None:
+def build(
+    source: Path, contracts_source: Path, metadata: Path, python: str, output: Path
+) -> None:
     lock = json.loads(metadata.read_text(encoding="utf-8"))
     expected = lock["workspace"]
     if (
@@ -20,9 +22,18 @@ def build(source: Path, metadata: Path, python: str, output: Path) -> None:
         != expected["uv_lock_sha256"]
     ):
         raise ValueError("foundation source uv.lock differs from the pinned workspace")
-    for package in lock["packages"].values():
+    sources = {"contracts": contracts_source, "harness": source}
+    for key, package in lock["packages"].items():
+        package_source = sources[key]
+        if (
+            sha256((package_source / "uv.lock").read_bytes()).hexdigest()
+            != package["uv_lock_sha256"]
+        ):
+            raise ValueError("package input uv.lock differs from its pinned origin")
         project = tomllib.loads(
-            (source / package["path"] / "pyproject.toml").read_text(encoding="utf-8")
+            (package_source / package["path"] / "pyproject.toml").read_text(
+                encoding="utf-8"
+            )
         )["project"]
         if (project["name"], project["version"]) != (
             package["distribution"],
@@ -34,24 +45,26 @@ def build(source: Path, metadata: Path, python: str, output: Path) -> None:
     if output.exists() and any(output.iterdir()):
         raise ValueError("foundation wheel output must be empty")
     output.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        [
-            "uv",
-            "build",
-            "--project",
-            str(source),
-            "--all-packages",
-            "--wheel",
-            "--no-sources",
-            "--no-build-isolation",
-            "--python",
-            python,
-            "--out-dir",
-            str(output),
-        ],
-        env={**os.environ, "SOURCE_DATE_EPOCH": str(expected["source_date_epoch"])},
-        check=True,
-    )
+    for key, package in lock["packages"].items():
+        subprocess.run(
+            [
+                "uv",
+                "build",
+                "--project",
+                str(sources[key]),
+                "--package",
+                package["distribution"],
+                "--wheel",
+                "--no-sources",
+                "--no-build-isolation",
+                "--python",
+                python,
+                "--out-dir",
+                str(output),
+            ],
+            env={**os.environ, "SOURCE_DATE_EPOCH": str(package["source_date_epoch"])},
+            check=True,
+        )
     requirements = {}
     for key, package in lock["packages"].items():
         name = package["distribution"].replace("-", "_")
@@ -61,7 +74,7 @@ def build(source: Path, metadata: Path, python: str, output: Path) -> None:
         # SOURCE_DATE_EPOCH controls archive entries, not this filesystem time.
         # Installers must also omit their cache metadata: uv uses ctime on Unix,
         # so normalizing mtime alone cannot make an installed image reproducible.
-        epoch_ns = int(expected["source_date_epoch"]) * 1_000_000_000
+        epoch_ns = int(package["source_date_epoch"]) * 1_000_000_000
         os.utime(wheel, ns=(epoch_ns, epoch_ns))
         wheel_digest = sha256(wheel.read_bytes()).hexdigest()
         requirements[key] = f"./{wheel.name} --hash=sha256:{wheel_digest}\n"
@@ -78,12 +91,19 @@ def build(source: Path, metadata: Path, python: str, output: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--contracts-source", type=Path, required=True)
     parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument("--python", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        build(args.source.resolve(), args.metadata, args.python, args.output.resolve())
+        build(
+            args.source.resolve(),
+            args.contracts_source.resolve(),
+            args.metadata,
+            args.python,
+            args.output.resolve(),
+        )
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"foundation wheels: {exc}\n")
     return 0

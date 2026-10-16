@@ -1,22 +1,30 @@
 {
   "workspace": {
     "url": "https://github.com/mmkolpakov/robotics-runtime.git",
-    "revision": "efeac712ea512b19523ce41be40752f703fa782b",
-    "source_date_epoch": 1791374540,
-    "uv_lock_sha256": "5e2d928259c89047caea3edf8947a903507821921f56d80cdf93e1eeef4ab079"
+    "revision": "4e8b008e36b84aafcc64edbc928c77bd02d62b4d",
+    "source_date_epoch": 1791747055,
+    "uv_lock_sha256": "61246c7261740d81e9e3406bbe95185d112186d8f6854b331b7fa6e94a6295f6"
   },
   "packages": {
     "contracts": {
       "distribution": "robotics-runtime-contracts",
-      "version": "0.19.0",
+      "version": "0.21.1",
       "path": "packages/contracts",
-      "git_tree": "308a6831050a6f2c5bc7d89c62bbbb9eaea2b764"
+      "revision": "a6fd70f73b6c7c4f2b70b449e5dedeefb96d46fa",
+      "git_tree": "3a9e6c9cc7c5f3dcc5c2378a628d861a45dee575",
+      "source_date_epoch": 1791682689,
+      "uv_lock_sha256": "b3b6879b10a11de8fb664f57607328b903a4baebf492c9e36cb982ad4f777905",
+      "release": "contracts-v0.21.1"
     },
     "harness": {
       "distribution": "robotics-acceptance-harness",
-      "version": "0.20.0",
+      "version": "0.22.2",
       "path": "packages/harness",
-      "git_tree": "036b5854d9b6690779602bb9cb5471ec1da64f91"
+      "revision": "4e8b008e36b84aafcc64edbc928c77bd02d62b4d",
+      "git_tree": "c2133376429f947e19d2119ce5e29abc182a0ddc",
+      "source_date_epoch": 1791747055,
+      "uv_lock_sha256": "61246c7261740d81e9e3406bbe95185d112186d8f6854b331b7fa6e94a6295f6",
+      "release": "harness-v0.22.2"
     }
   }
 }

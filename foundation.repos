@@ -3,8 +3,8 @@
     "robotics-runtime": {
       "type": "git",
       "url": "https://github.com/mmkolpakov/robotics-runtime.git",
-      "version": "efeac712ea512b19523ce41be40752f703fa782b",
-      "release": "harness-v0.20.0"
+      "version": "4e8b008e36b84aafcc64edbc928c77bd02d62b4d",
+      "release": "harness-v0.22.2"
     }
   }
 }

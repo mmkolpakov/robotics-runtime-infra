@@ -63,9 +63,38 @@ def release_pair(
     if match is None or packages["harness"]["version"] != match.group(1):
         raise ValueError(f"harness version does not match {release}")
     contracts = f"contracts-v{packages['contracts']['version']}"
-    tree = git(workspace, "rev-parse", f"refs/tags/{contracts}:packages/contracts")
-    if tree.decode().strip() != packages["contracts"]["git_tree"]:
-        raise ValueError(f"contracts source differs from {contracts}")
+    contracts_revision = (
+        git(workspace, "rev-parse", f"refs/tags/{contracts}^{{commit}}")
+        .decode()
+        .strip()
+    )
+    path = packages["contracts"]["path"]
+    source_path = f"{path}/src"
+    tagged_source = git(workspace, "rev-parse", f"{contracts_revision}:{source_path}")
+    selected_source = git(workspace, "rev-parse", f"{revision}:{source_path}")
+    if tagged_source != selected_source:
+        raise ValueError(f"contracts source differs from {contracts} at {source_path}")
+    metadata_path = f"{path}/pyproject.toml"
+    if git(workspace, "show", f"{contracts_revision}:{metadata_path}") != git(
+        workspace, "show", f"{revision}:{metadata_path}"
+    ):
+        raise ValueError(f"contracts package metadata differs from {contracts}")
+    # Equality above binds the common dependency graph. Build the complete
+    # contracts input from its own tag, including README/license/package data.
+    packages["contracts"].update(
+        revision=contracts_revision,
+        git_tree=git(workspace, "rev-parse", f"{contracts_revision}:{path}")
+        .decode()
+        .strip(),
+        source_date_epoch=int(
+            git(workspace, "show", "-s", "--format=%ct", contracts_revision)
+        ),
+        uv_lock_sha256=sha256(
+            git(workspace, "show", f"{contracts_revision}:uv.lock")
+        ).hexdigest(),
+        release=contracts,
+    )
+    packages["harness"]["release"] = release
     return release, contracts
 
 
@@ -186,9 +215,14 @@ def outputs(
             "distribution": distribution,
             "version": project["version"],
             "path": path,
+            "revision": revision,
             "git_tree": git(workspace, "rev-parse", f"{revision}:{path}")
             .decode()
             .strip(),
+            "source_date_epoch": int(
+                git(workspace, "show", "-s", "--format=%ct", revision)
+            ),
+            "uv_lock_sha256": sha256(lock_bytes).hexdigest(),
         }
         metadata[directory] = data
     release = pin.get("release")
@@ -216,29 +250,34 @@ def outputs(
         raise ValueError(
             "Docker Bake must contain exactly one generated foundation block"
         )
+    contracts_revision = packages["contracts"]["revision"]
+    contracts_source = (
+        f"{pin['url']}?ref={contracts_revision}&checksum={contracts_revision}"
+    )
     replacement = (
-        f'{begin}\nvariable "FOUNDATION_SOURCE" {{\n  default = "{source}"\n}}\n{end}'
+        f'{begin}\nvariable "FOUNDATION_SOURCE" {{\n  default = "{source}"\n}}\n'
+        f'variable "CONTRACTS_SOURCE" {{\n  default = "{contracts_source}"\n}}\n{end}'
     )
     start, stop = bake.index(begin), bake.index(end) + len(end)
     rows = [
         "# Foundation Compatibility Lock",
         "",
-        "Generated from the single workspace revision in `foundation.repos`.",
+        "Generated from the common workspace pin in `foundation.repos` and each package release tag.",
         "",
-        "| Component | Version | Workspace commit |",
+        "| Component | Version | Build input commit |",
         "| --- | --- | --- |",
         *[
-            f"| `{p['distribution']}` | `{p['version']}` | `{revision}` |"
+            f"| `{p['distribution']}` | `{p['version']}` | `{p['revision']}` |"
             for p in packages.values()
         ],
         "",
         *(
             [
                 f"The pin is bound to the source tags `{pair[0]}` and `{pair[1]}`.",
-                "The pinned commit matches the harness tag, and its contracts source",
-                "tree is identical to the contracts tag.",
-                "This proves source identity, not completed package publication.",
-                "Verify publication separately before release adoption.",
+                "Each complete build input is bound to its own tag and commit.",
+                "The common workspace's contracts `src` tree and `pyproject.toml`",
+                "match the contracts tag; its documentation is not used to build contracts.",
+                "Tag/source binding is separate from publication and image admission.",
             ]
             if pair
             else [
@@ -246,9 +285,13 @@ def outputs(
                 "without a release tag binding.",
             ]
         ),
-        "The images use a source-built package cohort from these immutable source trees.",
-        "Package source trees and project metadata are bound by this compatibility lock.",
-        "Whole wheel archive digests identify this source-built cohort.",
+        "The images build each package from its complete immutable Git context.",
+        "The named Git context ref and checksum bind every supplied input byte.",
+        "The build helper checks lock/project metadata; its uv.lock hash alone",
+        "does not authenticate an arbitrary supplied source directory.",
+        "Generated whole-wheel hashes identify each candidate build output.",
+        "Compare them with authenticated published assets when asserting",
+        "release-wheel equality.",
         "Build dependencies remain locked.",
         "CI checks the imported revision, workspace lock and installed image versions.",
         "Stable release adoption remains gated on completed publication "

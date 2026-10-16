@@ -4,14 +4,14 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
-ARG RCLONE_IMAGE=rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
+ARG RCLONE_IMAGE=rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
 ARG AWS_CLI_IMAGE=amazon/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
-ARG GO_BUILDER_IMAGE=golang:1.26.8@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff
+ARG GO_BUILDER_IMAGE=golang:1.27.2@sha256:2d658507a011f1eadc0114d7a421b312b2e77d9042a24036a26e267cc9231677
 # Policy and evidence targets receive the publisher-verified image from Bake.
 ARG COSIGN_IMAGE=scratch
 # Released binary module verification and platform digests: docker/opa/README.md.
-ARG OPA_IMAGE=openpolicyagent/opa:1.20.2-static@sha256:bb245e9e36be0d0ed486c240b606c56be7aba96014a4a87895fed4ba7a6dfa8d
+ARG OPA_IMAGE=openpolicyagent/opa:1.21.2-static@sha256:0843d2adce51655422e8b95a803629ab9f424803c4bd27876e7f44cce9a2b84d
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -41,6 +41,9 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 # The named context is pinned by both Git ref and checksum in Docker Bake.
 # hadolint ignore=DL3022
 COPY --from=foundation-source / /src/foundation/
+# The contracts package keeps its complete independent release origin.
+# hadolint ignore=DL3022
+COPY --from=contracts-source / /src/contracts/
 COPY docker/python/foundation-build.lock /tmp/foundation-build.lock
 COPY config/foundation-lock.json /tmp/foundation-lock.json
 COPY scripts/ci/foundation/build-workspace-wheels.py /tmp/build-workspace-wheels.py
@@ -48,7 +51,8 @@ RUN uv venv --no-cache --python /usr/bin/python3 /opt/build \
     && uv pip install --python /opt/build/bin/python --require-hashes --no-deps \
       --requirement /tmp/foundation-build.lock \
     && python3 /tmp/build-workspace-wheels.py \
-      --source /src/foundation --metadata /tmp/foundation-lock.json \
+      --source /src/foundation --contracts-source /src/contracts \
+      --metadata /tmp/foundation-lock.json \
       --python /opt/build/bin/python --output /out
 
 FROM ca-bootstrap AS foundation-contracts
@@ -73,12 +77,12 @@ ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf3
 
 FROM scratch AS rclone-license
 ADD --checksum=sha256:8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f45754cd04 \
-  https://raw.githubusercontent.com/rclone/rclone/687d264b689b8c49a67e2e52a8a5e0caa01c04ce/COPYING \
+  https://raw.githubusercontent.com/rclone/rclone/be8d6044eacb843b74d335db0c5fbe09222031fe/COPYING \
   /COPYING
 
 FROM scratch AS opa-license
 ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
-  https://raw.githubusercontent.com/open-policy-agent/opa/b2c26708e9d55645d7f837db495031f7e4152594/LICENSE \
+  https://raw.githubusercontent.com/open-policy-agent/opa/3f7474e6b3c631821d8aac25ca444f7e75a56483/LICENSE \
   /LICENSE
 
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
@@ -227,13 +231,13 @@ ADD --checksum=sha256:a6adb750d17c8eb3c50a5b063115c762ffe57724cfbd45cc38e5abe823
   https://github.com/intel/compute-runtime/releases/download/24.48.31907.7/libigdgmm12_22.5.4_amd64.deb \
   /packages/libigdgmm12_22.5.4_amd64.deb
 
-# The latest release still contains golang.org/x/text below the fixed version.
+# Build the exact upstream yq release with verified dependency versions.
 FROM --platform=${BUILDPLATFORM} ${GO_BUILDER_IMAGE} AS yq
 ARG TARGETOS
 ARG TARGETARCH
-ARG YQ_REVISION=0520a6fc904f2acdc188477e99d3720949268a1e
-ARG YQ_BASE_VERSION=v4.53.3
-ARG YQ_X_TEXT_VERSION=v0.40.0
+ARG YQ_REVISION=504fc38780cc46be8444ea1b72fb55919fc0bfb0
+ARG YQ_BASE_VERSION=v4.54.1
+ARG YQ_X_TEXT_VERSION=v0.42.0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     YQ_MODULE="github.com/mikefarah/yq/v4"; \

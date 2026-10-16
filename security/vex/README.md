@@ -12,7 +12,8 @@ update makes the statement inapplicable. A statement records the call-graph
 evidence (`govulncheck` source and binary modes) and is removed once the
 publisher ships a fixed dependency.
 
-The scan retains the full JSON report and enforces HIGH/CRITICAL findings after
+The scan retains the JSON report, including native suppressed-finding records
+with their original finding, source and rationale, and enforces HIGH/CRITICAL findings after
 applicability filtering. New findings remain blocking until assessed. Raw scan
 outputs belong in CI artifacts; local investigation notes do not belong in Git.
 No vulnerability risk acceptance is recorded in `.trivyignore`.
