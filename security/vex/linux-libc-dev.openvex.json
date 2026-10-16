@@ -3,7 +3,7 @@
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-09-08",
   "author": "mmkolpakov",
   "timestamp": "2026-10-08T16:41:33Z",
-  "version": 14,
+  "version": 15,
   "statements": [
     {
       "vulnerability": {
@@ -3163,7 +3163,126 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-12T18:38:40.252661+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes fs/jfs/jfs_dtree.c: add_missing_indices bounds/error handling and jfs_readdir propagation. The JFS implementation and these functions are absent from the binary payload. Package payloads are verified against Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain respectively 990 and 962 regular files: 988 and 960 exported usr/include headers plus two documentation files, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-38204.json (SHA256 343121239405f2d6a923911fc4da9308d6a5d85bf5184373da5ffd648669e7e3); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/38xxx/CVE-2025-38204.json (SHA256 bec3c42b044250db1421f63430a7ae6b35b8f499b218a3bbe867794fd0e0c4ca); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=5dff41a86377563f7a2b968aae00d25b4ceb37c9 (SHA256 2fe58015789506db4fdeb8590b721b4ddc892240b229a2a4e8c65d0ede3873de)."
+    },
+    {
+      "timestamp": "2026-10-16T09:44:01Z",
+      "vulnerability": {
+        "name": "CVE-2022-50240"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-13T16:54:06.386777+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes binder_update_page_range() in drivers/android/binder_alloc.c to use the mmap write lock when accessing the retained VMA pointer. The Binder allocator implementation is absent. Package payloads match the Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2022-50240.json (SHA256 ad35d9ccde0c91cb3fc96015d4ea6303831fd55263b582cc7a99a688a941bb42); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2022/50xxx/CVE-2022-50240.json (SHA256 a9efe408f15503529c18ce9ac53d37b390d441e220c8825c3d146411259c6bda); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=015ac18be7de25d17d6e5f1643cb3b60bfbe859e (SHA256 9e88e851962bc0e871a25815560d4295cefa5d0856f86ac693ab126e3b070910)."
+    },
+    {
+      "timestamp": "2026-10-16T09:44:01Z",
+      "vulnerability": {
+        "name": "CVE-2025-39933"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-15T14:06:55.791194+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes recv_done() in fs/smb/client/smbdirect.c to validate received offsets and lengths. The kernel SMB Direct client implementation is absent. Package payloads match the Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-39933.json (SHA256 0f9c891481bee694251d1b65471f6d2750cf9aafa69394a0412466cff1fb1c30); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/39xxx/CVE-2025-39933.json (SHA256 f3dd9d7ea36f91d47b8b10018dc9d85f21157f67f3ae832fef560bdbcadbf3a3); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=f57e53ea252363234f86674db475839e5b87102e (SHA256 d883cf1607602e6cd1068d350d9fbffec15f1cfb3192082bc0e1f54d2d19ff98)."
+    },
+    {
+      "timestamp": "2026-10-16T09:44:01Z",
+      "vulnerability": {
+        "name": "CVE-2025-40074"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-15T14:11:34.460020+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains pending. The fix changes net/ipv4/icmp.c, ip_fragment.c, ipmr.c and route.c to use dst_dev_rcu(). Those IPv4 kernel implementations are absent. Package payloads match the Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-40074.json (SHA256 0c4355e8e5ff459971c0455da3d3727c422b5648591f163b4da7325fe6f472ec); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/40xxx/CVE-2025-40074.json (SHA256 29c66bf7c9a707c3b684cdedabc2a209c4a531b1be89c3ac21d2d43783f589af); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=6ad8de3cefdb6ffa6708b21c567df0dbf82c43a8 (SHA256 13e89a07d08d52e42a799b2872d935765322d8b4e0e689391be6d6375bb60d65)."
+    },
+    {
+      "timestamp": "2026-10-16T09:44:01Z",
+      "vulnerability": {
+        "name": "CVE-2025-40139"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-15T13:57:05.744933+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains pending. The fix changes smc_clc_prfx_set() in net/smc/smc_clc.c to use __sk_dst_get() and dst_dev_rcu(). That SMC implementation is absent. Package payloads match the Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-40139.json (SHA256 beba3c73c320fc2a8f3365cf869ee621b1df3825cd9798f11ae3318bf0dd6f54); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/40xxx/CVE-2025-40139.json (SHA256 c20c92755a8db29991a287b7461be6e30abe338f831610e00efc770f8a02ac81); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=935d783e5de9b64587f3adb25641dd8385e64ddb (SHA256 99987ed205afcdb9eda5065d707698ed46b9443a356df61f1a13078bdf371aad)."
+    },
+    {
+      "timestamp": "2026-10-16T09:44:01Z",
+      "vulnerability": {
+        "name": "CVE-2025-40168"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-15T13:55:54.247975+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains pending. The fix changes smc_clc_prfx_match() in net/smc/smc_clc.c to use __sk_dst_get() and dst_dev_rcu(). That SMC implementation is absent. Package payloads match the Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-40168.json (SHA256 2974f0199ab4a3b27430b66e5d5508685df201987ba870b93f9832001a367523); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/40xxx/CVE-2025-40168.json (SHA256 eb81b05cb32abce570f7b40adcfcaa3ecc04350b0ba2f2f7fcb48dcad0f38d3a); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=235f81045c008169cc4e1955b4a64e118eebe61b (SHA256 b18d4c3664c80d81369558d4ec165f5ff6eee9cfeb2030eca8a1f5afc771ede3)."
+    },
+    {
+      "timestamp": "2026-10-16T09:44:01Z",
+      "vulnerability": {
+        "name": "CVE-2025-40170"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-15T14:12:15.346966+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes sk_setup_caps() in net/core/sock.c and internal include/net/ip.h, ip6_route.h and route.h. These kernel implementations and internal headers are absent; exported usr/include/linux UAPI headers are distinct. Package payloads match the Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-40170.json (SHA256 b901be54bcac3f4f4b7aaebcf230e70ede25fc489824770e591acffeabfb96f5); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/40xxx/CVE-2025-40170.json (SHA256 3c1f7bbb6308a02b0b0ae038d6cbe3f046d8201a4cc589b8bacae5cdc591862f); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=99a2ace61b211b0be861b07fbaa062fca4b58879 (SHA256 a33b31bd56ef20135e0c8e8a3499b1e212f209f0dedca942682154c85c0fdd90)."
+    },
+    {
+      "timestamp": "2026-10-16T09:44:01Z",
+      "vulnerability": {
+        "name": "CVE-2025-40274"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-15T14:06:55.791194+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes kvm_gmem_unbind() in virt/kvm/guest_memfd.c to remove bindings when guest_memfd is being released. That KVM implementation is absent. Package payloads match the Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain 988 amd64 or 960 arm64 exported usr/include headers plus changelog/copyright only, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-40274.json (SHA256 1b38d323ba360c5e779ff771c3ff2510f0ed28d3e47ebd5c0b692c20025c476b); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/40xxx/CVE-2025-40274.json (SHA256 d7a2f187975659d57f8801de474824aa4632ce111dbb77e9f19cfdff51bb0832); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=ae431059e75d36170a5ae6b44cc4d06d43613215 (SHA256 959efaf416cff8eeff8660ade7647fd68c012aaa1b2714469300cf4b2b7c9dde)."
     }
   ],
-  "last_updated": "2026-10-13T10:12:39Z"
+  "last_updated": "2026-10-16T09:44:01Z"
 }
