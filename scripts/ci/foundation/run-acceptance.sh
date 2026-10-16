@@ -480,55 +480,125 @@ capture_native_ros_trace() {
 }
 capture_runtime_metrics_diagnostics() {
   local phase="$1"
-  local destination="${artifact_dir}/.runtime-metrics-diagnostics"
-  local containers container inspection
+  local destination="${artifact_dir}/runtime-metrics-diagnostics"
+  local containers container inspection service actor_directory
+  local inventory_status digest size
+  local services=(runtime-metrics runtime-probe-publisher)
+  [[ "${data_source:-simulator}" != recording_playback ]] || services=(runtime-metrics playback)
 
-  # A single snapshot preserves the available state before owned cleanup.
+  # One snapshot preserves available diagnostics before owned cleanup. A
+  # refused inventory remains explicit; it never changes the observer outcome.
   [[ ! -d "${destination}" ]] || return 0
-  containers="$(timeout 10 "${compose[@]}" ps --all --quiet runtime-metrics)" || return 0
   mkdir -p "${destination}" || return 0
-  while IFS= read -r container; do
-    [[ "${container}" =~ ^[a-f0-9]{64}$ ]] || continue
-    # Inspect only this exact project's service; never retain Env or mounts.
+  for service in "${services[@]}"; do
+    if ! containers="$(timeout 10 "${compose[@]}" ps --all --quiet "${service}" \
+      2>>"${destination}/capture-errors.log")"; then
+      printf 'actor lookup refused: %s\n' "${service}" >>"${destination}/capture-errors.log" || true
+      continue
+    fi
+    if ! [[ "${containers}" =~ ^[a-f0-9]{64}$ ]]; then
+      printf 'expected one actor container: %s\n' "${service}" >>"${destination}/capture-errors.log" || true
+      continue
+    fi
+    container="${containers}"
+    # Inspect only an admitted actor; never retain raw Env, Cmd or mounts.
     if ! inspection="$(timeout 10 docker inspect "${container}" \
       2>>"${destination}/capture-errors.log" |
-      jq -e --arg project "${project}" --arg container "${container}" \
+      jq -e --arg project "${project}" --arg service "${service}" \
+        --arg container "${container}" --arg image "${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID}" \
+        --arg run "${ROBOTICS_RUN_ID}" --arg domain "${ROBOTICS_DOMAIN_ID}" \
+        --arg ros_domain "${ROS_DOMAIN_ID:-0}" --arg partition "${GZ_PARTITION:-robotics-runtime}" \
         --arg phase "${phase}" --arg captured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
         .[0] |
-        select(.Id == $container and
+        def marker($name):
+          [.Config.Env[] | select(startswith($name + "=")) | ltrimstr($name + "=")] |
+          if length == 1 then .[0] else error("ambiguous or missing run marker") end;
+        select(.Id == $container and .Image == $image and
           .Config.Labels["com.docker.compose.project"] == $project and
-          .Config.Labels["com.docker.compose.service"] == "runtime-metrics") |
+          .Config.Labels["com.docker.compose.service"] == $service and
+          marker("ROBOTICS_RUN_ID") == $run and marker("ROBOTICS_DOMAIN_ID") == $domain and
+          marker("ROS_DOMAIN_ID") == $ros_domain and marker("GZ_PARTITION") == $partition) |
         {
           container_id: .Id,
           image_id: .Image,
-          project: .Config.Labels["com.docker.compose.project"],
-          service: .Config.Labels["com.docker.compose.service"],
+          project: $project,
+          service: $service,
+          run_id: $run,
+          domain_id: $domain,
+          ros_domain_id: $ros_domain,
+          partition: $partition,
           phase: $phase,
           captured_at: $captured_at,
           state: (.State | {Status, Running, StartedAt, FinishedAt, ExitCode}),
           cpu_limits: (.HostConfig |
-            {NanoCpus, CpuPeriod, CpuQuota, CpuShares, CpusetCpus, CpusetMems})
+            {NanoCpus, CpuPeriod, CpuQuota, CpuShares, CpusetCpus, CpusetMems}),
+          native_inventory: {
+            status: "unavailable",
+            source_path: "/usr/share/robotics-runtime/deb-packages.tsv"
+          }
         }
       ' 2>>"${destination}/capture-errors.log")"; then
+      printf 'actor identity refused: %s %s\n' "${service}" "${container}" \
+        >>"${destination}/capture-errors.log" || true
       continue
     fi
-    mkdir -p "${destination}/${container}" || continue
-    printf '%s\n' "${inspection}" >"${destination}/${container}/inspect.json" || continue
+    actor_directory="${destination}/${container}"
+    mkdir -p "${actor_directory}" || continue
+    printf '%s\n' "${inspection}" >"${actor_directory}/inspect.json" || continue
+
+    # Retain the build-owned Debian inventory from this actor's rootfs. It is
+    # diagnostic composition evidence, not an attestation of loaded code.
+    inventory_status=0
+    timeout 15 docker cp "${container}:/usr/share/robotics-runtime/deb-packages.tsv" \
+      "${actor_directory}/.deb-packages.tsv" \
+      2>>"${destination}/capture-errors.log" || inventory_status=$?
+    if ((inventory_status == 0)) &&
+      ! [[ -f "${actor_directory}/.deb-packages.tsv" &&
+        ! -L "${actor_directory}/.deb-packages.tsv" &&
+        -s "${actor_directory}/.deb-packages.tsv" ]]; then
+      inventory_status=65
+    fi
+    if ((inventory_status == 0)); then
+      digest="$(sha256sum "${actor_directory}/.deb-packages.tsv" | cut -d' ' -f1)" || inventory_status=$?
+      size="$(stat -c '%s' "${actor_directory}/.deb-packages.tsv")" || inventory_status=$?
+    fi
+    if ((inventory_status == 0)); then
+      mv -- "${actor_directory}/.deb-packages.tsv" "${actor_directory}/deb-packages.tsv" || inventory_status=$?
+    fi
+    if ((inventory_status == 0)); then
+      jq --arg digest "${digest}" --argjson size "${size}" '
+        .native_inventory += {
+          status: "captured", path: "deb-packages.tsv",
+          sha256: $digest, size_bytes: $size
+        }
+      ' "${actor_directory}/inspect.json" >"${actor_directory}/.inspect.json" || inventory_status=$?
+    fi
+    if ((inventory_status == 0)); then
+      mv -- "${actor_directory}/.inspect.json" "${actor_directory}/inspect.json" || inventory_status=$?
+    fi
+    if ((inventory_status != 0)); then
+      # docker cp may return a directory; remove only this actor's issued staging path.
+      rm -rf -- "${actor_directory}/.deb-packages.tsv" || true
+      rm -f -- "${actor_directory}/deb-packages.tsv" "${actor_directory}/.inspect.json" || true
+    fi
+    printf '%s\n' "${inventory_status}" >"${actor_directory}/inventory-capture.exit" || true
+
+    [[ "${service}" == runtime-metrics ]] || continue
     timeout 10 docker stats --no-stream --format '{{json .}}' "${container}" \
-      >"${destination}/${container}/docker-stats.jsonl" \
+      >"${actor_directory}/docker-stats.jsonl" \
       2>>"${destination}/capture-errors.log" || true
     timeout 10 docker exec "${container}" cat /sys/fs/cgroup/cpu.stat \
-      >"${destination}/${container}/cpu.stat" \
+      >"${actor_directory}/cpu.stat" \
       2>>"${destination}/capture-errors.log" || true
     timeout 10 docker exec "${container}" cat /sys/fs/cgroup/cpu.max \
-      >"${destination}/${container}/cpu.max" \
+      >"${actor_directory}/cpu.max" \
       2>>"${destination}/capture-errors.log" || true
-  done <<<"${containers}"
+  done
   return 0
 }
 publish_failure_evidence() {
   local destination="${artifact_dir}/acceptance-evidence"
-  local diagnostics="${artifact_dir}/.runtime-metrics-diagnostics"
+  local diagnostics="${artifact_dir}/runtime-metrics-diagnostics"
   local source
   capture_runtime_metrics_diagnostics before_project_cleanup
   mkdir -p "${destination}"
@@ -538,6 +608,9 @@ publish_failure_evidence() {
     "${run_dir}/evidence/summaries" \
     "${run_dir}/bags" \
     "${run_dir}/scenario.yaml" \
+    "${run_dir}/runtime-manifest.json" \
+    "${run_dir}/acceptance-run.json" \
+    "${run_dir}/dataset-manifest.json" \
     "${run_dir}/configuration/extension-schemas"; do
     if [[ -e "${source}" ]]; then
       sudo cp -a "${source}" "${destination}/"

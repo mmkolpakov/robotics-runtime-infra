@@ -1305,7 +1305,9 @@ compose_leaf() {
     printf 'terminal-validation\n' >>"${trace}"
     return "${EOF_VALIDATION_STATUS:-0}"
   fi
-  if [[ "$*" == 'ps --all --quiet runtime-metrics' ]]; then
+  if [[ "$*" == 'ps --all --quiet runtime-metrics' ||
+    "$*" == 'ps --all --quiet runtime-probe-publisher' ||
+    "$*" == 'ps --all --quiet playback' ]]; then
     return 0
   fi
   [[ " $* " == *' stop '* ]]
