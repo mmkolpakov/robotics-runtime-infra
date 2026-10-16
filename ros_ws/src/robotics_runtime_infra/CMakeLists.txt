@@ -29,6 +29,13 @@ install(TARGETS moveit_plan_probe DESTINATION lib/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
 
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(
+    test_simulation_control_diagnostics
+    test/test_simulation_control_diagnostics.py
+    TIMEOUT 60
+  )
+
   add_launch_test(
     test/test_clock.py
     ENV "ROS_DOMAIN_ID=121"
