@@ -1,5 +1,6 @@
 """Exercise the actual workload input accessor while native entry stays closed."""
 
+import ast
 import json
 import copy
 import importlib.util
@@ -330,6 +331,31 @@ class NativeAdmissionControls(unittest.TestCase):
             self.module["validate_prepared"](
                 prepared, image_id=self.image_id, case="success"
             )
+
+    def test_embedded_image_receipt_is_valid_json_without_literal_escape_suffix(self):
+        import shlex
+
+        source = (ROOT / "Dockerfile").read_text().replace("\\\n", "")
+        run = next(
+            line
+            for line in source.splitlines()
+            if line.startswith("RUN /opt/consumer/bin/python -c")
+        )
+        arguments = shlex.split(run.removeprefix("RUN "))
+        program = arguments[arguments.index("-c") + 1]
+        tree = ast.parse(program)
+        write = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "write_text"
+        )
+        raw = eval(
+            compile(ast.Expression(write.args[0]), str(ROOT / "Dockerfile"), "eval"),
+            {"json": json, "receipt": {"files": {}, "packages": {}}},
+        )
+        self.assertEqual(json.loads(raw), {"files": {}, "packages": {}})
 
     def test_worker_verifies_native_inputs_before_loading_ros(self):
         import os
