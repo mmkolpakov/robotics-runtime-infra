@@ -1,16 +1,132 @@
-"""Assess genuine action observations; ROS/DDS acceptance remains the harness's job."""
+"""Assess captured Nav2 action and pose facts through verified SDK snapshots."""
 
 import math
 from collections.abc import Mapping
 from hashlib import sha256
 
 from robotics_acceptance_harness import AssertionEvaluation, EvaluationContext
-from robotics_runtime_contracts import load_mapping
+from robotics_runtime_contracts import loads_mapping
 
 NAMESPACE = "org.example.nav2-turtlebot3"
 
 
+def _shutdown_or_absent_result(report, config, observed):
+    """A local server observation is distinct from a physical terminal result."""
+    case = report["case"]
+    accepted = report.get("goal_accepted")
+    if accepted is not None and type(accepted) is not bool:
+        raise ValueError("malformed known SendGoal accepted flag")
+    goal_id = report.get("goal_id")
+    if goal_id is not None and not (
+        isinstance(goal_id, list)
+        and len(goal_id) == 16
+        and all(type(value) is int and 0 <= value <= 255 for value in goal_id)
+    ):
+        raise ValueError("malformed known goal UUID")
+    status = "skipped"
+    matched = None
+    reason = "original GetResult response was not captured"
+    if accepted is False:
+        matched, status, reason = False, "failed", "NavigateToPose goal was rejected"
+    elif case == "server-failure":
+        available = report.get("server_available_after_shutdown")
+        if available is not None and type(available) is not bool:
+            raise ValueError("malformed known action server presence")
+        fields = (
+            "goal_started_monotonic_ns",
+            "goal_accepted_monotonic_ns",
+            "consumer_trigger_monotonic_ns",
+            "server_after_shutdown_monotonic_ns",
+            "goal_finished_monotonic_ns",
+        )
+        values = [report.get(name) for name in fields]
+        if any(
+            value is not None and (type(value) is not int or value < 0)
+            for value in values
+        ):
+            raise ValueError("malformed known shutdown receiver time")
+        if available is True:
+            matched, status, reason = (
+                False,
+                "failed",
+                "Action server remained available after the requested shutdown",
+            )
+        elif (
+            accepted is True
+            and goal_id is not None
+            and available is not None
+            and all(value is not None for value in values)
+        ):
+            requested, accepted_at, issued_shutdown, observed_at, finished = values
+            ordered = (
+                requested <= accepted_at <= issued_shutdown <= observed_at <= finished
+            )
+            within_budget = (
+                ordered
+                and (observed_at - requested) / 1e9 < config["action_budget_sec"]
+            )
+            matched = (
+                available is False
+                and within_budget
+                and report.get("observation_status")
+                in {"server-unavailable", "complete"}
+            )
+            status = "passed" if matched else "failed"
+            reason = "Captured local shutdown/server observation must match the issued goal and budget"
+        else:
+            reason = (
+                "issued goal or ordered shutdown/server observation was not captured"
+            )
+    response = report.get("result_observation")
+    if isinstance(response, Mapping) and response.get("goal_id") != goal_id:
+        matched, status, reason = (
+            False,
+            "failed",
+            "GetResult belongs to another issued goal",
+        )
+    return [
+        (
+            "native-observations",
+            "passed" if observed else "skipped",
+            observed,
+            "Native odom/TF/Clock observations must be captured",
+        ),
+        ("action-" + case, status, matched, reason),
+    ]
+
+
+def _bound_cdr(context, report):
+    candidates = [
+        (path, link)
+        for path, link in context.evidence.local_files.items()
+        if path.name == "get-result-response.cdr"
+    ]
+    if len(candidates) > 1:
+        raise ValueError("ambiguous original GetResult CDR artifacts")
+    if not candidates:
+        return None
+    path, link = candidates[0]
+    response = report.get("result_observation")
+    if not isinstance(response, Mapping):
+        raise ValueError("GetResult CDR has no original observation metadata")
+    raw = context.evidence.read_local(path, max_raw_evidence_bytes=1024 * 1024)
+    if (
+        sha256(raw).hexdigest() != link["sha256"]
+        or link["sha256"] != response.get("sha256")
+        or len(raw) != response.get("size_bytes")
+        or link["sha256"] not in context.evidence_sha256
+        or response.get("capture_method")
+        != "serialized-client-GetResult_Response-observation"
+        or response.get("encoding") != "cdr"
+    ):
+        raise ValueError("GetResult CDR does not match the verified observation")
+    return link
+
+
 def evaluate(context: EvaluationContext):
+    controls = context.assessment_controls
+    if controls is not None and controls.data["calibration"]["state"] == "selected":
+        raise ValueError("the Nav2 method does not consume selected calibration")
     candidates = [
         (path, link)
         for path, link in context.evidence.local_files.items()
@@ -19,9 +135,8 @@ def evaluate(context: EvaluationContext):
     if len(candidates) != 1:
         raise ValueError("one verified Nav2 workload JSON artifact is required")
     path, link = candidates[0]
-    if sha256(path.read_bytes()).hexdigest() != link["sha256"]:
-        raise ValueError("Nav2 observation changed after evidence verification")
-    report = load_mapping(path)
+    raw = context.evidence.read_local(path, max_raw_evidence_bytes=1024 * 1024)
+    report = loads_mapping(raw, source_name=str(path))
     if (
         report.get("run_id") != context.run_id
         or report.get("domain_id") != context.domain_id
@@ -30,7 +145,7 @@ def evaluate(context: EvaluationContext):
     digest = str(link["sha256"])
     if digest not in context.evidence_sha256:
         raise ValueError("Nav2 JSON has no verified evidence binding")
-    config = context.scenario.get("extensions", {}).get(NAMESPACE)
+    config = context.bundle.scenario.as_dict().get("extensions", {}).get(NAMESPACE)
     if not isinstance(config, Mapping):
         raise TypeError("declared Nav2 scenario extension is required")
     expected_parameters = {
@@ -44,11 +159,9 @@ def evaluate(context: EvaluationContext):
             "max_observation_age_sec",
             "odometry_frame",
             "required_tf_edges",
+            "readiness",
         ]
     }
-    expected_parameters["required_tf_edges"] = [
-        list(edge) for edge in expected_parameters["required_tf_edges"]
-    ]
     if report.get("parameters") != expected_parameters:
         raise ValueError("worker parameters differ from the declared scenario")
     case = report.get("case")
@@ -57,10 +170,37 @@ def evaluate(context: EvaluationContext):
     if case not in {"success", "cancel", "timeout", "server-failure"}:
         raise ValueError("unknown Nav2 case")
     counts = report.get("message_counts", {})
+    if not isinstance(counts, Mapping) or any(
+        key in counts and (type(counts[key]) is not int or counts[key] < 0)
+        for key in ("odom", "tf", "clock")
+    ):
+        raise ValueError("malformed known native observation counts")
     observed = all(
         type(counts.get(key)) is int and counts[key] >= minimum
         for key, minimum in {"odom": 2, "tf": 2, "clock": 30}.items()
     )
+    cdr_link = _bound_cdr(context, report)
+    if (
+        case == "server-failure"
+        or report.get("goal_accepted") is False
+        or cdr_link is None
+    ):
+        for name, status, value, message in _shutdown_or_absent_result(
+            report, config, observed
+        ):
+            yield AssertionEvaluation(
+                assertion_id=NAMESPACE + "." + name,
+                status=status,
+                observed_value=value,
+                unit="1",
+                message=message,
+                source="product",
+                namespace=NAMESPACE,
+                evidence_sha256=(digest, str(cdr_link["sha256"]))
+                if cdr_link
+                else (digest,),
+            )
+        return
     finished = report.get("goal_finished_monotonic_ns", 0)
     latest = report.get("last_observation_monotonic_ns", {})
     freshness = config["max_observation_age_sec"]
@@ -103,22 +243,6 @@ def evaluate(context: EvaluationContext):
         and response.get("encoding") == "cdr"
         and response.get("size_bytes", 0) > 0
     )
-    cdr_candidates = [
-        (cdr_path, cdr_link)
-        for cdr_path, cdr_link in context.evidence.local_files.items()
-        if cdr_path.name == "get-result-response.cdr"
-    ]
-    if len(cdr_candidates) != 1:
-        raise ValueError("one verified original GetResult CDR artifact is required")
-    cdr_path, cdr_link = cdr_candidates[0]
-    cdr_raw = cdr_path.read_bytes()
-    if (
-        sha256(cdr_raw).hexdigest() != cdr_link["sha256"]
-        or cdr_link["sha256"] != response.get("sha256")
-        or len(cdr_raw) != response.get("size_bytes")
-        or cdr_link["sha256"] not in context.evidence_sha256
-    ):
-        raise ValueError("GetResult CDR does not match the verified observation")
     requested_at = report.get("goal_started_monotonic_ns")
     accepted = report.get("goal_accepted_monotonic_ns")
     result = report.get("result_observed_monotonic_ns")
