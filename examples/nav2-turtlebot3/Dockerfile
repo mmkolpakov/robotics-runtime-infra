@@ -26,42 +26,19 @@ RUN python3 /opt/sdk-policy/check-sdk-wheels.py /opt/sdk-cohort/wheels \
     && /opt/consumer/bin/pip install --disable-pip-version-check --only-binary=:all: \
        --require-hashes --no-cache-dir --no-index --find-links=/opt/sdk-cohort/wheels \
        -r /opt/sdk-policy/requirements.lock
-RUN /opt/consumer/bin/python - <<'PY'
-import hashlib
-import json
-from pathlib import Path
-import subprocess
-import yaml
-
-root = Path("/opt/sdk-policy")
-policy = json.loads((root / "inputs.lock.json").read_bytes())
-checked = subprocess.run(["dpkg", "--verify", *policy["packages"]], check=True, capture_output=True)
-if checked.stdout or checked.stderr:
-    raise ValueError("installed native package verification failed")
-paths = {
-    "model": "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro",
-    "world": "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/worlds/tb3_sandbox.sdf.xacro",
-    "map": "/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml",
-    "launch": "/opt/ros/jazzy/share/nav2_bringup/launch/tb3_simulation_launch.py",
-}
-paths["map_image"] = str((Path(paths["map"]).parent / yaml.safe_load(Path(paths["map"]).read_text())["image"]).resolve(strict=True))
-paths["robot_state"] = "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/urdf/turtlebot3_waffle.urdf"
-paths["params"] = "/opt/ros/jazzy/share/nav2_bringup/params/nav2_params.yaml"
-paths["spawn_launch"] = "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/launch/spawn_tb3.launch.py"
-files = {}
-for name, value in paths.items():
-    path = Path(value)
-    raw = path.read_bytes()
-    files[name] = {"path": value, "sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
-receipt = {
-    "policy_sha256": hashlib.sha256((root / "inputs.lock.json").read_bytes()).hexdigest(),
-    "dockerfile_sha256": hashlib.sha256((root / "Dockerfile").read_bytes()).hexdigest(),
-    "packages": {name: {"version": item["Version"], "sha256": item["SHA256"]} for name, item in policy["packages"].items()},
-    "files": files,
-    "installed_packages_sha256": hashlib.sha256(subprocess.check_output(["dpkg-query", "-W", "-f=${Package}\t${Version}\t${Architecture}\n"])).hexdigest(),
-}
-(root / "image-build.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
-PY
+RUN /opt/consumer/bin/python -c '\
+import hashlib,json,subprocess,yaml; \
+from pathlib import Path; \
+root=Path("/opt/sdk-policy"); \
+policy=json.loads((root/"inputs.lock.json").read_bytes()); \
+checked=subprocess.run(["dpkg","--verify",*policy["packages"]],check=True,capture_output=True); \
+assert not checked.stdout and not checked.stderr, "installed native package verification failed"; \
+base="/opt/ros/jazzy/share/"; \
+paths={"model":base+"nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro","world":base+"nav2_minimal_tb3_sim/worlds/tb3_sandbox.sdf.xacro","map":base+"nav2_bringup/maps/tb3_sandbox.yaml","launch":base+"nav2_bringup/launch/tb3_simulation_launch.py","robot_state":base+"nav2_minimal_tb3_sim/urdf/turtlebot3_waffle.urdf","params":base+"nav2_bringup/params/nav2_params.yaml","spawn_launch":base+"nav2_minimal_tb3_sim/launch/spawn_tb3.launch.py"}; \
+paths["map_image"]=str((Path(paths["map"]).parent/yaml.safe_load(Path(paths["map"]).read_text())["image"]).resolve(strict=True)); \
+files={name:{"path":path,"sha256":hashlib.sha256(raw:=Path(path).read_bytes()).hexdigest(),"size_bytes":len(raw)} for name,path in paths.items()}; \
+receipt={"policy_sha256":hashlib.sha256((root/"inputs.lock.json").read_bytes()).hexdigest(),"dockerfile_sha256":hashlib.sha256((root/"Dockerfile").read_bytes()).hexdigest(),"packages":{name:{"version":item["Version"],"sha256":item["SHA256"]} for name,item in policy["packages"].items()},"files":files,"installed_packages_sha256":hashlib.sha256(subprocess.check_output(["dpkg-query","-W","-f=${Package}\\t${Version}\\t${Architecture}\\n"])).hexdigest()}; \
+(root/"image-build.json").write_text(json.dumps(receipt,sort_keys=True)+"\\n")'
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
     LIBGL_ALWAYS_SOFTWARE=1

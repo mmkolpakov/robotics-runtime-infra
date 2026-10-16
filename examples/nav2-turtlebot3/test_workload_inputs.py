@@ -301,7 +301,7 @@ class NativeAdmissionControls(unittest.TestCase):
         model.write_bytes(b"altered model")
         manifest_path = prepared / "pre-execution-inputs.json"
         manifest = json.loads(manifest_path.read_bytes())
-        manifest["expanded_model"].update(
+        manifest["native_model"].update(
             sha256=hashlib.sha256(model.read_bytes()).hexdigest(),
             size_bytes=model.stat().st_size,
         )
@@ -369,7 +369,6 @@ class NativeAdmissionControls(unittest.TestCase):
                 (capture / "completed-facts.json").unlink()
                 (capture / case).mkdir()
                 (capture / "workload.json").rename(capture / case / "workload.json")
-                (prepared / "native-model.json").write_text("{}")
                 (prepared / "native-model.sdf").write_text("fixture")
                 (prepared / "native-world.sdf").write_text("fixture")
                 (prepared / "native-preflight.json").write_text("{}")
@@ -412,7 +411,9 @@ class NativeAdmissionControls(unittest.TestCase):
                 (capture / "native-acquired.json").write_text(
                     json.dumps({"HostConfig": {"NetworkMode": "none"}})
                 )
-                facts = self.module["complete_native"](prepared, capture)
+                facts = runpy.run_path(str(ROOT / "finalize.py"))["complete_native"](
+                    prepared, capture
+                )
                 if case != "success":
                     self.assertEqual(
                         facts["observations"]["condition"]["state"], "unobserved"
