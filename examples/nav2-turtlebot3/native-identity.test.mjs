@@ -2,8 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {assertOwned, canonicalConfigId, recoverCreated, createdId, nativeWaitExit, assertRosStopSignal, admitAndStart, removeUnstartedOwned} from './native-identity.mjs';
 
-const expected={cid:'a'.repeat(64),image:'sha256:'+'b'.repeat(64),owner:'issued-owner',name:'issued-name',stopSignal:'SIGINT'};
-const native=()=>({Id:expected.cid,Image:'b'.repeat(64),Name:'/issued-name',Config:{Labels:{'org.example.nav2.owner':'issued-owner'},StopSignal:2},State:{Running:true}});
+const expected={cid:'a'.repeat(64),image:'sha256:'+'b'.repeat(64),owner:'issued-owner',name:'issued-name',stopSignal:'SIGINT',composition:{command:['ros2','launch'],entrypoint:['/ros_entrypoint.sh'],env:['PATH=/usr/bin'],mounts:[],hostConfig:{NetworkMode:'none'}}};
+const native=()=>({Id:expected.cid,Image:'b'.repeat(64),Name:'/issued-name',Config:{Cmd:['ros2','launch'],Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin'],Labels:{'org.example.nav2.owner':'issued-owner'},StopSignal:2},Mounts:[],HostConfig:{NetworkMode:'none'},State:{Running:false,Pid:0,Status:'created'}});
 
 test('bare config ID and prefixed config ID identify the same exact configuration',()=>{
   assert.equal(canonicalConfigId('b'.repeat(64)),expected.image);
@@ -22,8 +22,8 @@ test('foreign identity and missing ownership refuse before any cleanup effect',(
     {...native(),Id:'c'.repeat(64)},
     {...native(),Name:'/foreign'},
     {...native(),Name:'//issued-name'},
-    {...native(),Config:{Labels:{}}},
-    {...native(),Config:{Labels:{'org.example.nav2.owner':'foreign'}}}
+    {...native(),Config:{Cmd:['ros2','launch'],Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin'],Labels:{}}},
+    {...native(),Config:{Cmd:['ros2','launch'],Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin'],Labels:{'org.example.nav2.owner':'foreign'}}}
   ]) assert.throws(()=>assertOwned(changed,expected));
 });
 test('lost native create response recovers an exact owner-labelled object, retaining only read operations',async()=>{
@@ -91,5 +91,22 @@ test('foreign acquisition cannot start or authorize the unstarted cleanup path',
 test('running or previously exited actor never uses the unstarted removal shortcut',async()=>{
   for(const state of [{Running:true,Pid:123,Status:'running'},{Running:false,Pid:0,Status:'exited'}]){
     assert.equal(await removeUnstartedOwned(async()=>{throw new Error('unexpected remove')},{...native(),State:state},expected),false);
+  }
+});
+
+test('every acquired composition mismatch refuses before native start',async()=>{
+  const mutations=[
+    value=>{value.Config.Cmd=['sh','-c','true'];},
+    value=>{value.Config.Entrypoint=['/bin/sh'];},
+    value=>{value.Config.Env=['PATH=/foreign'];},
+    value=>{value.Mounts=[{Source:'/foreign',Destination:'/evidence',RW:true,Type:'bind'}];},
+    value=>{value.HostConfig.NetworkMode='host';},
+    value=>{value.State={Running:true,Pid:999,Status:'running'};},
+  ];
+  for(const mutate of mutations){
+    const actual=native(),calls=[];
+    mutate(actual);
+    await assert.rejects(admitAndStart(async(op,args)=>{calls.push(args[0]);return JSON.stringify([actual]);},expected));
+    assert.deepEqual(calls,['inspect']);
   }
 });

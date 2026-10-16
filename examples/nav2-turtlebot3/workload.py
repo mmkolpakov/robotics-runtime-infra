@@ -16,33 +16,68 @@ import time
 from pathlib import Path
 
 
-if __name__ == "__main__":
-    raise SystemExit(
-        "native launch requires an admitted v2 SDK/image composition; the document profile does not authorize a worker"
-    )
-
-import rclpy
-from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from nav2_msgs.action import NavigateToPose
-from nav2_simple_commander.robot_navigator import BasicNavigator
-from nav_msgs.msg import Odometry
-from rclpy.action import ActionClient
-from rclpy.parameter import Parameter
-from rclpy.qos import (
-    DurabilityPolicy,
-    QoSProfile,
-    ReliabilityPolicy,
-    qos_profile_sensor_data,
-)
-from rclpy.serialization import serialize_message
-from robotics_acceptance_harness.readiness import wait_for_readiness
-from robotics_acceptance_harness.ros import RosGraphObserver
 from robotics_runtime_contracts import load_mapping
-from rosgraph_msgs.msg import Clock
-from rosidl_runtime_py.convert import message_to_ordereddict
-from std_srvs.srv import Empty
-from tf2_msgs.msg import TFMessage
+
+
+def admit_workload(args):
+    import runpy
+
+    if args.prepared.resolve() / "scenario.json" != args.scenario.resolve():
+        raise ValueError("worker scenario differs from the admitted prepared directory")
+    if os.environ.get("NAV2_IMAGE_CONFIG_ID") != args.image_id:
+        raise ValueError("worker image identity differs from the inspected actor")
+    validate = runpy.run_path(str(Path(__file__).with_name("make-scenario.py")))[
+        "validate_prepared"
+    ]
+    admitted = validate(args.prepared, image_id=args.image_id, case=args.case)
+    if (admitted["run_id"], admitted["domain_id"]) != (args.run_id, args.domain_id):
+        raise ValueError("worker run or domain differs")
+    return admitted
+
+
+def load_ros():
+    global \
+        rclpy, \
+        GoalStatus, \
+        PoseStamped, \
+        PoseWithCovarianceStamped, \
+        NavigateToPose, \
+        BasicNavigator, \
+        Odometry, \
+        ActionClient, \
+        Parameter, \
+        DurabilityPolicy, \
+        QoSProfile, \
+        ReliabilityPolicy, \
+        qos_profile_sensor_data, \
+        serialize_message, \
+        wait_for_readiness, \
+        RosGraphObserver, \
+        Clock, \
+        message_to_ordereddict, \
+        Empty, \
+        TFMessage
+    import rclpy
+    from action_msgs.msg import GoalStatus
+    from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+    from nav2_msgs.action import NavigateToPose
+    from nav2_simple_commander.robot_navigator import BasicNavigator
+    from nav_msgs.msg import Odometry
+    from rclpy.action import ActionClient
+    from rclpy.parameter import Parameter
+    from rclpy.qos import (
+        DurabilityPolicy,
+        QoSProfile,
+        ReliabilityPolicy,
+        qos_profile_sensor_data,
+    )
+    from rclpy.serialization import serialize_message
+    from robotics_acceptance_harness.readiness import wait_for_readiness
+    from robotics_acceptance_harness.ros import RosGraphObserver
+    from rosgraph_msgs.msg import Clock
+    from rosidl_runtime_py.convert import message_to_ordereddict
+    from std_srvs.srv import Empty
+    from tf2_msgs.msg import TFMessage
 
 
 def readiness_parameters(scenario):
@@ -107,7 +142,6 @@ def pose(node, x: float, y: float) -> PoseStamped:
 
 
 def main() -> int:
-    raise SystemExit("native launch requires an admitted v2 SDK/image composition")
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--case",
@@ -118,6 +152,8 @@ def main() -> int:
     parser.add_argument("--domain-id", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--scenario", type=Path, required=True)
+    parser.add_argument("--prepared", type=Path, required=True)
+    parser.add_argument("--image-id", required=True)
     parser.add_argument("--goal-x", type=float, default=1.0)
     parser.add_argument("--goal-y", type=float, default=-0.5)
     parser.add_argument("--action-budget-sec", type=float, default=120.0)
@@ -167,6 +203,8 @@ def main() -> int:
         or not 0 < args.max_observation_age_sec <= 5
     ):
         parser.error("finite pose and an action budget in (0,180] are required")
+    admit_workload(args)
+    load_ros()
     declared_scenario = load_mapping(args.scenario)
     configuration = declared_scenario["extensions"]["org.example.nav2-turtlebot3"]
     actual_parameters = {
@@ -939,3 +977,7 @@ def main() -> int:
                 report,
             )
     return 0 if report["expected_case_observed"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
