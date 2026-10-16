@@ -2,8 +2,9 @@
 
 `emit-runtime-manifest` collects runtime facts and delegates validation and JSON
 serialization to `robotics-contracts runtime-manifest init`. The CLI comes from the
-pinned workspace wheels in `/opt/contracts`; inference environments remain separate.
-The manifest records the same workspace revision for contracts and harness.
+pinned package wheels in `/opt/contracts`; inference environments remain separate.
+The manifest records each package's source revision from `packages.contracts.revision`
+and `packages.harness.revision` in the foundation lock.
 The default lock is `/usr/share/robotics-runtime/foundation-lock.json` from the image;
 standalone source deployments can supply the checked lock through `ROBOTICS_FOUNDATION_LOCK`.
 
@@ -50,7 +51,7 @@ failure. Digests remain SHA-256 of the final file bytes.
 
 The producer regression tests use the actual installed contracts CLI. They substitute
 only OS and ROS package observations, and do not qualify live ROS or container images.
-Full foundation qualification remains the integration gate for the migration branch.
+Full foundation qualification checks this producer together with its runtime composition.
 
 The ROS command is provided by
 [ros2pkg's XML verb](https://github.com/ros2/ros2cli/blob/jazzy/ros2pkg/ros2pkg/verb/xml.py).

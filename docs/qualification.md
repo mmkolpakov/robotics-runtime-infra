@@ -9,14 +9,15 @@ certificate verification remain delegated to Cosign.
 - Bash 5 or newer
 - Cosign 3.1.3
 - jq 1.6 or newer
-- The exact contracts workspace revision in `foundation.repos` (Python 3.12+)
+- The contracts source revision in `config/foundation-lock.json` (Python 3.12+)
 
-The current foundation uses the contracts 0.19.0 statement writer and matcher
-with harness 0.20.0, including the canonical dataset-manifest v2 bag model. Install
-the pinned workspace or exact published pair; the earlier 0.15.4 / 0.17.1 foundation
-cannot read these artifacts.
+The source foundation uses the contracts 0.21.1 statement writer and matcher
+with harness 0.22.2, including the canonical dataset-manifest v2 bag model.
+The [foundation lock](foundation-compatibility.md) binds each package to its own
+release source revision. Use those inputs or the exact published package pair.
+The published `v0.11.0-rc2` images retain contracts 0.19.0 and harness 0.20.0.
 Source qualification, an OCI release, and external consumer qualification are
-[separate gates](compatibility.md#foundation-generations).
+[separate gates](compatibility.md#package-and-release-generations).
 
 `ROBOTICS_CONTRACTS_CLI` may point to an executable from an isolated
 installation. Otherwise, the scripts resolve `robotics-contracts` from `PATH`
@@ -120,6 +121,29 @@ qualification include the same subjects. This profile covers simulation control
 and clock stepping. Sensor fidelity, product scenes and flight dynamics require
 their own profiles and probes. A failed probe stops qualification before a
 provider binding is produced.
+
+## Retained inputs and diagnostics on failure
+
+Before cleaning up a failed foundation run, the runner copies available source
+files into `acceptance-evidence/`: `scenario.yaml`, `runtime-manifest.json`,
+`acceptance-run.json`, `dataset-manifest.json`, metrics, the evidence index,
+recording summaries, bags and extension schemas. It preserves the existing bytes;
+missing files are not reconstructed.
+
+The runner also retains `runtime-metrics-diagnostics/` and includes it in
+`acceptance-evidence/`. It checks the container, image, project, run and domain
+identity before collecting from `runtime-metrics` and `runtime-probe-publisher`,
+or from `runtime-metrics` and `playback` for recorded playback. Each admitted
+container has a directory named by its ID. `inspect.json` records the selected
+identity, state, CPU limits and inventory status. When collection succeeds,
+`deb-packages.tsv` preserves the image-owned Debian package inventory;
+`native_inventory` records its SHA-256 and size. `inventory-capture.exit` records
+the collection exit code, and `capture-errors.log` retains capture errors.
+The metrics container also supplies Docker statistics and cgroup CPU files.
+
+Package inventory describes image contents, not the native libraries loaded by a
+process. These diagnostics do not establish measurement coverage or replace the
+original observer outcome. An unavailable or refused capture remains explicit.
 
 ## Independent policy
 
