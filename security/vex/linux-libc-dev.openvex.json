@@ -3,7 +3,7 @@
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-09-08",
   "author": "mmkolpakov",
   "timestamp": "2026-10-08T16:41:33Z",
-  "version": 13,
+  "version": 14,
   "statements": [
     {
       "vulnerability": {
@@ -3078,7 +3078,92 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "Assessed for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64 only. Canonical advisory updated 2026-10-09T06:07:42.361586+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The Linux CNA fix changes parse_durable_handle_context() in fs/smb/server/smb2pdu.c; this kernel SMB implementation is absent from the exported UAPI-header package. Independently downloaded debs match the signed Ubuntu snapshot 20260930T000000Z index: amd64 SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. Their payloads contain respectively 990 and 962 regular files: 988 and 960 usr/include headers plus two documents, with no ELF, executable file or kernel module. All installed file paths, sizes, modes and SHA256 values in the inspected amd64 simulation and acceptance-observer images match the amd64 deb. The arm64 assessment covers the signed binary package payload. Sources: https://ubuntu.com/security/cves/CVE-2025-22043.json (SHA256 b38d4593a67d04c1f5cb5af49c20ba7e4707f7d71937180a4ba99080a3ba167e); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/22xxx/CVE-2025-22043.json; https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?id=542027e123fc0bfd61dd59e21ae0ee4ef2101b29; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-amd64/Packages.xz; https://snapshot.ubuntu.com/ubuntu/20260930T000000Z/dists/noble-updates/main/binary-arm64/Packages.xz. This statement does not qualify the host kernel, hardware, other packages, another version/architecture/distribution or any other vulnerability. It makes no exception for OPA, yq or x/net."
+    },
+    {
+      "timestamp": "2026-10-13T10:05:07.015079+00:00",
+      "vulnerability": {
+        "name": "CVE-2024-58098"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-12T18:23:32.713195+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes internal include/linux/bpf_verifier.h and kernel/bpf/verifier.c: bpf_subprog_info changes_pkt_data tracking and global-function packet-pointer invalidation. These verifier implementation and internal structures are not in the binary payload. Package payloads are verified against Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain respectively 990 and 962 regular files: 988 and 960 exported usr/include headers plus two documentation files, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2024-58098.json (SHA256 9d824517ca4a969a0f7a121c3177fae43ce10af42c43f79450e3b72d8a2569ef); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/58xxx/CVE-2024-58098.json (SHA256 95d7cd1d73c59f69ccf3b15e79f02526ebff890337ee7a05d21d7a363c87d238); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=51081a3f25c742da5a659d7fc6fd77ebfdd555be (SHA256 8b643d11de477f427da83eb5ed8ced4e26c0502e012b98cb5387a4421e9c918d)."
+    },
+    {
+      "timestamp": "2026-10-13T10:05:07.015079+00:00",
+      "vulnerability": {
+        "name": "CVE-2024-58100"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-12T18:25:15.919326+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes internal include/linux/bpf.h and kernel/bpf/verifier.c: bpf_prog_aux changes_pkt_data, CFG/attach checks and extension-program compatibility. The installed usr/include/linux/bpf.h is the UAPI interface (enum bpf_cmd, enum bpf_prog_type, union bpf_attr, struct bpf_insn); it is not the internal kernel header and contains none of bpf_prog_aux, bpf_subprog_info, changes_pkt_data or verifier functions. Package payloads are verified against Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain respectively 990 and 962 regular files: 988 and 960 exported usr/include headers plus two documentation files, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2024-58100.json (SHA256 68c2f9015b67dddd0aa7f0638fa2f59e5eb7d0f83dd997f8c335b22fef1a87bf); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2024/58xxx/CVE-2024-58100.json (SHA256 40dbfccfce4df448b22d305a8b893d4eaebf1220c4eecf9936395975e7f9b2d2); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=81f6d0530ba031b5f038a091619bf2ff29568852 (SHA256 f34708433f13884f7e2d4e281038c4d1a69348764e28d70a08fce5bb71bf2ac8)."
+    },
+    {
+      "timestamp": "2026-10-13T10:05:07.015079+00:00",
+      "vulnerability": {
+        "name": "CVE-2025-37743"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-12T18:30:00.031952+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes drivers/net/wireless/ath/ath12k/dp_mon.c and hal_rx.h: ath12k monitor TLV parsing and memory allocation while enabling statistics. The driver implementation and its internal header/functions are absent from the binary payload. Package payloads are verified against Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain respectively 990 and 962 regular files: 988 and 960 exported usr/include headers plus two documentation files, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-37743.json (SHA256 874f44d5d795e1b8a708d097259f73897f4e3e863becb3e6f1e2e8428320b960); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/37xxx/CVE-2025-37743.json (SHA256 662233965b2d1fb449b51d7436c591fcc83d5610bd5e7ef7de4bbbbf1a78fa2f); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=ecfc131389923405be8e7a6f4408fd9321e4d19b (SHA256 97980804ecb83871ab0fe13787da53c1e59e5d2c0ba5bec0e5c740805e398f89)."
+    },
+    {
+      "timestamp": "2026-10-13T10:05:07.015079+00:00",
+      "vulnerability": {
+        "name": "CVE-2025-37776"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-12T18:34:41.227154+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes fs/smb/server/oplock.c and oplock.h: smb_break_all_levII_oplock locking and lifetime. The kernel SMB implementation, oplock structures and function are absent from the binary payload. Package payloads are verified against Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain respectively 990 and 962 regular files: 988 and 960 exported usr/include headers plus two documentation files, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-37776.json (SHA256 f461bfdefbc46cc9687a6b3c02457f38e2406f67e7ddced219b6d6c6c00b1d65); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/37xxx/CVE-2025-37776.json (SHA256 3ae29c6305cd8620cb16b90e7e4cc3a82c5bf7fd4b5a0bc978d5602e110fb8cc); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=18b4fac5ef17f77fed9417d22210ceafd6525fc7 (SHA256 6fd800c5b44da005a405d42bc0c683912468a174c479ae1e13f3437a1efe1bb5)."
+    },
+    {
+      "timestamp": "2026-10-13T10:05:07.015079+00:00",
+      "vulnerability": {
+        "name": "CVE-2025-38204"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed only for Ubuntu noble linux-libc-dev 6.8.0-142.142, amd64 and arm64. Canonical advisory updated 2026-10-12T18:38:40.252661+00:00 explicitly tags linux with binary-exclude:linux-libc-dev while noble linux source remains needed. The fix changes fs/jfs/jfs_dtree.c: add_missing_indices bounds/error handling and jfs_readdir propagation. The JFS implementation and these functions are absent from the binary payload. Package payloads are verified against Ubuntu snapshot 20260930T000000Z signed InRelease and Packages indices: amd64 deb SHA256 937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6; arm64 deb SHA256 d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0. The payloads contain respectively 990 and 962 regular files: 988 and 960 exported usr/include headers plus two documentation files, with no ELF, executable file or kernel module. This statement does not qualify the host kernel, hardware, another package/version/architecture/distribution or another vulnerability. Sources: https://ubuntu.com/security/cves/CVE-2025-38204.json (SHA256 343121239405f2d6a923911fc4da9308d6a5d85bf5184373da5ffd648669e7e3); https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/38xxx/CVE-2025-38204.json (SHA256 bec3c42b044250db1421f63430a7ae6b35b8f499b218a3bbe867794fd0e0c4ca); https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/patch/?id=5dff41a86377563f7a2b968aae00d25b4ceb37c9 (SHA256 2fe58015789506db4fdeb8590b721b4ddc892240b229a2a4e8c65d0ede3873de)."
     }
   ],
-  "last_updated": "2026-10-11T01:15:12Z"
+  "last_updated": "2026-10-13T10:12:39Z"
 }
