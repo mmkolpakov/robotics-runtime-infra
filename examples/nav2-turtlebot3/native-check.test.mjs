@@ -97,7 +97,7 @@ for(const mode of ['success','cancel','timeout','server-failure']){
     assert.equal(f.calls.filter(c=>c.args[0]==='start').length,1);
     assert.equal(f.started,true);
     assert.equal(f.removed,true);
-    assert.ok(f.calls.some(c=>c.args.includes('--complete-capture')));
+    assert.ok(f.calls.some(c=>c.args.includes('--from-native')));
     assert.ok(f.calls.some(c=>c.args.some(a=>a.endsWith('/finalize.py'))));
   });
 }

@@ -15,6 +15,7 @@ from robotics_runtime_contracts.writers import (
     create_evidence_index,
     finalize_evidence_index,
     write_document,
+    write_bytes_atomically,
 )
 
 NAMESPACE = "org.example.nav2-turtlebot3"
@@ -200,11 +201,149 @@ def complete(prepared: Path, capture: Path) -> dict:
     }
 
 
+def complete_native(prepared: Path, capture: Path) -> dict:
+    """Bind closed records without turning action acknowledgements into physical facts."""
+    from shutil import copyfile
+
+    def reference(path):
+        raw = read_once(path, DOCUMENT_LIMIT)
+        return {
+            "uri": path.resolve().as_uri(),
+            "sha256": sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+            "media_type": "application/json",
+        }
+
+    manifest = loads_mapping(
+        read_once(prepared / "pre-execution-inputs.json", DOCUMENT_LIMIT)
+    )
+    scenario = loads_mapping(read_once(prepared / "scenario.json", DOCUMENT_LIMIT))
+    case = scenario["extensions"][NAMESPACE]["case"]
+    workload_path = capture / case / "workload.json"
+    report = loads_mapping(read_once(workload_path, DOCUMENT_LIMIT))
+    if (report["run_id"], report["domain_id"], report["case"]) != (
+        manifest["run_id"],
+        "nav2",
+        case,
+    ):
+        raise ValueError("native workload belongs to another execution")
+    timing = loads_mapping(read_once(capture / "native-run.json", DOCUMENT_LIMIT))
+    cleanup_path = capture / "cleanup.json"
+    cleanup = loads_mapping(read_once(cleanup_path, DOCUMENT_LIMIT))
+    recorder = loads_mapping(
+        read_once(capture / "recorder-facts/capture-state.json", DOCUMENT_LIMIT)
+    )
+    if recorder["run_id"] != manifest["run_id"] or recorder["domain_id"] != "nav2":
+        raise ValueError("native recorder belongs to another execution")
+    unknown = {
+        "state": "unobserved",
+        "reason": "the native producer did not capture this fact",
+    }
+    observations = {
+        name: dict(unknown) for name in ("command", "terminal", "condition", "cleanup")
+    }
+    evidence = reference(workload_path)
+    if type(report.get("goal_accepted")) is bool:
+        observations["command"] = {
+            "state": "measured",
+            "value": report["goal_accepted"],
+            "evidence": evidence,
+        }
+    response = report.get("result_observation")
+    cdr = capture / case / "get-result-response.cdr"
+    response_bound = False
+    if isinstance(response, dict) and cdr.is_file():
+        raw_cdr = read_once(cdr, DOCUMENT_LIMIT)
+        response_bound = response.get("sha256") == sha256(
+            raw_cdr
+        ).hexdigest() and response.get("size_bytes") == len(raw_cdr)
+    if response_bound and type(report.get("action_status")) is int:
+        observations["terminal"] = {
+            "state": "measured",
+            "value": report["action_status"],
+            "evidence": evidence,
+        }
+    pose = report.get("final_amcl_pose", {})
+    result_time = report.get("result_observed_monotonic_ns")
+    if (
+        case == "success"
+        and response_bound
+        and report.get("observation_status") == "complete"
+        and type(result_time) is int
+        and pose.get("observed_monotonic_ns", -1) >= result_time
+    ):
+        observations["condition"] = {
+            "state": "measured",
+            "value": pose,
+            "evidence": evidence,
+        }
+    if (
+        cleanup.get("remaining") == []
+        and cleanup.get("worker_settled") is True
+        and cleanup.get("recorder_settled") is True
+    ):
+        observations["cleanup"] = {
+            "state": "measured",
+            "value": [],
+            "evidence": reference(cleanup_path),
+        }
+    for name in (
+        "native-model.sdf",
+        "native-world.sdf",
+        "native-preflight.json",
+    ):
+        copyfile(prepared / name, capture / name)
+    artifacts = []
+    for index, path in enumerate(sorted(capture.rglob("*"))):
+        if path.is_symlink():
+            raise ValueError("symlink in native capture")
+        if path.is_file() and path.name != "completed-facts.json":
+            artifacts.append(
+                {
+                    "source": str(path.relative_to(capture)),
+                    "artifact_id": "native-" + str(index),
+                    "kind": "other_evidence",
+                    "media_type": "application/json"
+                    if path.suffix == ".json"
+                    else "application/octet-stream",
+                }
+            )
+    policy_observation = dict(recorder["policy_observation"])
+    if (
+        policy_observation["retention_class"]
+        != scenario["evidence_policy"]["retention_class"]
+        or policy_observation["upload_mode"] != "local_only"
+    ):
+        raise ValueError("observed recorder policy differs")
+    acquired = loads_mapping(
+        read_once(capture / "native-acquired.json", DOCUMENT_LIMIT)
+    )
+    if acquired["HostConfig"]["NetworkMode"] != "none":
+        raise ValueError("remote-free recorder isolation was not observed")
+    facts = {
+        "started_at": timing["started_at"],
+        "finished_at": timing["finished_at"],
+        "observations": observations,
+        "artifacts": artifacts,
+        "policy_observation": policy_observation,
+    }
+    if (
+        recorder.get("capture_status") != "complete"
+        or recorder.get("closure_confirmed") is not True
+    ):
+        raise ValueError("native recorder closure is not established")
+    write_bytes_atomically(dumps_canonical(facts), capture / "completed-facts.json")
+    return facts
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepared", type=Path, required=True)
     parser.add_argument("--capture", type=Path, required=True)
+    parser.add_argument("--from-native", action="store_true")
     arguments = parser.parse_args()
+    if arguments.from_native:
+        complete_native(arguments.prepared, arguments.capture)
     print(json.dumps(complete(arguments.prepared, arguments.capture), sort_keys=True))
 
 

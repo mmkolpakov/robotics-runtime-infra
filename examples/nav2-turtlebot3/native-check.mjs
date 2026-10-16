@@ -220,8 +220,7 @@ finally{
 await writeFile(output+'/native-run.json',JSON.stringify({started_at:startedAt,finished_at:new Date().toISOString()}));
 if (admitted&&recorderSettled&&workerSettled) {
   try {
-    await hostCommand('complete-inputs',[snapshot+'/make-scenario.py','--validate-prepared',prepared,'--complete-capture',output]);
-    const inputs=await hostCommand('finalize-inputs',[snapshot+'/finalize.py','--prepared',prepared,'--capture',output]);
+    const inputs=await hostCommand('finalize-inputs',[snapshot+'/finalize.py','--prepared',prepared,'--capture',output,'--from-native']);
     await writeFile(outputRoot+'/evaluation-inputs.json',inputs);
   } catch(error) {failure??=error;}
 }

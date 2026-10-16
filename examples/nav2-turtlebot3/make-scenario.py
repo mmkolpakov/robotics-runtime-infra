@@ -135,21 +135,9 @@ def prepare(
                 base64.b64decode(facts["rendered"][kind]["base64"], validate=True),
                 output / ("native-" + kind + ".sdf"),
             )
-        model = output / "native-model.json"
-        descriptor = {
-            "kind": "declared_nav2_inputs",
-            "loaded_model_state": "unobserved",
-            "source_files": {
-                key: {k: v for k, v in item.items() if k != "base64"}
-                for key, item in facts["files"].items()
-            },
-            "expanded_model": reference(output / "native-model.sdf", "application/xml"),
-            "expanded_world": reference(output / "native-world.sdf", "application/xml"),
-            "launch": NATIVE_LAUNCH,
-        }
-        write_bytes_atomically(dumps_canonical(descriptor), model)
+        model = output / "native-model.sdf"
         write_bytes_atomically(native_raw, output / "native-preflight.json")
-        scenario["native_model"] = reference(model)
+        scenario["native_model"] = reference(model, "application/xml")
     scenario_path, runtime_path = output / "scenario.json", output / "runtime.json"
     write_document(scenario, scenario_path, extension_schemas={schema_uri: schema_raw})
     runtime = {
@@ -202,8 +190,7 @@ def prepare(
     }
     if native is not None:
         manifest["native_preflight"] = reference(output / "native-preflight.json")
-        manifest["native_model"] = reference(output / "native-model.json")
-        manifest["expanded_model"] = reference(
+        manifest["native_model"] = reference(
             output / "native-model.sdf", "application/xml"
         )
         manifest["expanded_world"] = reference(
@@ -304,7 +291,7 @@ def inspect_image() -> dict:
             or len(raw) != expected["size_bytes"]
         ):
             raise ValueError("installed native input differs: " + name)
-        files[name] = {**expected, "base64": base64.b64encode(raw).decode("ascii")}
+        files[name] = dict(expected)
     rendered = {}
     for name in ("model", "world"):
         command = ["/opt/ros/jazzy/bin/xacro", NATIVE_FILES[name]]
@@ -399,14 +386,9 @@ def check_preflight(document: dict, image_reference: str, image_id: str) -> dict
     for name, expected in facts["files"].items():
         if name in NATIVE_FILES and expected["path"] != NATIVE_FILES[name]:
             raise ValueError("native input path differs: " + name)
-        raw = base64.b64decode(expected["base64"], validate=True)
         identity = {key: expected[key] for key in ("path", "sha256", "size_bytes")}
-        if (
-            identity != build["files"][name]
-            or len(raw) != expected["size_bytes"]
-            or sha256(raw).hexdigest() != expected["sha256"]
-        ):
-            raise ValueError("native input bytes differ: " + name)
+        if identity != build["files"][name]:
+            raise ValueError("native input identity differs: " + name)
     for value in facts["rendered"].values():
         raw = base64.b64decode(value["base64"], validate=True)
         if (
@@ -479,8 +461,7 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
         "native_profile": "native-profile.json",
         "extension_schema": "nav2.schema.json",
         "native_preflight": "native-preflight.json",
-        "native_model": "native-model.json",
-        "expanded_model": "native-model.sdf",
+        "native_model": "native-model.sdf",
         "expanded_world": "native-world.sdf",
     }
     for key, name in names.items():
@@ -509,21 +490,20 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
     )
     image_reference = preflight["image_reference"]
     facts = check_preflight(preflight, image_reference, image_id)
-    descriptor = loads_mapping(
-        read_once(prepared / "native-model.json", DOCUMENT_LIMIT)
-    )
-    for kind in ("model", "world"):
+    for kind, key in (("model", "native_model"), ("world", "expanded_world")):
         expected = facts["rendered"][kind]
-        reference_key = "expanded_" + kind
-        actual = manifest[reference_key]
-        declared = descriptor[reference_key]
         if any(
-            actual[key] != expected[key] or declared[key] != expected[key]
-            for key in ("sha256", "size_bytes")
+            manifest[key][field] != expected[field]
+            for field in ("sha256", "size_bytes")
         ):
             raise ValueError(
                 "mounted native input differs from captured preflight: " + kind
             )
+    if any(
+        scenario["native_model"][field] != manifest["native_model"][field]
+        for field in ("sha256", "size_bytes")
+    ):
+        raise ValueError("scenario model does not bind captured native bytes")
     subject = {
         "kind": "oci_image",
         "locator": (
@@ -535,11 +515,6 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
     }
     if runtime.get("execution_subject") != subject:
         raise ValueError("runtime does not bind the selected RepoDigest")
-    if (
-        scenario["profile"]["executor"]["version"]
-        != native_profile(facts)["executor"]["version"]
-    ):
-        raise ValueError("native executor source differs")
     from copy import deepcopy
 
     expected_profile = native_profile(facts)
@@ -583,133 +558,6 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
     }
 
 
-def complete_native(prepared: Path, capture: Path) -> dict:
-    """Bind closed records without turning action acknowledgements into physical facts."""
-    from shutil import copyfile
-
-    manifest = loads_mapping(
-        read_once(prepared / "pre-execution-inputs.json", DOCUMENT_LIMIT)
-    )
-    scenario = loads_mapping(read_once(prepared / "scenario.json", DOCUMENT_LIMIT))
-    case = scenario["extensions"][NAMESPACE]["case"]
-    workload_path = capture / case / "workload.json"
-    report = loads_mapping(read_once(workload_path, DOCUMENT_LIMIT))
-    if (report["run_id"], report["domain_id"], report["case"]) != (
-        manifest["run_id"],
-        "nav2",
-        case,
-    ):
-        raise ValueError("native workload belongs to another execution")
-    timing = loads_mapping(read_once(capture / "native-run.json", DOCUMENT_LIMIT))
-    cleanup_path = capture / "cleanup.json"
-    cleanup = loads_mapping(read_once(cleanup_path, DOCUMENT_LIMIT))
-    recorder = loads_mapping(
-        read_once(capture / "recorder-facts/capture-state.json", DOCUMENT_LIMIT)
-    )
-    if recorder["run_id"] != manifest["run_id"] or recorder["domain_id"] != "nav2":
-        raise ValueError("native recorder belongs to another execution")
-    unknown = {
-        "state": "unobserved",
-        "reason": "the native producer did not capture this fact",
-    }
-    observations = {
-        name: dict(unknown) for name in ("command", "terminal", "condition", "cleanup")
-    }
-    evidence = reference(workload_path)
-    if type(report.get("goal_accepted")) is bool:
-        observations["command"] = {
-            "state": "measured",
-            "value": report["goal_accepted"],
-            "evidence": evidence,
-        }
-    response = report.get("result_observation")
-    cdr = capture / case / "get-result-response.cdr"
-    response_bound = False
-    if isinstance(response, dict) and cdr.is_file():
-        raw_cdr = read_once(cdr, DOCUMENT_LIMIT)
-        response_bound = response.get("sha256") == sha256(
-            raw_cdr
-        ).hexdigest() and response.get("size_bytes") == len(raw_cdr)
-    if response_bound and type(report.get("action_status")) is int:
-        observations["terminal"] = {
-            "state": "measured",
-            "value": report["action_status"],
-            "evidence": evidence,
-        }
-    pose = report.get("final_amcl_pose", {})
-    result_time = report.get("result_observed_monotonic_ns")
-    if (
-        case == "success"
-        and response_bound
-        and report.get("observation_status") == "complete"
-        and type(result_time) is int
-        and pose.get("observed_monotonic_ns", -1) >= result_time
-    ):
-        observations["condition"] = {
-            "state": "measured",
-            "value": pose,
-            "evidence": evidence,
-        }
-    if (
-        cleanup.get("remaining") == []
-        and cleanup.get("worker_settled") is True
-        and cleanup.get("recorder_settled") is True
-    ):
-        observations["cleanup"] = {
-            "state": "measured",
-            "value": [],
-            "evidence": reference(cleanup_path),
-        }
-    for name in (
-        "native-model.json",
-        "native-model.sdf",
-        "native-world.sdf",
-        "native-preflight.json",
-    ):
-        copyfile(prepared / name, capture / name)
-    artifacts = []
-    for index, path in enumerate(sorted(capture.rglob("*"))):
-        if path.is_symlink():
-            raise ValueError("symlink in native capture")
-        if path.is_file() and path.name != "completed-facts.json":
-            artifacts.append(
-                {
-                    "source": str(path.relative_to(capture)),
-                    "artifact_id": "native-" + str(index),
-                    "kind": "other_evidence",
-                    "media_type": "application/json"
-                    if path.suffix == ".json"
-                    else "application/octet-stream",
-                }
-            )
-    policy_observation = dict(recorder["policy_observation"])
-    if (
-        policy_observation["retention_class"]
-        != scenario["evidence_policy"]["retention_class"]
-        or policy_observation["upload_mode"] != "local_only"
-    ):
-        raise ValueError("observed recorder policy differs")
-    acquired = loads_mapping(
-        read_once(capture / "native-acquired.json", DOCUMENT_LIMIT)
-    )
-    if acquired["HostConfig"]["NetworkMode"] != "none":
-        raise ValueError("remote-free recorder isolation was not observed")
-    facts = {
-        "started_at": timing["started_at"],
-        "finished_at": timing["finished_at"],
-        "observations": observations,
-        "artifacts": artifacts,
-        "policy_observation": policy_observation,
-    }
-    if (
-        recorder.get("capture_status") != "complete"
-        or recorder.get("closure_confirmed") is not True
-    ):
-        raise ValueError("native recorder closure is not established")
-    write_bytes_atomically(dumps_canonical(facts), capture / "completed-facts.json")
-    return facts
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path)
@@ -722,17 +570,13 @@ def main() -> None:
     parser.add_argument("--inspect-image", action="store_true")
     parser.add_argument("--validate-prepared", type=Path)
     parser.add_argument("--case")
-    parser.add_argument("--complete-capture", type=Path)
     args = parser.parse_args()
     if args.inspect_image:
         result = inspect_image()
     elif args.validate_prepared:
-        if args.complete_capture:
-            result = complete_native(args.validate_prepared, args.complete_capture)
-        else:
-            result = validate_prepared(
-                args.validate_prepared, image_id=args.image_id, case=args.case
-            )
+        result = validate_prepared(
+            args.validate_prepared, image_id=args.image_id, case=args.case
+        )
     else:
         if (
             not args.requirements
