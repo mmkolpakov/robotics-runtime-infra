@@ -61,6 +61,10 @@ def main() -> None:
             owner,
             "--deadline-seconds",
             "40",
+            "--expected-world-sha256",
+            "71d46273c8e096a17ed27432522156783f5bf6f50a2314edf88654b635842f8b",
+            "--expected-proto-sha256",
+            "9ae291f7d2a88051b1148e8f7bd4fd65f0daf30370be009ac0a2f7f16d88cee1",
         ]
         if mode == "cancel":
             process = subprocess.Popen(

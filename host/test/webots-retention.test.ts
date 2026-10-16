@@ -21,6 +21,7 @@ async function fixture(t: TestContext, retained = true) {
     composeExecutable: join(root, 'compose'), socketPath: join(root, 'engine.sock'),
     composeFiles: [join(root, 'compose.yaml')], cwd: root,
     workerImage: 'localhost/webots@sha256:' + 'a'.repeat(64), runVolume: 'test-source',
+    worldSha256: '71d46273c8e096a17ed27432522156783f5bf6f50a2314edf88654b635842f8b', protoSha256: '9ae291f7d2a88051b1148e8f7bd4fd65f0daf30370be009ac0a2f7f16d88cee1',
     outputRoot: join(root, 'source'), mode: 'physics-only', deadlineMs: 1000,
     ...(retained ? {artifactDirectory: join(root, 'retained')} : {}),
   };
@@ -40,15 +41,16 @@ async function fixture(t: TestContext, retained = true) {
 
 async function nativeFiles(provider: WebotsNative) {
   await mkdir(provider.output, {recursive: true});
-  const names = ['controller-result.json', 'measurement.json', 'last-native-state.json',
+  const names = ['inputs/native.wbt', 'inputs/NativeProbe.proto', 'inputs/upstream.json', 'loaded-scene.wrl', 'controller-result.json', 'measurement.json', 'last-native-state.json',
     'ready.json', 'worker-identity.json', 'oci-init.json', 'engine-readiness.json',
     'renderer.txt', 'packages.tsv', 'binaries.sha256', 'controller.log', 'webots.log',
     'xvfb.log', 'pre-reset.json'];
   const expected = new Map<string, Buffer>();
   for (const name of names) {
     const bytes = name === 'webots.log' ? Buffer.alloc(5 * 1024 * 1024, 0x6b) : Buffer.from(name + '\n');
+    await mkdir(join(provider.output, name, ".."), {recursive: true});
     await writeFile(join(provider.output, name), bytes);
-    expected.set(name, bytes);
+    expected.set(name.split("/").at(-1)!, bytes);
   }
   const result = Buffer.from(JSON.stringify({owner_id: provider.ownerId, evidence_exported_before_stop: true}));
   await writeFile(join(provider.output, 'worker-result.json'), result);
@@ -93,7 +95,7 @@ test('an occupied retention root refuses export and leaves the original native b
   const expected = await nativeFiles(provider);
   await writeFile(config.artifactDirectory!, 'occupied');
   await assert.rejects(provider.exportEvidence(AbortSignal.timeout(1000)));
-  for (const [name, bytes] of expected) assert.deepEqual(await readFile(join(provider.output, name)), bytes);
+  for (const [name, bytes] of expected) assert.deepEqual(await readFile(join(provider.output, ["native.wbt","NativeProbe.proto","upstream.json"].includes(name) ? "inputs" : "", name)), bytes);
   assert.equal(await readFile(config.artifactDirectory!, 'utf8'), 'occupied');
 });
 
@@ -195,4 +197,17 @@ test('an existing retained symlink is refused even if its destination has identi
   assert.equal((await lstat(target)).isSymbolicLink(), true);
   assert.deepEqual(await readFile(prior), expected.get('controller-result.json'));
   assert.deepEqual(await readFile(join(provider.output, 'controller-result.json')), expected.get('controller-result.json'));
+});
+
+
+test('malformed volume inventory cannot qualify cleanup as released', async t => {
+  const {root, ctx, provider, resources} = await fixture(t);
+  const api = await ownershipApi(root, () => [], () => ({Volumes: 'not-an-array'}));
+  try {
+    Object.assign(provider, {engine: api.engine});
+    await ctx.fiber.dispose().catch(() => {});
+    const outcomes = await resources.verify(1000);
+    assert.equal(outcomes[0].released, false);
+    await assert.rejects(stat(join(root, 'effects')), {code: 'ENOENT'});
+  } finally {await api.close();}
 });

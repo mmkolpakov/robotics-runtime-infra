@@ -20,6 +20,10 @@ services:
       - "/run/robotics/output/webots/${ROBOTICS_WEBOTS_SCOPE:?owned output scope required}"
       - --owner-id
       - "${ROBOTICS_RUN_ID:?run owner required}"
+      - --expected-world-sha256
+      - "${ROBOTICS_WEBOTS_WORLD_SHA256:?reviewed world hash required}"
+      - --expected-proto-sha256
+      - "${ROBOTICS_WEBOTS_PROTO_SHA256:?reviewed PROTO hash required}"
       - --mode
       - "${ROBOTICS_WEBOTS_MODE:-physics-only}"
       - --deadline-seconds

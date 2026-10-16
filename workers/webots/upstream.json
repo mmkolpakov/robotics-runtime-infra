@@ -13,5 +13,17 @@
   },
   "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260901T000000Z",
   "platform": "linux/amd64",
-  "scope": "native Python Robot/Supervisor, CPU physics and optional Mesa/Xvfb offscreen camera; no ROS, PX4 or RTSP capability"
+  "scope": "native Python Robot/Supervisor, CPU physics and optional Mesa/Xvfb offscreen camera; no ROS, PX4 or RTSP capability",
+  "model_inputs": {
+    "world": {
+      "path": "worlds/native.wbt",
+      "sha256": "71d46273c8e096a17ed27432522156783f5bf6f50a2314edf88654b635842f8b",
+      "size_bytes": 999
+    },
+    "proto": {
+      "path": "protos/NativeProbe.proto",
+      "sha256": "9ae291f7d2a88051b1148e8f7bd4fd65f0daf30370be009ac0a2f7f16d88cee1",
+      "size_bytes": 401
+    }
+  }
 }
