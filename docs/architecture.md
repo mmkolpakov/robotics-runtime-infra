@@ -84,16 +84,14 @@ Source and released runs are independent gates. An immutable Python pair, host
 asset and infra lock retain separate source identities; release qualification
 installs the published artifacts without rebuilding them from source.
 
-The provider line is under development. The retained released profile keeps its
-current [compatibility scope](compatibility.md); the open neutral-robot
-time/readiness failure remains open until a new complete run passes.
+The retained released profile has its own [compatibility scope](compatibility.md).
 
 ## Product deployment ownership
 
-[Component responsibilities](component-responsibilities.md) records the existing
-language/tool boundaries and planned Ansible, Terraform and Kubernetes paths.
-[ADR 0009](decisions/0009-product-deployment-boundaries.md) keeps product deployment
-independent of a particular development machine and of private home infrastructure.
+[Component responsibilities](component-responsibilities.md) records language,
+tool and deployment ownership. [ADR 0009](decisions/0009-product-deployment-boundaries.md)
+assigns provisioning to explicitly enrolled product nodes. Deployment operators
+supply the host prerequisites.
 Cloud configuration and execution remain unqualified until their own acceptance
 checks pass; application composition does not provide cluster scheduling.
 

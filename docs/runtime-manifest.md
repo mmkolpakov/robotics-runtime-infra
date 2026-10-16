@@ -2,8 +2,9 @@
 
 `emit-runtime-manifest` collects runtime facts and delegates validation and JSON
 serialization to `robotics-contracts runtime-manifest init`. The CLI comes from the
-pinned workspace wheels in `/opt/contracts`; inference environments remain separate.
-The manifest records the same workspace revision for contracts and harness.
+pinned package wheels in `/opt/contracts`; inference environments remain separate.
+The manifest records each package's source revision from `packages.contracts.revision`
+and `packages.harness.revision` in the foundation lock.
 The default lock is `/usr/share/robotics-runtime/foundation-lock.json` from the image;
 standalone source deployments can supply the checked lock through `ROBOTICS_FOUNDATION_LOCK`.
 
