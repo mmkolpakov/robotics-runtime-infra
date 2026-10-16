@@ -111,12 +111,12 @@ EOF
     def scoped_cves:
       ["CVE-2024-46742", "CVE-2024-46833", "CVE-2024-52560", "CVE-2024-56591"];
     def newly_reviewed_cves:
-      ["CVE-2024-58098", "CVE-2024-58100", "CVE-2025-37743", "CVE-2025-37776", "CVE-2025-38204"];
+      ["CVE-2022-50240", "CVE-2024-58098", "CVE-2024-58100", "CVE-2025-37743", "CVE-2025-37776", "CVE-2025-38204", "CVE-2025-39933", "CVE-2025-40074", "CVE-2025-40139", "CVE-2025-40168", "CVE-2025-40170", "CVE-2025-40274"];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 14
-    and (.statements | length == 199)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 144)
+    and .version == 15
+    and (.statements | length == 206)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 151)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -181,7 +181,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local cve product mutated="$BATS_TEST_TMPDIR/out-of-scope-vex.json"
-  for cve in CVE-2024-58098 CVE-2024-58100 CVE-2025-37743 CVE-2025-37776 CVE-2025-38204; do
+  for cve in CVE-2022-50240 CVE-2024-58098 CVE-2024-58100 CVE-2025-37743 CVE-2025-37776 CVE-2025-38204 CVE-2025-39933 CVE-2025-40074 CVE-2025-40139 CVE-2025-40168 CVE-2025-40170 CVE-2025-40274; do
     for product in \
       'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.143?arch=amd64&distro=ubuntu-24.04' \
       'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=ppc64el&distro=ubuntu-24.04' \
