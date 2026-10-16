@@ -38,7 +38,7 @@ paths={"model":base+"nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro","world":base
 paths["map_image"]=str((Path(paths["map"]).parent/yaml.safe_load(Path(paths["map"]).read_text())["image"]).resolve(strict=True)); \
 files={name:{"path":path,"sha256":hashlib.sha256(raw:=Path(path).read_bytes()).hexdigest(),"size_bytes":len(raw)} for name,path in paths.items()}; \
 receipt={"policy_sha256":hashlib.sha256((root/"inputs.lock.json").read_bytes()).hexdigest(),"dockerfile_sha256":hashlib.sha256((root/"Dockerfile").read_bytes()).hexdigest(),"packages":{name:{"version":item["Version"],"sha256":item["SHA256"]} for name,item in policy["packages"].items()},"files":files,"installed_packages_sha256":hashlib.sha256(subprocess.check_output(["dpkg-query","-W","-f=${Package}\\t${Version}\\t${Architecture}\\n"])).hexdigest()}; \
-(root/"image-build.json").write_text(json.dumps(receipt,sort_keys=True)+"\\n")'
+(root/"image-build.json").write_text(json.dumps(receipt,sort_keys=True))'
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
     LIBGL_ALWAYS_SOFTWARE=1
