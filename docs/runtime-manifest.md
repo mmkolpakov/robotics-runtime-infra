@@ -51,7 +51,7 @@ failure. Digests remain SHA-256 of the final file bytes.
 
 The producer regression tests use the actual installed contracts CLI. They substitute
 only OS and ROS package observations, and do not qualify live ROS or container images.
-Full foundation qualification remains the integration gate for the migration branch.
+Full foundation qualification checks this producer together with its runtime composition.
 
 The ROS command is provided by
 [ros2pkg's XML verb](https://github.com/ros2/ros2cli/blob/jazzy/ros2pkg/ros2pkg/verb/xml.py).
