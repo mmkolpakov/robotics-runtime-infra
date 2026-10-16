@@ -102,7 +102,7 @@ EOF
 }
 
 @test "reviewed OpenVEX policy is scoped to the kernel header package" {
-  run jq -e '
+  local scope_filter='
     def reviewed_headers:
       [
         {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"},
@@ -110,11 +110,13 @@ EOF
       ];
     def scoped_cves:
       ["CVE-2024-46742", "CVE-2024-46833", "CVE-2024-52560", "CVE-2024-56591"];
+    def newly_reviewed_cves:
+      ["CVE-2024-58098", "CVE-2024-58100", "CVE-2025-37743", "CVE-2025-37776", "CVE-2025-38204"];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 13
-    and (.statements | length == 194)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 139)
+    and .version == 14
+    and (.statements | length == 199)
+    and ([.statements[] | select(.products == reviewed_headers)] | length == 144)
     and (
       [.statements[].vulnerability.name]
       | length == (unique | length)
@@ -124,11 +126,25 @@ EOF
         | select(. as $name | scoped_cves | index($name) != null)]
       | sort == scoped_cves
     )
+    and (
+      [.statements[].vulnerability.name
+        | select(. as $name | newly_reviewed_cves | index($name) != null)]
+      | sort == newly_reviewed_cves
+    )
     and all(
       .statements[];
       (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
       and (
-        if (.vulnerability.name as $name | scoped_cves | index($name)) != null then
+        if (.vulnerability.name as $name | newly_reviewed_cves | index($name)) != null then
+          .products == reviewed_headers
+          and (.impact_statement | contains("binary-exclude:linux-libc-dev"))
+          and (.vulnerability.name as $name | .impact_statement
+            | contains("https://ubuntu.com/security/cves/" + $name + ".json (SHA256 "))
+          and (.impact_statement | contains("937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6"))
+          and (.impact_statement | contains("d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0"))
+          and (.impact_statement | contains("does not qualify the host kernel, hardware"))
+          and (.impact_statement | contains("another package/version/architecture/distribution or another vulnerability"))
+        elif (.vulnerability.name as $name | scoped_cves | index($name)) != null then
           .products == reviewed_headers
           and (.impact_statement | contains("Sources: https://"))
           and (
@@ -159,8 +175,28 @@ EOF
       and .status == "not_affected"
       and .justification == "vulnerable_code_not_present"
     )
-  ' security/vex/linux-libc-dev.openvex.json
-  [ "${status}" -eq 0 ]
+  '
+
+  run jq -e "$scope_filter" security/vex/linux-libc-dev.openvex.json
+  [ "$status" -eq 0 ]
+
+  local cve product mutated="$BATS_TEST_TMPDIR/out-of-scope-vex.json"
+  for cve in CVE-2024-58098 CVE-2024-58100 CVE-2025-37743 CVE-2025-37776 CVE-2025-38204; do
+    for product in \
+      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.143?arch=amd64&distro=ubuntu-24.04' \
+      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=ppc64el&distro=ubuntu-24.04' \
+      'pkg:deb/ubuntu/linux-image-6.8.0-142-generic@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04' \
+      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-22.04' \
+      'pkg:golang/github.com/open-policy-agent/opa@v1.21.2%2Bdirty' \
+      'pkg:golang/github.com/mikefarah/yq/v4@v4.54.1' \
+      'pkg:golang/golang.org/x/net@v0.60.0'; do
+      jq --arg cve "$cve" --arg product "$product" '
+        (.statements[] | select(.vulnerability.name == $cve).products[0]["@id"]) = $product
+      ' security/vex/linux-libc-dev.openvex.json >"$mutated"
+      run jq -e "$scope_filter" "$mutated"
+      [ "$status" -ne 0 ] || { printf 'policy accepted %s for %s\n' "$product" "$cve" >&2; return 1; }
+    done
+  done
 
   run awk '!/^[[:space:]]*(#|$)/ { print }' .trivyignore
   [ "${status}" -eq 0 ]
