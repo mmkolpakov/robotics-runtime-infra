@@ -522,6 +522,16 @@ target "rclone-supplier" {
   tags      = ["${REGISTRY}/robotics-runtime-infra/rclone-supplier:${VERSION}"]
 }
 
+target "legacy-finalizer" {
+  context    = "."
+  dockerfile = "docker/legacy-finalizer.Dockerfile"
+  args = {
+    COSIGN_IMAGE   = COSIGN_IMAGE
+    COSIGN_VERSION = COSIGN_VERSION
+  }
+  platforms = ["linux/amd64"]
+}
+
 target "legacy-evidence-source" {
   context    = "."
   dockerfile = "docker/evidence-source.Dockerfile"
