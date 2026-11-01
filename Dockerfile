@@ -53,11 +53,15 @@ RUN apk verify --keys-dir /usr/share/apk/keys /usr/share/robotics-runtime/rclone
       'exec /opt/robotics-rclone/ld-musl.so.1 --library-path /opt/robotics-rclone /opt/robotics-rclone/rclone "$@"' \
       > /opt/robotics-rclone/bin/rclone \
     && chmod 0555 /opt/robotics-rclone/bin/rclone
+ADD --checksum=sha256:b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b \
+  https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v1.2.6 /opt/robotics-rclone/COPYRIGHT.musl
+
 FROM scratch AS rclone-supplier-evidence
 COPY --from=rclone-apks / /apks/
 COPY --from=rclone-supplier /usr/share/apk/keys/ /keys/
 COPY --from=rclone-supplier /lib/apk/db/installed /apk-installed
 COPY --from=rclone-supplier /etc/alpine-release /alpine-release
+COPY --from=rclone-supplier /opt/robotics-rclone/COPYRIGHT.musl /musl-COPYRIGHT
 
 FROM ${COSIGN_IMAGE} AS cosign
 FROM ${AWS_CLI_IMAGE} AS aws-cli

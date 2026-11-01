@@ -389,7 +389,7 @@ jobs:
             --set 'rclone-supplier.output=type=local,dest=artifacts/security/rclone-supplier-inputs'
           cp Dockerfile artifacts/security/rclone-supplier-inputs/Dockerfile
           git rev-parse HEAD > artifacts/security/rclone-supplier-inputs/source-commit.txt
-          (cd artifacts/security/rclone-supplier-inputs && sha256sum apks/*/* keys/*.pub apk-installed alpine-release Dockerfile source-commit.txt > SHA256SUMS)
+          (cd artifacts/security/rclone-supplier-inputs && sha256sum apks/*/* keys/*.pub apk-installed alpine-release musl-COPYRIGHT Dockerfile source-commit.txt > SHA256SUMS)
       - name: Scan the rclone supplier closure
         run: |
           env -u ROBOTICS_CI_VENDOR_VEX_DIR ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive \
@@ -402,6 +402,10 @@ jobs:
               any(.Packages[]?; .Name == "stdlib" and .Version == "v1.27.3") and
               any(.Packages[]?; .Name == "github.com/rclone/rclone"))
           ' artifacts/security/security-supplier-rclone-supplier-linux-amd64.json > /dev/null
+          docker run --rm --volume "${PWD}/artifacts/security:/reports" "${TRIVY_IMAGE}" \
+            --config /dev/null convert --ignorefile /dev/null --format cyclonedx \
+            --output /reports/security-supplier-rclone-supplier-linux-amd64.cdx.json \
+            /reports/security-supplier-rclone-supplier-linux-amd64.json
       - name: Scan CI-only images and enforce vulnerability policy
         run: scripts/ci/security/scan-bake-group.sh ci-only
       - name: Stop runtime
@@ -658,6 +662,10 @@ jobs:
               any(.Packages[]?; .Name == "stdlib" and .Version == "v1.27.3") and
               any(.Packages[]?; .Name == "github.com/rclone/rclone"))
           ' artifacts/security/security-supplier-rclone-supplier-linux-arm64.json > /dev/null
+          docker run --rm --volume "${PWD}/artifacts/security:/reports" "${TRIVY_IMAGE}" \
+            --config /dev/null convert --ignorefile /dev/null --format cyclonedx \
+            --output /reports/security-supplier-rclone-supplier-linux-arm64.cdx.json \
+            /reports/security-supplier-rclone-supplier-linux-arm64.json
       - name: Upload portable ARM64 scan results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
