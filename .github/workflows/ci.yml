@@ -389,7 +389,7 @@ jobs:
             --set 'rclone-supplier.output=type=local,dest=artifacts/security/rclone-supplier-inputs'
           cp Dockerfile artifacts/security/rclone-supplier-inputs/Dockerfile
           git rev-parse HEAD > artifacts/security/rclone-supplier-inputs/source-commit.txt
-          (cd artifacts/security/rclone-supplier-inputs && sha256sum apks/*/* keys/* > SHA256SUMS)
+          (cd artifacts/security/rclone-supplier-inputs && sha256sum apks/*/* keys/*.pub apk-installed alpine-release Dockerfile source-commit.txt > SHA256SUMS)
       - name: Scan the rclone supplier closure
         run: |
           env -u ROBOTICS_CI_VENDOR_VEX_DIR ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive \
