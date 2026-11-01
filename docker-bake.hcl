@@ -64,7 +64,7 @@ variable "RKNN_SOURCE" {
 }
 
 variable "COSIGN_IMAGE" {
-  default = "cgr.dev/chainguard/cosign:latest@sha256:3fad8be83b93869051c08bb98f36612afe81dabe06c288e70e41ce09a037ba18"
+  default = "cgr.dev/chainguard/cosign:latest@sha256:35b607c4eba6e914b3b8b80f5f8a63ce2eccd48617717d5edd572dd62f0cdf66"
   validation {
     condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
     error_message = "COSIGN_IMAGE must pin the publisher-verified Chainguard image."
@@ -72,7 +72,7 @@ variable "COSIGN_IMAGE" {
 }
 
 variable "COSIGN_VERSION" {
-  default = "3.1.3"
+  default = "3.1.4"
   validation {
     condition = COSIGN_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", COSIGN_VERSION)
     error_message = "COSIGN_VERSION must be a semantic version."
