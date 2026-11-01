@@ -53,6 +53,12 @@ RUN apk verify --keys-dir /usr/share/apk/keys /usr/share/robotics-runtime/rclone
       'exec /opt/robotics-rclone/ld-musl.so.1 --library-path /opt/robotics-rclone /opt/robotics-rclone/rclone "$@"' \
       > /opt/robotics-rclone/bin/rclone \
     && chmod 0555 /opt/robotics-rclone/bin/rclone
+FROM scratch AS rclone-supplier-evidence
+COPY --from=rclone-apks / /apks/
+COPY --from=rclone-supplier /usr/share/apk/keys/ /keys/
+COPY --from=rclone-supplier /lib/apk/db/installed /apk-installed
+COPY --from=rclone-supplier /etc/alpine-release /alpine-release
+
 FROM ${COSIGN_IMAGE} AS cosign
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${OPA_IMAGE} AS opa

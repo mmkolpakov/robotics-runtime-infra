@@ -4,7 +4,10 @@ The evidence sink uses the official Alpine packages for rclone and musl. The
 Dockerfile pins both signed APKs by SHA-256 for each supported architecture.
 The supplier stage verifies their signatures with Alpine's keys and installs
 them without network access. It retains the original APKs and package database
-for the supplier image scan. The final image copies the executable and its
+for the supplier image scan. CI exports the signed APKs, verification keys,
+installed package inventory, source Dockerfile, and hashes with the security
+reports. CI artifact retention is limited; it is not an offline package mirror.
+The final image copies the executable and its
 matching musl loader into an isolated directory, with a small CLI launcher.
 
 The supported evidence profile uses rclone `copy`, `check`, and `version`.
@@ -17,7 +20,7 @@ For a local build, supply the existing finalizer image and the desired tag:
 
 ```sh
 docker buildx bake --load \
-  --set 'legacy-evidence-source.platform=linux/amd64' \
+  --set '*.platform=linux/amd64' \
   --set 'legacy-evidence-source.args.EVIDENCE_BASE_IMAGE=<finalizer-image>' \
   --set 'legacy-evidence-source.tags=<evidence-image>' legacy-evidence-source
 ```

@@ -174,7 +174,7 @@ docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
 finalizer="$(share_image "${finalizer_tag}" finalizer)"
 evidence_tag="${registry}/installed-ros/evidence:${scope}"
 docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
-  --set 'legacy-evidence-source.platform=linux/amd64' \
+  --set '*.platform=linux/amd64' \
   --set "legacy-evidence-source.args.EVIDENCE_BASE_IMAGE=${finalizer}" \
   --set "legacy-evidence-source.tags=${evidence_tag}" legacy-evidence-source
 evidence="$(share_image "${evidence_tag}" evidence)"
