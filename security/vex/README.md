@@ -83,6 +83,8 @@ Stock Trivy makes the applicability decision and retains suppressed findings.
 
 The optional directory must remain under the retained security artifact
 directory. The wrapper checks its files before scanning and mounts it read-only.
+SHA256SUMS checks consistency of trusted prepared input; it does not authenticate
+the preparer or replace verification of the image and supplier source.
 An unset option preserves the existing scan path. All scans retain package
 inventory and suppressed findings; HIGH/CRITICAL conversion remains unchanged.
 A successful synthetic identity test does not admit an image.

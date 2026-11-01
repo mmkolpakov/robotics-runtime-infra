@@ -71,7 +71,7 @@ class UbuntuVexIdentityTest(unittest.TestCase):
         (self.root / "report.json").write_text(json.dumps(self.report))
         (self.root / "os-release").write_text(self.os)
 
-    def prepare(self):
+    def prepare(self, output_name="out"):
         return subprocess.run(
             [
                 sys.executable,
@@ -87,7 +87,7 @@ class UbuntuVexIdentityTest(unittest.TestCase):
                 "--package-purl",
                 self.purl,
                 "--output-dir",
-                str(self.root / "out"),
+                str(self.root / output_name),
             ],
             capture_output=True,
             text=True,
@@ -102,6 +102,11 @@ class UbuntuVexIdentityTest(unittest.TestCase):
         self.assertEqual(derived["statements"], [expected])
         self.assertEqual(derived["author"], "mmkolpakov")
         self.assertNotEqual(derived["@id"], self.vendor["@id"])
+        self.assertEqual(self.prepare("second").returncode, 0)
+        second = json.loads(
+            (self.root / "second/canonical-ubuntu.openvex.json").read_text()
+        )
+        self.assertNotEqual(derived["@id"], second["@id"])
         self.assertEqual(
             (output / "raw/CVE-2026-63825.json").read_bytes(),
             (self.raw / "CVE-2026-63825.json").read_bytes(),

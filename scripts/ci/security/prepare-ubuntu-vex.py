@@ -137,7 +137,7 @@ def main():
         "artifact_name": report["ArtifactName"],
         "metadata": report["Metadata"],
     }
-    identity = str(uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(binding, sort_keys=True)))
+    identity = str(uuid.uuid4())
     derived = {
         "@context": "https://openvex.dev/ns/v0.2.0",
         "@id": "urn:uuid:" + identity,
