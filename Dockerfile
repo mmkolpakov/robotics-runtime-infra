@@ -4,7 +4,7 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
-ARG RCLONE_IMAGE=rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
+ARG ALPINE_SUPPLIER_IMAGE=alpine:edge@sha256:020dfcbaaf4cc1078bf2d9c7ba31a8466e334061dcd2f248001d68f79e52c000
 ARG AWS_CLI_IMAGE=amazon/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 ARG GO_BUILDER_IMAGE=golang:1.27.2@sha256:2d658507a011f1eadc0114d7a421b312b2e77d9042a24036a26e267cc9231677
@@ -29,7 +29,30 @@ ARG ROS_SNAPSHOT=2026-09-11
 ARG ROSDISTRO_INDEX_REVISION=8e9a99d200fd312f106418b2b497b0cc5146e6a7
 
 FROM ${UV_IMAGE} AS uv
-FROM ${RCLONE_IMAGE} AS rclone
+FROM scratch AS rclone-apks
+ADD --checksum=sha256:a9d65d28b9a37b611903c22c6823baab56aa1a99fb0f2161255467d23283dbc8 \
+  https://dl-cdn.alpinelinux.org/alpine/edge/community/x86_64/rclone-1.75.2-r0.apk /amd64/rclone.apk
+ADD --checksum=sha256:002f8b956419d67e91fd4e594f7b8d62fef13042cec45d977305df1a9ce0704f \
+  https://dl-cdn.alpinelinux.org/alpine/edge/main/x86_64/musl-1.2.6-r6.apk /amd64/musl.apk
+ADD --checksum=sha256:6b910430463264c111978785fbcf4046414018fe8398851c990e47140e480fa6 \
+  https://dl-cdn.alpinelinux.org/alpine/edge/community/aarch64/rclone-1.75.2-r0.apk /arm64/rclone.apk
+ADD --checksum=sha256:180b2e52dbd452919c3271ed9dddf06826cee9a387650c81c00c7ac393031c5b \
+  https://dl-cdn.alpinelinux.org/alpine/edge/main/aarch64/musl-1.2.6-r6.apk /arm64/musl.apk
+
+FROM ${ALPINE_SUPPLIER_IMAGE} AS rclone-supplier
+ARG TARGETARCH
+COPY --from=rclone-apks /${TARGETARCH}/ /usr/share/robotics-runtime/rclone-apks/
+RUN apk verify --keys-dir /usr/share/apk/keys /usr/share/robotics-runtime/rclone-apks/*.apk \
+    && apk add --no-cache --no-network --repositories-file /dev/null \
+      --keys-dir /usr/share/apk/keys /usr/share/robotics-runtime/rclone-apks/*.apk \
+    && mkdir -p /opt/robotics-rclone/bin \
+    && cp /usr/bin/rclone /opt/robotics-rclone/rclone \
+    && cp -L "/lib/ld-musl-$(apk --print-arch).so.1" /opt/robotics-rclone/ld-musl.so.1 \
+    && ln -s ld-musl.so.1 "/opt/robotics-rclone/libc.musl-$(apk --print-arch).so.1" \
+    && printf '%s\n' '#!/bin/sh' \
+      'exec /opt/robotics-rclone/ld-musl.so.1 --library-path /opt/robotics-rclone /opt/robotics-rclone/rclone "$@"' \
+      > /opt/robotics-rclone/bin/rclone \
+    && chmod 0555 /opt/robotics-rclone/bin/rclone
 FROM ${COSIGN_IMAGE} AS cosign
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${OPA_IMAGE} AS opa
@@ -600,7 +623,8 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,rea
       /var/log/dpkg.log
 
 COPY --from=mcap /mcap /usr/local/bin/mcap
-COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --from=rclone-supplier /opt/robotics-rclone /opt/robotics-rclone
+RUN ln -s /opt/robotics-rclone/bin/rclone /usr/local/bin/rclone
 COPY --from=rclone-license --chmod=0444 /COPYING /usr/share/licenses/rclone/COPYING
 COPY --from=aws-cli /usr/local/aws-cli /usr/local/aws-cli
 RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws

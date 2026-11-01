@@ -99,6 +99,10 @@ group "cpu" {
   ]
 }
 
+group "security-supplier" {
+  targets = ["rclone-supplier"]
+}
+
 group "ci-only" {
   targets = ["permit-preflight-ci"]
 }
@@ -509,6 +513,25 @@ target "benchmark-runtime" {
   target    = "benchmark-runtime"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/benchmark:${VERSION}"]
+}
+
+target "rclone-supplier" {
+  inherits  = ["_common"]
+  target    = "rclone-supplier"
+  platforms = ["linux/amd64", "linux/arm64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/rclone-supplier:${VERSION}"]
+}
+
+target "legacy-evidence-source" {
+  context    = "."
+  dockerfile = "docker/evidence-source.Dockerfile"
+  contexts = {
+    "rclone-supplier" = "target:rclone-supplier"
+  }
+  args = {
+    COSIGN_VERSION = COSIGN_VERSION
+  }
+  platforms = ["linux/amd64"]
 }
 
 target "evidence-sink" {

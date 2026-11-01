@@ -381,6 +381,8 @@ jobs:
         run: scripts/ci/integration/capture-runtime-evidence.sh
       - name: Scan images and enforce vulnerability policy
         run: scripts/ci/security/scan-bake-group.sh cpu
+      - name: Scan the rclone supplier closure
+        run: env -u ROBOTICS_CI_VENDOR_VEX_DIR scripts/ci/security/scan-bake-group.sh security-supplier linux/amd64
       - name: Scan CI-only images and enforce vulnerability policy
         run: scripts/ci/security/scan-bake-group.sh ci-only
       - name: Stop runtime
@@ -621,6 +623,11 @@ jobs:
       - name: Build and scan every portable target for ARM64
         run: >-
           scripts/ci/security/scan-bake-group.sh multiarch linux/arm64
+          --set '*.cache-from=type=gha,scope=runtime-infra-arm64'
+          --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
+      - name: Scan the ARM64 rclone supplier closure
+        run: >-
+          env -u ROBOTICS_CI_VENDOR_VEX_DIR scripts/ci/security/scan-bake-group.sh security-supplier linux/arm64
           --set '*.cache-from=type=gha,scope=runtime-infra-arm64'
           --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
       - name: Upload portable ARM64 scan results
