@@ -11,7 +11,7 @@ ARG GO_BUILDER_IMAGE=golang:1.27.2@sha256:2d658507a011f1eadc0114d7a421b312b2e77d
 # Policy and evidence targets receive the publisher-verified image from Bake.
 ARG COSIGN_IMAGE=scratch
 # Released binary module verification and platform digests: docker/opa/README.md.
-ARG OPA_IMAGE=openpolicyagent/opa:1.21.2-static@sha256:0843d2adce51655422e8b95a803629ab9f424803c4bd27876e7f44cce9a2b84d
+ARG OPA_IMAGE=openpolicyagent/opa:1.22.0-static@sha256:2e5f84895445ca479be9eb1f2473c904a447b5ec53e6a487e0fcb3193d651ed8
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
