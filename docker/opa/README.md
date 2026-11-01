@@ -2,6 +2,10 @@
 
 `Dockerfile` pins the official multi-platform `openpolicyagent/opa` static image
 and copies its binary unchanged into policy tooling and permit-preflight images.
+The pinned digest identifies the original upstream release image. Its binaries
+for both supported architectures match the corresponding
+[official release assets](https://github.com/open-policy-agent/opa/releases);
+compare those bytes when updating the pin.
 The license is fetched from the pinned upstream source commit with a checksum.
 
 Renovate preserves the `-static` variant using

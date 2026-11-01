@@ -7,9 +7,8 @@ them without network access. It retains the original APKs and package database
 for the supplier image scan. CI exports the signed APKs, verification keys,
 installed package inventory, source Dockerfile, and hashes with the security
 reports, including a CycloneDX SBOM. CI artifact retention is limited; it is
-not an offline package mirror. The final image includes musl's copyright notice
-and copies the executable and its
-matching musl loader into an isolated directory, with a small CLI launcher.
+not an offline package mirror. The final image includes musl's copyright notice and copies the executable and
+its matching musl loader into an isolated directory, with a small CLI launcher.
 
 The supported evidence profile uses rclone `copy`, `check`, and `version`.
 Immutable uploads use directory `copy --immutable --checksum`. The versioned
