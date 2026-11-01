@@ -1,0 +1,13 @@
+{
+  "source_commit": "f904483357e84d1836895448ed579c7aa1bede4f",
+  "files": [
+    {
+      "name": "CVE-2026-63825.json",
+      "sha256": "0af08115179e915c6087ad207dc23e9eea52f8c03cd2e8a2534e27aff460b379"
+    },
+    {
+      "name": "CVE-2026-72399.json",
+      "sha256": "abc2869acd2a1e3177264c61df6ccce8444fa1ac142a178ac45c5f855c95e2c9"
+    }
+  ]
+}

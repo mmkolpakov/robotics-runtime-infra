@@ -305,9 +305,9 @@ EOF
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
-  run grep -F 'ARG UBUNTU_SNAPSHOT=20260930T000000Z' Dockerfile
+  run grep -F 'ARG UBUNTU_SNAPSHOT=20261101T000000Z' Dockerfile
   [ "${status}" -eq 0 ]
-  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142' Dockerfile
+  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-147.147' Dockerfile
   [ "${status}" -eq 0 ]
   run grep -F \
     'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
@@ -317,8 +317,85 @@ EOF
   run grep -F 'ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16' Dockerfile
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"libssl3t64=${OPENSSL_VERSION}"' Dockerfile)" -eq 2 ]
-  run grep -F 'default = "20260930T000000Z"' docker-bake.hcl
+  run grep -F 'default = "20261101T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
-  run grep -F 'default = "6.8.0-142.142"' docker-bake.hcl
+  run grep -F 'default = "6.8.0-147.147"' docker-bake.hcl
   [ "${status}" -eq 0 ]
+}
+
+@test "prepared vendor VEX is mounted read-only and retains native scan output" {
+  local vendor_dir="${SECURITY_DIR}/vendor-vex"
+  mkdir -p "${vendor_dir}"
+  printf '{}\n' >"${vendor_dir}/canonical-ubuntu.openvex.json"
+  printf '{}\n' >"${vendor_dir}/provenance.json"
+  (cd "${vendor_dir}" && sha256sum canonical-ubuntu.openvex.json provenance.json >SHA256SUMS)
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >>"${DOCKER_LOG}"
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+
+  environment=(
+    "PATH=${FAKE_BIN}:${PATH}" "DOCKER_LOG=${DOCKER_LOG}"
+    "HOME=${BATS_TEST_TMPDIR}" "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}"
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}"
+    "ROBOTICS_CI_VENDOR_VEX_DIR=${vendor_dir}" TRIVY_IMAGE=trivy:test
+  )
+  run env "${environment[@]}" scripts/ci/security/scan-image.sh \
+    registry.example/runtime:test candidate linux/amd64
+  [ "${status}" -eq 0 ]
+  grep -F -- "${vendor_dir}:/vendor-vex:ro" "${DOCKER_LOG}"
+  grep -F -- '--vex /vendor-vex/canonical-ubuntu.openvex.json' "${DOCKER_LOG}"
+  grep -F -- '--show-suppressed --list-all-pkgs' "${DOCKER_LOG}"
+
+  rm "${DOCKER_LOG}"
+  printf 'tampered\n' >>"${vendor_dir}/canonical-ubuntu.openvex.json"
+  run env "${environment[@]}" scripts/ci/security/scan-image.sh \
+    registry.example/runtime:test candidate linux/amd64
+  [ "${status}" -ne 0 ]
+  [ ! -e "${DOCKER_LOG}" ]
+}
+
+@test "explicit vendor VEX input fails when missing or outside retained artifacts" {
+  run env "HOME=${BATS_TEST_TMPDIR}" TRIVY_IMAGE=trivy:test \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    "ROBOTICS_CI_VENDOR_VEX_DIR=${BATS_TEST_TMPDIR}" \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+  [ "${status}" -ne 0 ]
+
+  mkdir "${SECURITY_DIR}/incomplete-vex"
+  run env "HOME=${BATS_TEST_TMPDIR}" TRIVY_IMAGE=trivy:test \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    "ROBOTICS_CI_VENDOR_VEX_DIR=${SECURITY_DIR}/incomplete-vex" \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+  [ "${status}" -ne 0 ]
+}
+
+@test "explicit comprehensive detection uses the stock flag and rejects other values" {
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >>"${DOCKER_LOG}"
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+  environment=(
+    "PATH=${FAKE_BIN}:${PATH}" "DOCKER_LOG=${DOCKER_LOG}"
+    "HOME=${BATS_TEST_TMPDIR}" "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}"
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" TRIVY_IMAGE=trivy:test
+  )
+  run env "${environment[@]}" ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test supplier linux/amd64
+  [ "${status}" -eq 0 ]
+  grep -F -- 'image --detection-priority comprehensive' "${DOCKER_LOG}"
+  grep -F -- '--severity HIGH,CRITICAL --exit-code 1' "${DOCKER_LOG}"
+  rm "${DOCKER_LOG}"
+  for priority in precise unknown '--ignore-unfixed'; do
+    run env "${environment[@]}" "ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=${priority}" \
+      scripts/ci/security/scan-image.sh registry.example/runtime:test supplier linux/amd64
+    [ "${status}" -eq 65 ]
+    [ ! -e "${DOCKER_LOG}" ]
+  done
 }
