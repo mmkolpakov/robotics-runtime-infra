@@ -343,8 +343,17 @@ jobs:
       - name: Prepare synthetic physical attach prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            can-utils socat "linux-modules-extra-$(uname -r)"
+          sudo apt-get install -y --no-install-recommends can-utils socat
+          if ! modprobe --dry-run vcan >/dev/null 2>&1; then
+            kernel="$(uname -r)"
+            # Newer Ubuntu kernels include extra modules in linux-modules.
+            if apt-cache show "linux-modules-extra-${kernel}" >/dev/null 2>&1; then
+              sudo apt-get install -y --no-install-recommends "linux-modules-extra-${kernel}"
+            else
+              sudo apt-get install -y --no-install-recommends "linux-modules-${kernel}"
+            fi
+          fi
+          modprobe --dry-run vcan
       - name: Verify host time evidence
         run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify synthetic physical attach end to end
