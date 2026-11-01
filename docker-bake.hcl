@@ -23,11 +23,15 @@ variable "SOURCE_DATE_EPOCH" {
 }
 
 variable "UBUNTU_SNAPSHOT" {
-  default = "20260930T000000Z"
+  default = "20261101T000000Z"
 }
 
 variable "LINUX_LIBC_DEV_VERSION" {
-  default = "6.8.0-142.142"
+  default = "6.8.0-147.147"
+}
+
+variable "BROTLI_VERSION" {
+  default = "1.1.0-2ubuntu0.1"
 }
 
 variable "ROS_SNAPSHOT" {
@@ -189,6 +193,7 @@ target "_common" {
     VCS_REF       = VCS_REF
     UBUNTU_SNAPSHOT          = UBUNTU_SNAPSHOT
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
+    BROTLI_VERSION           = BROTLI_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
   }

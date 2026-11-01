@@ -20,10 +20,11 @@ ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG SENSOR_INFERENCE_BASE=inference-cpu
-ARG UBUNTU_SNAPSHOT=20260930T000000Z
+ARG UBUNTU_SNAPSHOT=20261101T000000Z
 ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16
-ARG CA_CERTIFICATES_VERSION=20260601~24.04.1
-ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142
+ARG CA_CERTIFICATES_VERSION=20260816ubuntu0.24.04.1
+ARG LINUX_LIBC_DEV_VERSION=6.8.0-147.147
+ARG BROTLI_VERSION=1.1.0-2ubuntu0.1
 ARG ROS_SNAPSHOT=2026-09-11
 ARG ROSDISTRO_INDEX_REVISION=8e9a99d200fd312f106418b2b497b0cc5146e6a7
 
@@ -626,6 +627,7 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG BROTLI_VERSION
 ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
@@ -661,6 +663,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libbrotli1=${BROTLI_VERSION}" \
       "libssl-dev=${OPENSSL_VERSION}" \
       "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
@@ -1184,6 +1187,7 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG BROTLI_VERSION
 ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
@@ -1233,6 +1237,7 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
        done \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libbrotli1=${BROTLI_VERSION}" \
       "libssl-dev=${OPENSSL_VERSION}" \
       "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
