@@ -69,6 +69,21 @@ cosign attest-blob \
   --yes
 ```
 
+For an archive with separate original execution and reassessment, supply both
+results, both aggregates and their complete referenced inputs. Select the
+profile explicitly for `create-statement` and `package-artifacts`:
+
+```text
+--schema-version qualification-bundle.v2 --comparison-rule exact_assertion_outcome
+```
+
+The resulting package arguments retain that selection for `verify-bundle`.
+V2 verification requires an independently trusted explicit key: the current
+identity policy schema admits the v1 predicate only. Without these options
+the helpers continue to use `qualification-bundle.v1`.
+The archive comparison preserves missing historical calibration or coverage;
+it does not turn an incomplete or non-comparable result into a pass.
+
 The generated statement is deterministic for unchanged inputs. Its
 `generated_at` value comes from the supplied `acceptance-aggregate.v1`; the
 producer does not insert its own wall-clock timestamp. When cross-domain
@@ -268,9 +283,9 @@ Cosign key pairs and proves successful verification, wrong-key rejection, and
 aggregate-digest tamper rejection. The foundation workflow additionally tests
 the keyless path on canonical `main`.
 
-The installed-finalizer test verifies the same signed package at two mount
-locations with network access disabled and an independently supplied key. It
-uses the exact published contracts wheel, masks the original contracts
+The installed-finalizer test verifies signed v1 and v2 archive packages at two
+mount locations with network access disabled and an independently supplied key.
+It uses the exact published contracts wheel, masks the original contracts
 installation and checks that the copied CLI resolves within its own environment.
 The test key does not establish hardware or provider qualification.
 

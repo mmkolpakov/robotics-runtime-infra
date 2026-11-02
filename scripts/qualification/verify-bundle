@@ -6,7 +6,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$script_dir/lib.sh"
 
-QUALIFICATION_PREDICATE_TYPE='https://robotics-runtime-contracts.dev/attestations/qualification-bundle/v1'
 
 usage() {
   cat >&2 <<'EOF'
@@ -22,6 +21,7 @@ usage: verify-bundle
   --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
   --recording-summary LABEL=PATH [--recording-summary LABEL=PATH ...]
   [--extension-schema URI=PATH ...]
+  [--schema-version qualification-bundle.v2 --comparison-rule exact_assertion_outcome]
   [--evidence KIND:LABEL=PATH ...]
 
 Alternatively supply the complete inventory with repeated --artifact KIND:SUBJECT=PATH.
@@ -38,6 +38,10 @@ EOF
 }
 
 qualification_parse_cli verify "$@"
+if [[ "$schema_version" == qualification-bundle.v2 && -z "$verification_key" ]]; then
+  qualification_fail 'qualification-bundle.v2 requires an explicit trusted key'
+fi
+QUALIFICATION_PREDICATE_TYPE="https://robotics-runtime-contracts.dev/attestations/qualification-bundle/${schema_version##*.}"
 qualification_require_command cosign
 qualification_require_command base64
 qualification_require_command sha256sum
@@ -83,10 +87,13 @@ qualification_write_statement "$work/expected-statement.json"
 
 aggregate_sha256="$(jq -er '
   . as $statement
-  | .predicate.artifacts[]
-  | select(.kind == "acceptance_aggregate")
-  | .subject_name as $name
-  | $statement.subject[] | select(.name == $name) | .digest.sha256
+  | (if .predicate.schema_version == "qualification-bundle.v2" then
+       .predicate.acceptance_aggregate
+     else
+       .predicate.artifacts[] | select(.kind == "acceptance_aggregate") | .subject_name
+     end) as $name
+  | [$statement.subject[] | select(.name == $name) | .digest.sha256]
+  | if length == 1 then .[0] else error("expected one assessment aggregate") end
 ' "$work/expected-statement.json")"
 verified_identity=''
 if [[ -n "$verification_key" ]]; then
