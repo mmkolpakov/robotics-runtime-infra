@@ -362,6 +362,62 @@ class NativeDocumentControls(unittest.TestCase):
             PREPARE.prepare(profile, requirements, self.root / "archive")
         self.assertFalse((self.root / "archive").exists())
 
+    def test_schema_validation_uses_the_single_captured_generation(self):
+        from unittest.mock import patch
+
+        prepared, manifest = inputs(self.root)
+        capture, _ = completed(prepared, manifest)
+        schema = prepared / "nav2.schema.json"
+        original = schema.read_bytes()
+        read_once, validate_role = FINALIZE.read_once, FINALIZE.validate_role
+        captured = []
+
+        def read(path, limit, **options):
+            if path == schema:
+                captured.append(path)
+                self.assertEqual(len(captured), 1)
+            return read_once(path, limit, **options)
+
+        def validate(document, role, **options):
+            if role == "acceptance_scenario":
+                schema.write_bytes(b"{}")
+                self.assertEqual(
+                    options["extension_schemas"]["urn:nav2-turtlebot3:scenario:v1"],
+                    original,
+                )
+            return validate_role(document, role, **options)
+
+        with (
+            patch.object(FINALIZE, "read_once", side_effect=read),
+            patch.object(FINALIZE, "validate_role", side_effect=validate),
+        ):
+            self.assertEqual(
+                FINALIZE.complete(prepared, capture)["run_id"], manifest["run_id"]
+            )
+        self.assertEqual(len(captured), 1)
+
+    def test_writer_cannot_bind_changed_configuration_after_capture(self):
+        from unittest.mock import patch
+
+        prepared, manifest = inputs(self.root)
+        capture, _ = completed(prepared, manifest)
+        configuration = prepared / "nav2-configuration.json"
+        add_artifact = FINALIZE.add_evidence_artifact
+
+        def add(draft, source, metadata, **options):
+            if Path(source) == configuration:
+                self.assertEqual(
+                    metadata["sha256"], manifest["configuration"]["sha256"]
+                )
+                configuration.write_bytes(b"{}")
+            return add_artifact(draft, source, metadata, **options)
+
+        with patch.object(FINALIZE, "add_evidence_artifact", side_effect=add):
+            with self.assertRaises(ValueError):
+                FINALIZE.complete(prepared, capture)
+        self.assertFalse((prepared.parent / "observation.json").exists())
+        self.assertFalse((prepared.parent / "evidence-index.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -450,6 +450,234 @@ class NativeAdmissionControls(unittest.TestCase):
                     finalize(prepared, capture)["run_id"], manifest["run_id"]
                 )
 
+    def test_each_rehashed_run_binding_refuses_independently(self):
+        import hashlib
+
+        prepared, _ = self.prepare()
+        run_path = prepared / "run.json"
+        manifest_path = prepared / "pre-execution-inputs.json"
+        original_run, original_manifest = (
+            run_path.read_bytes(),
+            manifest_path.read_bytes(),
+        )
+        changes = {
+            "run_id": "run-22222222-3333-4444-8555-666666666666",
+            "scenario_id": "another-scenario",
+            "scenario_sha256": "f" * 64,
+            "domains": [{"domain_id": "another-domain", "role": "simulation"}],
+        }
+        for field, value in changes.items():
+            with self.subTest(field=field):
+                run = json.loads(original_run)
+                run[field] = value
+                raw = json.dumps(run).encode()
+                run_path.write_bytes(raw)
+                manifest = json.loads(original_manifest)
+                manifest["run_context"].update(
+                    sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw)
+                )
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, "run context"):
+                    self.module["validate_prepared"](
+                        prepared, image_id=self.image_id, case="success"
+                    )
+        run_path.write_bytes(original_run)
+        manifest_path.write_bytes(original_manifest)
+
+    def test_cli_and_local_checks_consume_the_captured_generation(self):
+        import subprocess
+        from unittest.mock import patch
+
+        prepared, _ = self.prepare()
+        names = (
+            "nav2.schema.json",
+            "native-preflight.json",
+            "native-profile.json",
+            "nav2-configuration.json",
+        )
+        originals = {name: (prepared / name).read_bytes() for name in names}
+        validate = self.module["validate_prepared"]
+        capture, invoke = validate.__globals__["read_once"], subprocess.run
+        counts = {}
+
+        def read_once(path, limit, **options):
+            if path.parent == prepared:
+                counts[path.name] = counts.get(path.name, 0) + 1
+            return capture(path, limit, **options)
+
+        def run(arguments, **options):
+            if arguments[1] == "explain":
+                for name in names:
+                    (prepared / name).write_bytes(b"{}")
+                option = arguments[arguments.index("--extension-schema") + 1]
+                schema = Path(option.split("=", 1)[1])
+                self.assertNotEqual(schema, prepared / "nav2.schema.json")
+                self.assertEqual(schema.read_bytes(), originals["nav2.schema.json"])
+                self.assertEqual(schema.stat().st_mode & 0o777, 0o400)
+                self.assertEqual(schema.parent.stat().st_mode & 0o777, 0o700)
+            return invoke(arguments, **options)
+
+        try:
+            with (
+                patch.dict(validate.__globals__, {"read_once": read_once}),
+                patch.object(subprocess, "run", side_effect=run),
+            ):
+                admitted = validate(prepared, image_id=self.image_id, case="success")
+            self.assertEqual(
+                admitted["configuration"], json.loads(originals[names[-1]])
+            )
+            for name in names:
+                self.assertEqual(counts[name], 1)
+        finally:
+            for name, raw in originals.items():
+                (prepared / name).write_bytes(raw)
+
+    def test_cli_failures_do_not_retry_or_issue_another_run(self):
+        import subprocess
+        from unittest.mock import patch
+
+        invoke = subprocess.run
+        modes = (
+            "missing",
+            "exit2",
+            "timeout-after-write",
+            "missing-output",
+            "wrong-stdout",
+            "existing-output",
+        )
+        for mode in modes:
+            with self.subTest(mode=mode):
+                output = self.root / ("cli-" + mode)
+                calls = []
+
+                def run(arguments, **options):
+                    calls.append(arguments)
+                    if mode == "missing":
+                        raise FileNotFoundError("controlled unavailable executable")
+                    if mode == "exit2":
+                        return subprocess.CompletedProcess(arguments, 2, "", "invalid")
+                    if arguments[1] == "create-run":
+                        context = Path(arguments[arguments.index("--output") + 1])
+                        reserved = arguments[arguments.index("--run-id") + 1]
+                        if mode == "missing-output":
+                            return subprocess.CompletedProcess(
+                                arguments, 0, reserved + "\n", ""
+                            )
+                        if mode == "existing-output":
+                            context.write_text("{}")
+                        result = invoke(arguments, **options)
+                        if mode == "timeout-after-write":
+                            self.assertEqual(result.returncode, 0)
+                            raise subprocess.TimeoutExpired(arguments, 30)
+                        if mode == "wrong-stdout":
+                            result.stdout = "another-run"
+                        return result
+                    return invoke(arguments, **options)
+
+                def prepare():
+                    return self.module["prepare"](
+                        None,
+                        self.requirements,
+                        output,
+                        native_preflight=self.preflight,
+                        image_reference=self.image_reference,
+                        image_id=self.image_id,
+                    )
+
+                with patch.object(subprocess, "run", side_effect=run):
+                    with self.assertRaises((ValueError, OSError)):
+                        prepare()
+                    self.assertLessEqual(sum(c[1] == "create-run" for c in calls), 1)
+                    if mode == "timeout-after-write":
+                        issued = json.loads((output / "run.json").read_bytes())[
+                            "run_id"
+                        ]
+                        command = next(c for c in calls if c[1] == "create-run")
+                        self.assertEqual(issued, command[command.index("--run-id") + 1])
+                        count = len(calls)
+                        with self.assertRaises(FileExistsError):
+                            prepare()
+                        self.assertEqual(len(calls), count)
+                self.assertFalse((output / "pre-execution-inputs.json").exists())
+
+    def test_worker_keeps_admitted_scenario_when_source_changes_before_ros_use(self):
+        import os
+        import sys
+        from unittest.mock import patch
+
+        prepared, manifest = self.prepare()
+        worker = workload_functions()
+        main = worker["main"]
+        actual_admit = worker["admit_workload"]
+        admitted = {}
+        parameters = json.loads((prepared / "scenario.json").read_bytes())[
+            "extensions"
+        ]["org.example.nav2-turtlebot3"]
+
+        class BeforeRosUse(Exception):
+            pass
+
+        def admit(args):
+            admitted.update(actual_admit(args))
+            return admitted
+
+        def load_ros():
+            (prepared / "scenario.json").write_text("{}")
+
+        def readiness(scenario):
+            self.assertIs(scenario, admitted["scenario"])
+            self.assertEqual(
+                scenario["extensions"]["org.example.nav2-turtlebot3"], parameters
+            )
+            raise BeforeRosUse()
+
+        argv = [
+            "workload.py",
+            "--case",
+            "success",
+            "--run-id",
+            manifest["run_id"],
+            "--domain-id",
+            "nav2",
+            "--output",
+            str(self.root / "worker"),
+            "--scenario",
+            str(prepared / "scenario.json"),
+            "--prepared",
+            str(prepared),
+            "--image-id",
+            self.image_id,
+            "--goal-x",
+            str(parameters["goal"]["x"]),
+            "--goal-y",
+            str(parameters["goal"]["y"]),
+        ]
+        for option, key in (
+            ("--action-budget-sec", "action_budget_sec"),
+            ("--application-timeout-sec", "application_timeout_sec"),
+            ("--max-pose-error-m", "max_final_pose_error_m"),
+            ("--min-displacement-m", "min_displacement_m"),
+            ("--max-observation-age-sec", "max_observation_age_sec"),
+            ("--odometry-frame", "odometry_frame"),
+        ):
+            argv.extend([option, str(parameters[key])])
+        for edge in parameters["required_tf_edges"]:
+            argv.extend(["--required-tf-edge", *edge])
+        with (
+            patch.dict(os.environ, {"NAV2_IMAGE_CONFIG_ID": self.image_id}),
+            patch.object(sys, "argv", argv),
+            patch.dict(
+                main.__globals__,
+                {
+                    "admit_workload": admit,
+                    "load_ros": load_ros,
+                    "readiness_parameters": readiness,
+                },
+            ),
+            self.assertRaises(BeforeRosUse),
+        ):
+            main()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,27 +4,75 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import sys
+from contextlib import contextmanager
+from tempfile import TemporaryDirectory
+from uuid import uuid4
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
 from robotics_acceptance_harness.evaluator_trust import read_once
-from robotics_acceptance_harness.run_context import create_run_context
-from robotics_runtime_contracts import dumps_canonical, loads_mapping
+from robotics_runtime_contracts import dumps_canonical, loads_mapping, validate_role
 from robotics_runtime_contracts.writers import write_bytes_atomically, write_document
 
 NAMESPACE = "org.example.nav2-turtlebot3"
 DOCUMENT_LIMIT = 1024 * 1024
 
 
-def reference(path: Path, media_type: str = "application/json") -> dict:
-    raw = path.read_bytes()
+def reference(path: Path, raw: bytes, media_type: str = "application/json") -> dict:
     return {
         "uri": path.resolve().as_uri(),
         "sha256": sha256(raw).hexdigest(),
         "size_bytes": len(raw),
         "media_type": media_type,
     }
+
+
+@contextmanager
+def cli_snapshot(raw_by_name: dict[str, bytes], parent: Path):
+    with TemporaryDirectory(prefix=".nav2-cli-", dir=parent) as temporary:
+        snapshot = Path(temporary)
+        for name in ("scenario.json", "runtime.json", "nav2.schema.json"):
+            path = snapshot / name
+            write_bytes_atomically(raw_by_name[name], path)
+            path.chmod(0o400)
+        yield snapshot
+
+
+def run_cli(*arguments: str) -> str:
+    executable = Path(sys.executable).with_name("robotics-acceptance")
+    environment = dict(os.environ)
+    for key in ("PYTHONPATH", "PYTHONHOME"):
+        environment.pop(key, None)
+    try:
+        result = subprocess.run(
+            [str(executable), *arguments],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError("installed acceptance CLI invocation failed") from error
+    if result.returncode != 0:
+        raise ValueError("acceptance CLI refused inputs: " + arguments[0])
+    return result.stdout.strip()
+
+
+def check_run_binding(run: dict, run_id: str, scenario: dict, scenario_raw: bytes):
+    validate_role(run, "acceptance_run")
+    if (
+        run["run_id"] != run_id
+        or run["scenario_id"] != scenario["scenario_id"]
+        or run["scenario_sha256"] != sha256(scenario_raw).hexdigest()
+        or "nav2" not in {item["domain_id"] for item in run["domains"]}
+    ):
+        raise ValueError("run context differs from the prepared Nav2 inputs")
 
 
 def prepare(
@@ -83,15 +131,19 @@ def prepare(
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     configuration = output / "nav2-configuration.json"
     schema_path = Path(__file__).with_name("nav2.schema.json")
-    write_bytes_atomically(
-        dumps_canonical(requirements["configuration"]), configuration
-    )
+    raw_by_name = {
+        "nav2-configuration.json": dumps_canonical(requirements["configuration"])
+    }
+    write_bytes_atomically(raw_by_name["nav2-configuration.json"], configuration)
     selected_profile = dict(profile)
     selected_profile["executor"] = {
         **profile["executor"],
-        "configuration": reference(configuration),
+        "configuration": reference(
+            configuration, raw_by_name["nav2-configuration.json"]
+        ),
     }
     profile_snapshot = output / "native-profile.json"
+    raw_by_name["native-profile.json"] = profile_raw
     write_bytes_atomically(profile_raw, profile_snapshot)
     scenario = {
         "schema_version": "acceptance-scenario.v2",
@@ -117,6 +169,7 @@ def prepare(
     }
     schema_raw = read_once(schema_path, 1024 * 1024)
     schema_snapshot = output / "nav2.schema.json"
+    raw_by_name["nav2.schema.json"] = schema_raw
     write_bytes_atomically(schema_raw, schema_snapshot)
     schema_uri = "urn:nav2-turtlebot3:scenario:v1"
     scenario["extension_schemas"] = [
@@ -131,20 +184,25 @@ def prepare(
         import base64
 
         for kind in ("model", "world"):
-            write_bytes_atomically(
-                base64.b64decode(facts["rendered"][kind]["base64"], validate=True),
-                output / ("native-" + kind + ".sdf"),
+            name = "native-" + kind + ".sdf"
+            raw_by_name[name] = base64.b64decode(
+                facts["rendered"][kind]["base64"], validate=True
             )
+            write_bytes_atomically(raw_by_name[name], output / name)
         model = output / "native-model.sdf"
+        raw_by_name["native-preflight.json"] = native_raw
         write_bytes_atomically(native_raw, output / "native-preflight.json")
-        scenario["native_model"] = reference(model, "application/xml")
+        scenario["native_model"] = reference(
+            model, raw_by_name["native-model.sdf"], "application/xml"
+        )
     scenario_path, runtime_path = output / "scenario.json", output / "runtime.json"
     write_document(scenario, scenario_path, extension_schemas={schema_uri: schema_raw})
+    raw_by_name["scenario.json"] = read_once(scenario_path, DOCUMENT_LIMIT)
     runtime = {
         "schema_version": "runtime-manifest.v2",
         "runtime_id": "nav2-turtlebot3-native",
         "generated_at": datetime.now(UTC).isoformat(),
-        "scenario_sha256": reference(scenario_path)["sha256"],
+        "scenario_sha256": sha256(raw_by_name["scenario.json"]).hexdigest(),
         "execution": scenario["execution"],
         "profile": selected_profile,
         "evaluator_bindings": scenario["evaluator_requirements"],
@@ -161,40 +219,75 @@ def prepare(
             "digest": image_reference.rsplit("@", 1)[-1],
         }
     write_document(runtime, runtime_path)
-    from robotics_acceptance_harness.documents import load_bundle
-
-    load_bundle(
-        scenario_path,
-        runtime_path=runtime_path,
-        extension_schemas={schema_uri: schema_raw},
-    )
+    raw_by_name["runtime.json"] = read_once(runtime_path, DOCUMENT_LIMIT)
     context_path = output / "run.json"
-    issued = create_run_context(
-        scenario_path,
-        context_path,
-        domains={"nav2": "simulation"},
-        time_authority=selected_profile["clock"]["kind"],
-        time_source=selected_profile["clock"]["source_id"],
-        run_id=run_id,
-        extension_schemas={schema_uri: schema_raw},
+    reserved = run_id if run_id is not None else "run-" + str(uuid4())
+    with cli_snapshot(raw_by_name, output.parent) as snapshot:
+        schema_option = "urn:nav2-turtlebot3:scenario:v1=" + str(
+            snapshot / "nav2.schema.json"
+        )
+        run_cli(
+            "explain",
+            "--scenario",
+            str(snapshot / "scenario.json"),
+            "--runtime",
+            str(snapshot / "runtime.json"),
+            "--extension-schema",
+            schema_option,
+        )
+        issued = run_cli(
+            "create-run",
+            "--scenario",
+            str(snapshot / "scenario.json"),
+            "--output",
+            str(context_path.resolve()),
+            "--domain",
+            "nav2=simulation",
+            "--time-authority",
+            selected_profile["clock"]["kind"],
+            "--time-source",
+            selected_profile["clock"]["source_id"],
+            "--run-id",
+            reserved,
+            "--extension-schema",
+            schema_option,
+        )
+    if issued != reserved:
+        raise ValueError("acceptance CLI returned a different run identity")
+    raw_by_name["run.json"] = read_once(context_path, DOCUMENT_LIMIT)
+    check_run_binding(
+        loads_mapping(raw_by_name["run.json"]),
+        reserved,
+        scenario,
+        raw_by_name["scenario.json"],
     )
     manifest = {
         "run_id": issued,
         "domain_id": "nav2",
-        "scenario": reference(scenario_path),
-        "runtime": reference(runtime_path),
-        "run_context": reference(context_path),
-        "configuration": reference(configuration),
-        "native_profile": reference(profile_snapshot),
-        "extension_schema": reference(schema_snapshot),
+        "scenario": reference(scenario_path, raw_by_name["scenario.json"]),
+        "runtime": reference(runtime_path, raw_by_name["runtime.json"]),
+        "run_context": reference(context_path, raw_by_name["run.json"]),
+        "configuration": reference(
+            configuration, raw_by_name["nav2-configuration.json"]
+        ),
+        "native_profile": reference(
+            profile_snapshot, raw_by_name["native-profile.json"]
+        ),
+        "extension_schema": reference(schema_snapshot, raw_by_name["nav2.schema.json"]),
     }
     if native is not None:
-        manifest["native_preflight"] = reference(output / "native-preflight.json")
+        manifest["native_preflight"] = reference(
+            output / "native-preflight.json", raw_by_name["native-preflight.json"]
+        )
         manifest["native_model"] = reference(
-            output / "native-model.sdf", "application/xml"
+            output / "native-model.sdf",
+            raw_by_name["native-model.sdf"],
+            "application/xml",
         )
         manifest["expanded_world"] = reference(
-            output / "native-world.sdf", "application/xml"
+            output / "native-world.sdf",
+            raw_by_name["native-world.sdf"],
+            "application/xml",
         )
     write_bytes_atomically(
         dumps_canonical(manifest), output / "pre-execution-inputs.json"
@@ -447,9 +540,6 @@ def native_profile(facts: dict) -> dict:
 
 
 def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
-    from robotics_acceptance_harness.documents import load_bundle
-    from robotics_acceptance_harness.run_context import load_run_context
-
     manifest = loads_mapping(
         read_once(prepared / "pre-execution-inputs.json", DOCUMENT_LIMIT)
     )
@@ -464,30 +554,41 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
         "native_model": "native-model.sdf",
         "expanded_world": "native-world.sdf",
     }
+    raw_by_name = {}
     for key, name in names.items():
         raw = read_once(prepared / name, 8 * DOCUMENT_LIMIT)
+        raw_by_name[name] = raw
         identity = manifest.get(key, {})
         if identity.get("sha256") != sha256(raw).hexdigest() or identity.get(
             "size_bytes"
         ) != len(raw):
             raise ValueError("prepared input differs: " + key)
-    schema = read_once(prepared / "nav2.schema.json", DOCUMENT_LIMIT)
-    bundle = load_bundle(
-        prepared / "scenario.json",
-        runtime_path=prepared / "runtime.json",
+    schema = raw_by_name["nav2.schema.json"]
+    scenario = loads_mapping(raw_by_name["scenario.json"])
+    runtime = loads_mapping(raw_by_name["runtime.json"])
+    validate_role(
+        scenario,
+        "acceptance_scenario",
         extension_schemas={"urn:nav2-turtlebot3:scenario:v1": schema},
     )
-    scenario, runtime = bundle.scenario.as_dict(), bundle.runtime.as_dict()
-    load_run_context(
-        prepared / "run.json",
-        run_id=manifest["run_id"],
-        domain_id="nav2",
-        scenario_id=scenario["scenario_id"],
-        scenario_sha256=bundle.scenario.sha256,
+    validate_role(runtime, "runtime_manifest")
+    with cli_snapshot(raw_by_name, prepared.parent) as snapshot:
+        run_cli(
+            "explain",
+            "--scenario",
+            str(snapshot / "scenario.json"),
+            "--runtime",
+            str(snapshot / "runtime.json"),
+            "--extension-schema",
+            "urn:nav2-turtlebot3:scenario:v1=" + str(snapshot / "nav2.schema.json"),
+        )
+    check_run_binding(
+        loads_mapping(raw_by_name["run.json"]),
+        manifest["run_id"],
+        scenario,
+        raw_by_name["scenario.json"],
     )
-    preflight = loads_mapping(
-        read_once(prepared / "native-preflight.json", 8 * DOCUMENT_LIMIT)
-    )
+    preflight = loads_mapping(raw_by_name["native-preflight.json"])
     image_reference = preflight["image_reference"]
     facts = check_preflight(preflight, image_reference, image_id)
     for kind, key in (("model", "native_model"), ("world", "expanded_world")):
@@ -522,9 +623,7 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
     configuration_ref = declared_profile["executor"].pop("configuration")
     if declared_profile != expected_profile:
         raise ValueError("declared native profile differs from observed image")
-    stored_profile = loads_mapping(
-        read_once(prepared / "native-profile.json", DOCUMENT_LIMIT)
-    )
+    stored_profile = loads_mapping(raw_by_name["native-profile.json"])
     if stored_profile != expected_profile:
         raise ValueError("captured native profile differs")
     for key in ("sha256", "size_bytes"):
@@ -533,10 +632,7 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
                 "executor configuration reference differs from captured bytes"
             )
     configuration = scenario["extensions"][NAMESPACE]
-    if (
-        loads_mapping(read_once(prepared / "nav2-configuration.json", DOCUMENT_LIMIT))
-        != configuration
-    ):
+    if loads_mapping(raw_by_name["nav2-configuration.json"]) != configuration:
         raise ValueError("captured configuration differs from the scenario")
     if (
         scenario["execution"]["target_environment"] != "simulation"
@@ -552,6 +648,8 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
         "run_id": manifest["run_id"],
         "domain_id": "nav2",
         "configuration": configuration,
+        "scenario": scenario,
+        "scenario_sha256": sha256(raw_by_name["scenario.json"]).hexdigest(),
         "image_id": image_id,
         "image_reference": image_reference,
         "launch": facts["launch"],
