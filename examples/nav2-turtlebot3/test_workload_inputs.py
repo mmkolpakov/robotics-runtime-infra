@@ -289,7 +289,7 @@ class NativeAdmissionControls(unittest.TestCase):
             size_bytes=path.stat().st_size,
         )
         manifest_path.write_text(json.dumps(manifest))
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "(?s)explain.*exit 2.*profile"):
             self.module["validate_prepared"](
                 prepared, image_id=self.image_id, case="success"
             )
@@ -555,14 +555,16 @@ class NativeAdmissionControls(unittest.TestCase):
                     if mode == "missing":
                         raise FileNotFoundError("controlled unavailable executable")
                     if mode == "exit2":
-                        return subprocess.CompletedProcess(arguments, 2, "", "invalid")
+                        options["stderr"].write(
+                            b"error: $.runtime.profile differs from scenario\n"
+                        )
+                        return subprocess.CompletedProcess(arguments, 2)
                     if arguments[1] == "create-run":
                         context = Path(arguments[arguments.index("--output") + 1])
                         reserved = arguments[arguments.index("--run-id") + 1]
                         if mode == "missing-output":
-                            return subprocess.CompletedProcess(
-                                arguments, 0, reserved + "\n", ""
-                            )
+                            options["stdout"].write((reserved + "\n").encode())
+                            return subprocess.CompletedProcess(arguments, 0)
                         if mode == "existing-output":
                             context.write_text("{}")
                         result = invoke(arguments, **options)
@@ -570,7 +572,9 @@ class NativeAdmissionControls(unittest.TestCase):
                             self.assertEqual(result.returncode, 0)
                             raise subprocess.TimeoutExpired(arguments, 30)
                         if mode == "wrong-stdout":
-                            result.stdout = "another-run"
+                            options["stdout"].seek(0)
+                            options["stdout"].truncate()
+                            options["stdout"].write(b"another-run\n")
                         return result
                     return invoke(arguments, **options)
 
@@ -677,6 +681,45 @@ class NativeAdmissionControls(unittest.TestCase):
             self.assertRaises(BeforeRosUse),
         ):
             main()
+
+    def test_cli_diagnostics_and_identifier_responses_are_bounded(self):
+        import subprocess
+        from unittest.mock import patch
+
+        snapshot = self.root / "bounded-cli"
+        snapshot.mkdir(mode=0o700)
+
+        def refusal(arguments, **options):
+            self.assertNotIn("capture_output", options)
+            self.assertNotEqual(options["stdout"], subprocess.PIPE)
+            self.assertNotEqual(options["stderr"], subprocess.PIPE)
+            options["stdout"].write(b"STDOUT_NOT_LOGGED" * 10000)
+            options["stderr"].write(
+                b"error: $.runtime.profile differs from scenario\n"
+                + b"x" * 8192
+                + b"DIAGNOSTIC_TAIL_NOT_LOGGED"
+            )
+            return subprocess.CompletedProcess(arguments, 2)
+
+        with patch.object(subprocess, "run", side_effect=refusal):
+            with self.assertRaises(ValueError) as caught:
+                self.module["run_cli"](snapshot, "explain")
+        message = str(caught.exception)
+        self.assertIn("$.runtime.profile", message)
+        self.assertIn("exit 2", message)
+        self.assertIn("[diagnostic truncated]", message)
+        self.assertNotIn("STDOUT_NOT_LOGGED", message)
+        self.assertNotIn("DIAGNOSTIC_TAIL_NOT_LOGGED", message)
+        self.assertLess(len(message), 4352)
+
+        def oversized(arguments, **options):
+            options["stdout"].write(b"x" * 8192)
+            return subprocess.CompletedProcess(arguments, 0)
+
+        with patch.object(subprocess, "run", side_effect=oversized):
+            self.assertEqual(self.module["run_cli"](snapshot, "explain"), "")
+            with self.assertRaisesRegex(ValueError, "output exceeded its byte limit"):
+                self.module["run_cli"](snapshot, "create-run")
 
 
 if __name__ == "__main__":
