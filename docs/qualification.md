@@ -220,17 +220,10 @@ relative inventory from the package root. Supply the trusted public key independ
 ```bash
 cd /retained/package
 mapfile -t inputs < qualification-arguments.txt
-ROBOTICS_CONTRACTS_CLI=/tools/venv/bin/robotics-contracts \
+ROBOTICS_CONTRACTS_CLI=/opt/contracts/bin/robotics-contracts \
   /opt/robotics/finalizer/scripts/qualification/verify-bundle "${inputs[@]}" \
   --bundle qualification.sigstore.json --key /trust/expected.pub
 ```
-
-The installed-finalizer check runs this command with network access disabled at
-both of two mount locations, using the exact published contracts wheel and the
-same signed package bytes. Each consumer masks the original contracts environment;
-the copied CLI resolves its interpreter and package inside the installed copy.
-The signing key in this integration fixture is
-explicit test trust; it does not establish hardware or provider qualification.
 
 ## Tests
 
@@ -248,6 +241,12 @@ without requesting an OIDC certificate. `real-cosign.sh` generates two real
 Cosign key pairs and proves successful verification, wrong-key rejection, and
 aggregate-digest tamper rejection. The foundation workflow additionally tests
 the keyless path on canonical `main`.
+
+The installed-finalizer test verifies the same signed package at two mount
+locations with network access disabled and an independently supplied key. It
+uses the exact published contracts wheel, masks the original contracts
+installation and checks that the copied CLI resolves within its own environment.
+The test key does not establish hardware or provider qualification.
 
 These checks qualify the software foundation and its evidence chain. They do
 not claim GPU, flight-controller, sensor, HIL, or other physical-hardware
