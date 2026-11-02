@@ -1,0 +1,25 @@
+{
+  "graph": {
+    "topics": [
+      {
+        "name": "/odom",
+        "type": "nav_msgs/msg/Odometry",
+        "min_publishers": 1,
+        "min_subscribers": 0,
+        "first_message_timeout_sec": 2.0,
+        "qos_profile": "system_default"
+      }
+    ],
+    "services": [],
+    "actions": [
+      {
+        "name": "/navigate_to_pose",
+        "type": "nav2_msgs/action/NavigateToPose",
+        "server_required": true
+      }
+    ],
+    "lifecycle_nodes": []
+  },
+  "timeout_sec": 10.0,
+  "stable_for_sec": 0.5
+}

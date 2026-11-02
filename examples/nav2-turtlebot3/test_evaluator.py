@@ -2,7 +2,6 @@
 
 import copy
 import hashlib
-import importlib.util
 import json
 import tempfile
 import unittest
@@ -11,35 +10,40 @@ from pathlib import Path
 
 from nav2_turtlebot3_evaluator import NAMESPACE, evaluate
 from robotics_acceptance_harness import EvaluationContext
-from robotics_acceptance_harness.documents import (
-    DocumentBundle,
-    LoadedDocument,
-    load_document,
-)
+from robotics_acceptance_harness.archive import load_assessment_controls
+from robotics_acceptance_harness.documents import DocumentBundle, LoadedDocument
 from robotics_acceptance_harness.evidence import VerifiedEvidence
 
 
 class NativeCaseControls(unittest.TestCase):
-    def context(self, case="success", mutate=None):
+    def context(self, case="success", mutate=None, *, include_cdr=True):
         source = self.root / case
         report = json.loads((source / "workload.json").read_bytes())
+        report["parameters"]["readiness"] = json.loads(
+            (
+                Path(__file__).parent / "evaluator/tests/readiness-control.json"
+            ).read_bytes()
+        )
         if mutate:
             mutate(report)
         directory = Path(self.temporary.name)
         path = directory / "workload.json"
         path.write_text(json.dumps(report))
-        cdr = directory / "get-result-response.cdr"
-        cdr.write_bytes((source / cdr.name).read_bytes())
         links = {
             path: {
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "size_bytes": path.stat().st_size,
                 "media_type": "application/json",
             },
-            cdr: {
-                "sha256": hashlib.sha256(cdr.read_bytes()).hexdigest(),
-                "media_type": "application/octet-stream",
-            },
         }
+        if include_cdr:
+            cdr = directory / "get-result-response.cdr"
+            cdr.write_bytes((source / cdr.name).read_bytes())
+            links[cdr] = {
+                "sha256": hashlib.sha256(cdr.read_bytes()).hexdigest(),
+                "size_bytes": cdr.stat().st_size,
+                "media_type": "application/octet-stream",
+            }
         scenario = {
             "extensions": {
                 NAMESPACE: {**copy.deepcopy(report["parameters"]), "case": case}
@@ -75,41 +79,195 @@ class NativeCaseControls(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertEqual(
                     [r.status for r in evaluate(self.context(case))],
-                    ["passed", "passed"],
+                    ["passed", "skipped"]
+                    if case == "server-failure"
+                    else ["passed", "passed"],
                 )
 
-    def test_actual_public_loader_immutable_context(self):
-        root = Path(__file__).parent
-        specification = importlib.util.spec_from_file_location(
-            "nav2_requirements", root / "make-scenario.py"
-        )
-        constructor = importlib.util.module_from_spec(specification)
-        specification.loader.exec_module(constructor)
-        directory = Path(self.temporary.name)
-        # A syntactic requirements header for this predicate fixture, not a verified receipt.
-        header = directory / "requirements-header.json"
-        header.write_text(json.dumps({"artifact": {"sha256": "0" * 64}}))
-        scenario = directory / "public-scenario.json"
-        constructor.create(
-            "success", header, root / "fastdds.xml", root / "nav2.schema.json", scenario
-        )
-        loaded = load_document(
-            scenario,
-            expected_role="acceptance_scenario",
-            extension_schemas={
-                constructor.SCHEMA_URI: (root / "nav2.schema.json").read_bytes()
-            },
-        )
-        original = self.context()
-        context = replace(
-            original, bundle=DocumentBundle(loaded, original.bundle.runtime)
-        )
-        self.assertIsInstance(
-            context.scenario["extensions"][NAMESPACE]["required_tf_edges"], tuple
-        )
+    def test_readiness_parameters_preserve_all_graph_fields_and_original_bundle(self):
+        def populated(report):
+            graph = report["parameters"]["readiness"]["graph"]
+            graph["topics"][0]["qos_profile"] = "sensor_data"
+            graph["services"] = [
+                {
+                    "name": "/lifecycle_manager_navigation/manage_nodes",
+                    "type": "nav2_msgs/srv/ManageLifecycleNodes",
+                    "server_required": True,
+                }
+            ]
+            graph["lifecycle_nodes"] = [
+                {
+                    "name": "/bt_navigator",
+                    "required_state": "active",
+                    "timeout_sec": 2,
+                    "stable_for_sec": 0.5,
+                }
+            ]
+
+        context = self.context(mutate=populated)
+        original = copy.deepcopy(context.scenario)
         self.assertEqual(
-            [value.status for value in evaluate(context)], ["passed", "passed"]
+            [item.status for item in evaluate(context)], ["passed", "passed"]
         )
+        self.assertEqual(context.scenario, original)
+
+    def test_ordered_shutdown_without_getresult_can_pass_local_assertion(self):
+        def shutdown(report):
+            report.pop("result_observation", None)
+            report.pop("result_observed_monotonic_ns", None)
+            report.pop("action_result", None)
+            report.pop("action_status", None)
+            report["observation_status"] = "server-unavailable"
+            # Synthetic receiver sample, not a physical-stop/deadline witness.
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+
+        outcomes = list(
+            evaluate(self.context("server-failure", shutdown, include_cdr=False))
+        )
+        self.assertEqual([row.status for row in outcomes], ["passed", "passed"])
+
+    def test_missing_shutdown_time_is_incomplete(self):
+        outcomes = list(evaluate(self.context("server-failure", include_cdr=False)))
+        self.assertEqual(outcomes[1].status, "skipped")
+
+    def test_known_server_presence_after_shutdown_is_failed(self):
+        def present(report):
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+            report["server_available_after_shutdown"] = True
+
+        self.assertEqual(
+            list(evaluate(self.context("server-failure", present)))[1].status, "failed"
+        )
+
+    def test_known_server_presence_without_time_remains_failed(self):
+        def present_without_time(report):
+            report["server_available_after_shutdown"] = True
+            report.pop("server_after_shutdown_monotonic_ns", None)
+
+        outcome = list(
+            evaluate(
+                self.context("server-failure", present_without_time, include_cdr=False)
+            )
+        )[1]
+        self.assertEqual(outcome.status, "failed")
+        self.assertIs(outcome.observed_value, False)
+
+    def test_malformed_known_shutdown_presence_is_error(self):
+        def malformed(report):
+            report["server_available_after_shutdown"] = "false"
+
+        with self.assertRaisesRegex(ValueError, "malformed known"):
+            list(evaluate(self.context("server-failure", malformed)))
+
+    def test_missing_result_for_success_is_incomplete(self):
+        self.assertEqual(
+            list(evaluate(self.context(include_cdr=False)))[1].status, "skipped"
+        )
+
+    def test_known_goal_rejection_is_failed_without_result(self):
+        def rejected(report):
+            report["goal_accepted"] = False
+            report.pop("result_observation", None)
+            report.pop("result_observed_monotonic_ns", None)
+            report["observation_status"] = "error"
+
+        self.assertEqual(
+            list(evaluate(self.context(mutate=rejected, include_cdr=False)))[1].status,
+            "failed",
+        )
+
+    def test_foreign_result_is_not_masked_by_expected_shutdown(self):
+        def foreign(report):
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+            report["result_observation"]["goal_id"][0] ^= 1
+
+        self.assertEqual(
+            list(evaluate(self.context("server-failure", foreign)))[1].status, "failed"
+        )
+
+    def test_selected_calibration_refuses_before_raw_payload_access(self):
+        context = self.context()
+        directory = Path(self.temporary.name)
+        calibration = directory / "calibration.json"
+        calibration.write_text('{"offset": 0}')
+        controls = directory / "controls.json"
+        controls.write_text(
+            json.dumps(
+                {
+                    "metric_definitions": [],
+                    "assertions": [],
+                    "evaluator_requirements": [
+                        {
+                            "namespace": NAMESPACE,
+                            "entry_point": "nav2_turtlebot3_evaluator:evaluate",
+                            "distribution": "nav2-turtlebot3-evaluator",
+                            "version": "0.3.0",
+                            "artifact_sha256": "0" * 64,
+                            "receipt_sha256": "0" * 64,
+                        }
+                    ],
+                    "evidence_policy": {
+                        "max_artifact_size_bytes": 1048576,
+                        "max_archive_size_bytes": 4194304,
+                        "max_upload_lag_sec": 0,
+                        "upload_mode": "local_only",
+                        "retention_class": "test-evidence",
+                        "remote_sink_allowed": False,
+                    },
+                    "calibration": {
+                        "state": "selected",
+                        "artifacts": [
+                            {
+                                "uri": calibration.as_uri(),
+                                "sha256": hashlib.sha256(
+                                    calibration.read_bytes()
+                                ).hexdigest(),
+                                "size_bytes": calibration.stat().st_size,
+                                "media_type": "application/json",
+                            }
+                        ],
+                    },
+                }
+            )
+        )
+        selected = load_assessment_controls(controls)
+        from unittest.mock import patch
+
+        with (
+            patch.object(
+                VerifiedEvidence,
+                "read_local",
+                side_effect=AssertionError("unexpected raw access"),
+            ),
+            self.assertRaisesRegex(ValueError, "does not consume selected calibration"),
+        ):
+            list(evaluate(replace(context, assessment_controls=selected)))
+
+    def test_payload_is_parsed_from_one_verified_snapshot(self):
+        from unittest.mock import patch
+
+        context = self.context()
+        original_reader = VerifiedEvidence.read_local
+        captured = []
+
+        def read(evidence, path, **keywords):
+            payload = original_reader(evidence, path, **keywords)
+            captured.append(path.name)
+            if path.name == "workload.json":
+                path.write_text('{"mutated_after_capture": true}')
+            return payload
+
+        with patch.object(VerifiedEvidence, "read_local", read):
+            self.assertEqual(
+                [value.status for value in evaluate(context)], ["passed", "passed"]
+            )
+        self.assertEqual(captured, ["workload.json", "get-result-response.cdr"])
 
     def test_stale_required_dynamic_tf_refuses(self):
         def stale(report):
@@ -157,7 +315,13 @@ class NativeCaseControls(unittest.TestCase):
                 evaluate(
                     self.context(
                         "server-failure",
-                        lambda r: r.update(server_available_after_shutdown=True),
+                        lambda r: r.update(
+                            server_available_after_shutdown=True,
+                            server_after_shutdown_monotonic_ns=r[
+                                "goal_finished_monotonic_ns"
+                            ]
+                            - 1,
+                        ),
                     )
                 )
             )[1].status,
@@ -220,7 +384,7 @@ class NativeCaseControls(unittest.TestCase):
         next(
             p for p in context.evidence.local_files if p.name == "workload.json"
         ).write_text("{}")
-        with self.assertRaisesRegex(ValueError, "changed"):
+        with self.assertRaisesRegex(ValueError, "expected.*observed"):
             list(evaluate(context))
 
     def test_mutated_cdr_refuses(self):
@@ -228,7 +392,7 @@ class NativeCaseControls(unittest.TestCase):
         next(
             p for p in context.evidence.local_files if p.name.endswith(".cdr")
         ).write_bytes(b"bad")
-        with self.assertRaisesRegex(ValueError, "CDR"):
+        with self.assertRaisesRegex(ValueError, "expected.*observed"):
             list(evaluate(context))
 
 

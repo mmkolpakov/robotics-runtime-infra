@@ -136,6 +136,47 @@ def artifact_file(path: Path, root: Path, deadline: float) -> dict:
     }
 
 
+def storage_observation(
+    directory: Path, members: list[dict], metadata: dict, message_count: int
+) -> dict:
+    """Inspect the closed stock recording; this recorder never rotates or deletes members."""
+    from mcap.reader import make_reader
+    from mcap.records import Chunk
+    from mcap.stream_reader import StreamReader
+
+    expected_names = {"metadata.yaml", *(item["path"] for item in members)}
+    if {path.name for path in directory.iterdir()} != expected_names:
+        raise ValueError("unexpected file in the closed single-segment spool")
+    if len(members) != 1:
+        raise ValueError("the bounded single-segment spool contract differs")
+    compressions = set()
+    counts = 0
+    for member in members:
+        path = directory / member["path"]
+        with path.open("rb") as stream:
+            counts += sum(
+                1 for _ in make_reader(stream, validate_crcs=True).iter_messages()
+            )
+        with path.open("rb") as stream:
+            for record in StreamReader(
+                stream, emit_chunks=True, validate_crcs=True
+            ).records:
+                if isinstance(record, Chunk):
+                    compressions.add(record.compression or "none")
+    if counts != message_count or not compressions:
+        raise ValueError("closed stock recording does not match its metadata")
+    total = metadata["size_bytes"] + sum(item["size_bytes"] for item in members)
+    return {
+        "recording_mode": "native-files",
+        "compression": next(iter(compressions)) if len(compressions) == 1 else "mixed",
+        "retention_class": "test-evidence",
+        "upload_mode": "local_only",
+        "remote_sink_used": False,
+        "spool_peak_size_bytes": total,
+        "upload_lag_max_sec": 0,
+    }
+
+
 def main() -> int:
     args = arguments()
     args.facts_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -186,8 +227,13 @@ def main() -> int:
             storage_id="mcap",
             storage_preset_profile="zstd_fast",
             max_cache_size=0,
+            max_bagfile_size=0,
+            max_bagfile_duration=0,
+            snapshot_mode=False,
         )
         options = rosbag2_py.RecordOptions()
+        options.compression_mode = ""
+        options.compression_format = ""
         options.topics = list(TOPICS)
         options.include_hidden_topics = True
         options.disable_keyboard_controls = True
@@ -256,6 +302,10 @@ def main() -> int:
 
                 metadata = rosbag2_py.Info().read_metadata(str(args.output), "mcap")
                 before_deadline(close_deadline, "native metadata read")
+                if metadata.compression_mode or metadata.compression_format:
+                    raise ValueError(
+                        "file/message compression rewrites are not admitted"
+                    )
                 metadata_ref = artifact_file(
                     args.output / "metadata.yaml", args.output, close_deadline
                 )
@@ -290,6 +340,12 @@ def main() -> int:
                     raise ValueError("native bag exceeds declared recording size")
                 if not 0 <= duration_ns <= int(args.max_lifetime_sec * 1e9):
                     raise ValueError("native bag exceeds declared recording duration")
+                state["policy_observation"] = storage_observation(
+                    args.output, members, metadata_ref, int(metadata.message_count)
+                )
+                state["spool_scope"] = (
+                    "fresh single-segment append-only bag including final metadata"
+                )
                 state["closure_confirmed"] = True
         except Exception as error:  # noqa: BLE001 - Unknown native close errors must refuse complete capture.
             failed = True
