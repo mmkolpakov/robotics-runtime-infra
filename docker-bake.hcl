@@ -34,6 +34,10 @@ variable "BROTLI_VERSION" {
   default = "1.1.0-2ubuntu0.1"
 }
 
+variable "LXML_VERSION" {
+  default = "5.2.1-1ubuntu0.2"
+}
+
 variable "ROS_SNAPSHOT" {
   default = "2026-09-11"
 }
@@ -198,6 +202,7 @@ target "_common" {
     UBUNTU_SNAPSHOT          = UBUNTU_SNAPSHOT
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
     BROTLI_VERSION           = BROTLI_VERSION
+    LXML_VERSION             = LXML_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
   }
