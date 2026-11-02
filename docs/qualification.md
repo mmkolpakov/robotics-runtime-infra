@@ -75,7 +75,9 @@ profile explicitly for `create-statement` and `package-artifacts`:
 ```
 
 The resulting package arguments retain that selection for `verify-bundle`.
-Without these options the helpers continue to use `qualification-bundle.v1`.
+V2 verification requires an independently trusted explicit key: the current
+identity policy schema admits the v1 predicate only. Without these options
+the helpers continue to use `qualification-bundle.v1`.
 The archive comparison preserves missing historical calibration or coverage;
 it does not turn an incomplete or non-comparable result into a pass.
 
