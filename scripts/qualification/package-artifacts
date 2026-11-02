@@ -15,5 +15,5 @@ qualification_collect_subjects
 qualification_require_command python3
 # shellcheck disable=SC2154
 exec python3 "$script_dir/package_artifacts.py" "$output" "$QUALIFICATION_CONTRACTS_CLI" \
-  "${schema_version}" "${comparison_rule}" "${#extension_schema_specs[@]}" \
+  "${QUALIFICATION_SCHEMA_VERSION}" "${QUALIFICATION_COMPARISON_RULE}" "${#extension_schema_specs[@]}" \
   "${extension_schema_specs[@]}" "${QUALIFICATION_ARTIFACT_SPECS[@]}"
