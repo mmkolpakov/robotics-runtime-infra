@@ -31,7 +31,7 @@ setup() {
       ros_ws/src/robotics_observability/package.xml
     [ "${status}" -eq 0 ]
 
-    run grep -F "${dependency}==1.44.0" docker/python/observability.lock
+    run grep -F "${dependency}==1.45.1" docker/python/observability.lock
     [ "${status}" -eq 0 ]
 
     [ "$(grep -Fc "python3-${dependency}-pip" Dockerfile)" -eq 1 ]

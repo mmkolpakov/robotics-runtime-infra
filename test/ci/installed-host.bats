@@ -188,10 +188,15 @@ marker = json.loads((root / "failure-snapshot.json").read_bytes())
 allowed = exports[0][exports[0].index("--allow") + 1]
 assert allowed == "fs.write=" + marker["preserved_work"]
 assert "*" not in allowed
-assert sum("--allow" in v for v in builds) == 1
-evidence_build = [v for v in builds if "docker/evidence-source.Dockerfile" in v]
+finalizer_build = [v for v in builds if "legacy-finalizer" == v[-1]]
+assert len(finalizer_build) == 1
+read_allowed = finalizer_build[0][finalizer_build[0].index("--allow") + 1]
+assert read_allowed == "fs.read=" + marker["preserved_work"] + "/cosign-license"
+assert "*" not in read_allowed
+assert sum(v.count("--allow") for v in builds) == 2
+evidence_build = [v for v in builds if v[-1] == "legacy-evidence-source"]
 assert len(evidence_build) == 1
-assert "EVIDENCE_BASE_IMAGE=127.0.0.1:5000/installed-ros/finalizer@sha256:" + "b" * 64 in evidence_build[0]
+assert "legacy-evidence-source.args.EVIDENCE_BASE_IMAGE=127.0.0.1:5000/installed-ros/finalizer@sha256:" + "b" * 64 in evidence_build[0]
 config = (root / "buildkitd.toml").read_text()
 assert config == '[registry."127.0.0.1:5000"]\n  http = true\n'
 assert not re.search(r'\[registry\."(?!127\.0\.0\.1:)', config)

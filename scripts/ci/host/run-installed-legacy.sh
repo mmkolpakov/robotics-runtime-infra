@@ -167,6 +167,7 @@ docker buildx bake --builder "${builder}" --file docker-bake.hcl --allow "fs.wri
   --set "evidence-sink.output=type=local,dest=${work}/cosign-license" evidence-sink
 finalizer_tag="${registry}/installed-ros/finalizer:${scope}"
 docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
+  --allow "fs.read=${work}/cosign-license" \
   --set 'legacy-finalizer.platform=linux/amd64' \
   --set "legacy-finalizer.contexts.cosign-license=${work}/cosign-license" \
   --set "legacy-finalizer.args.COORDINATOR_IMAGE=${simulation}" \
