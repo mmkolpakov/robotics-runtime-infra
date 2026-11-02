@@ -37,8 +37,8 @@ qualification_parse_cli() {
   verification_key=''
   trusted_root=''
   policy=''
-  schema_version='qualification-bundle.v1'
-  comparison_rule=''
+  QUALIFICATION_SCHEMA_VERSION='qualification-bundle.v1'
+  QUALIFICATION_COMPARISON_RULE=''
   runtime_manifest_specs=()
   result_specs=()
   evidence_index_specs=()
@@ -71,12 +71,12 @@ qualification_parse_cli() {
         ;;
       --schema-version)
         (($# >= 2)) || usage
-        schema_version="$2"
+        QUALIFICATION_SCHEMA_VERSION="$2"
         shift 2
         ;;
       --comparison-rule)
         (($# >= 2)) || usage
-        comparison_rule="$2"
+        QUALIFICATION_COMPARISON_RULE="$2"
         shift 2
         ;;
       --scenario)
@@ -147,10 +147,10 @@ qualification_parse_cli() {
 
   [[ "$mode" == verify || -n "$output" ]] || usage
   QUALIFICATION_PROFILE_ARGUMENTS=()
-  case "$schema_version:$comparison_rule" in
+  case "$QUALIFICATION_SCHEMA_VERSION:$QUALIFICATION_COMPARISON_RULE" in
     qualification-bundle.v1:) ;;
     qualification-bundle.v2:exact_assertion_outcome)
-      QUALIFICATION_PROFILE_ARGUMENTS=(--schema-version "$schema_version" --comparison-rule "$comparison_rule")
+      QUALIFICATION_PROFILE_ARGUMENTS=(--schema-version "$QUALIFICATION_SCHEMA_VERSION" --comparison-rule "$QUALIFICATION_COMPARISON_RULE")
       ;;
     *) qualification_fail 'unsupported qualification version or comparison rule' ;;
   esac

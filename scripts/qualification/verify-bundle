@@ -38,10 +38,10 @@ EOF
 }
 
 qualification_parse_cli verify "$@"
-if [[ "$schema_version" == qualification-bundle.v2 && -z "$verification_key" ]]; then
+if [[ "$QUALIFICATION_SCHEMA_VERSION" == qualification-bundle.v2 && -z "$verification_key" ]]; then
   qualification_fail 'qualification-bundle.v2 requires an explicit trusted key'
 fi
-QUALIFICATION_PREDICATE_TYPE="https://robotics-runtime-contracts.dev/attestations/qualification-bundle/${schema_version##*.}"
+QUALIFICATION_PREDICATE_TYPE="https://robotics-runtime-contracts.dev/attestations/qualification-bundle/${QUALIFICATION_SCHEMA_VERSION##*.}"
 qualification_require_command cosign
 qualification_require_command base64
 qualification_require_command sha256sum
