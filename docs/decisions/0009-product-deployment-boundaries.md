@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-05
+- Amended: 2026-11-02
 
 ## Context and Problem Statement
 
@@ -24,10 +25,15 @@ Reuse the existing samplers, systemd units and configuration through standard
 modules. Developer workstation administration is outside this architecture;
 product roles target only explicitly enrolled product nodes.
 
-Keep Compose and Dockerode as the local execution provider. The cloud target
-uses Terraform for AWS resources, Helm for workloads and the official Kubernetes
-client for observed Job/Pod identities. Its implementation and AWS qualification
-are separate deliverables; local Engine facts do not stand in for Kubernetes facts.
+Keep Compose and Dockerode as the local execution provider. Use Dagu as the
+local campaign workbench and Argo Workflows for Kubernetes campaigns. They
+invoke the same finite attempt and evidence boundary; they are alternatives,
+not layers of one attempt.
+
+Use Terraform for AWS resources and Helm for identity, retained storage and
+workload packaging. Confine the official Kubernetes client to domain
+identity, admission and recovery checks that campaign status cannot establish.
+Local Engine facts do not stand in for Kubernetes facts.
 
 Cordis owns composition within an application process. A run owns its native
 SDK clients and resources; frame and control payloads use native connections.
@@ -49,9 +55,15 @@ Unexported results must survive execution cleanup. Cloud storage policy binds
 attempt and resource UIDs, immutable object versions and retention lifetime.
 A lost execution is not silently resumed or relabelled successful.
 
+Configure a selected ready tool before adding code. Compose its stock CLI or
+native client for workloads outside a specialized action. A small adapter owns
+only uncovered domain semantics. Prefer an upstream contribution to a parallel
+general scheduler, UI, queue or policy implementation.
+
 Measure setup, update and recovery effort plus cost per qualified workload.
-Include failed attempts, idle capacity, storage and network cost. Source line
-count, diagram output and completed checklist items are not TCO measurements.
+Include failed attempts, idle capacity, storage and network cost. Include prevented development
+and operator work alongside existing maintenance.
+Source line count, diagram output and checklist totals are not TCO measurements.
 
 [Component responsibilities](../component-responsibilities.md) records the
 language, existing tool and validation boundary for each functional path.

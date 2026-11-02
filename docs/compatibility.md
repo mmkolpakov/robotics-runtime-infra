@@ -13,10 +13,10 @@ build inputs. `release.env` is the immutable OCI execution lock.
 
 ## Package and release generations
 
-The source foundation and published `v0.11.0-rc2` images use contracts 0.19.0 and
-harness 0.20.0 from the exact workspace in the
-[foundation lock](foundation-compatibility.md). The newer public harness release
-is not an automatic image repin; the selected cohort requires its own validation.
+The source foundation uses contracts 0.21.1 and harness 0.22.2, with separate
+package source revisions in the [foundation lock](foundation-compatibility.md).
+The published `v0.11.0-rc2` images retain contracts 0.19.0 and harness 0.20.0.
+Updating the source foundation does not change that released image composition.
 
 The [qualification reference](qualification-baseline.md) records accepted
 Docker execution and independent consumption of this release. Package identity,
