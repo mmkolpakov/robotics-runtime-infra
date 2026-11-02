@@ -530,8 +530,13 @@ target "rclone-supplier" {
 target "legacy-finalizer" {
   context    = "."
   dockerfile = "docker/legacy-finalizer.Dockerfile"
+  # The caller must bind these inputs; empty image references refuse before execution.
+  contexts = {
+    coordinator      = "docker-image://"
+    cosign-license   = "docker-image://"
+    cosign-publisher = "docker-image://${COSIGN_IMAGE}"
+  }
   args = {
-    COSIGN_IMAGE   = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
   platforms = ["linux/amd64"]

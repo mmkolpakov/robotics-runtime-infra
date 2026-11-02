@@ -49,5 +49,21 @@ mapfile -t checkable_targets < <(
 )
 ((${#checkable_targets[@]} > 0))
 for target in "${checkable_targets[@]}"; do
-  "${bake[@]}" --check "${target}"
+  if [[ "${target}" == legacy-finalizer ]]; then
+    # This pinned base is a lint fixture, not an admitted coordinator/finalizer.
+    outline="$("${bake[@]}" --set edge-runtime.target=edge-runtime-base \
+      --call=outline,format=json edge-runtime)"
+    lint_base="$(jq -er '
+      .target["edge-runtime"].outline.args[]
+      | select(.name == "ROS_BASE_IMAGE")
+      | .value
+      | select(test("@sha256:[a-f0-9]{64}$"))
+    ' <<<"${outline}")"
+    "${bake[@]}" --check \
+      --set "legacy-finalizer.contexts.coordinator=docker-image://${lint_base}" \
+      --set 'legacy-finalizer.contexts.cosign-license=https://github.com/sigstore/cosign.git#0e48502cf5ef34e2e60bbd3617aa19945712f705' \
+      "${target}"
+  else
+    "${bake[@]}" --check "${target}"
+  fi
 done
