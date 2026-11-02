@@ -686,3 +686,15 @@ EOF
   [ "$status" -ne 0 ]
   jq -e '.execution.data_source == "simulator"' "$TEST_ROOT/playback-explain.json"
 }
+
+@test "qualification profiles refuse unsupported version and comparison combinations" {
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    --schema-version qualification-bundle.v2 --output "$TEST_ROOT/statement.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"unsupported qualification version or comparison rule"* ]]
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    --schema-version qualification-bundle.v1 --comparison-rule exact_assertion_outcome \
+    --output "$TEST_ROOT/statement.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"unsupported qualification version or comparison rule"* ]]
+}

@@ -87,6 +87,10 @@ bash = r'''
 import json, os, sys
 from pathlib import Path
 a = sys.argv[1:]
+if a and a[0] == "test/qualification/real-cosign.sh":
+    with open(os.environ["MOCK_CALLS"], "a") as f:
+        f.write(json.dumps(["offline-helper", *a, os.environ["ROBOTICS_CONTRACTS_CLI"]]) + "\n")
+    sys.exit(0)
 if a and a[0].endswith("/build-assets.sh"):
     asset = Path(os.environ["MOCK_FIXTURE"]) / "host/.tools/host-asset"
     asset.mkdir(parents=True)
@@ -167,7 +171,7 @@ PY
   run_failed_fixture
   assert_incomplete_and_inputs_preserved
   "${REAL_PYTHON}" - "${MOCK_CALLS}" "${OUTPUT_DIRECTORY}" <<'PY'
-import json, re, sys
+import json, os, re, sys
 from pathlib import Path
 calls = [json.loads(v) for v in open(sys.argv[1])]
 root = Path(sys.argv[2])
@@ -188,6 +192,11 @@ marker = json.loads((root / "failure-snapshot.json").read_bytes())
 allowed = exports[0][exports[0].index("--allow") + 1]
 assert allowed == "fs.write=" + marker["preserved_work"]
 assert "*" not in allowed
+fixture = Path(os.environ["MOCK_FIXTURE"])
+offline = [v for v in calls if v[0] == "offline-helper"]
+assert offline == [["offline-helper", "test/qualification/real-cosign.sh", "--offline-consumer",
+                    "127.0.0.1:5000/installed-ros/finalizer@sha256:" + "b" * 64,
+                    str(fixture / "dependencies/robotics-runtime/.venv/bin/robotics-contracts")]]
 assert sum("--allow" in v for v in builds) == 1
 evidence_build = [v for v in builds if "docker/evidence-source.Dockerfile" in v]
 assert len(evidence_build) == 1

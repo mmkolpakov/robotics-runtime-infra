@@ -40,7 +40,7 @@ def parser_mode(path: Path) -> str:
     return "json" if suffix == ".json" else "auto"
 
 
-def statement(cli: str, arguments: list[str], output: Path) -> None:
+def statement(cli: str, arguments: list[str], output: Path, profile: list[str]) -> None:
     result = subprocess.run(
         [
             cli,
@@ -48,6 +48,7 @@ def statement(cli: str, arguments: list[str], output: Path) -> None:
             "json",
             "qualification",
             "statement",
+            *profile,
             *arguments,
             "--output",
             str(output),
@@ -64,15 +65,30 @@ def statement(cli: str, arguments: list[str], output: Path) -> None:
 
 
 def package(
-    output: str, cli: str, schema_count: int, specifications: list[str]
+    output: str,
+    cli: str,
+    schema_version: str,
+    comparison_rule: str,
+    schema_count: int,
+    specifications: list[str],
 ) -> None:
     root = Path.cwd().resolve()
+    if (schema_version, comparison_rule) not in {
+        ("qualification-bundle.v1", ""),
+        ("qualification-bundle.v2", "exact_assertion_outcome"),
+    }:
+        raise ValueError("unsupported qualification version or comparison rule")
+    profile = (
+        ["--schema-version", schema_version, "--comparison-rule", comparison_rule]
+        if schema_version == "qualification-bundle.v2"
+        else []
+    )
     destination = safe_path(output, root, exists=False)
     if destination.exists() or not destination.parent.is_dir():
         raise ValueError("output must be a new directory under an existing parent")
     entries: list[tuple[str, str, Path, str, str]] = []
     original: list[str] = []
-    portable: list[str] = []
+    portable: list[str] = list(profile)
     for index, specification in enumerate(specifications):
         label, value = specification.split("=", 1)
         if label.startswith("-") or any(ord(char) < 32 for char in label):
@@ -109,7 +125,7 @@ def package(
         raise ValueError("subject file and directory paths collide")
     with tempfile.TemporaryDirectory(prefix="qualification-package-") as work:
         expected, staged = Path(work) / "expected.json", Path(work) / "staged.json"
-        statement(cli, original, expected)
+        statement(cli, original, expected, profile)
         destination.mkdir(mode=0o700)
         complete = False
         try:
@@ -126,7 +142,7 @@ def package(
                 ):
                     raise ValueError(f"input changed during packaging: {target}")
                 staged_arguments.extend([option, f"{label}={copied}"])
-            statement(cli, staged_arguments, staged)
+            statement(cli, staged_arguments, staged, profile)
             if expected.read_bytes() != staged.read_bytes():
                 raise ValueError("copied subjects differ from the validated statement")
             with (destination / "qualification-arguments.txt").open("x") as arguments:
@@ -139,7 +155,14 @@ def package(
 
 if __name__ == "__main__":
     try:
-        package(sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4:])
+        package(
+            sys.argv[1],
+            sys.argv[2],
+            sys.argv[3],
+            sys.argv[4],
+            int(sys.argv[5]),
+            sys.argv[6:],
+        )
     except (
         OSError,
         ValueError,
