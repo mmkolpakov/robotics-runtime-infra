@@ -7,14 +7,13 @@ certificate verification remain delegated to Cosign.
 ## Prerequisites
 
 - Bash 5 or newer
-- Cosign 3.1.3
+- Cosign 3.1.3 or newer
 - jq 1.6 or newer
 - The exact contracts workspace revision in `foundation.repos` (Python 3.12+)
 
-The current foundation uses the contracts 0.19.0 statement writer and matcher
-with harness 0.20.0, including the canonical dataset-manifest v2 bag model. Install
-the pinned workspace or exact published pair; the earlier 0.15.4 / 0.17.1 foundation
-cannot read these artifacts.
+The foundation versions are selected by `config/foundation-lock.json`. The
+qualification verifier uses the contracts CLI; it does not require the harness.
+Install a contracts release compatible with the complete supplied inventory.
 Source qualification, an OCI release, and external consumer qualification are
 [separate gates](compatibility.md#foundation-generations).
 
@@ -25,10 +24,10 @@ or from the imported foundation environment.
 Cosign 3.1.3 is the minimum security baseline for
 [GHSA-fx35-mq7g-6g98](https://github.com/sigstore/cosign/security/advisories/GHSA-fx35-mq7g-6g98),
 which affects legacy JSON bundle verification through 3.1.2. The
-[current upstream release](https://github.com/sigstore/cosign/releases/tag/v3.1.3)
-was checked on 2026-09-07. CI pins the CLI version; `docker-bake.hcl` pins the
-multi-platform Chainguard image digest and the same version. Update both
-together: the preflight image build checks the embedded binary version.
+[upstream release](https://github.com/sigstore/cosign/releases/tag/v3.1.3)
+contains the fix. CI pins the CLI version; `docker-bake.hcl` pins the
+multi-platform Chainguard image digest and the image version. The preflight
+image build checks the embedded binary version.
 
 ## Produce and sign
 
@@ -214,6 +213,24 @@ scripts/qualification/verify-bundle \
 `--key` is mutually exclusive with `--trusted-root` and `--policy`; it cannot
 be used to claim a GitHub Actions identity or public transparency-log
 inclusion.
+
+For a package produced by `package-artifacts`, the installed verifier reads its
+relative inventory from the package root. Supply the trusted public key independently:
+
+```bash
+cd /retained/package
+mapfile -t inputs < qualification-arguments.txt
+ROBOTICS_CONTRACTS_CLI=/tools/venv/bin/robotics-contracts \
+  /opt/robotics/finalizer/scripts/qualification/verify-bundle "${inputs[@]}" \
+  --bundle qualification.sigstore.json --key /trust/expected.pub
+```
+
+The installed-finalizer check runs this command with network access disabled at
+both of two mount locations, using the exact published contracts wheel and the
+same signed package bytes. Each consumer masks the original contracts environment;
+the copied CLI resolves its interpreter and package inside the installed copy.
+The signing key in this integration fixture is
+explicit test trust; it does not establish hardware or provider qualification.
 
 ## Tests
 
