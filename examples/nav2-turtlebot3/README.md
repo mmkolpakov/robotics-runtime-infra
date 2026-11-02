@@ -106,6 +106,19 @@ This writes scenario/runtime v2, the issued run context, and captured configurat
 bytes. `pre-execution-inputs.json` records their exact hashes. There are no completed observations
 in the runtime manifest. Use a fresh archive for every admitted action.
 
+Preparation invokes the installed public `robotics-acceptance explain` and
+`create-run` entry points beside the selected interpreter, with literal arguments
+and a finite process budget. A run ID is reserved once; an invocation failure or
+unknown acknowledgement does not trigger another creation. The issued context
+uses `acceptance-run.v1`, including for a v2 scenario.
+
+Validation captures each input once. The public CLI receives a private read-only
+snapshot of those same scenario, runtime and schema bytes; profile, configuration
+and preflight checks use that captured generation. The worker consumes the
+already admitted scenario mapping. The attempt owner must keep the prepared
+tree settled throughout admission and use. A read-only container mount does not
+prevent its host owner from changing the source files.
+
 ## Retain completed observations
 
 Only after producers have settled, place their closed files under `archive/capture`.

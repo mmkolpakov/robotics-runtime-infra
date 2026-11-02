@@ -16,9 +16,6 @@ import time
 from pathlib import Path
 
 
-from robotics_runtime_contracts import load_mapping
-
-
 def admit_workload(args):
     import runpy
 
@@ -203,9 +200,9 @@ def main() -> int:
         or not 0 < args.max_observation_age_sec <= 5
     ):
         parser.error("finite pose and an action budget in (0,180] are required")
-    admit_workload(args)
+    admitted = admit_workload(args)
     load_ros()
-    declared_scenario = load_mapping(args.scenario)
+    declared_scenario = admitted["scenario"]
     configuration = declared_scenario["extensions"]["org.example.nav2-turtlebot3"]
     actual_parameters = {
         "goal": {"x": args.goal_x, "y": args.goal_y},
@@ -279,7 +276,7 @@ def main() -> int:
         "middleware_profile_sha256": hashlib.sha256(
             Path(os.environ["FASTRTPS_DEFAULT_PROFILES_FILE"]).read_bytes()
         ).hexdigest(),
-        "scenario_sha256": hashlib.sha256(args.scenario.read_bytes()).hexdigest(),
+        "scenario_sha256": admitted["scenario_sha256"],
     }
     args.output.mkdir(mode=0o700, parents=True, exist_ok=True)
     atomic_json(

@@ -9,7 +9,12 @@ from hashlib import sha256
 from pathlib import Path
 
 from robotics_acceptance_harness.evaluator_trust import read_once
-from robotics_runtime_contracts import dumps_canonical, loads_mapping, validate_document
+from robotics_runtime_contracts import (
+    dumps_canonical,
+    loads_mapping,
+    validate_document,
+    validate_role,
+)
 from robotics_runtime_contracts.writers import (
     add_evidence_artifact,
     create_evidence_index,
@@ -35,6 +40,7 @@ def complete(prepared: Path, capture: Path) -> dict:
         raise ValueError("the retained capture must be inside the original archive")
     _raw_manifest, manifest = captured(prepared / "pre-execution-inputs.json")
     documents = {}
+    raw_by_name = {}
     for name, key in (
         ("scenario.json", "scenario"),
         ("runtime.json", "runtime"),
@@ -46,6 +52,7 @@ def complete(prepared: Path, capture: Path) -> dict:
             or len(raw) != manifest[key]["size_bytes"]
         ):
             raise ValueError("pre-execution input bytes changed")
+        raw_by_name[name] = raw
         documents[key] = document
     for name, key in (
         ("nav2-configuration.json", "configuration"),
@@ -53,24 +60,29 @@ def complete(prepared: Path, capture: Path) -> dict:
         ("nav2.schema.json", "extension_schema"),
     ):
         raw = read_once(prepared / name, DOCUMENT_LIMIT)
+        raw_by_name[name] = raw
         if (
             sha256(raw).hexdigest() != manifest[key]["sha256"]
             or len(raw) != manifest[key]["size_bytes"]
         ):
             raise ValueError("pre-execution input bytes changed")
-    schema = read_once(prepared / "nav2.schema.json", DOCUMENT_LIMIT)
-    validate_document(
+    schema = raw_by_name["nav2.schema.json"]
+    validate_role(
         documents["scenario"],
+        "acceptance_scenario",
         extension_schemas={"urn:nav2-turtlebot3:scenario:v1": schema},
     )
-    validate_document(documents["runtime"])
-    validate_document(documents["run_context"])
+    validate_role(documents["runtime"], "runtime_manifest")
+    validate_role(documents["run_context"], "acceptance_run")
     scenario, runtime, run = (
         documents[name] for name in ("scenario", "runtime", "run_context")
     )
     if (
         scenario["profile"]["profile_id"] != NAMESPACE
         or run["run_id"] != manifest["run_id"]
+        or run["scenario_id"] != scenario["scenario_id"]
+        or run["scenario_sha256"] != sha256(raw_by_name["scenario.json"]).hexdigest()
+        or "nav2" not in {item["domain_id"] for item in run["domains"]}
     ):
         raise ValueError("foreign pre-execution Nav2 inputs")
     if runtime["scenario_sha256"] != manifest["scenario"]["sha256"]:
@@ -135,6 +147,8 @@ def complete(prepared: Path, capture: Path) -> dict:
             prepared / "nav2-configuration.json",
             {
                 "artifact_id": "nav2-configuration",
+                "sha256": sha256(raw_by_name["nav2-configuration.json"]).hexdigest(),
+                "size_bytes": len(raw_by_name["nav2-configuration.json"]),
                 "kind": "other_evidence",
                 "media_type": "application/json",
             },
