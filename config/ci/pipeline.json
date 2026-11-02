@@ -46,6 +46,14 @@
       ]
     },
     {
+      "name": "playback-podman",
+      "files": [
+        "compose.yaml",
+        "compose.playback.yaml",
+        "compose.playback.podman.yaml"
+      ]
+    },
+    {
       "name": "record",
       "files": [
         "compose.yaml",

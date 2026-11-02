@@ -5,6 +5,43 @@ CI_REPO_ROOT="$(
   pwd
 )"
 
+# Use the same native Engine component identity as host EngineMetadata.
+# Rootless parent metadata is qualified against Podman's native API 4.9.3.
+ci_engine_backend() {
+  local version backend security
+  version="$(timeout --foreground 30 docker version --format '{{json .Server}}')" || return
+  backend="$(jq -er '
+    . as $version |
+    if type != "object" or (.Components | type) != "array" then
+      error("incomplete native Engine components")
+    else .Components end |
+    if all(.[]; type == "object" and (.Name | type) == "string") then .
+    else error("malformed native Engine component") end |
+    map(select(.Name == "Podman Engine")) as $podman |
+    map(select(.Name == "Engine")) as $docker |
+    if ($podman | length) == 1 and
+       $podman[0].Details.APIVersion == "4.9.3" and
+       $podman[0].Version == "4.9.3" and $version.Version == "4.9.3" and
+       (($docker | length) == 0 or
+        (($docker | length) == 1 and
+         $docker[0].Version == $podman[0].Version and
+         $docker[0].Details.ApiVersion == $version.ApiVersion)) then "podman"
+    elif ($docker | length) == 1 and ($podman | length) == 0 and
+         ($docker[0].Version | type) == "string" and
+         ($docker[0].Version | test("^[0-9]+[.][0-9]+")) then "docker"
+    else error("unsupported or ambiguous native Engine identity") end
+  ' <<<"${version}")" || return 65
+  if [[ "${backend}" == podman ]]; then
+    security="$(timeout --foreground 30 docker info --format '{{json .SecurityOptions}}')" || return
+    jq -e 'type == "array" and all(.[]; type == "string") and
+      any(.[]; . == "name=rootless")' <<<"${security}" >/dev/null || {
+      printf 'playback Podman profile requires an observed rootless Engine\n' >&2
+      return 65
+    }
+  fi
+  printf '%s\n' "${backend}"
+}
+
 ci_enter_repo() {
   cd "${CI_REPO_ROOT}" || return 1
 }
