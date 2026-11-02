@@ -111,6 +111,63 @@ PY
     printf 'offline verifier accepted a foreign key\n' >&2
     exit 1
   fi
+  # Build an original/assessment pair with the foundation's existing test
+  # factory. Only the resulting immutable files enter the consumer container.
+  mkdir "$work/v2-source"
+  PYTHONPATH="$root/dependencies/robotics-runtime/packages/harness" \
+    "$(dirname "$ROBOTICS_CONTRACTS_CLI")/python" - "$work/v2-source" "$work/v2-specs.json" <<'PY'
+import json, pathlib, sys
+from tests.test_archive_qualification import _archive_pair
+root = pathlib.Path(sys.argv[1])
+specifications = _archive_pair(root)
+pathlib.Path(sys.argv[2]).write_text(json.dumps(specifications))
+PY
+  jq -e '.schema_version == "acceptance-scenario.v2"' "$work/v2-source/scenario.json" >/dev/null
+  jq -e '.schema_version == "runtime-manifest.v2"' "$work/v2-source/runtime-primary.json" >/dev/null
+  jq -se 'all(.[]; .schema_version == "acceptance-result.v2")' \
+    "$work/v2-source/result-primary.json" "$work/v2-source/new-result-primary.json" >/dev/null
+  mapfile -t v2_specs < <(jq -r '.[]' "$work/v2-specs.json")
+  v2_arguments=()
+  for specification in "${v2_specs[@]}"; do v2_arguments+=(--artifact "$specification"); done
+  printf '{"timestamp_ns":9007199254740993}\n' >"$work/v2-source/large-clock.json"
+  v2_arguments+=(--artifact "other_evidence:evidence/large-clock.json=$work/v2-source/large-clock.json")
+  v2_profile=(--schema-version qualification-bundle.v2 --comparison-rule exact_assertion_outcome)
+  "$root/scripts/qualification/create-statement" "${v2_profile[@]}" "${v2_arguments[@]}" \
+    --output "$work/v2-statement.json"
+  jq -e '
+    .predicate.schema_version == "qualification-bundle.v2" and
+    .predicate.original_execution.acceptance_aggregate == "original-aggregate.json" and
+    .predicate.acceptance_aggregate == "acceptance-aggregate.json" and
+    .predicate.comparison.rule == "exact_assertion_outcome" and
+    .predicate.comparison.per_domain[0].status == "not_comparable"
+  ' "$work/v2-statement.json" >/dev/null
+  bash "$root/scripts/ci/foundation/sign-ephemeral-qualification.sh" \
+    "$work/v2-statement.json" "$work/v2-signature.json" "$work/key/v2.pub"
+  (
+    cd "$work"
+    "$root/scripts/qualification/package-artifacts" "${v2_profile[@]}" "${v2_arguments[@]}" \
+      --output "$work/v2-portable"
+  )
+  cp "$work/v2-signature.json" "$work/v2-portable/qualification.sigstore.json"
+  cp "$work/v2-statement.json" "$work/v2-portable/qualification-statement.json"
+  (cd "$work/v2-portable" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) \
+    >"$work/v2-original.sha256"
+  cp -a "$work/v2-portable" "$work/v2-first"
+  rm -rf -- "$work/v2-portable" "$work/v2-source"
+  (cd "$work/v2-first" && sha256sum --check "$work/v2-original.sha256")
+  verify_offline "$work/v2-first" /archive-one "$work/key/v2.pub"
+  cp -a "$work/v2-first" "$work/v2-second"
+  rm -rf -- "$work/v2-first"
+  (cd "$work/v2-second" && sha256sum --check "$work/v2-original.sha256")
+  verify_offline "$work/v2-second" /elsewhere/retained "$work/key/v2.pub"
+  cp -a "$work/v2-second" "$work/v2-rejected"
+  printf '\n' >>"$work/v2-rejected/subjects/original-results/primary.json"
+  if verify_offline "$work/v2-rejected" /rejected "$work/key/v2.pub" >"$work/rejection.log" 2>&1; then
+    printf 'offline v2 verifier accepted altered original-result bytes\n' >&2
+    exit 1
+  fi
+  printf 'published contracts offline v2 archive relocation checks passed\n'
+
   printf 'published contracts offline relocation checks passed\n'
   exit 0
 fi
