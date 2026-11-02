@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 from contextlib import contextmanager
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, TemporaryFile
 from uuid import uuid4
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -20,6 +20,7 @@ from robotics_runtime_contracts.writers import write_bytes_atomically, write_doc
 
 NAMESPACE = "org.example.nav2-turtlebot3"
 DOCUMENT_LIMIT = 1024 * 1024
+CLI_OUTPUT_LIMIT = 4096
 
 
 def reference(path: Path, raw: bytes, media_type: str = "application/json") -> dict:
@@ -42,26 +43,43 @@ def cli_snapshot(raw_by_name: dict[str, bytes], parent: Path):
         yield snapshot
 
 
-def run_cli(*arguments: str) -> str:
+def run_cli(snapshot: Path, *arguments: str) -> str:
     executable = Path(sys.executable).with_name("robotics-acceptance")
     environment = dict(os.environ)
     for key in ("PYTHONPATH", "PYTHONHOME"):
         environment.pop(key, None)
-    try:
-        result = subprocess.run(
-            [str(executable), *arguments],
-            env=environment,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise ValueError("installed acceptance CLI invocation failed") from error
-    if result.returncode != 0:
-        raise ValueError("acceptance CLI refused inputs: " + arguments[0])
-    return result.stdout.strip()
+    with TemporaryFile(dir=snapshot) as stdout, TemporaryFile(dir=snapshot) as stderr:
+        try:
+            result = subprocess.run(
+                [str(executable), *arguments],
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ValueError("installed acceptance CLI invocation failed") from error
+        stderr.seek(0)
+        diagnostic = stderr.read(CLI_OUTPUT_LIMIT + 1)
+        if result.returncode != 0:
+            reason = (
+                diagnostic[:CLI_OUTPUT_LIMIT].decode("utf-8", errors="replace").strip()
+            )
+            if len(diagnostic) > CLI_OUTPUT_LIMIT:
+                reason += "\n[diagnostic truncated]"
+            raise ValueError(
+                f"acceptance CLI {arguments[0]} failed (exit {result.returncode}): "
+                + (reason or "no diagnostic emitted")
+            )
+        if arguments[0] != "create-run":
+            return ""
+        stdout.seek(0)
+        output = stdout.read(CLI_OUTPUT_LIMIT + 1)
+        if len(output) > CLI_OUTPUT_LIMIT:
+            raise ValueError("acceptance CLI create-run output exceeded its byte limit")
+        return output.decode("utf-8").strip()
 
 
 def check_run_binding(run: dict, run_id: str, scenario: dict, scenario_raw: bytes):
@@ -227,6 +245,7 @@ def prepare(
             snapshot / "nav2.schema.json"
         )
         run_cli(
+            snapshot,
             "explain",
             "--scenario",
             str(snapshot / "scenario.json"),
@@ -236,6 +255,7 @@ def prepare(
             schema_option,
         )
         issued = run_cli(
+            snapshot,
             "create-run",
             "--scenario",
             str(snapshot / "scenario.json"),
@@ -574,6 +594,7 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
     validate_role(runtime, "runtime_manifest")
     with cli_snapshot(raw_by_name, prepared.parent) as snapshot:
         run_cli(
+            snapshot,
             "explain",
             "--scenario",
             str(snapshot / "scenario.json"),
