@@ -1,10 +1,8 @@
 # syntax=docker/dockerfile:1.14
-ARG COORDINATOR_IMAGE
-ARG COSIGN_IMAGE
 # Publisher image is the existing repository COSIGN_IMAGE lock.
 # hadolint ignore=DL3026
-FROM ${COSIGN_IMAGE} AS cosign
-FROM ${COORDINATOR_IMAGE}
+FROM cosign-publisher AS cosign
+FROM coordinator
 ARG COSIGN_VERSION
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER 0:0

@@ -170,7 +170,7 @@ docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
   --allow "fs.read=${work}/cosign-license" \
   --set 'legacy-finalizer.platform=linux/amd64' \
   --set "legacy-finalizer.contexts.cosign-license=${work}/cosign-license" \
-  --set "legacy-finalizer.args.COORDINATOR_IMAGE=${simulation}" \
+  --set "legacy-finalizer.contexts.coordinator=docker-image://${simulation}" \
   --set "legacy-finalizer.tags=${finalizer_tag}" legacy-finalizer
 finalizer="$(share_image "${finalizer_tag}" finalizer)"
 ROBOTICS_CONTRACTS_CLI="${root}/dependencies/robotics-runtime/.venv/bin/robotics-contracts" \

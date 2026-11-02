@@ -190,6 +190,9 @@ assert allowed == "fs.write=" + marker["preserved_work"]
 assert "*" not in allowed
 finalizer_build = [v for v in builds if "legacy-finalizer" == v[-1]]
 assert len(finalizer_build) == 1
+assert "legacy-finalizer.contexts.coordinator=docker-image://127.0.0.1:5000/installed-ros/coordinator@sha256:" + "b" * 64 in finalizer_build[0]
+assert "legacy-finalizer.contexts.cosign-license=" + marker["preserved_work"] + "/cosign-license" in finalizer_build[0]
+assert not any("legacy-finalizer.args.COORDINATOR_IMAGE=" in a for v in builds for a in v)
 read_allowed = finalizer_build[0][finalizer_build[0].index("--allow") + 1]
 assert read_allowed == "fs.read=" + marker["preserved_work"] + "/cosign-license"
 assert "*" not in read_allowed

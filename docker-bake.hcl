@@ -34,6 +34,10 @@ variable "BROTLI_VERSION" {
   default = "1.1.0-2ubuntu0.1"
 }
 
+variable "LXML_VERSION" {
+  default = "5.2.1-1ubuntu0.2"
+}
+
 variable "ROS_SNAPSHOT" {
   default = "2026-09-11"
 }
@@ -198,6 +202,7 @@ target "_common" {
     UBUNTU_SNAPSHOT          = UBUNTU_SNAPSHOT
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
     BROTLI_VERSION           = BROTLI_VERSION
+    LXML_VERSION             = LXML_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
   }
@@ -525,8 +530,13 @@ target "rclone-supplier" {
 target "legacy-finalizer" {
   context    = "."
   dockerfile = "docker/legacy-finalizer.Dockerfile"
+  # The caller must bind these inputs; empty image references refuse before execution.
+  contexts = {
+    coordinator      = "docker-image://"
+    cosign-license   = "docker-image://"
+    cosign-publisher = "docker-image://${COSIGN_IMAGE}"
+  }
   args = {
-    COSIGN_IMAGE   = COSIGN_IMAGE
     COSIGN_VERSION = COSIGN_VERSION
   }
   platforms = ["linux/amd64"]
