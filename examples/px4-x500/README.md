@@ -1,29 +1,86 @@
-# External stock X500 consumer
+# Stock X500 consumer
 
-This consumer uses public host `Jobs` and stock generated `Mavsdk` clients.
-Its Python producer writes public v2 scenario/runtime/run inputs before execution,
-then an observation and evidence index from retained decoded SDK records. The
-separate `px4-x500-evaluator` method reads each registered payload once through
-`VerifiedEvidence.read_local`; the public acceptance CLI writes JSON and JUnit.
+This example keeps flight policy outside the runtime core. It uses public host
+ownership interfaces, native MAVSDK 4.1 control, stock PX4 listener/logger commands,
+and a separate ULog evaluator. Public contracts describe the inputs and evidence;
+the acceptance CLI produces JSON and JUnit.
 
-The Python document path uses published contracts 0.21.1/harness 0.22.2.
-[input-pins.json](input-pins.json) records their exact release tags, source revisions,
-wheel sizes and SHA-256 values. [requirements.lock](requirements.lock) fixes those
-wheels and their dependency closure. A storage directory does not replace the
-committed policy.
+## Control and evidence
 
-Native launch currently refuses before host imports or Engine/flight effects:
-this document profile requires separate SDK/image composition admission. The pinned
-PX4/Gazebo/MAVSDK and host inputs remain declarations requiring composition
-admission and native qualification. Portable synthetic controls verify the
-document and authentication boundaries; they do not qualify flight or hardware.
+The native path uses one owned PX4/Gazebo container. The worker calls synchronous
+MAVSDK Action methods once per application intent; the SDK owns its protocol
+retries. Cached Telemetry supplies readiness and control hints. It does not supply
+the altitude measurements used by the evaluator.
 
-## Install the published document SDK
+Before dispatch, the worker checks valid local/global/home position health and
+reads stock listener snapshots. Their source timestamps must advance within the
+same PX4 process instance. Original listener output is retained and independently
+parsed by the evaluator using the same fixed-version grammar.
 
-Use a POSIX shell, Python 3.12, uv 0.11.28 and Node 24.21.0 for the portable Node
-controls. The Python prepare/complete/evaluate commands do not require Node.
-From this example directory, download the exact published wheels and locked
-dependencies, check the SDK policy, and install from that wheelhouse:
+The worker persists each action intent before calling the SDK. Application
+invocation IDs identify those intents, not PX4 transactions. The parent retains
+the original container/process identities and Engine exec records. A closed
+journal alone does not establish successful SDK teardown or process settlement.
+
+After verified worker settlement, the owner stops the logger while simulation
+time advances, verifies closure, pauses Gazebo and exports the original ULog.
+Only then may it remove owned resources. Stream cancellation, a timeout, an SDK
+error or a missing closure record cannot authorize cleanup. The remote worker
+uses stock GNU `timeout`; it is not a general guarantee about detached daemons.
+
+Keep these directories with the completed archive:
+
+- `inputs/`: immutable configuration, scenario, runtime and issued run.
+- `parent-facts/`: original owner, process, logger and exec observations.
+- `source-records/`: bounded frozen journal JSON written during completion.
+- `capture/`: the worker's journal and closed controller manifest.
+- `capture/retained-native-logs/`: original bytes from the existing opaque exporter.
+
+The parent writes a separate `native-evidence.json` after journal closure.
+Completion registers the original native artifact URIs, sizes and hashes; it
+does not relocate them or append to the worker's journal. Missing original
+records remain missing. Artifact URIs bind their locations; copying the archive
+does not rebind them.
+
+## Cases and measurement
+
+Method 0.2 uses stock pyulog and NumPy to evaluate sampled PX4 estimates:
+
+- `land`: start grounded and unarmed, observe home-relative estimated
+  altitude of at least 1.2 m after received takeoff and before received land, then observe
+  grounded and disarmed state after land.
+- `unarmed-refusal`: dispatch neither arm nor takeoff and capture four distinct
+  estimator samples within 0.2 m of the initial relative altitude. This checks a
+  caller precondition, not firmware command denial or continuous absence of motion.
+- `application-deadline`: observe ascent, record a two-second application interval
+  and independently request landing. This does not simulate a native deadlock.
+
+ULog received commands and ACKs bind the admitted sender/target tuple. Attributable
+SDK retries and late ACKs are allowed; ambiguous ownership or application phases
+remain incomplete. Estimated altitude follows PX4's float32 subtraction,
+float32 millimetre conversion and integer truncation. Invalid home, an in-phase
+home/reset change, stale samples, corruption, dropouts or insufficient coverage
+prevent an unsupported positive result.
+
+The method requests a 64 MiB raw ULog budget. The selected harness also limits
+capture size: the document-control lock uses harness 0.22.2, whose capture ceiling
+is 8 MiB. That lock is not a native install set. Native SDK/image composition
+admission is separate. `npm run flight-native` unconditionally refuses before
+native imports or Engine effects; it cannot launch a native attempt.
+
+These assertions concern the selected simulated X500 estimates. They do not
+establish hardware behavior, camera/media performance, model-load provenance,
+cross-clock synchronization or physical safety. JSON and JUnit expose the same
+assertions. Missing facts yield `incomplete`; observed unmet conditions yield
+`failed`; malformed input can yield `error`. SDK timeout alone is not firmware
+rejection.
+
+## Install the document controls
+
+Use Python 3.12 and uv 0.11.28. Node controls use Node 24.21.0.
+[input-pins.json](input-pins.json) fixes contracts 0.21.1 and harness 0.22.2;
+[requirements.lock](requirements.lock) fixes their dependency closure and the
+method's pyulog/NumPy dependencies. From this directory:
 
 ```sh
 uv venv --python 3.12 .venv
@@ -37,96 +94,52 @@ python3 check-sdk-wheels.py sdk-wheels
 uv build --wheel --out-dir dist evaluator
 ```
 
-The SDK policy check opens regular files without following symlinks, captures at
-most their committed size plus one byte, and checks size, SHA-256 and unchanged
-file identity before SDK imports. Caller storage or a replacement lock cannot
-change the selected SDK bytes.
+Authenticate the method wheel before installing it or importing the producer.
+The acceptance CLI requires an operator trust policy outside the evidence archive.
+A receipt or verification JSON alone does not establish publisher authentication.
+See the SDK's [operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.2/packages/harness/docs/evaluator-trust.md).
 
-The producer and its shared facts are operator-owned consumer application code.
-Authenticate and review the consumer's method wheel before installing it or
-importing the producer. The independent acceptance CLI also authenticates that
-wheel against an operator policy outside the evidence archive. A receipt or
-verification JSON cannot establish publisher authentication.
-
-Use the SDK's
-[operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.2/packages/harness/docs/evaluator-trust.md)
-with an approved publisher/key, exact wheel and verifier identities, and limits.
-The explicit Cosign key-only mode can support a private publisher without sending
-its code to GitHub. It proves the pinned key's signature and subject/predicate;
-it does not prove OIDC identity, transparency time or build provenance.
-
-[test_admission_fixture.py](test_admission_fixture.py) is a disposable local
-publisher control. It uses stock Cosign, authenticates the original wheel and
-validates its purelib shape before ordinary pip installation. It generates
-temporary test keys, retains only public material, and supplies an external test
-policy. Its random test key is not a production publisher policy.
-
-For portable controls, supply an operator-approved Cosign tool profile with
-`executable`, `executable_sha256` and the exact `version`, then run:
+[test_admission_fixture.py](test_admission_fixture.py) provides a disposable local
+publisher for software controls. Supply an approved Cosign tool profile containing
+`executable`, `executable_sha256` and its exact vendor `version`:
 
 ```sh
 .venv/bin/python -I test_admission_fixture.py \
-  --wheel dist/px4_x500_evaluator-0.1.0-py3-none-any.whl \
+  --wheel dist/px4_x500_evaluator-0.2.0-py3-none-any.whl \
   --tool-profile /absolute/approved-cosign-tool.json --output results/authenticated
 .venv/bin/python -I -m pip install --no-index --no-deps \
-  results/authenticated/px4_x500_evaluator-0.1.0-py3-none-any.whl
+  results/authenticated/px4_x500_evaluator-0.2.0-py3-none-any.whl
 .venv/bin/python -I -m pip check
-PX4_EVALUATOR_BINDING="$PWD/results/authenticated/binding.json" \
-  PX4_ADMISSION="$PWD/results/authenticated" .venv/bin/python test_producer.py
+PX4_SDK_WHEELS="$PWD/sdk-wheels" \
+  PX4_EVALUATOR_BINDING="$PWD/results/authenticated/binding.json" \
+  PX4_ADMISSION="$PWD/results/authenticated" \
+  .venv/bin/python -I -m unittest discover -s . -p 'test_*.py'
 npm ci --ignore-scripts --no-fund
 npm test
 ```
 
-The fixture requires the executable approved by the CI tool pin, including its
-exact vendor version. It does not approve a different executable from a version
-probe alone. Controls cover observed failure, incomplete/unknown inputs, malformed
-enum values, read-once byte binding, and bounded FIFO/symlink/tamper refusal.
+The fixture's random key is not a production publisher policy. These controls
+exercise software boundaries without importing MAVSDK or launching a simulator.
 
-## Pre-run inputs and completed observations
+## Prepare, complete and evaluate
 
-Prepare a fresh archive using the declared SDK types in
-[native-profile.json](native-profile.json) and the exact authenticated binding:
+Prepare inputs before execution with the authenticated method binding:
 
 ```sh
 .venv/bin/python producer.py prepare --profile native-profile.json --case land \
   --evaluator-binding /absolute/admitted-binding.json --output case/inputs
 ```
 
-This creates `scenario.json`, `runtime.json`, `run.json`,
-`configuration.json`, `native-profile.json` and `pre-run-inputs.json`.
-The configuration contains the selected case and issued run/domain; its original
-URI, SHA-256 and size remain bound in the scenario and completed index.
-These files are captured before execution and are not rewritten by completion.
-
-The controller's journal retains original decoded SDK responses with issued
-run/domain, receiver sequence, receiver UTC nanoseconds and monotonic milliseconds.
-The declared recorder transformation uses the stock `JSON.stringify` replacer
-hook to preserve non-finite SDK numbers as `"NaN"`, `"Infinity"` and `"-Infinity"`,
-following the [ProtoJSON scalar representation](https://protobuf.dev/programming-guides/json/).
-It does not decode the protobuf wire or implement a complete ProtoJSON codec.
-Its UTC source has millisecond resolution; it does not measure sender time or
-cross-clock synchronization. A closed `controller-manifest.json` binds every
-record's name, SHA-256 and size, count/byte totals, and receiver window. The producer
-requires ordered receiver times within that window.
-
-Place the controller capture under the same original archive, then complete:
+The issued configuration and run identity remain immutable. After the owner has
+retained original capture and custody files, complete the archive:
 
 ```sh
 .venv/bin/python producer.py complete --prepared case/inputs --capture case/capture \
   > case/evaluate-inputs.json
 ```
 
-Completion first captures bounded regular native files with the public SDK,
-checks their manifest hashes, and freezes their bytes in private
-`source-records`. Streaming writers receive those owned snapshots. The original
-prepared configuration remains registered at its admitted pre-run URI.
-FIFO, symlink, oversized, foreign-owner and altered input records fail before
-artifact registration. Each record is limited to 1 MiB, the journal to 2048
-records/8 MiB, and the final index is checked against the scenario's per-artifact
-and aggregate byte policy.
-
-Completion writes `observation.json` and `evidence-index.json`; the printed JSON
-contains the exact run/domain, input paths and receiver window arguments for:
+Completion writes `observation.json` and `evidence-index.json`. Its output supplies
+the exact run/domain and receiver-window arguments for the public evaluator:
 
 ```sh
 .venv/bin/robotics-acceptance evaluate \
@@ -142,52 +155,6 @@ contains the exact run/domain, input paths and receiver window arguments for:
   --evaluator-receipt-dependency /absolute/verified-report.txt --output case/assessment
 ```
 
-The method evaluates completion, command acceptance, terminal grounded/disarmed
-state, the case's captured position postcondition, and native owner cleanup.
-Missing required facts and unknown/transport outcomes (including unset/`"NaN"`
-altitude) yield skipped assertions
-and `incomplete`; malformed known SDK data yields `error`; observed unmet
-conditions yield `failed`. Infinite altitude and malformed scalar types yield
-`error`. A finite ascent can establish the existential positive condition;
-unknown positions prevent an unsupported negative or universal refusal pass.
-Captured independent facts remain visible when the
-controller summary is missing or interrupted. Exit codes are 0 for `passed`,
-1 for a completed non-passing result (including `error`), and 2 for input or
-admission refusal before evaluation. JSON and JUnit express the same
-assertions. There is no synthesized OTLP stream from these SDK JSON records.
-
-## Native SDK semantics and launch boundary
-
-The retained stock flight policy starts genuinely grounded and unarmed. It uses
-ordinary ARM/takeoff/land calls, observes armed state, and requires at least 1.2 m
-relative ascent. `unarmed-refusal` dispatches neither ARM nor takeoff and checks
-four captured positions within 0.2 m of the initial relative altitude: this is a
-caller precondition refusal, not firmware command denial.
-`application-deadline` applies a two-second application deadline after ascent
-and independently requests landing; it is not a native deadlock verdict.
-
-The pinned
-[MAVSDK ActionResult and Takeoff/Land interfaces](https://github.com/mavlink/MAVSDK-Proto/blob/5c81ecfeb6110cf74ba75ae50b78a1b265c05670/protos/action/action.proto)
-report command responses. The method validates their closed enum and keeps
-unknown/transport outcomes separate from observed rejection.
-[Telemetry types](https://github.com/mavlink/MAVSDK-Proto/blob/5c81ecfeb6110cf74ba75ae50b78a1b265c05670/protos/telemetry/telemetry.proto)
-supply relative altitude, landed state and armed state. A command ACK does not
-prove physical effect: terminal telemetry must follow the corresponding issued
-land phase in captured receiver order, and ascent samples must follow issued
-takeoff. Telemetry between issuance and ACK remains valid.
-
-The trusted operator's bounded regular `operator.json` supplies the fixed curl
-executable, Engine Unix socket/API, exact actor IDs, owner/project, loopback gRPC
-port and retained volume. Read-only stock Engine inspection checks actual image,
-labels, namespace, command/environment, volume, tmpfs and loopback endpoint before
-commands and refuses a mid-case actor restart. The controller owns SDK handles
-and finite read jobs; it does not own producer actor removal.
-
-The producer owner must independently close measurement, drain the PX4 logger
-while simulation advances, retain the original ULog/native observations, and
-verify cleanup. Only its actual owner-bound Engine cleanup observation can prove
-empty actor/network inventory. Process exit, SDK disposal, image names and a
-planned model do not prove cleanup or loaded-model identity. This method does not
-consume ULog, model/SDF load provenance, native crash/hang proof, or selected
-calibration or independently measured application-deadline duration; those
-unsupported boundaries remain outside its verdict.
+Exit codes are 0 for `passed`, 1 for a completed non-passing assessment and 2 for
+input/admission refusal. A late cleanup observation cannot turn missing native
+measurements into a pass.
