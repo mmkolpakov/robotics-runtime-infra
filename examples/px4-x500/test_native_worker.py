@@ -354,6 +354,79 @@ class WorkerTests(unittest.TestCase):
         self.assertFalse(self.scenario.run())
         self.assertEqual(self.scenario.calls, [])
 
+    def test_slow_listener_counts_full_duration_before_arm(self):
+        original = self.scenario.listener
+
+        def slow(topic, instance, budget):
+            result = original(topic, instance, budget)
+            if self.scenario.listener_calls == 1:
+                self.scenario.clock.sleep(0.4)
+                result["host_finished_monotonic_ms"] = self.scenario.clock.now()
+            return result
+
+        self.scenario.listener = slow
+        self.assertFalse(self.scenario.run())
+        self.assertEqual(self.scenario.calls, [])
+        self.assertTrue(
+            any(
+                r["value"].get("slot") == "initial-status-a"
+                for r in self.scenario.records()
+            )
+        )
+
+    def test_slow_durable_issuance_is_checked_after_write(self):
+        original = self.scenario.journal.retain
+
+        def slow(kind, value):
+            result = original(kind, value)
+            if kind == "action-issued":
+                self.scenario.clock.sleep(0.4)
+            return result
+
+        self.scenario.journal.retain = slow
+        self.assertFalse(self.scenario.run())
+        self.assertEqual(self.scenario.calls, [])
+        self.assertTrue(
+            any(r["kind"] == "action-issued" for r in self.scenario.records())
+        )
+
+    def test_slow_post_issuance_process_validation_is_counted(self):
+        original = self.scenario.actor_probe
+
+        def slow(config):
+            if (
+                self.scenario.journal.records
+                and self.scenario.records()[-1]["kind"] == "action-issued"
+            ):
+                self.scenario.clock.sleep(0.4)
+            return original(config)
+
+        self.scenario.actor_probe = slow
+        self.assertFalse(self.scenario.run())
+        self.assertEqual(self.scenario.calls, [])
+
+    def test_dispatch_anchor_includes_durable_issuance_delay(self):
+        original = self.scenario.journal.retain
+
+        def slow(kind, value):
+            result = original(kind, value)
+            if kind == "action-issued":
+                self.scenario.clock.sleep(0.1)
+            return result
+
+        self.scenario.journal.retain = slow
+        self.assertTrue(self.scenario.run())
+        records = self.scenario.records()
+        issued = next(r for r in records if r["kind"] == "action-issued")
+        result = next(r for r in records if r["kind"] == "action-arm")
+        self.assertGreaterEqual(
+            result["value"]["dispatch_monotonic_ms"] - issued["value"]["monotonic_ms"],
+            100,
+        )
+        self.assertLess(
+            result["value"]["dispatch_monotonic_ms"], result["receiver_monotonic_ms"]
+        )
+
     def test_missing_final_source_bound_is_incomplete(self):
         self.scenario.bad_final = True
         self.assertFalse(self.scenario.run("unarmed-refusal"))
@@ -389,6 +462,45 @@ class WorkerTests(unittest.TestCase):
         self.scenario.actor_probe = changed
         self.assertFalse(self.scenario.run())
         self.assertEqual(self.scenario.calls, [])
+
+
+class FreshnessBudgetTests(unittest.TestCase):
+    def observations(self):
+        return {
+            slot: {
+                "host_started_monotonic_ms": 100,
+                "host_finished_monotonic_ms": 200,
+                "parsed": {"age_s": 0.1},
+            }
+            for slot in ("initial-status-a", "initial-land", "initial-status-b")
+        }
+
+    def test_each_initial_observation_must_meet_combined_budget(self):
+        for slot in self.observations():
+            with self.subTest(slot=slot):
+                values = self.observations()
+                values[slot]["parsed"]["age_s"] = 0.9
+                with self.assertRaises(worker.Refused):
+                    worker.check_initial_freshness(values, 300)
+        worker.check_initial_freshness(self.observations(), 300)
+
+    def test_rounding_margin_and_full_listener_duration(self):
+        values = self.observations()
+        for value in values.values():
+            value["parsed"]["age_s"] = 0.799999
+        worker.check_initial_freshness(values, 300)
+        with self.assertRaises(worker.Refused):
+            worker.check_initial_freshness(values, 300.0006)
+
+    def test_missing_or_unordered_observation_cannot_be_fresh(self):
+        values = self.observations()
+        del values["initial-land"]
+        with self.assertRaises(worker.Refused):
+            worker.check_initial_freshness(values, 300)
+        values = self.observations()
+        values["initial-status-a"]["host_finished_monotonic_ms"] = 301
+        with self.assertRaises(worker.Refused):
+            worker.check_initial_freshness(values, 300)
 
 
 class JournalTests(unittest.TestCase):
