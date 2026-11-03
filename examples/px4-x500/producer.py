@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory, TemporaryFile
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 from uuid import uuid4
 
 from px4_x500_evaluator import facts, validate_journal
@@ -144,6 +146,8 @@ def prepare(
     run_id = run_id or "run-" + str(uuid4())
     configuration = {
         "case": case,
+        "measurement_method": "px4-valid-home-sampled-v0.2",
+        "max_ulog_bytes": 64 * 1024**2,
         "run_id": run_id,
         "domain_id": "px4",
         "min_ascent_m": 1.2,
@@ -216,6 +220,98 @@ def state(value, evidence, *, reason=None):
             "reason": reason or "required source record was not captured",
         }
     return {"state": "measured", "value": value, "evidence": evidence}
+
+
+def retained_native(capture: Path, binding: dict) -> dict[Path, dict]:
+    """Bind the small fixed custody roles to their original retained local paths."""
+    if (binding.get("kind"), binding.get("domain_id")) != ("native-evidence", "px4"):
+        raise ValueError("foreign or malformed native binding")
+    value = binding.get("value", {})
+    custody = value.get("custody", {})
+    if not isinstance(custody, dict) or not set(custody) <= {
+        "actor_before",
+        "actor_after",
+        "logger_start",
+        "logger_stop",
+        "export_manifest",
+        "export_plan",
+        "export_job",
+    }:
+        raise ValueError("malformed native custody references")
+    selected = {}
+
+    def capture_ref(ref, limit, *, ulog=False):
+        if not isinstance(ref, dict) or set(ref) != {
+            "uri",
+            "sha256",
+            "size_bytes",
+            "media_type",
+        }:
+            raise ValueError("native original must be one complete ArtifactRef")
+        uri = urlsplit(ref["uri"])
+        if (
+            uri.scheme != "file"
+            or uri.netloc not in {"", "localhost"}
+            or uri.query
+            or uri.fragment
+        ):
+            raise ValueError("native original requires a local retained file URI")
+        path = Path(url2pathname(uri.path))
+        if not path.is_absolute() or path.as_uri() != ref["uri"]:
+            raise ValueError("native original URI is not canonical")
+        roots = (capture,) if ulog else (capture, capture.parent / "parent-facts")
+        selected_root = next(
+            (root for root in roots if path.is_relative_to(root)), None
+        )
+        if selected_root is None:
+            raise ValueError("native original is outside the two fixed retained roots")
+        relative = path.relative_to(selected_root)
+        if not relative.parts or any(v in {".", ".."} for v in relative.parts):
+            raise ValueError("native original path is not confined")
+        parent = selected_root
+        if parent.is_symlink():
+            raise ValueError("native retained root is a symbolic link")
+        for part in relative.parts:
+            parent = parent / part
+            if parent.is_symlink():
+                raise ValueError("native original path contains a symbolic link")
+        if path in selected:
+            if selected[path] != ref:
+                raise ValueError("native original has conflicting identity")
+            return None
+        if (
+            len(selected) >= 16
+            or type(ref["size_bytes"]) is not int
+            or not 0 <= ref["size_bytes"] <= limit
+        ):
+            raise ValueError("native originals exceed count/byte policy")
+        raw = read_once(path, limit)
+        if (sha256(raw).hexdigest(), len(raw)) != (ref["sha256"], ref["size_bytes"]):
+            raise ValueError(
+                "native original bytes differ from their exact ArtifactRef"
+            )
+        selected[path] = ref
+        return raw
+
+    if "ulog" in value:
+        capture_ref(value["ulog"], 64 * 1024**2, ulog=True)
+    for role in (
+        "actor_before",
+        "actor_after",
+        "logger_start",
+        "logger_stop",
+        "export_manifest",
+        "export_plan",
+        "export_job",
+    ):
+        if role not in custody:
+            continue
+        raw = capture_ref(custody[role], LIMIT)
+        if role.startswith("actor_") and raw is not None:
+            actor = loads_mapping(raw, source_name=role + ".json")
+            if "process_record" in actor:
+                capture_ref(actor["process_record"], LIMIT)
+    return selected
 
 
 def complete(prepared: Path, capture: Path) -> dict:
@@ -295,6 +391,15 @@ def complete(prepared: Path, capture: Path) -> dict:
         if cleanup_data.get("owner_id") != issued["run_id"]:
             raise ValueError("cleanup belongs to another native owner")
         snapshots["engine-cleanup.json"] = raw
+    native_originals = {}
+    native_input = capture / "native-evidence.json"
+    if native_input.exists() or native_input.is_symlink():
+        raw = read_once(native_input, LIMIT)
+        native = loads_mapping(raw, source_name=str(native_input))
+        if native.get("run_id") != issued["run_id"]:
+            raise ValueError("native binding belongs to another original run")
+        native_originals = retained_native(capture, native)
+        snapshots["native-evidence.json"] = raw
     observation_path, index_path = (
         archive / "observation.json",
         archive / "evidence-index.json",
@@ -336,7 +441,12 @@ def complete(prepared: Path, capture: Path) -> dict:
     )
     paths = []
     for number, entry in enumerate(entries):
-        path = frozen / entry["path"]
+        original_path = capture / entry["path"]
+        path = (
+            original_path
+            if original_path in native_originals
+            else frozen / entry["path"]
+        )
         paths.append(path)
         draft = add_evidence_artifact(
             draft,
@@ -377,6 +487,32 @@ def complete(prepared: Path, capture: Path) -> dict:
             "size_bytes": issued["configuration"]["size_bytes"],
         },
     )
+    if "native-evidence.json" in snapshots:
+        draft = add_evidence_artifact(
+            draft,
+            frozen / "native-evidence.json",
+            {
+                "artifact_id": "native-binding",
+                "kind": "other_evidence",
+                "media_type": "application/json",
+                "retention_class": "test-evidence",
+                "storage_state": "local",
+            },
+        )
+    for number, (path, ref) in enumerate(native_originals.items()):
+        if path in paths:
+            continue
+        draft = add_evidence_artifact(
+            draft,
+            path,
+            {
+                **ref,
+                "artifact_id": f"native-{number}",
+                "kind": "other_evidence",
+                "retention_class": "test-evidence",
+                "storage_state": "local",
+            },
+        )
     with NamedTemporaryFile(
         dir=archive, prefix=".px4-source-index-", suffix=".json", delete=False
     ) as staging:
@@ -413,7 +549,21 @@ def complete(prepared: Path, capture: Path) -> dict:
         if cleanup and cleanup[0].get("owner_id") != issued["run_id"]:
             raise ValueError("cleanup belongs to another native owner")
         try:
-            assessed = facts(records, documents["configuration"], cleanup)
+            native = None
+            if "native-evidence.json" in snapshots:
+                native = loads_mapping(
+                    verified.read_local(
+                        frozen / "native-evidence.json", max_raw_evidence_bytes=LIMIT
+                    ),
+                    source_name="native-evidence.json",
+                )
+            assessed = facts(
+                records,
+                documents["configuration"],
+                cleanup,
+                evidence=verified,
+                native=native,
+            )
             observations = {
                 "command": state(
                     assessed["command"][0],

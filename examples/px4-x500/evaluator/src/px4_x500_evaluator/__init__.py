@@ -1,4 +1,4 @@
-"""Assess decoded stock MAVSDK records without implementing a vehicle or codec."""
+"""Evidence-bound sampled PX4 valid-home method, version0.2."""
 
 from __future__ import annotations
 
@@ -7,35 +7,11 @@ import math
 from robotics_acceptance_harness import AssertionEvaluation, EvaluationContext
 from robotics_runtime_contracts import loads_mapping
 
+from ._ulog import sampled_facts
+
 NAMESPACE = "org.example.px4-x500"
 CLOCK_SOURCE = "controller-utc-ms"
 LIMIT = 1024 * 1024
-# The pinned MAVSDK-Proto ActionResult.Result, not a new wire decoder.
-# https://github.com/mavlink/MAVSDK-Proto/blob/5c81ecfeb6110cf74ba75ae50b78a1b265c05670/protos/action/action.proto
-ACTION_RESULTS = {
-    "RESULT_UNKNOWN",
-    "RESULT_SUCCESS",
-    "RESULT_NO_SYSTEM",
-    "RESULT_CONNECTION_ERROR",
-    "RESULT_BUSY",
-    "RESULT_COMMAND_DENIED",
-    "RESULT_COMMAND_DENIED_LANDED_STATE_UNKNOWN",
-    "RESULT_COMMAND_DENIED_NOT_LANDED",
-    "RESULT_TIMEOUT",
-    "RESULT_VTOL_TRANSITION_SUPPORT_UNKNOWN",
-    "RESULT_NO_VTOL_TRANSITION_SUPPORT",
-    "RESULT_PARAMETER_ERROR",
-    "RESULT_UNSUPPORTED",
-    "RESULT_FAILED",
-    "RESULT_INVALID_ARGUMENT",
-}
-UNCERTAIN_RESULTS = {
-    "RESULT_UNKNOWN",
-    "RESULT_NO_SYSTEM",
-    "RESULT_CONNECTION_ERROR",
-    "RESULT_TIMEOUT",
-    "RESULT_VTOL_TRANSITION_SUPPORT_UNKNOWN",
-}
 
 
 def decimal(value):
@@ -104,221 +80,23 @@ def validate_journal(manifest, configuration, records, run_id, domain_id):
         previous_time, previous_monotonic = timestamp, monotonic
 
 
-def decoded(record):
-    value = record["value"].get("value")
-    if not isinstance(value, dict):
-        raise ValueError("malformed known decoded SDK response")
-    return value
-
-
-def facts(records, configuration, cleanup):
-    """One interpretation shared by producer projections and the product method."""
-    kinds = {}
-    for record, link in records:
-        kinds.setdefault(record["kind"], []).append((record, link))
-    results = kinds.get("controller-result", [])
-    if len(results) > 1:
-        raise ValueError("duplicate terminal controller records")
-    terminal, terminal_ref = (
-        (results[0][0]["value"], results[0][1]) if results else ({}, None)
+def facts(records, configuration, cleanup, *, evidence=None, native=None):
+    if configuration.get("measurement_method") != "px4-valid-home-sampled-v0.2":
+        raise ValueError(
+            "the version0.2 method requires its original sampled configuration"
+        )
+    if (
+        configuration.get("min_ascent_m"),
+        configuration.get("max_refusal_ascent_m"),
+        configuration.get("application_deadline_ms"),
+        configuration.get("max_ulog_bytes"),
+    ) != (1.2, 0.2, 2000, 64 * 1024**2):
+        raise ValueError(
+            "the version0.2 method requires its declared thresholds and byte budget"
+        )
+    return sampled_facts(
+        records, configuration, cleanup, evidence=evidence, native=native
     )
-    if results and type(terminal.get("complete")) is not bool:
-        raise ValueError("malformed terminal controller completion")
-    outcome = terminal.get("outcome", {})
-    if not isinstance(outcome, dict):
-        raise ValueError("malformed terminal controller outcome")
-    completed = terminal.get("complete") is True
-    if (completed or "case" in outcome) and outcome.get("case") != configuration[
-        "case"
-    ]:
-        raise ValueError("controller case differs from immutable inputs")
-    completion = (
-        True if completed else None,
-        terminal_ref,
-        None if completed else "terminal controller completion was not captured",
-    )
-    issued = {}
-    for record, link in kinds.get("action-issued", []):
-        method = record["value"].get("method")
-        if not isinstance(method, str):
-            raise ValueError("malformed issued SDK action")
-        issued.setdefault(method, []).append((record, link))
-
-    def phase(method):
-        values = issued.get(method, [])
-        return values[-1][0]["sequence"] if values else None
-
-    takeoff_phase, land_phase = phase("takeoff"), phase("land")
-    refusal = configuration["case"] == "unarmed-refusal"
-    if refusal:
-        forbidden = any(issued.get(method) for method in ("arm", "takeoff"))
-        command = (
-            False
-            if forbidden
-            else (
-                outcome.get("observed") == "caller-refused-unarmed"
-                and outcome.get("refusal")
-                == {
-                    "method": "takeoff",
-                    "boundary": "caller-precondition",
-                    "reason": "unarmed",
-                }
-            )
-            if completed
-            else None
-        )
-        command_ref = terminal_ref
-        position_rows = kinds.get("telemetry-position", [])
-        terminal_phase = position_rows[0][0]["sequence"] if position_rows else None
-    else:
-        responses = kinds.get("action-takeoff", [])
-        command, command_ref = None, None
-        if responses:
-            response_record, command_ref = responses[-1]
-            response = decoded(response_record).get("action_result")
-            if (
-                not isinstance(response, dict)
-                or not isinstance(response.get("result"), str)
-                or response["result"] not in ACTION_RESULTS
-            ):
-                raise ValueError("malformed known TakeoffResponse result")
-            if (
-                takeoff_phase is not None
-                and response_record["sequence"] > takeoff_phase
-            ):
-                result = response["result"]
-                command = (
-                    None if result in UNCERTAIN_RESULTS else result == "RESULT_SUCCESS"
-                )
-        terminal_phase = (
-            land_phase
-            if land_phase is not None
-            and takeoff_phase is not None
-            and land_phase > takeoff_phase
-            else None
-        )
-
-    def final(kind, field, expected):
-        values = [
-            (record, reference)
-            for record, reference in kinds.get(kind, [])
-            if terminal_phase is not None and record["sequence"] > terminal_phase
-        ]
-        if not values:
-            return None, None, "required terminal-phase telemetry was not captured"
-        record, reference = values[-1]
-        value = decoded(record).get(field)
-        if field == "is_armed" and type(value) is not bool:
-            raise ValueError("malformed known ArmedResponse")
-        if field == "landed_state" and (
-            not isinstance(value, str)
-            or value
-            not in {
-                "LANDED_STATE_UNKNOWN",
-                "LANDED_STATE_ON_GROUND",
-                "LANDED_STATE_IN_AIR",
-                "LANDED_STATE_TAKING_OFF",
-                "LANDED_STATE_LANDING",
-            }
-        ):
-            raise ValueError("malformed known LandedStateResponse")
-        if value == "LANDED_STATE_UNKNOWN":
-            return None, reference, "native landed state is UNKNOWN"
-        return value == expected, reference, None
-
-    grounded = final("telemetry-landed", "landed_state", "LANDED_STATE_ON_GROUND")
-    disarmed = final("telemetry-armed", "is_armed", False)
-    positions = []
-    unknown_positions = 0
-    baseline_unknown = False
-    for record, reference in kinds.get("telemetry-position", []):
-        if not refusal and (
-            takeoff_phase is None or record["sequence"] <= takeoff_phase
-        ):
-            continue
-        position = decoded(record).get("position")
-        if position is not None and not isinstance(position, dict):
-            raise ValueError("malformed known PositionResponse position")
-        altitude = position.get("relative_altitude_m") if position is not None else None
-        # The recorder preserves stock non-finite scalars using ProtoJSON names.
-        # Unset/NaN cannot prove an observed physical violation; infinities remain errors.
-        if altitude is None or altitude == "NaN":
-            if not positions:
-                baseline_unknown = True
-            unknown_positions += 1
-            continue
-        if (
-            isinstance(altitude, bool)
-            or not isinstance(altitude, (float, int))
-            or not math.isfinite(altitude)
-        ):
-            raise ValueError("malformed known PositionResponse relative altitude")
-        positions.append((float(altitude), reference))
-    if positions:
-        if refusal:
-            initial = positions[0][0]
-            excursion = max(abs(value - initial) for value, _ref in positions)
-            if baseline_unknown:
-                condition = None
-            elif excursion > configuration["max_refusal_ascent_m"]:
-                condition = False
-            else:
-                condition = (
-                    True if len(positions) >= 4 and not unknown_positions else None
-                )
-            condition_ref = positions[-1][1]
-        else:
-            maximum, condition_ref = max(positions, key=lambda item: item[0])
-            condition = (
-                True
-                if maximum >= configuration["min_ascent_m"]
-                else None
-                if unknown_positions
-                else False
-            )
-        postcondition = (
-            condition,
-            condition_ref,
-            (
-                "required finite position coverage was not captured"
-                if condition is None
-                else None
-            ),
-        )
-    else:
-        postcondition = None, None, "post-command position telemetry was not captured"
-    released = None, None, "native owner cleanup was not captured"
-    if cleanup:
-        observed, reference = cleanup
-        if observed.get("owner_id") != configuration["run_id"]:
-            raise ValueError("cleanup belongs to another native owner")
-        resources = observed.get("observed")
-        if (
-            type(observed.get("released")) is not bool
-            or not isinstance(resources, dict)
-            or not isinstance(resources.get("containers"), list)
-            or not isinstance(resources.get("networks"), list)
-        ):
-            raise ValueError("malformed known Engine cleanup observation")
-        released = (
-            observed["released"]
-            and not resources["containers"]
-            and not resources["networks"],
-            reference,
-            None,
-        )
-    return {
-        "completion": completion,
-        "command": (
-            command,
-            command_ref,
-            "command acceptance/order was not captured" if command is None else None,
-        ),
-        "grounded": grounded,
-        "disarmed": disarmed,
-        "postcondition": postcondition,
-        "cleanup": released,
-    }
 
 
 def evaluate(context: EvaluationContext):
@@ -379,7 +157,11 @@ def evaluate(context: EvaluationContext):
         else None
     )
     try:
-        assessed = facts(records, configuration, cleanup)
+        native_path = named.get("native-evidence.json")
+        native = read(native_path) if native_path else None
+        assessed = facts(
+            records, configuration, cleanup, evidence=context.evidence, native=native
+        )
     except ValueError as error:
         yield AssertionEvaluation(
             assertion_id=NAMESPACE + ".invalid",
@@ -400,7 +182,8 @@ def evaluate(context: EvaluationContext):
             status="skipped" if value is None else "passed" if value else "failed",
             observed_value=value,
             unit="1",
-            message=reason or "Captured SDK fact must meet the declared case",
+            message=reason
+            or "Captured source fact must meet the declared sampled case",
             source="product",
             namespace=NAMESPACE,
             evidence_sha256=(str(reference["sha256"]),)

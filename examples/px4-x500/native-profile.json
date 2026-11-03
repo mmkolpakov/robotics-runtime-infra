@@ -2,7 +2,7 @@
   "profile_id": "org.example.px4-x500",
   "executor": {
     "implementation": "px4-x500-controller",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "clock": {
     "kind": "external",
@@ -10,75 +10,21 @@
   },
   "channels": [
     {
-      "name": "mavsdk-takeoff",
+      "name": "px4-source-ulog",
       "original_type": {
-        "name": "mavsdk.rpc.action.TakeoffResponse",
+        "name": "PX4 ULog",
         "type_support": {
-          "implementation": "MAVSDK-Proto",
-          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
+          "implementation": "PX4",
+          "version": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4"
         }
       },
-      "backend": "gRPC",
-      "wire_envelope": "protobuf",
-      "native_encoding": "protobuf",
+      "backend": "PX4 logger",
+      "wire_envelope": "ULog",
+      "native_encoding": "ULog",
       "recorder": {
-        "implementation": "px4-x500-controller",
-        "version": "0.1.0",
-        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
-      }
-    },
-    {
-      "name": "mavsdk-position",
-      "original_type": {
-        "name": "mavsdk.rpc.telemetry.PositionResponse",
-        "type_support": {
-          "implementation": "MAVSDK-Proto",
-          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
-        }
-      },
-      "backend": "gRPC",
-      "wire_envelope": "protobuf",
-      "native_encoding": "protobuf",
-      "recorder": {
-        "implementation": "px4-x500-controller",
-        "version": "0.1.0",
-        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
-      }
-    },
-    {
-      "name": "mavsdk-landed",
-      "original_type": {
-        "name": "mavsdk.rpc.telemetry.LandedStateResponse",
-        "type_support": {
-          "implementation": "MAVSDK-Proto",
-          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
-        }
-      },
-      "backend": "gRPC",
-      "wire_envelope": "protobuf",
-      "native_encoding": "protobuf",
-      "recorder": {
-        "implementation": "px4-x500-controller",
-        "version": "0.1.0",
-        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
-      }
-    },
-    {
-      "name": "mavsdk-armed",
-      "original_type": {
-        "name": "mavsdk.rpc.telemetry.ArmedResponse",
-        "type_support": {
-          "implementation": "MAVSDK-Proto",
-          "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670"
-        }
-      },
-      "backend": "gRPC",
-      "wire_envelope": "protobuf",
-      "native_encoding": "protobuf",
-      "recorder": {
-        "implementation": "px4-x500-controller",
-        "version": "0.1.0",
-        "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars"
+        "implementation": "PX4 logger",
+        "version": "1.17.0",
+        "transformation": "closed original ULog bytes; sampled valid-home estimated altitude in integer millimetres"
       }
     }
   ],
