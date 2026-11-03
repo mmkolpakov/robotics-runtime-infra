@@ -160,6 +160,28 @@ PY
   rm -rf -- "$work/v2-first"
   (cd "$work/v2-second" && sha256sum --check "$work/v2-original.sha256")
   verify_offline "$work/v2-second" /elsewhere/retained "$work/key/v2.pub"
+  cp -a "$work/v2-second" "$work/v2-swapped"
+  python3 - "$work/v2-swapped/qualification-arguments.txt" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+lines = path.read_text().splitlines()
+original = "acceptance_aggregate:original-aggregate.json=subjects/original-aggregate.json"
+assessment = "acceptance_aggregate:acceptance-aggregate.json=subjects/acceptance-aggregate.json"
+assert lines.count(original) == lines.count(assessment) == 1
+lines[lines.index(original)] = original.replace("=subjects/original-aggregate.json", "=subjects/acceptance-aggregate.json")
+lines[lines.index(assessment)] = assessment.replace("=subjects/acceptance-aggregate.json", "=subjects/original-aggregate.json")
+path.write_text("\n".join(lines) + "\n")
+PY
+  (cd "$work/v2-swapped" && sed '/  \.\/qualification-arguments\.txt$/d' "$work/v2-original.sha256" | sha256sum --check)
+  swap_status=0
+  verify_offline "$work/v2-swapped" /rejected "$work/key/v2.pub" >"$work/swap-rejection.log" 2>&1 || swap_status=$?
+  [[ "$swap_status" == 65 ]] && grep -Fq 'qualification.statement_mismatch' "$work/swap-rejection.log" || {
+    printf 'offline v2 verifier did not reject swapped aggregate bindings as a statement mismatch\n' >&2
+    cat "$work/swap-rejection.log" >&2
+    exit 1
+  }
+  (cd "$work/v2-second" && sha256sum --check "$work/v2-original.sha256")
+  (cd "$work/v2-swapped" && sed '/  \.\/qualification-arguments\.txt$/d' "$work/v2-original.sha256" | sha256sum --check)
   cp -a "$work/v2-second" "$work/v2-rejected"
   printf '\n' >>"$work/v2-rejected/subjects/original-results/primary.json"
   if verify_offline "$work/v2-rejected" /rejected "$work/key/v2.pub" >"$work/rejection.log" 2>&1; then
