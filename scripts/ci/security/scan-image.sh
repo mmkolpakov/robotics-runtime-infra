@@ -35,6 +35,31 @@ security_artifact_dir="${ROBOTICS_CI_SECURITY_ARTIFACT_DIR:-${PWD}/artifacts/sec
 trivy_cache_dir="${ROBOTICS_CI_TRIVY_CACHE_DIR:-${PWD}/.trivy-cache}"
 mkdir -p "${security_artifact_dir}" "${trivy_cache_dir}"
 
+priority_args=()
+if test -n "${ROBOTICS_CI_TRIVY_DETECTION_PRIORITY:-}"; then
+  if test "${ROBOTICS_CI_TRIVY_DETECTION_PRIORITY}" != comprehensive; then
+    printf 'unsupported explicit Trivy detection priority\n' >&2
+    exit 65
+  fi
+  priority_args=(--detection-priority comprehensive)
+fi
+
+vendor_mount=()
+vendor_args=()
+if test -n "${ROBOTICS_CI_VENDOR_VEX_DIR:-}"; then
+  vendor_dir="$(realpath -- "${ROBOTICS_CI_VENDOR_VEX_DIR}")"
+  artifact_root="$(realpath -- "${security_artifact_dir}")"
+  case "${vendor_dir}" in
+    "${artifact_root}"/*) ;;
+    *) printf 'vendor VEX must be retained under the security artifact directory\n' >&2; exit 65 ;;
+  esac
+  test -f "${vendor_dir}/canonical-ubuntu.openvex.json"
+  test -f "${vendor_dir}/provenance.json"
+  (cd -- "${vendor_dir}" && sha256sum --strict --check SHA256SUMS)
+  vendor_mount=(--volume "${vendor_dir}:/vendor-vex:ro")
+  vendor_args=(--vex /vendor-vex/canonical-ubuntu.openvex.json)
+fi
+
 trivy=(
   docker run --rm
   --volume /var/run/docker.sock:/var/run/docker.sock
@@ -42,12 +67,16 @@ trivy=(
   --volume "${PWD}:/work:ro"
   --volume "${security_artifact_dir}:/reports"
   --volume "${trivy_cache_dir}:/root/.cache/trivy"
+  "${vendor_mount[@]}"
   "${TRIVY_IMAGE}" image
+  "${priority_args[@]}"
   --config /work/trivy.yaml
   --ignorefile /work/.trivyignore
   --vex /work/security/vex/linux-libc-dev.openvex.json
   --vex /work/security/vex/go-modules.openvex.json
+  "${vendor_args[@]}"
   --show-suppressed
+  --list-all-pkgs
 )
 
 failed=()

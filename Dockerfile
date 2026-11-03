@@ -4,14 +4,14 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
-ARG RCLONE_IMAGE=rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
+ARG ALPINE_SUPPLIER_IMAGE=alpine:edge@sha256:020dfcbaaf4cc1078bf2d9c7ba31a8466e334061dcd2f248001d68f79e52c000
 ARG AWS_CLI_IMAGE=amazon/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 ARG GO_BUILDER_IMAGE=golang:1.27.2@sha256:2d658507a011f1eadc0114d7a421b312b2e77d9042a24036a26e267cc9231677
 # Policy and evidence targets receive the publisher-verified image from Bake.
 ARG COSIGN_IMAGE=scratch
 # Released binary module verification and platform digests: docker/opa/README.md.
-ARG OPA_IMAGE=openpolicyagent/opa:1.21.2-static@sha256:0843d2adce51655422e8b95a803629ab9f424803c4bd27876e7f44cce9a2b84d
+ARG OPA_IMAGE=openpolicyagent/opa:1.22.0-static@sha256:2e5f84895445ca479be9eb1f2473c904a447b5ec53e6a487e0fcb3193d651ed8
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -20,15 +20,53 @@ ARG PROVIDER_CONFORMANCE_EXPECTED_PROVIDER=CPUExecutionProvider
 ARG PROVIDER_CONFORMANCE_TITLE="Robotics CPU provider conformance"
 ARG PROVIDER_CONFORMANCE_DESCRIPTION="Release gate for ONNX Runtime provider identity, fallback, and tensor parity."
 ARG SENSOR_INFERENCE_BASE=inference-cpu
-ARG UBUNTU_SNAPSHOT=20260930T000000Z
+ARG UBUNTU_SNAPSHOT=20261101T000000Z
 ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16
-ARG CA_CERTIFICATES_VERSION=20260601~24.04.1
-ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142
+ARG CA_CERTIFICATES_VERSION=20260816ubuntu0.24.04.1
+ARG LINUX_LIBC_DEV_VERSION=6.8.0-147.147
+ARG BROTLI_VERSION=1.1.0-2ubuntu0.1
+ARG LXML_VERSION=5.2.1-1ubuntu0.2
+ARG RUBY_VERSION=3.2.3-1ubuntu0.24.04.8
 ARG ROS_SNAPSHOT=2026-09-11
 ARG ROSDISTRO_INDEX_REVISION=8e9a99d200fd312f106418b2b497b0cc5146e6a7
 
 FROM ${UV_IMAGE} AS uv
-FROM ${RCLONE_IMAGE} AS rclone
+FROM scratch AS rclone-apks
+ADD --checksum=sha256:a9d65d28b9a37b611903c22c6823baab56aa1a99fb0f2161255467d23283dbc8 \
+  https://dl-cdn.alpinelinux.org/alpine/edge/community/x86_64/rclone-1.75.2-r0.apk /amd64/rclone.apk
+ADD --checksum=sha256:002f8b956419d67e91fd4e594f7b8d62fef13042cec45d977305df1a9ce0704f \
+  https://dl-cdn.alpinelinux.org/alpine/edge/main/x86_64/musl-1.2.6-r6.apk /amd64/musl.apk
+ADD --checksum=sha256:6b910430463264c111978785fbcf4046414018fe8398851c990e47140e480fa6 \
+  https://dl-cdn.alpinelinux.org/alpine/edge/community/aarch64/rclone-1.75.2-r0.apk /arm64/rclone.apk
+ADD --checksum=sha256:180b2e52dbd452919c3271ed9dddf06826cee9a387650c81c00c7ac393031c5b \
+  https://dl-cdn.alpinelinux.org/alpine/edge/main/aarch64/musl-1.2.6-r6.apk /arm64/musl.apk
+
+FROM ${ALPINE_SUPPLIER_IMAGE} AS rclone-supplier
+ARG TARGETARCH
+COPY --from=rclone-apks /${TARGETARCH}/ /usr/share/robotics-runtime/rclone-apks/
+RUN apk verify --keys-dir /usr/share/apk/keys /usr/share/robotics-runtime/rclone-apks/*.apk \
+    && apk add --no-cache --no-network --repositories-file /dev/null \
+      --keys-dir /usr/share/apk/keys /usr/share/robotics-runtime/rclone-apks/*.apk \
+    && mkdir -p /opt/robotics-rclone/bin \
+    && cp /usr/bin/rclone /opt/robotics-rclone/rclone \
+    && cp -L "/lib/ld-musl-$(apk --print-arch).so.1" /opt/robotics-rclone/ld-musl.so.1 \
+    && ln -s ld-musl.so.1 "/opt/robotics-rclone/libc.musl-$(apk --print-arch).so.1" \
+    && printf '%s\n' '#!/bin/sh' \
+      'exec /opt/robotics-rclone/ld-musl.so.1 --library-path /opt/robotics-rclone /opt/robotics-rclone/rclone "$@"' \
+      > /opt/robotics-rclone/bin/rclone \
+    && chmod 0555 /opt/robotics-rclone/bin/rclone
+# https://musl.libc.org/releases/musl-1.2.6.tar.gz (unaltered COPYRIGHT)
+COPY --chmod=0444 docker/licenses/musl-1.2.6-COPYRIGHT /opt/robotics-rclone/COPYRIGHT.musl
+RUN echo "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b  /opt/robotics-rclone/COPYRIGHT.musl" \
+    | sha256sum -c -
+
+FROM scratch AS rclone-supplier-evidence
+COPY --from=rclone-apks / /apks/
+COPY --from=rclone-supplier /usr/share/apk/keys/ /keys/
+COPY --from=rclone-supplier /lib/apk/db/installed /apk-installed
+COPY --from=rclone-supplier /etc/alpine-release /alpine-release
+COPY --from=rclone-supplier /opt/robotics-rclone/COPYRIGHT.musl /musl-COPYRIGHT
+
 FROM ${COSIGN_IMAGE} AS cosign
 FROM ${AWS_CLI_IMAGE} AS aws-cli
 FROM ${OPA_IMAGE} AS opa
@@ -599,7 +637,8 @@ RUN --mount=from=foundation-wheels,source=/out,target=/tmp/foundation-wheels,rea
       /var/log/dpkg.log
 
 COPY --from=mcap /mcap /usr/local/bin/mcap
-COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --from=rclone-supplier /opt/robotics-rclone /opt/robotics-rclone
+RUN ln -s /opt/robotics-rclone/bin/rclone /usr/local/bin/rclone
 COPY --from=rclone-license --chmod=0444 /COPYING /usr/share/licenses/rclone/COPYING
 COPY --from=aws-cli /usr/local/aws-cli /usr/local/aws-cli
 RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws
@@ -626,6 +665,8 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG BROTLI_VERSION
+ARG LXML_VERSION
 ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
@@ -661,9 +702,11 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libbrotli1=${BROTLI_VERSION}" \
       "libssl-dev=${OPENSSL_VERSION}" \
       "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
+      "python3-lxml=${LXML_VERSION}" \
       "openssl=${OPENSSL_VERSION}" \
     && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
       "${OPENSSL_VERSION}" \
@@ -1184,6 +1227,9 @@ ARG IMAGE_VERSION=dev
 ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
+ARG BROTLI_VERSION
+ARG LXML_VERSION
+ARG RUBY_VERSION
 ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
@@ -1233,9 +1279,13 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
        done \
     && apt-get install -y --no-install-recommends \
       jq \
+      "libbrotli1=${BROTLI_VERSION}" \
+      "libruby3.2=${RUBY_VERSION}" \
       "libssl-dev=${OPENSSL_VERSION}" \
       "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
+      "python3-lxml=${LXML_VERSION}" \
+      "ruby3.2=${RUBY_VERSION}" \
       "openssl=${OPENSSL_VERSION}" \
     && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
       "${OPENSSL_VERSION}" \

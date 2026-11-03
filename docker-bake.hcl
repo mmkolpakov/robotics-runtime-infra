@@ -23,11 +23,23 @@ variable "SOURCE_DATE_EPOCH" {
 }
 
 variable "UBUNTU_SNAPSHOT" {
-  default = "20260930T000000Z"
+  default = "20261101T000000Z"
 }
 
 variable "LINUX_LIBC_DEV_VERSION" {
-  default = "6.8.0-142.142"
+  default = "6.8.0-147.147"
+}
+
+variable "BROTLI_VERSION" {
+  default = "1.1.0-2ubuntu0.1"
+}
+
+variable "LXML_VERSION" {
+  default = "5.2.1-1ubuntu0.2"
+}
+
+variable "RUBY_VERSION" {
+  default = "3.2.3-1ubuntu0.24.04.8"
 }
 
 variable "ROS_SNAPSHOT" {
@@ -60,7 +72,7 @@ variable "RKNN_SOURCE" {
 }
 
 variable "COSIGN_IMAGE" {
-  default = "cgr.dev/chainguard/cosign:latest@sha256:3fad8be83b93869051c08bb98f36612afe81dabe06c288e70e41ce09a037ba18"
+  default = "cgr.dev/chainguard/cosign:latest@sha256:35b607c4eba6e914b3b8b80f5f8a63ce2eccd48617717d5edd572dd62f0cdf66"
   validation {
     condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
     error_message = "COSIGN_IMAGE must pin the publisher-verified Chainguard image."
@@ -68,7 +80,7 @@ variable "COSIGN_IMAGE" {
 }
 
 variable "COSIGN_VERSION" {
-  default = "3.1.3"
+  default = "3.1.4"
   validation {
     condition = COSIGN_VERSION == regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", COSIGN_VERSION)
     error_message = "COSIGN_VERSION must be a semantic version."
@@ -93,6 +105,10 @@ group "cpu" {
     "permit-preflight",
     "host-io-fixture",
   ]
+}
+
+group "security-supplier" {
+  targets = ["rclone-supplier"]
 }
 
 group "ci-only" {
@@ -189,6 +205,9 @@ target "_common" {
     VCS_REF       = VCS_REF
     UBUNTU_SNAPSHOT          = UBUNTU_SNAPSHOT
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
+    BROTLI_VERSION           = BROTLI_VERSION
+    LXML_VERSION             = LXML_VERSION
+    RUBY_VERSION             = RUBY_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
   }
@@ -504,6 +523,40 @@ target "benchmark-runtime" {
   target    = "benchmark-runtime"
   platforms = ["linux/amd64", "linux/arm64"]
   tags      = ["${REGISTRY}/robotics-runtime-infra/benchmark:${VERSION}"]
+}
+
+target "rclone-supplier" {
+  inherits  = ["_common"]
+  target    = "rclone-supplier"
+  platforms = ["linux/amd64", "linux/arm64"]
+  tags      = ["${REGISTRY}/robotics-runtime-infra/rclone-supplier:${VERSION}"]
+}
+
+target "legacy-finalizer" {
+  context    = "."
+  dockerfile = "docker/legacy-finalizer.Dockerfile"
+  # The caller must bind these inputs; empty image references refuse before execution.
+  contexts = {
+    coordinator      = "docker-image://"
+    cosign-license   = "docker-image://"
+    cosign-publisher = "docker-image://${COSIGN_IMAGE}"
+  }
+  args = {
+    COSIGN_VERSION = COSIGN_VERSION
+  }
+  platforms = ["linux/amd64"]
+}
+
+target "legacy-evidence-source" {
+  context    = "."
+  dockerfile = "docker/evidence-source.Dockerfile"
+  contexts = {
+    "rclone-supplier" = "target:rclone-supplier"
+  }
+  args = {
+    COSIGN_VERSION = COSIGN_VERSION
+  }
+  platforms = ["linux/amd64"]
 }
 
 target "evidence-sink" {

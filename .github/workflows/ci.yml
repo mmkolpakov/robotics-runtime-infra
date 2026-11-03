@@ -25,7 +25,7 @@ env:
   RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
   # yamllint disable-line rule:line-length
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
-  TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+  TRIVY_IMAGE: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
 
 jobs:
   consumer-examples:
@@ -343,8 +343,17 @@ jobs:
       - name: Prepare synthetic physical attach prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            can-utils socat "linux-modules-extra-$(uname -r)"
+          sudo apt-get install -y --no-install-recommends can-utils socat
+          if ! modprobe --dry-run vcan >/dev/null 2>&1; then
+            kernel="$(uname -r)"
+            # Newer Ubuntu kernels include extra modules in linux-modules.
+            if apt-cache show "linux-modules-extra-${kernel}" >/dev/null 2>&1; then
+              sudo apt-get install -y --no-install-recommends "linux-modules-extra-${kernel}"
+            else
+              sudo apt-get install -y --no-install-recommends "linux-modules-${kernel}"
+            fi
+          fi
+          modprobe --dry-run vcan
       - name: Verify host time evidence
         run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify synthetic physical attach end to end
@@ -371,7 +380,34 @@ jobs:
         if: always()
         run: scripts/ci/integration/capture-runtime-evidence.sh
       - name: Scan images and enforce vulnerability policy
-        run: scripts/ci/security/scan-bake-group.sh cpu
+        run: ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive scripts/ci/security/scan-bake-group.sh cpu
+      - name: Retain rclone supplier inputs
+        run: |
+          docker buildx bake --file docker-bake.hcl rclone-supplier \
+            --set '*.platform=linux/amd64' \
+            --set 'rclone-supplier.target=rclone-supplier-evidence' \
+            --set 'rclone-supplier.output=type=local,dest=artifacts/security/rclone-supplier-inputs'
+          cp Dockerfile artifacts/security/rclone-supplier-inputs/Dockerfile
+          git rev-parse HEAD > artifacts/security/rclone-supplier-inputs/source-commit.txt
+          (cd artifacts/security/rclone-supplier-inputs && \
+            sha256sum apks/*/* keys/*.pub apk-installed alpine-release musl-COPYRIGHT Dockerfile \
+              source-commit.txt > SHA256SUMS)
+      - name: Scan the rclone supplier closure
+        run: |
+          env -u ROBOTICS_CI_VENDOR_VEX_DIR ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive \
+            scripts/ci/security/scan-bake-group.sh security-supplier linux/amd64
+          jq -e --arg arch x86_64 '
+            any(.Results[]; .Type == "alpine" and
+              any(.Packages[]?; .Name == "musl" and .Version == "1.2.6-r6" and .Arch == $arch) and
+              any(.Packages[]?; .Name == "rclone" and .Version == "1.75.2-r0" and .Arch == $arch)) and
+            any(.Results[]; .Type == "gobinary" and .Target == "usr/bin/rclone" and
+              any(.Packages[]?; .Name == "stdlib" and .Version == "v1.27.3") and
+              any(.Packages[]?; .Name == "github.com/rclone/rclone"))
+          ' artifacts/security/security-supplier-rclone-supplier-linux-amd64.json > /dev/null
+          docker run --rm --volume "${PWD}/artifacts/security:/reports" "${TRIVY_IMAGE}" \
+            --config /dev/null convert --ignorefile /dev/null --format cyclonedx \
+            --output /reports/security-supplier-rclone-supplier-linux-amd64.cdx.json \
+            /reports/security-supplier-rclone-supplier-linux-amd64.json
       - name: Scan CI-only images and enforce vulnerability policy
         run: scripts/ci/security/scan-bake-group.sh ci-only
       - name: Stop runtime
@@ -405,6 +441,17 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
+      - name: Free unused runner toolchains
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6  # v2.0.0
+        with:
+          android: "true"
+          dotnet: "true"
+          haskell: "true"
+          large-packages: "false"
+          docker-images: "false"
+          preinstalled-runtimes: "false"
+          tool-cache: "false"
+          swap-storage: "false"
       - uses: ./.github/actions/setup-buildx
       - name: Set reproducible build metadata
         run: scripts/ci/set-build-metadata.sh
@@ -611,9 +658,28 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build and scan every portable target for ARM64
         run: >-
+          ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive
           scripts/ci/security/scan-bake-group.sh multiarch linux/arm64
           --set '*.cache-from=type=gha,scope=runtime-infra-arm64'
           --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
+      - name: Scan the ARM64 rclone supplier closure
+        run: |
+          env -u ROBOTICS_CI_VENDOR_VEX_DIR ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive \
+            scripts/ci/security/scan-bake-group.sh security-supplier linux/arm64 \
+            --set '*.cache-from=type=gha,scope=runtime-infra-arm64' \
+            --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
+          jq -e --arg arch aarch64 '
+            any(.Results[]; .Type == "alpine" and
+              any(.Packages[]?; .Name == "musl" and .Version == "1.2.6-r6" and .Arch == $arch) and
+              any(.Packages[]?; .Name == "rclone" and .Version == "1.75.2-r0" and .Arch == $arch)) and
+            any(.Results[]; .Type == "gobinary" and .Target == "usr/bin/rclone" and
+              any(.Packages[]?; .Name == "stdlib" and .Version == "v1.27.3") and
+              any(.Packages[]?; .Name == "github.com/rclone/rclone"))
+          ' artifacts/security/security-supplier-rclone-supplier-linux-arm64.json > /dev/null
+          docker run --rm --volume "${PWD}/artifacts/security:/reports" "${TRIVY_IMAGE}" \
+            --config /dev/null convert --ignorefile /dev/null --format cyclonedx \
+            --output /reports/security-supplier-rclone-supplier-linux-arm64.cdx.json \
+            /reports/security-supplier-rclone-supplier-linux-arm64.json
       - name: Upload portable ARM64 scan results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
