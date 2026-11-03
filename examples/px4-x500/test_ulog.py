@@ -12,6 +12,7 @@ from px4_x500_evaluator._ulog import (
     sampled_facts,
     snapshot,
     serial_actions,
+    rows,
 )
 
 IDENTITY = {
@@ -154,6 +155,23 @@ class NativeCommandControls(unittest.TestCase):
                 (50, 300),
             )
 
+    def test_unknown_ack_enum_cannot_become_known_denial(self):
+        ack = {
+            "timestamp": 200,
+            "command": 22,
+            "result": 7,
+            "target_system": 245,
+            "target_component": 190,
+        }
+        for value in (7, -1, True):
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(Unavailable, "result is unknown"),
+            ):
+                command_phase(
+                    [command()], [{**ack, "result": value}], IDENTITY, 22, (50, 300)
+                )
+
     def test_second_application_invocation_is_not_an_sdk_retry(self):
         def row(sequence, kind, invocation):
             return (
@@ -221,6 +239,36 @@ class NativeCommandControls(unittest.TestCase):
         self.assertIsNone(result["postcondition"][0])
         record["value"]["budget_ms"] = 1999
         self.assertIsNone(sampled_facts([(record, {})], config, None)["deadline"][0])
+
+
+class StockBooleanControls(unittest.TestCase):
+    def test_stock_int8_boolean_is_normalized_only_for_known_fields(self):
+        import numpy as np
+        from types import SimpleNamespace
+
+        for value in (0, 1, -1, 2):
+            ulog = SimpleNamespace(
+                data_list=[
+                    SimpleNamespace(
+                        name="home_position",
+                        multi_id=0,
+                        data={
+                            "timestamp": np.array([1]),
+                            "valid_alt": np.array([value], dtype=np.int8),
+                        },
+                    )
+                ]
+            )
+            if value in (0, 1):
+                self.assertIs(
+                    rows(ulog, "home_position", ("timestamp", "valid_alt"))[0][
+                        "valid_alt"
+                    ],
+                    value == 1,
+                )
+            else:
+                with self.assertRaisesRegex(Unavailable, "stock int8 zero or one"):
+                    rows(ulog, "home_position", ("timestamp", "valid_alt"))
 
 
 class ListenerGrammarControls(unittest.TestCase):

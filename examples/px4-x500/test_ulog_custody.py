@@ -189,6 +189,30 @@ def native_case(folder, case="land"):
             }
         },
     }
+    execution = "e" * 64
+    exec_record = retain(
+        "native-worker-exec.json",
+        {"owner_id": RUN, "container_id": cid, "exec_id": execution},
+        parent=True,
+    )
+    exec_result = retain(
+        "native-worker-result.json",
+        {
+            "owner_id": RUN,
+            "container_id": cid,
+            "exec_id": execution,
+            "started": True,
+            "stream_complete": True,
+            "inspect": {
+                "ID": execution,
+                "ContainerID": cid,
+                "Running": False,
+                "ExitCode": 0,
+            },
+            "output_base64": "",
+        },
+        parent=True,
+    )
     custody = {}
     for name, _ref, captured in (
         ("actor_before", before, BASE),
@@ -201,6 +225,11 @@ def native_case(folder, case="land"):
                 "captured_unix_ns": str(captured),
                 "container": container,
                 "image": {"Id": image},
+                **(
+                    {"exec_record": exec_record, "exec_result": exec_result}
+                    if name == "actor_after"
+                    else {}
+                ),
                 "process_record": retain(
                     name + "-process.json",
                     {
@@ -278,7 +307,13 @@ def native_case(folder, case="land"):
         return SimpleNamespace(
             name=name,
             multi_id=0,
-            data={k: np.array([r[k] for r in rows]) for k in rows[0]},
+            data={
+                k: np.array(
+                    [r[k] for r in rows],
+                    dtype=np.int8 if type(rows[0][k]) is bool else None,
+                )
+                for k in rows[0]
+            },
         )
 
     glob, homes = positions(
@@ -382,6 +417,7 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
         from contextlib import nullcontext
 
         records, native, refs, decoded = native_case(self.root / "capture", case)
+        self.refs = refs
         if mutate:
             mutate(records, native, decoded)
         evidence = self.evidence(refs)
@@ -403,6 +439,223 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
         result = self.assess("unarmed-refusal")
         self.assertIs(result["command"][0], True, result)
         self.assertIs(result["postcondition"][0], True, result)
+
+    def rewrite(self, ref, update):
+        from urllib.parse import urlsplit
+        from urllib.request import url2pathname
+
+        path = Path(url2pathname(urlsplit(ref["uri"]).path))
+        value = json.loads(path.read_bytes())
+        update(value)
+        raw = json.dumps(value).encode()
+        path.write_bytes(raw)
+        ref.update(sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw))
+        self.refs[path].update(ref)
+
+    def test_missing_exec_pair_keeps_independent_measurements(self):
+        def missing(_records, native, _decoded):
+            self.rewrite(
+                native["value"]["custody"]["actor_after"],
+                lambda actor: actor.pop("exec_result"),
+            )
+
+        result = self.assess(mutate=missing)
+        self.assertIsNone(result["completion"][0])
+        self.assertIn("exec pair is missing", result["completion"][2])
+        self.assertIs(result["postcondition"][0], True)
+
+    def test_exec_nonzero_is_known_failed_completion(self):
+        for exit_code in (1, 124, 137):
+            with (
+                self.subTest(exit_code=exit_code),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                self.root = Path(temporary)
+
+                def exited(_records, native, _decoded):
+                    def update(actor):
+                        self.rewrite(
+                            actor["exec_result"],
+                            lambda result: result["inspect"].update(ExitCode=exit_code),
+                        )
+
+                    self.rewrite(native["value"]["custody"]["actor_after"], update)
+
+                result = self.assess(mutate=exited)
+                self.assertIs(result["completion"][0], False)
+                self.assertIn("exited " + str(exit_code), result["completion"][2])
+                self.assertIs(result["postcondition"][0], True)
+
+    def test_exec_foreign_partial_or_created_only_is_incomplete(self):
+        mutations = (
+            (lambda result: result.update(owner_id="another-owner"), "another owner"),
+            (lambda result: result.update(container_id="f" * 64), "another owner"),
+            (lambda result: result.update(exec_id="f" * 64), "another owner"),
+            (lambda result: result.update(started=False), "created-only or partial"),
+            (
+                lambda result: result.update(stream_complete=False),
+                "created-only or partial",
+            ),
+            (
+                lambda result: result["inspect"].update(Running=True),
+                "one settled process",
+            ),
+            (
+                lambda result: result["inspect"].update(ExitCode=True),
+                "one settled process",
+            ),
+            (
+                lambda result: result["inspect"].update(ID="f" * 64),
+                "one settled process",
+            ),
+        )
+        for change, reason in mutations:
+            with (
+                self.subTest(reason=reason),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                self.root = Path(temporary)
+
+                def mutate(_records, native, _decoded):
+                    self.rewrite(
+                        native["value"]["custody"]["actor_after"],
+                        lambda actor: self.rewrite(actor["exec_result"], change),
+                    )
+
+                result = self.assess(mutate=mutate)
+                self.assertIsNone(result["completion"][0])
+                self.assertIn(reason, result["completion"][2])
+                self.assertIs(result["postcondition"][0], True)
+
+    def test_owned_denied_ack_is_failed_even_with_sdk_error_and_missing_land(self):
+        def denied(records, _native, decoded):
+            import numpy as np
+
+            for record, _ref in records:
+                if record["kind"] == "action-takeoff":
+                    record["kind"] = "action-error"
+                    record["value"]["sdk_result"] = {
+                        "name": "COMMAND_DENIED",
+                        "value": 4,
+                    }
+            records[:] = [
+                (record, ref)
+                for record, ref in records
+                if not (
+                    record["kind"] in ("action-issued", "action-land")
+                    and record["value"].get("method") == "land"
+                )
+            ]
+            source = next(
+                d for d in decoded.data_list if d.name == "vehicle_command_ack"
+            )
+            source.data["result"] = np.array([2, 0])
+            source = next(d for d in decoded.data_list if d.name == "vehicle_command")
+            source.data = {k: v[:-1] for k, v in source.data.items()}
+
+        result = self.assess(mutate=denied)
+        self.assertIs(result["command"][0], False)
+        self.assertIn("explicitly rejected", result["command"][2])
+
+    def test_denied_ack_survives_missing_unrelated_measurement_topics(self):
+        for topic in (
+            "vehicle_global_position",
+            "home_position",
+            "vehicle_status",
+            "vehicle_land_detected",
+        ):
+            with self.subTest(topic=topic), tempfile.TemporaryDirectory() as temporary:
+                self.root = Path(temporary)
+
+                def missing(records, _native, decoded):
+                    import numpy as np
+
+                    for record, _ref in records:
+                        if record["kind"] == "action-takeoff":
+                            record["kind"] = "action-error"
+                            record["value"]["sdk_result"] = {
+                                "name": "COMMAND_DENIED",
+                                "value": 5,
+                            }
+                    source = next(
+                        d for d in decoded.data_list if d.name == "vehicle_command_ack"
+                    )
+                    source.data["result"] = np.array([2, 0])
+                    decoded.data_list = [
+                        d for d in decoded.data_list if d.name != topic
+                    ]
+
+                result = self.assess(mutate=missing)
+                self.assertIs(result["command"][0], False)
+                self.assertIn("explicitly rejected", result["command"][2])
+                affected = {
+                    "vehicle_global_position": "postcondition",
+                    "home_position": "postcondition",
+                    "vehicle_status": "disarmed",
+                    "vehicle_land_detected": "grounded",
+                }[topic]
+                self.assertIsNone(result[affected][0])
+                self.assertIn(topic, result[affected][2])
+
+    def test_missing_terminal_topic_does_not_erase_other_measurements(self):
+        def missing(_records, _native, decoded):
+            decoded.data_list = [
+                d for d in decoded.data_list if d.name != "vehicle_land_detected"
+            ]
+
+        result = self.assess(mutate=missing)
+        self.assertIsNone(result["grounded"][0])
+        for name in ("command", "disarmed", "postcondition"):
+            self.assertIs(result[name][0], True)
+
+    def test_nonzero_exec_before_worker_process_records_is_known_failure(self):
+        def startup_failed(records, native, _decoded):
+            records[:] = [
+                (r, ref) for r, ref in records if r["kind"] == "controller-result"
+            ]
+            records[0][0]["value"].update(
+                complete=False,
+                outcome={"case": "land", "observed": "unknown"},
+                scope="controller startup",
+            )
+            self.rewrite(
+                native["value"]["custody"]["actor_after"],
+                lambda actor: self.rewrite(
+                    actor["exec_result"],
+                    lambda result: result["inspect"].update(ExitCode=1),
+                ),
+            )
+
+        result = self.assess(mutate=startup_failed)
+        self.assertIs(result["completion"][0], False)
+        self.assertIn("exited 1", result["completion"][2])
+        self.assertIsNone(result["postcondition"][0])
+
+    def test_accepted_ack_with_unknown_sdk_result_does_not_prove_success(self):
+        def unknown(records, _native, _decoded):
+            for record, _ref in records:
+                if record["kind"] == "action-takeoff":
+                    record["kind"] = "action-error"
+                    record["value"]["sdk_result"] = None
+
+        result = self.assess(mutate=unknown)
+        self.assertIsNone(result["command"][0])
+        self.assertIs(result["postcondition"][0], True)
+
+    def test_sdk_error_without_attributable_terminal_ack_stays_incomplete(self):
+        def unknown(records, _native, decoded):
+            for record, _ref in records:
+                if record["kind"] == "action-takeoff":
+                    record["kind"] = "action-error"
+                    record["value"]["sdk_result"] = None
+            source = next(
+                d for d in decoded.data_list if d.name == "vehicle_command_ack"
+            )
+            source.data = {k: v[1:] for k, v in source.data.items()}
+
+        result = self.assess(mutate=unknown)
+        self.assertIsNone(result["command"][0])
+        self.assertIn("acknowledgement", result["postcondition"][2])
 
     def test_stock_decoder_exception_stays_incomplete(self):
         result = self.assess(decode=False)
@@ -442,7 +695,7 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
 
         result = self.assess(mutate=restart)
         self.assertIsNone(result["postcondition"][0])
-        self.assertIn("restarted", result["postcondition"][2])
+        self.assertIn("restarted", result["completion"][2])
 
     def test_successful_stop_without_absent_module_status_is_incomplete(self):
         def still_running(_records, native, _decoded):
@@ -505,7 +758,8 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
 
             source = next(d for d in decoded.data_list if d.name == "vehicle_command")
             source.data = {
-                key: np.array([value]) for key, value in command(150).items()
+                key: np.array([value], dtype=np.int8 if type(value) is bool else None)
+                for key, value in command(150).items()
             }
 
         result = self.assess("unarmed-refusal", mutate=received)
