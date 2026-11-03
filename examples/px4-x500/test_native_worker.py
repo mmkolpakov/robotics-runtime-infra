@@ -1,6 +1,8 @@
 """Source-only controls: importing or executing the native SDK is forbidden."""
 
 import hashlib
+import io
+from contextlib import redirect_stderr
 import importlib.abc
 import importlib.util
 import json
@@ -95,6 +97,7 @@ class Scenario:
         self.armed = False
         self.altitude = 0.0
         self.home = True
+        self.armable = True
         self.calls = []
         self.failure = None
         self.listener_calls = 0
@@ -106,7 +109,7 @@ class Scenario:
         self.stop = False
         self.telemetry = SimpleNamespace(
             health=lambda: SimpleNamespace(
-                is_armable=True,
+                is_armable=self.armable,
                 is_local_position_ok=True,
                 is_global_position_ok=True,
                 is_home_position_ok=self.home,
@@ -285,8 +288,33 @@ class WorkerTests(unittest.TestCase):
         self.scenario.home = False
         self.assertFalse(self.scenario.run("unarmed-refusal"))
         self.assertEqual(self.scenario.calls, [])
+        self.assertFalse(
+            any(r["kind"] == "caller-refusal" for r in self.scenario.records())
+        )
+        self.assertFalse(
+            any(
+                r["value"].get("slot", "").startswith("initial-")
+                for r in self.scenario.records()
+            )
+        )
+
+    def test_valid_home_refusal_does_not_require_armable(self):
+        self.scenario.armable = False
+        self.assertTrue(self.scenario.run("unarmed-refusal"))
+        self.assertEqual(self.scenario.calls, [])
         self.assertTrue(
             any(r["kind"] == "caller-refusal" for r in self.scenario.records())
+        )
+
+    def test_mutating_case_still_requires_armable_before_phase(self):
+        self.scenario.armable = False
+        self.assertFalse(self.scenario.run("land"))
+        self.assertEqual(self.scenario.calls, [])
+        self.assertFalse(
+            any(
+                r["value"].get("slot", "").startswith("initial-")
+                for r in self.scenario.records()
+            )
         )
 
     def test_stalled_source_clock_and_wrong_actor_refuse(self):
@@ -552,6 +580,97 @@ class JournalTests(unittest.TestCase):
             with self.assertRaises(worker.Refused):
                 journal.retain("oversize", {"value": "x" * 1048576})
             self.assertEqual(list(journal.output.iterdir()), [])
+
+
+class ActorConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "actor.json"
+        self.payload = json.dumps({"owner_id": RUN}).encode()
+
+    def refused_before_sdk(self):
+        output = Path(self.tmp.name) / "not-created"
+        argv = [
+            "native_worker.py",
+            "unarmed-refusal",
+            "--run-id",
+            RUN,
+            "--output",
+            str(output),
+            "--config",
+            str(self.path),
+        ]
+        with (
+            patch.object(sys, "argv", argv),
+            patch.object(worker, "native_sdk") as native,
+        ):
+            with (
+                redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as stopped,
+            ):
+                worker.main()
+            self.assertEqual(stopped.exception.code, 2)
+            native.assert_not_called()
+        self.assertFalse(output.exists())
+
+    def test_valid_original_regular_config(self):
+        self.path.write_bytes(self.payload)
+        self.assertEqual(worker.read_actor_config(self.path, RUN), {"owner_id": RUN})
+
+    def test_fifo_refused_before_sdk_import(self):
+        os.mkfifo(self.path)
+        self.refused_before_sdk()
+
+    def test_symlink_refused_before_sdk_import(self):
+        target = self.path.with_name("original.json")
+        target.write_bytes(self.payload)
+        self.path.symlink_to(target)
+        self.refused_before_sdk()
+
+    def test_oversize_refused_before_read_and_sdk_import(self):
+        self.path.write_bytes(b"x" * 32769)
+        with patch.object(
+            worker.os, "read", side_effect=AssertionError("oversize must not be read")
+        ):
+            self.refused_before_sdk()
+
+    def test_owner_mismatch_refused_before_sdk_import(self):
+        self.path.write_text(json.dumps({"owner_id": "another-owner"}))
+        self.refused_before_sdk()
+
+    def test_in_place_mutation_refused_before_sdk_import(self):
+        self.path.write_bytes(self.payload)
+        original = os.read
+        changed = False
+
+        def mutate(descriptor, amount):
+            nonlocal changed
+            raw = original(descriptor, amount)
+            if not changed:
+                changed = True
+                self.path.write_bytes(self.payload + b" ")
+            return raw
+
+        with patch.object(worker.os, "read", mutate):
+            self.refused_before_sdk()
+
+    def test_path_replacement_refused_before_sdk_import(self):
+        self.path.write_bytes(self.payload)
+        original = os.read
+        replaced = False
+
+        def replace(descriptor, amount):
+            nonlocal replaced
+            raw = original(descriptor, amount)
+            if not replaced:
+                replaced = True
+                self.path.rename(self.path.with_name("previous.json"))
+                self.path.write_bytes(self.payload)
+            return raw
+
+        with patch.object(worker.os, "read", replace):
+            self.refused_before_sdk()
 
 
 class ProcessTests(unittest.TestCase):
