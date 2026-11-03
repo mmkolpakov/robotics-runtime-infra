@@ -5,11 +5,27 @@ on:
   pull_request:
     paths:
       - examples/px4-x500/**
+      - host/tools/prepare-px4-image.py
+      - host/tools/test_prepare_px4_image.py
+      - host/tools/build-px4-stock.sh
+      - host/workers/px4/probe.py
+      - host/test/test_px4_probe_identity.py
+      - docker/px4-sitl-native.Dockerfile
+      - docker/python/px4-native-sdk.lock
+      - compose.px4-sdk.yaml
       - .github/workflows/px4-consumer.yml
   push:
     branches: [main]
     paths:
       - examples/px4-x500/**
+      - host/tools/prepare-px4-image.py
+      - host/tools/test_prepare_px4_image.py
+      - host/tools/build-px4-stock.sh
+      - host/workers/px4/probe.py
+      - host/test/test_px4_probe_identity.py
+      - docker/px4-sitl-native.Dockerfile
+      - docker/python/px4-native-sdk.lock
+      - compose.px4-sdk.yaml
       - .github/workflows/px4-consumer.yml
   workflow_dispatch:
 
@@ -41,6 +57,11 @@ jobs:
         with:
           node-version: "24.21.0"
           package-manager-cache: false
+      - name: Check source image contexts and actor probes without native execution
+        working-directory: .
+        run: |
+          python3 -I -m unittest discover -s host/tools -p test_prepare_px4_image.py
+          python3 -I -m unittest discover -s host/test -p test_px4_probe_identity.py
       - name: Download and check the exact published SDK before installation
         run: |
           uv venv --python 3.12 .venv
@@ -73,10 +94,10 @@ jobs:
       - name: Authenticate method bytes and shape before installation or imports
         run: |
           .venv/bin/python -I test_admission_fixture.py \
-            --wheel dist/px4_x500_evaluator-0.1.0-py3-none-any.whl \
+            --wheel dist/px4_x500_evaluator-0.2.0-py3-none-any.whl \
             --tool-profile results/cosign-profile.json --output results/authenticated
           .venv/bin/python -I -m pip install --no-index --no-deps \
-            results/authenticated/px4_x500_evaluator-0.1.0-py3-none-any.whl
+            results/authenticated/px4_x500_evaluator-0.2.0-py3-none-any.whl
           .venv/bin/python -I -m pip check
       - name: Test installed public JSON/JUnit and bounded raw-byte controls
         env:
