@@ -4,17 +4,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory, TemporaryFile
 from uuid import uuid4
 
 from px4_x500_evaluator import facts, validate_journal
 from robotics_acceptance_harness.evaluator_trust import read_once
 from robotics_acceptance_harness.evidence import load_evidence_index
-from robotics_acceptance_harness.run_context import create_run_context
-from robotics_runtime_contracts import dumps_canonical, loads_mapping, validate_document
+from robotics_runtime_contracts import (
+    dumps_canonical,
+    loads_mapping,
+    validate_document,
+    validate_role,
+)
 from robotics_runtime_contracts.writers import (
     add_evidence_artifact,
     create_evidence_index,
@@ -42,6 +49,74 @@ def reference(path: Path) -> dict:
         "size_bytes": len(raw),
         "media_type": "application/json",
     }
+
+
+def create_run(scenario_path: Path, run_path: Path, run_id: str) -> str:
+    scenario_raw, scenario = mapping(scenario_path)
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    environment.pop("PYTHONHOME", None)
+    with TemporaryDirectory(prefix=".create-run-", dir=run_path.parent) as directory:
+        snapshot = Path(directory) / "scenario.json"
+        snapshot.write_bytes(scenario_raw)
+        snapshot.chmod(0o400)
+        with (
+            TemporaryFile(dir=directory) as stdout,
+            TemporaryFile(dir=directory) as stderr,
+        ):
+            result = subprocess.run(
+                [
+                    str(
+                        Path(sys.executable).absolute().with_name("robotics-acceptance")
+                    ),
+                    "create-run",
+                    "--scenario",
+                    str(snapshot.resolve()),
+                    "--output",
+                    str(run_path.absolute()),
+                    "--domain",
+                    "px4=simulation",
+                    "--time-authority",
+                    CLOCK["kind"],
+                    "--time-source",
+                    CLOCK["source_id"],
+                    "--run-id",
+                    run_id,
+                ],
+                cwd=directory,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                timeout=30,
+                check=False,
+            )
+            stderr.seek(0)
+            diagnostic = stderr.read(4097)
+            if result.returncode != 0:
+                reason = diagnostic[:4096].decode("utf-8", errors="replace").strip()
+                if len(diagnostic) > 4096:
+                    reason += "\n[diagnostic truncated]"
+                raise ValueError(
+                    f"acceptance CLI create-run failed (exit {result.returncode}): "
+                    + (reason or "no diagnostic emitted")
+                )
+            stdout.seek(0)
+            output = stdout.read(4097)
+            if len(output) > 4096 or output.decode("utf-8").strip() != run_id:
+                raise ValueError("acceptance CLI returned a different run identity")
+    _, run = mapping(run_path)
+    validate_role(run, "acceptance_run")
+    if (
+        run["run_id"] != run_id
+        or run["scenario_id"] != scenario["scenario_id"]
+        or run["scenario_sha256"] != sha256(scenario_raw).hexdigest()
+        or run["domains"] != [{"domain_id": "px4", "role": "simulation"}]
+        or run["time_authority"] != CLOCK
+        or read_once(scenario_path, LIMIT) != scenario_raw
+    ):
+        raise ValueError("run context differs from the prepared PX4 inputs")
+    return run_id
 
 
 def prepare(
@@ -120,14 +195,7 @@ def prepare(
         "evaluator_bindings": [binding],
     }
     write_document(runtime, runtime_path)
-    issued = create_run_context(
-        scenario_path,
-        run_path,
-        domains={"px4": "simulation"},
-        time_authority=CLOCK["kind"],
-        time_source=CLOCK["source_id"],
-        run_id=run_id,
-    )
+    issued = create_run(scenario_path, run_path, run_id)
     manifest = {
         "run_id": issued,
         "domain_id": "px4",
