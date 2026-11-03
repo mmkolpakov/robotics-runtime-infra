@@ -303,6 +303,12 @@
       ]
     },
     {
+      "name": "px4-native-sdk",
+      "files": [
+        "compose.px4-sdk.yaml"
+      ]
+    },
+    {
       "name": "px4-podman",
       "files": [
         "compose.px4.yaml",
