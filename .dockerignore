@@ -2,6 +2,8 @@
 !Dockerfile
 !foundation.repos
 !docker/
+!docker/licenses/
+!docker/licenses/musl-1.2.6-COPYRIGHT
 !docker/entrypoint.sh
 !docker/apt/
 !docker/apt/**
