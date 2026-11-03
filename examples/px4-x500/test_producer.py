@@ -240,6 +240,150 @@ def action_result(value):
     return transform
 
 
+class PublicRunIssuanceControls(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.invoke = subprocess.run
+
+    def test_installed_cli_issues_the_bound_run_without_native_startup(self):
+        prepared, manifest = inputs(self.root)
+        run = json.loads((prepared / "run.json").read_bytes())
+        self.assertEqual(run["run_id"], RUN)
+        self.assertEqual(run["scenario_sha256"], manifest["scenario"]["sha256"])
+        self.assertEqual(run["domains"], [{"domain_id": "px4", "role": "simulation"}])
+        self.assertEqual(run["time_authority"], PRODUCER.CLOCK)
+
+    def test_cli_uses_read_only_snapshot_and_refuses_changed_source(self):
+        def changed(arguments, **options):
+            snapshot = Path(arguments[arguments.index("--scenario") + 1])
+            self.assertEqual(snapshot.stat().st_mode & 0o777, 0o400)
+            self.assertEqual(snapshot.parent.stat().st_mode & 0o777, 0o700)
+            original = self.root / "archive/inputs/scenario.json"
+            self.assertNotEqual(snapshot, original)
+            result = self.invoke(arguments, **options)
+            document = json.loads(original.read_bytes())
+            document["scenario_id"] += "-changed"
+            write(original, document)
+            return result
+
+        with patch.object(PRODUCER.subprocess, "run", side_effect=changed) as command:
+            with self.assertRaisesRegex(ValueError, "prepared PX4 inputs"):
+                inputs(self.root)
+        self.assertEqual(command.call_count, 1)
+        self.assertFalse((self.root / "archive/inputs/pre-run-inputs.json").exists())
+
+    def test_each_run_binding_is_checked_after_actual_cli(self):
+        mutations = {
+            "run": lambda r: r.update(run_id="run-foreign"),
+            "scenario": lambda r: r.update(scenario_id="foreign"),
+            "digest": lambda r: r.update(scenario_sha256="f" * 64),
+            "domain": lambda r: r.update(
+                domains=[{"domain_id": "foreign", "role": "simulation"}]
+            ),
+            "role": lambda r: r.update(
+                domains=[{"domain_id": "px4", "role": "measurement"}]
+            ),
+            "clock": lambda r: r.update(
+                time_authority={"kind": "external", "source_id": "foreign"}
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(binding=name):
+                (self.root / name).mkdir()
+
+                def altered(arguments, **options):
+                    result = self.invoke(arguments, **options)
+                    output = Path(arguments[arguments.index("--output") + 1])
+                    document = json.loads(output.read_bytes())
+                    mutate(document)
+                    write(output, document)
+                    return result
+
+                with patch.object(PRODUCER.subprocess, "run", side_effect=altered):
+                    with self.assertRaises(ValueError):
+                        inputs(self.root / name)
+
+    def test_lost_acknowledgement_does_not_retry_or_remove_created_run(self):
+        def lost(arguments, **options):
+            result = self.invoke(arguments, **options)
+            self.assertEqual(result.returncode, 0)
+            options["stderr"].write(b"acknowledgement lost")
+            return subprocess.CompletedProcess(arguments, 2)
+
+        with patch.object(PRODUCER.subprocess, "run", side_effect=lost) as command:
+            with self.assertRaisesRegex(ValueError, "acknowledgement lost"):
+                inputs(self.root)
+        self.assertEqual(command.call_count, 1)
+        self.assertTrue((self.root / "archive/inputs/run.json").is_file())
+        self.assertFalse((self.root / "archive/inputs/pre-run-inputs.json").exists())
+
+    def test_wrong_empty_or_oversized_stdout_is_not_a_run_acknowledgement(self):
+        for name, payload in [
+            ("wrong", b"run-foreign\n"),
+            ("empty", b""),
+            ("oversized", b"x" * 4097),
+        ]:
+            with self.subTest(output=name):
+                (self.root / name).mkdir()
+
+                def altered(arguments, **options):
+                    result = self.invoke(arguments, **options)
+                    options["stdout"].seek(0)
+                    options["stdout"].truncate()
+                    options["stdout"].write(payload)
+                    return result
+
+                with patch.object(
+                    PRODUCER.subprocess, "run", side_effect=altered
+                ) as command:
+                    with self.assertRaisesRegex(ValueError, "different run identity"):
+                        inputs(self.root / name)
+                self.assertEqual(command.call_count, 1)
+
+    def test_failure_diagnostic_is_bounded_and_stdout_is_not_disclosed(self):
+        def refused(arguments, **options):
+            options["stdout"].write(b"PRIVATE-STDOUT")
+            options["stderr"].write(b"reason-" + b"x" * 5000)
+            return subprocess.CompletedProcess(arguments, 2)
+
+        with patch.object(PRODUCER.subprocess, "run", side_effect=refused):
+            with self.assertRaises(ValueError) as caught:
+                inputs(self.root)
+        message = str(caught.exception)
+        self.assertIn("exit 2", message)
+        self.assertIn("reason-", message)
+        self.assertIn("[diagnostic truncated]", message)
+        self.assertNotIn("PRIVATE-STDOUT", message)
+        self.assertLess(len(message), 4300)
+
+    def test_missing_cli_and_timeout_have_no_fallback_or_retry(self):
+        for name, error in [
+            ("missing", FileNotFoundError("CLI unavailable")),
+            ("timeout", subprocess.TimeoutExpired("robotics-acceptance", 30)),
+        ]:
+            with self.subTest(failure=name):
+                (self.root / name).mkdir()
+                with patch.object(
+                    PRODUCER.subprocess, "run", side_effect=error
+                ) as command:
+                    with self.assertRaises(type(error)):
+                        inputs(self.root / name)
+                self.assertEqual(command.call_count, 1)
+                self.assertFalse(
+                    (self.root / name / "archive/inputs/pre-run-inputs.json").exists()
+                )
+
+    def test_existing_output_is_refused_by_the_installed_cli(self):
+        prepared, _manifest = inputs(self.root)
+        output = prepared / "run.json"
+        before = output.read_bytes()
+        with self.assertRaisesRegex(ValueError, "create-run failed"):
+            PRODUCER.create_run(prepared / "scenario.json", output, RUN)
+        self.assertEqual(output.read_bytes(), before)
+
+
 class ProducerControls(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
