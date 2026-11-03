@@ -40,11 +40,25 @@ def main():
     parser.add_argument(
         "--source", type=Path, default=ROOT / "host/.tools/PX4-Autopilot"
     )
-    parser.add_argument("--mavsdk-server", type=Path, required=True)
+    parser.add_argument(
+        "--controller", choices=("legacy", "native-python"), default="legacy"
+    )
+    parser.add_argument("--mavsdk-server", type=Path)
     parser.add_argument("--deps-image", required=True)
-    parser.add_argument("--context-name", default="px4-image-context")
-    parser.add_argument("--tag", default="localhost/rr-c13-px4:source")
+    parser.add_argument("--context-name")
+    parser.add_argument("--tag")
     args = parser.parse_args()
+    native = args.controller == "native-python"
+    if native and args.mavsdk_server is not None:
+        parser.error("native-python uses the official wheel, not a MAVSDK server")
+    if not native and args.mavsdk_server is None:
+        parser.error("legacy controller requires --mavsdk-server")
+    args.context_name = args.context_name or (
+        "px4-image-native-context" if native else "px4-image-context"
+    )
+    args.tag = args.tag or (
+        "localhost/rr-px4-native:source" if native else "localhost/rr-c13-px4:source"
+    )
     source = args.source.resolve(strict=True)
     if not source.is_relative_to(ROOT / "host/.tools"):
         raise ValueError("source must stay in project tool directory")
@@ -62,7 +76,7 @@ def main():
 
     if not re.fullmatch(r"(?:sha256:|.+@sha256:)[a-f0-9]{64}", args.deps_image):
         raise ValueError("immutable dependency image required")
-    if (
+    if not native and (
         sha(args.mavsdk_server)
         != "7cd0a2995460983e82fe2cf0ef187aba852bb849168ce972a139680f3611c0d8"
     ):
@@ -112,13 +126,40 @@ def main():
         "deps_image": args.deps_image,
         "payload_manifest_sha256": sha(metadata / "payload.sha256"),
     }
+    if native:
+        (context / "workers").mkdir()
+        for original, name in (
+            ("examples/px4-x500/native_worker.py", "native_worker.py"),
+            (
+                "examples/px4-x500/evaluator/src/px4_x500_evaluator/_px4_listener.py",
+                "_px4_listener.py",
+            ),
+            ("host/workers/px4/probe.py", "probe.py"),
+        ):
+            shutil.copy2(ROOT / original, context / "workers" / name)
+        lock = context / "native-sdk.lock"
+        shutil.copy2(ROOT / "docker/python/px4-native-sdk.lock", lock)
+        lock_sha256 = sha(lock)
+        (metadata / "native-sdk.sha256").write_text(lock_sha256 + "  native-sdk.lock\n")
+        record.update(
+            {
+                "controller": "native-python",
+                "native_sdk": {
+                    "package": "mavsdk",
+                    "version": "4.1.0",
+                    "lock_sha256": lock_sha256,
+                    "python": "/opt/px4-native-venv/bin/python",
+                },
+            }
+        )
+    else:
+        shutil.copy2(args.mavsdk_server, context / "mavsdk_server")
+        shutil.copytree(
+            ROOT / "host/workers/px4",
+            context / "workers",
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
     (metadata / "source.json").write_text(json.dumps(record, indent=2) + "\n")
-    shutil.copy2(args.mavsdk_server, context / "mavsdk_server")
-    shutil.copytree(
-        ROOT / "host/workers/px4",
-        context / "workers",
-        ignore=shutil.ignore_patterns("__pycache__"),
-    )
     shutil.copy2(
         ROOT / "host/workers/legacy-finalization/export_retained.py",
         context / "workers/opaque_export.py",
@@ -138,7 +179,14 @@ def main():
             "--build-arg",
             "PX4_DEPS_IMAGE=" + args.deps_image,
             "-f",
-            str(ROOT / "docker/px4-sitl.Dockerfile"),
+            str(
+                ROOT
+                / (
+                    "docker/px4-sitl-native.Dockerfile"
+                    if native
+                    else "docker/px4-sitl.Dockerfile"
+                )
+            ),
             "-t",
             args.tag,
             str(context),

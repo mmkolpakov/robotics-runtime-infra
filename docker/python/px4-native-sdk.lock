@@ -1,0 +1,4 @@
+# Official MAVSDK4.1 Linux wheels; no declared Python dependencies.
+mavsdk==4.1.0 \
+    --hash=sha256:478eb79b8d45975694cb055934594b3035d4b07b8e9a373daaad07a1c84fa6bc \
+    --hash=sha256:8a09ea4f0ee6d40e579b147633eef298a094b938b1baef9cf3005ee4e651f649
