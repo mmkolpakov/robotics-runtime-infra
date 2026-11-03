@@ -10,6 +10,7 @@ import os
 import re
 import selectors
 import signal
+import stat
 import subprocess
 import time
 from pathlib import Path
@@ -501,14 +502,16 @@ def run_case(
 
     def healthy():
         health = telemetry.health()
-        return all(
+        position_ready = all(
             getattr(health, key, None) is True
             for key in (
-                "is_armable",
                 "is_local_position_ok",
                 "is_global_position_ok",
                 "is_home_position_ok",
             )
+        )
+        return position_ready and (
+            name == "unarmed-refusal" or getattr(health, "is_armable", None) is True
         )
 
     try:
@@ -536,8 +539,7 @@ def run_case(
         ]:
             raise Refused("SDK sender/target identity differs")
         journal.retain("sdk-identity", sdk_identity)
-        if name != "unarmed-refusal":
-            wait(healthy, readiness_ms)
+        wait(healthy, readiness_ms)
         observation("initial-status-a", "vehicle_status", initial=True)
         observation("initial-land", "vehicle_land_detected", initial=True)
         sleep(0.6)
@@ -553,7 +555,6 @@ def run_case(
                     "dispatched": False,
                 },
             )
-            wait(healthy, readiness_ms)
             end = now() + 2000
             while now() < end:
                 check_stop()
@@ -691,6 +692,41 @@ def native_sdk(config):
         raise
 
 
+def read_actor_config(path, run_id):
+    descriptor = os.open(
+        path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    )
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > 32768:
+            raise Refused("actor configuration must be a bounded regular file")
+        raw = bytearray()
+        while chunk := os.read(descriptor, min(4096, 32769 - len(raw))):
+            raw.extend(chunk)
+            if len(raw) > 32768:
+                raise Refused("actor configuration exceeds byte bound")
+        after = os.fstat(descriptor)
+        named = os.stat(path, follow_symlinks=False)
+        identity_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        identity = tuple(getattr(before, field) for field in identity_fields)
+        if (
+            not stat.S_ISREG(after.st_mode)
+            or not stat.S_ISREG(named.st_mode)
+            or any(
+                tuple(getattr(value, field) for field in identity_fields) != identity
+                for value in (after, named)
+            )
+            or len(raw) != before.st_size
+        ):
+            raise Refused("actor configuration changed during capture")
+    finally:
+        os.close(descriptor)
+    config = json.loads(raw)
+    if not isinstance(config, dict) or config.get("owner_id") != run_id:
+        raise Refused("issued owner configuration required")
+    return config
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("case", choices=CASES)
@@ -700,13 +736,10 @@ def main():
     args = parser.parse_args()
     if not args.output.is_absolute() or not args.config.is_absolute():
         parser.error("absolute capture and actor configuration paths required")
-    with args.config.open("rb") as stream:
-        raw = stream.read(32769)
-    if len(raw) > 32768:
-        parser.error("actor configuration exceeds bound")
-    config = json.loads(raw)
-    if not isinstance(config, dict) or config.get("owner_id") != args.run_id:
-        parser.error("issued owner configuration required")
+    try:
+        config = read_actor_config(args.config, args.run_id)
+    except (OSError, ValueError, Refused) as failure:
+        parser.error(str(failure))
     journal = Journal(args.output, args.run_id)
     stop = False
 
