@@ -2,7 +2,7 @@
 ARG COORDINATOR_IMAGE
 # Publisher image is the existing repository COSIGN_IMAGE lock.
 # hadolint ignore=DL3026
-FROM cgr.dev/chainguard/cosign:latest@sha256:e7ef547a42e52b877a9069ee49e2caa6287c30bcb97d27df3ec5d22c0afdbb6f AS cosign
+FROM cgr.dev/chainguard/cosign:latest@sha256:01691d7f79cce18756260f3a98e35b421ce8d0435cef8495875d33d1cd0283db AS cosign
 FROM ${COORDINATOR_IMAGE}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER 0:0
