@@ -38,6 +38,10 @@ variable "LXML_VERSION" {
   default = "5.2.1-1ubuntu0.2"
 }
 
+variable "RUBY_VERSION" {
+  default = "3.2.3-1ubuntu0.24.04.8"
+}
+
 variable "ROS_SNAPSHOT" {
   default = "2026-09-11"
 }
@@ -203,6 +207,7 @@ target "_common" {
     LINUX_LIBC_DEV_VERSION   = LINUX_LIBC_DEV_VERSION
     BROTLI_VERSION           = BROTLI_VERSION
     LXML_VERSION             = LXML_VERSION
+    RUBY_VERSION             = RUBY_VERSION
     ROS_SNAPSHOT             = ROS_SNAPSHOT
     ROSDISTRO_INDEX_REVISION = ROSDISTRO_INDEX_REVISION
   }

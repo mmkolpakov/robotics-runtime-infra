@@ -26,6 +26,7 @@ ARG CA_CERTIFICATES_VERSION=20260816ubuntu0.24.04.1
 ARG LINUX_LIBC_DEV_VERSION=6.8.0-147.147
 ARG BROTLI_VERSION=1.1.0-2ubuntu0.1
 ARG LXML_VERSION=5.2.1-1ubuntu0.2
+ARG RUBY_VERSION=3.2.3-1ubuntu0.24.04.8
 ARG ROS_SNAPSHOT=2026-09-11
 ARG ROSDISTRO_INDEX_REVISION=8e9a99d200fd312f106418b2b497b0cc5146e6a7
 
@@ -1226,6 +1227,7 @@ ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
 ARG BROTLI_VERSION
 ARG LXML_VERSION
+ARG RUBY_VERSION
 ARG OPENSSL_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
@@ -1276,10 +1278,12 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
     && apt-get install -y --no-install-recommends \
       jq \
       "libbrotli1=${BROTLI_VERSION}" \
+      "libruby3.2=${RUBY_VERSION}" \
       "libssl-dev=${OPENSSL_VERSION}" \
       "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
       "python3-lxml=${LXML_VERSION}" \
+      "ruby3.2=${RUBY_VERSION}" \
       "openssl=${OPENSSL_VERSION}" \
     && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
       "${OPENSSL_VERSION}" \
