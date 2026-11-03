@@ -162,6 +162,21 @@ def rows(ulog, name, fields):
     result = [
         {k: data[k][i].item() for k in fields} for i in range(next(iter(lengths)))
     ]
+    boolean_fields = {
+        "vehicle_global_position": {"alt_valid"},
+        "home_position": {"valid_alt"},
+        "vehicle_land_detected": {"landed"},
+        "vehicle_command": {"from_external"},
+        "vehicle_command_ack": {"from_external"},
+    }.get(name, set())
+    for row in result:
+        for field in boolean_fields.intersection(fields):
+            value = row[field]
+            need(
+                type(value) is int and value in (0, 1),
+                "native boolean must be stock int8 zero or one: " + name + "." + field,
+            )
+            row[field] = value == 1
     times = [r["timestamp"] for r in result]
     need(
         all(type(t) is int and t > 0 for t in times)
@@ -307,6 +322,13 @@ def command_phase(command_rows, ack_rows, identity, code, window):
         and r["command"] == code
         and (r["target_system"], r["target_component"]) == expected[2:]
     ]
+    need(
+        all(
+            type(r["result"]) is int and r["result"] in range(7)
+            for r in acknowledgements
+        ),
+        "native command acknowledgement result is unknown",
+    )
     terminal = [r for r in acknowledgements if r["result"] != 5]
     need(
         terminal and len({r["result"] for r in terminal}) == 1,
@@ -387,7 +409,7 @@ def job(wrapper, command, owner, cid, *, status=False):
     return result
 
 
-def custody(native, evidence, configuration, slots, records):
+def actor_facts(native, evidence, configuration, records):
     need(
         isinstance(native, dict)
         and (native.get("run_id"), native.get("domain_id"), native.get("kind"))
@@ -403,15 +425,14 @@ def custody(native, evidence, configuration, slots, records):
             for k in (
                 "actor_before",
                 "actor_after",
-                "logger_start",
-                "logger_stop",
-                "export_manifest",
             )
         ),
         "original native custody chain is incomplete",
     )
     actors = [document(refs[k], evidence) for k in ("actor_before", "actor_after")]
     identities, engine = [], []
+    first = min(integer(record["receiver_unix_ns"]) for record, _ref in records)
+    last = max(integer(record["receiver_unix_ns"]) for record, _ref in records)
     for number, actor in enumerate(actors):
         need(
             actor.get("owner_id") == configuration["run_id"],
@@ -461,52 +482,108 @@ def custody(native, evidence, configuration, slots, records):
             is not None,
             "PX4 process/start/executable/instance identity is unavailable",
         )
-        kind = "actor-identity-" + ("before" if number == 0 else "after")
-        matching_process = [
-            record for record, _ref in records if record["kind"] == kind
-        ]
-        need(
-            len(matching_process) == 1,
-            "original worker PX4 process observation is unavailable",
-        )
-        worker_process = matching_process[0]
-        need(
-            worker_process.get("run_id") == configuration["run_id"]
-            and worker_process.get("domain_id") == "px4"
-            and worker_process.get("value") == pid,
-            "parent and worker PX4 process identities differ",
-        )
-        boundary_sequence = slots[
-            "initial-status-a" if number == 0 else "final-status"
-        ][0]["sequence"]
-        need(
-            worker_process["sequence"] < boundary_sequence
-            if number == 0
-            else worker_process["sequence"] > boundary_sequence,
-            "PX4 process observation does not enclose the source phase",
-        )
         probe_time = integer(process.get("captured_unix_ns"))
-        boundary_time = integer(
-            slots["initial-status-b" if number == 0 else "final-status"][0][
-                "receiver_unix_ns"
-            ]
-        )
         need(
-            probe_time <= boundary_time if number == 0 else probe_time >= boundary_time,
-            "original parent PX4 probes do not enclose the case",
+            probe_time <= first if number == 0 else probe_time >= last,
+            "original parent PX4 probes do not enclose the worker journal",
         )
         identities.append(pid)
     need(
         engine[0] == engine[1] and identities[0] == identities[1],
         "PX4 actor restarted during measurement",
     )
-    b, end = slots["initial-status-b"][0], slots["final-status"][0]
     need(
-        integer(actors[0].get("captured_unix_ns")) <= integer(b["receiver_unix_ns"])
-        and integer(actors[1].get("captured_unix_ns"))
-        >= integer(end["receiver_unix_ns"]),
-        "actor observations do not enclose the controller measurement",
+        integer(actors[0].get("captured_unix_ns")) <= first
+        and integer(actors[1].get("captured_unix_ns")) >= last,
+        "actor observations do not enclose the worker journal",
     )
+    return actors, engine, identities[0], records
+
+
+def worker_processes(actor_data, configuration):
+    _actors, _engine, identity, records = actor_data
+    observed = []
+    for suffix in ("before", "after"):
+        matches = [
+            record
+            for record, _ref in records
+            if record["kind"] == "actor-identity-" + suffix
+        ]
+        need(
+            len(matches) == 1, "original worker PX4 process observation is unavailable"
+        )
+        value = matches[0]
+        need(
+            value.get("run_id") == configuration["run_id"]
+            and value.get("domain_id") == "px4"
+            and value.get("value") == identity,
+            "parent and worker PX4 process identities differ",
+        )
+        observed.append(value)
+    need(
+        observed[0]["sequence"] < observed[1]["sequence"],
+        "worker process observations are not ordered",
+    )
+    return observed
+
+
+def exec_pair(actor_data, evidence):
+    actors, engine, _identity, _records = actor_data
+    after = actors[1]
+    created_ref, result_ref = after.get("exec_record"), after.get("exec_result")
+    need(
+        isinstance(created_ref, dict) and isinstance(result_ref, dict),
+        "original native exec pair is missing",
+    )
+    created, result = document(created_ref, evidence), document(result_ref, evidence)
+    owner, cid = actors[0]["owner_id"], engine[0][0]
+    execution = created.get("exec_id")
+    need(
+        isinstance(execution, str)
+        and re.fullmatch(r"[a-f0-9]{64}", execution) is not None,
+        "native exec identifier is unavailable",
+    )
+    need(
+        all(
+            item.get("owner_id") == owner
+            and item.get("container_id") == cid
+            and item.get("exec_id") == execution
+            for item in (created, result)
+        ),
+        "native exec pair belongs to another owner, actor or invocation",
+    )
+    inspected = result.get("inspect", {})
+    need(
+        result.get("started") is True and result.get("stream_complete") is True,
+        "created-only or partial exec is not observed settlement",
+    )
+    need(
+        isinstance(inspected, dict)
+        and inspected.get("ID") == execution
+        and inspected.get("ContainerID") == cid
+        and inspected.get("Running") is False
+        and type(inspected.get("ExitCode")) is int,
+        "native exec inspection does not establish one settled process",
+    )
+    return inspected["ExitCode"], result_ref
+
+
+def custody(native, evidence, configuration, slots, actor_data):
+    need(actor_data is not None, "original native actor custody is unavailable")
+    actors, engine, _identity, _records = actor_data
+    observed = worker_processes(actor_data, configuration)
+    need(
+        observed[0]["sequence"] < slots["initial-status-a"][0]["sequence"]
+        and observed[1]["sequence"] > slots["final-status"][0]["sequence"],
+        "PX4 process observations do not enclose the source phase",
+    )
+    value = native["value"]
+    refs = value["custody"]
+    need(
+        all(k in refs for k in ("logger_start", "logger_stop", "export_manifest")),
+        "original native custody chain is incomplete",
+    )
+    b, end = slots["initial-status-b"][0], slots["final-status"][0]
     start, stop = (document(refs[k], evidence) for k in ("logger_start", "logger_stop"))
     need(
         start.get("role") == "before-case" and stop.get("role") == "after-case",
@@ -701,6 +778,31 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
                     reference,
                     None,
                 )
+    actor_data = None
+    try:
+        need(evidence is not None, "registered native evidence is unavailable")
+        actor_data = actor_facts(native, evidence, configuration, records)
+        exit_code, execution_ref = exec_pair(actor_data, evidence)
+        if exit_code != 0:
+            assessed["completion"] = (
+                False,
+                execution_ref,
+                "observed native worker exec exited "
+                + str(exit_code)
+                + "; physical outcome is unknown",
+            )
+        elif assessed["completion"][0] is True:
+            worker_processes(actor_data, configuration)
+            assessed["completion"] = (True, execution_ref, None)
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        IndexError,
+        OSError,
+    ) as error:
+        assessed["completion"] = (None, assessed["completion"][1], str(error))
     try:
         kinds, identity, slots, start, end, snapshots = phase(records)
         actions = serial_actions(kinds)
@@ -790,7 +892,7 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             else:
                 assessed["command"] = (record["value"] == expected, reference, None)
         need(evidence is not None, "registered native evidence is unavailable")
-        uref = custody(native, evidence, configuration, slots, records)
+        uref = custody(native, evidence, configuration, slots, actor_data)
         from pyulog import ULog
 
         raw = original(uref, evidence, maximum=ULOG_LIMIT)
@@ -826,29 +928,21 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             ),
             "logger configuration changed during measurement",
         )
-        global_rows = rows(
-            ulog,
-            "vehicle_global_position",
-            ("timestamp", "timestamp_sample", "alt", "alt_valid", "alt_reset_counter"),
-        )
-        home_rows = rows(
-            ulog, "home_position", ("timestamp", "alt", "valid_alt", "update_count")
-        )
-        status = rows(
-            ulog,
-            "vehicle_status",
-            ("timestamp", "arming_state", "system_id", "component_id"),
-        )
-        landed = rows(ulog, "vehicle_land_detected", ("timestamp", "landed"))
-        need(
-            all(
-                (r["system_id"], r["component_id"])
-                == (identity["target_system_id"], identity["target_component_id"])
-                for r in status
-                if start <= r["timestamp"] <= end
-            ),
-            "ULog actor identity changed inside measurement",
-        )
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        IndexError,
+        OSError,
+    ) as error:
+        for name in ("command", "grounded", "disarmed", "postcondition"):
+            if assessed[name][0] is None:
+                assessed[name] = (None, None, str(error))
+        return assessed
+    bounds = None
+    phase_error = "received command phase is unavailable"
+    try:
         lower, upper = start, end
         if refusal and any(d.name == "vehicle_command" for d in ulog.data_list):
             commands = rows(
@@ -903,8 +997,8 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
                 )
         if not refusal:
             need(
-                "takeoff" in actions and "land" in actions,
-                "required serial application actions are absent",
+                "takeoff" in actions,
+                "required application takeoff action is absent",
             )
             fields = (
                 "timestamp",
@@ -932,6 +1026,16 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             takeoff, accepted = command_phase(
                 commands, acks, identity, 22, (start, end)
             )
+            sdk = actions["takeoff"]["result"]
+            if accepted is False:
+                assessed["command"] = (
+                    False,
+                    uref,
+                    "PX4 explicitly rejected the attributable takeoff command",
+                )
+            elif sdk == {"name": "SUCCESS", "value": 1}:
+                assessed["command"] = (True, actions["takeoff"]["reference"], None)
+            need("land" in actions, "required serial application land action is absent")
             land, _land_accepted = command_phase(
                 commands, acks, identity, 21, (start, end)
             )
@@ -957,15 +1061,43 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
                 start <= stamp < land <= end,
                 "received land is outside the observed land phase",
             )
-            sdk = actions["takeoff"]["result"]
-            if sdk == {"name": "SUCCESS", "value": 1}:
-                assessed["command"] = (accepted, actions["takeoff"]["reference"], None)
             lower, upper = takeoff, land - 1
             terminal_lower = land
         else:
             terminal_lower = start
+        bounds = (lower, upper, terminal_lower)
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        IndexError,
+        OSError,
+    ) as error:
+        phase_error = str(error)
+        if assessed["command"][0] is None:
+            assessed["command"] = (None, None, phase_error)
+    if bounds is None:
+        for name in ("grounded", "disarmed", "postcondition"):
+            assessed[name] = (None, None, phase_error)
+        return assessed
+    lower, upper, terminal_lower = bounds
+    try:
+        status = rows(
+            ulog,
+            "vehicle_status",
+            ("timestamp", "arming_state", "system_id", "component_id"),
+        )
+        need(
+            all(
+                (r["system_id"], r["component_id"])
+                == (identity["target_system_id"], identity["target_component_id"])
+                for r in status
+                if start <= r["timestamp"] <= end
+            ),
+            "ULog actor identity changed inside measurement",
+        )
         terminal_status = [r for r in status if terminal_lower < r["timestamp"] <= end]
-        terminal_land = [r for r in landed if terminal_lower < r["timestamp"] <= end]
         if terminal_status:
             need(
                 terminal_status[-1]["arming_state"] in (1, 2),
@@ -976,12 +1108,42 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
                 uref,
                 None,
             )
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        IndexError,
+        OSError,
+    ) as error:
+        assessed["disarmed"] = (None, None, str(error))
+    try:
+        landed = rows(ulog, "vehicle_land_detected", ("timestamp", "landed"))
+        terminal_land = [r for r in landed if terminal_lower < r["timestamp"] <= end]
         if terminal_land:
             need(
                 type(terminal_land[-1]["landed"]) is bool,
                 "terminal landed state is invalid",
             )
             assessed["grounded"] = (terminal_land[-1]["landed"], uref, None)
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        IndexError,
+        OSError,
+    ) as error:
+        assessed["grounded"] = (None, None, str(error))
+    try:
+        global_rows = rows(
+            ulog,
+            "vehicle_global_position",
+            ("timestamp", "timestamp_sample", "alt", "alt_valid", "alt_reset_counter"),
+        )
+        home_rows = rows(
+            ulog, "home_position", ("timestamp", "alt", "valid_alt", "update_count")
+        )
         samples = altitude_samples(global_rows, home_rows, lower, upper)
         if refusal:
             excursion = max(abs(mm - samples[0][1]) for _time, mm in samples)
@@ -1003,7 +1165,5 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
         IndexError,
         OSError,
     ) as error:
-        for name in ("command", "grounded", "disarmed", "postcondition"):
-            if assessed[name][0] is None:
-                assessed[name] = (None, None, str(error))
+        assessed["postcondition"] = (None, None, str(error))
     return assessed

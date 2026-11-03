@@ -311,6 +311,10 @@ def retained_native(capture: Path, binding: dict) -> dict[Path, dict]:
             actor = loads_mapping(raw, source_name=role + ".json")
             if "process_record" in actor:
                 capture_ref(actor["process_record"], LIMIT)
+            if role == "actor_after":
+                for key in ("exec_record", "exec_result"):
+                    if key in actor:
+                        capture_ref(actor[key], LIMIT)
     return selected
 
 
