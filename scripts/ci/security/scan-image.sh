@@ -146,7 +146,7 @@ scan_with_canonical_vex() (
       test "$(wc -c <"${capture}/os-release")" -le 32768
     fi
   done
-  docker rm --volumes "${cid}" >/dev/null
+  cleanup_capture
   container_removed=true
   package_purl="$(jq -er '
     [.Results[]?.Packages[]? | select(.Name == "linux-libc-dev") | .Identifier.PURL]

@@ -438,7 +438,10 @@ case "$1 $2" in
         printf 'ID=ubuntu\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n' >"${@: -1}"
         test "$FAKE_MODE" != wrong-os || printf 'VERSION_CODENAME=jammy\n' >"${@: -1}"
         ;;
-      rm) test "$*" = "rm --volumes $CAPTURE_CID" ;;
+      rm)
+        test "$*" = "rm --volumes $CAPTURE_CID"
+        test "$FAKE_MODE" != cleanup-fail || exit 36
+        ;;
       run)
         output=
         for ((i=1; i<=$#; i++)); do
@@ -616,4 +619,17 @@ EOF
   [[ "${output}" == *'vulnerability gate failed:'* ]]
   [ "$(grep -c -- '--platform linux/arm64' "${DOCKER_LOG}")" -eq 3 ]
   ! grep -q '^build' "${DOCKER_LOG}"
+}
+
+@test "Canonical cleanup failure cannot proceed to the VEX scan" {
+  setup_canonical_scan
+  run env "${environment[@]}" FAKE_MODE=cleanup-fail FAKE_ARCH=arm64 \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test cleanup-fail linux/arm64
+  [ "${status}" -ne 0 ]
+  [ "$(grep -c '^create ' "${DOCKER_LOG}")" -eq 1 ]
+  [ "$(grep -c 'trivy:test image' "${DOCKER_LOG}")" -eq 1 ]
+  [ "$(grep -c '^rm --volumes ' "${DOCKER_LOG}")" -eq 2 ]
+  ! grep -q -- '--skip-db-update' "${DOCKER_LOG}"
+  ! grep -q ' convert ' "${DOCKER_LOG}"
+  [ -s "${SECURITY_DIR}/cleanup-fail-linux-arm64-raw.json" ]
 }
