@@ -399,3 +399,221 @@ EOF
     [ ! -e "${DOCKER_LOG}" ]
   done
 }
+
+setup_canonical_scan() {
+  export IMAGE_ID="sha256:$(printf 'a%.0s' {1..64})"
+  export CAPTURE_CID="$(printf 'c%.0s' {1..64})"
+  mkdir -p "${SECURITY_DIR}/canonical-raw"
+  cat >"${FAKE_BIN}/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >>"${DOCKER_LOG}"
+case "$1 $2" in
+  'image inspect')
+    jq -n --arg id "$IMAGE_ID" --arg arch "$FAKE_ARCH" \
+      --arg os "${FAKE_IMAGE_OS:-linux}" '{Id:$id, Architecture:$arch, Os:$os}'
+    ;;
+  'container inspect')
+    observed_id="$IMAGE_ID"
+    observed_state=created
+    count="$(grep -c '^container inspect ' "${DOCKER_LOG}")"
+    if test "$FAKE_MODE" = container-id || { test "$FAKE_MODE" = container-after && test "$count" -eq 2; }; then
+      observed_id=sha256:foreign
+    fi
+    test "$FAKE_MODE" != container-running || observed_state=running
+    jq -n --arg id "$CAPTURE_CID" --arg image "$observed_id" --arg state "$observed_state" \
+      '{Id:$id, Image:$image, State:{Status:$state, Running:($state == "running")}}'
+    ;;
+  *)
+    case "$1" in
+      create)
+        while test "$1" != --cidfile; do shift; done
+        printf '%s\n' "$CAPTURE_CID" >"$2"
+        printf '%s\n' "$CAPTURE_CID"
+        test "$FAKE_MODE" != create-fail || exit 35
+        ;;
+      cp)
+        test "$2" = -L
+        test "$FAKE_MODE" != missing-os || exit 31
+        printf 'ID=ubuntu\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n' >"${@: -1}"
+        test "$FAKE_MODE" != wrong-os || printf 'VERSION_CODENAME=jammy\n' >"${@: -1}"
+        ;;
+      rm) test "$*" = "rm --volumes $CAPTURE_CID" ;;
+      run)
+        output=
+        for ((i=1; i<=$#; i++)); do
+          if test "${!i}" = --output; then j=$((i+1)); output="${!j}"; fi
+        done
+        if [[ " $* " == *' trivy:test image '* ]]; then
+          target="${SECURITY_DIR}/$(basename "$output")"
+          jq -n --arg id "$IMAGE_ID" --arg arch "$FAKE_ARCH" --arg mode "$FAKE_MODE" '
+            {SchemaVersion:2, ArtifactName:"fixture", Metadata:{
+              ImageID:(if $mode == "report-id" then "sha256:foreign" else $id end),
+              ImageConfig:{architecture:(if $mode == "report-arch" then "foreign" else $arch end)},
+              OS:{Family:"ubuntu", Name:(if $mode == "report-os" then "22.04" else "24.04" end)}},
+             Results:[{Packages:[{Name:"linux-libc-dev", Identifier:{PURL:
+              ("pkg:deb/ubuntu/linux-libc-dev@6.8.0-147.147?arch="+$arch+"&distro=ubuntu-24.04")}}],
+              Vulnerabilities:["CVE-2026-63825","CVE-2026-100074","CVE-2026-112393","CVE-2026-41316"]}]}
+          ' >"$target"
+          if [[ " $* " == *' --vex /canonical-vex/'* ]]; then
+            jq '.Results[0].Vulnerabilities |= map(select(. != "CVE-2026-63825"))' "$target" >"$target.next"
+            mv "$target.next" "$target"
+            test "$FAKE_MODE" != second-scan || exit 32
+          else
+            test "$FAKE_MODE" != first-scan || exit 33
+          fi
+        elif [[ " $* " == *' convert '* && " $* " == *' --format sarif '* ]]; then
+          exit 1
+        fi
+        ;;
+      *) exit 99 ;;
+    esac
+    ;;
+esac
+EOF
+  chmod +x "${FAKE_BIN}/docker"
+  cat >"${FAKE_BIN}/security-python" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if test "$1" = -c; then exit 0; fi
+printf '%s\n' "$*" >"${DOCKER_LOG}.prepare"
+while test "$#" -gt 0; do
+  case "$1" in
+    --output-dir) destination="$2"; shift ;;
+    --os-release) original_os="$2"; shift ;;
+    --scan-report) original_report="$2"; shift ;;
+  esac
+  shift
+done
+test "$FAKE_MODE" != unknown-vendor || exit 34
+grep -Fx 'VERSION_CODENAME=noble' "$original_os" >/dev/null
+jq -e '.Results[0].Vulnerabilities | index("CVE-2026-63825") != null' "$original_report" >/dev/null
+mkdir "$destination"
+printf '{}\n' >"$destination/canonical-ubuntu.openvex.json"
+printf '{}\n' >"$destination/provenance.json"
+(cd "$destination" && sha256sum canonical-ubuntu.openvex.json provenance.json >SHA256SUMS)
+EOF
+  chmod +x "${FAKE_BIN}/security-python"
+  environment=(
+    "PATH=${FAKE_BIN}:${PATH}" "DOCKER_LOG=${DOCKER_LOG}" "HOME=${BATS_TEST_TMPDIR}"
+    "SECURITY_DIR=${SECURITY_DIR}"
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}"
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}"
+    "ROBOTICS_CI_CANONICAL_SOURCE_DIR=${SECURITY_DIR}/canonical-raw"
+    "ROBOTICS_CI_SECURITY_PYTHON=${FAKE_BIN}/security-python"
+    ROBOTICS_CI_TRIVY_DETECTION_PRIORITY=comprehensive TRIVY_IMAGE=trivy:test
+  )
+}
+
+@test "Canonical orchestration keeps both reports and the unresolved gate for each architecture" {
+  setup_canonical_scan
+  for arch in amd64 arm64; do
+    : >"${DOCKER_LOG}"
+    run env "${environment[@]}" FAKE_MODE=valid "FAKE_ARCH=${arch}" \
+      scripts/ci/security/scan-image.sh registry.example/runtime:test "candidate-${arch}" "linux/${arch}"
+    [ "${status}" -eq 1 ]
+    [[ "${output}" == *'vulnerability gate failed:'* ]]
+    [ "$(grep -c '^image inspect ' "${DOCKER_LOG}")" -eq 1 ]
+    [ "$(grep -c '^create ' "${DOCKER_LOG}")" -eq 1 ]
+    [ "$(grep -c '^rm --volumes ' "${DOCKER_LOG}")" -eq 1 ]
+    [ "$(grep -c '^container inspect ' "${DOCKER_LOG}")" -eq 2 ]
+    [ "$(grep -c 'trivy:test image --detection-priority comprehensive' "${DOCKER_LOG}")" -eq 2 ]
+    [ "$(grep -c -- '--skip-db-update --skip-java-db-update' "${DOCKER_LOG}")" -eq 1 ]
+    [ "$(grep -c -- '--show-suppressed --list-all-pkgs' "${DOCKER_LOG}")" -eq 2 ]
+    [ "$(grep -c -- "--platform linux/${arch}.*${IMAGE_ID}$" "${DOCKER_LOG}")" -eq 3 ]
+    ! grep -E '^(start|restart|exec) |^run.*registry.example/runtime' "${DOCKER_LOG}"
+    local original="${SECURITY_DIR}/candidate-${arch}-linux-${arch}-raw.json"
+    local final="${SECURITY_DIR}/candidate-${arch}-linux-${arch}.json"
+    jq -e '.Results[0].Vulnerabilities | length == 4 and index("CVE-2026-63825") != null' "$original"
+    jq -e '.Results[0].Vulnerabilities == ["CVE-2026-100074","CVE-2026-112393","CVE-2026-41316"]' "$final"
+    grep -F -- '--severity HIGH,CRITICAL --exit-code 1' "${DOCKER_LOG}"
+    grep -F -- "--scan-report ${original}" "${DOCKER_LOG}.prepare"
+  done
+}
+
+@test "Canonical observation rejects identity errors before creating a container" {
+  setup_canonical_scan
+  for mode in report-id report-arch report-os; do
+    : >"${DOCKER_LOG}"
+    run env "${environment[@]}" "FAKE_MODE=${mode}" FAKE_ARCH=arm64 \
+      scripts/ci/security/scan-image.sh registry.example/runtime:test "$mode" linux/arm64
+    [ "${status}" -ne 0 ]
+    ! grep -q '^create ' "${DOCKER_LOG}"
+    [ -s "${SECURITY_DIR}/${mode}-linux-arm64-raw.json" ]
+  done
+  for arch in amd64 arm64; do
+    : >"${DOCKER_LOG}"
+    other=amd64
+    test "$arch" != amd64 || other=arm64
+    run env "${environment[@]}" FAKE_MODE=valid "FAKE_ARCH=${arch}" \
+      scripts/ci/security/scan-image.sh registry.example/runtime:test "wrong-${arch}" "linux/${other}"
+    [ "${status}" -ne 0 ]
+    ! grep -q '^create ' "${DOCKER_LOG}"
+    ! grep -q 'trivy:test image' "${DOCKER_LOG}"
+  done
+}
+
+@test "Canonical capture cleans only its stopped container on copy and binding failures" {
+  setup_canonical_scan
+  for mode in create-fail missing-os wrong-os container-id container-after container-running unknown-vendor; do
+    : >"${DOCKER_LOG}"
+    run env "${environment[@]}" "FAKE_MODE=${mode}" FAKE_ARCH=arm64 \
+      scripts/ci/security/scan-image.sh registry.example/runtime:test "$mode" linux/arm64
+    [ "${status}" -ne 0 ]
+    [ "$(grep -c '^create ' "${DOCKER_LOG}")" -eq 1 ]
+    [ "$(grep -c '^rm --volumes ' "${DOCKER_LOG}")" -eq 1 ]
+    [ "$(grep -c 'trivy:test image' "${DOCKER_LOG}")" -eq 1 ]
+    ! grep -q -- '--skip-db-update' "${DOCKER_LOG}"
+    ! grep -E '^(start|restart|exec) |^run.*registry.example/runtime' "${DOCKER_LOG}"
+    [ -s "${SECURITY_DIR}/${mode}-linux-arm64-raw.json" ]
+  done
+}
+
+@test "Canonical scan errors preserve originals and do not reach format conversion" {
+  setup_canonical_scan
+  for mode in first-scan second-scan; do
+    : >"${DOCKER_LOG}"
+    run env "${environment[@]}" "FAKE_MODE=${mode}" FAKE_ARCH=arm64 \
+      scripts/ci/security/scan-image.sh registry.example/runtime:test "$mode" linux/arm64
+    [ "${status}" -ne 0 ]
+    ! grep -q ' convert ' "${DOCKER_LOG}"
+    [ -s "${SECURITY_DIR}/${mode}-linux-arm64-raw.json" ]
+    if test "$mode" = first-scan; then
+      ! grep -q '^create ' "${DOCKER_LOG}"
+    else
+      [ "$(grep -c '^create ' "${DOCKER_LOG}")" -eq 1 ]
+      [ "$(grep -c '^rm --volumes ' "${DOCKER_LOG}")" -eq 1 ]
+    fi
+  done
+}
+
+@test "Canonical opt-in requires comprehensive and cannot mix prebuilt VEX" {
+  setup_canonical_scan
+  local prebuilt="${SECURITY_DIR}/prebuilt"
+  mkdir "$prebuilt"
+  printf '{}\n' >"$prebuilt/canonical-ubuntu.openvex.json"
+  printf '{}\n' >"$prebuilt/provenance.json"
+  (cd "$prebuilt" && sha256sum canonical-ubuntu.openvex.json provenance.json >SHA256SUMS)
+  for mode in default mixed; do
+    : >"${DOCKER_LOG}"
+    if test "$mode" = default; then
+      run env "${environment[@]}" ROBOTICS_CI_TRIVY_DETECTION_PRIORITY= \
+        scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+    else
+      run env "${environment[@]}" "ROBOTICS_CI_VENDOR_VEX_DIR=${prebuilt}" \
+        scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+    fi
+    [ "${status}" -ne 0 ]
+    [ ! -s "${DOCKER_LOG}" ]
+  done
+}
+
+@test "Canonical local image scan derives its platform without rebuilding" {
+  setup_canonical_scan
+  run env "${environment[@]}" FAKE_MODE=valid FAKE_ARCH=arm64 \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *'vulnerability gate failed:'* ]]
+  [ "$(grep -c -- '--platform linux/arm64' "${DOCKER_LOG}")" -eq 3 ]
+  ! grep -q '^build' "${DOCKER_LOG}"
+}

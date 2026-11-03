@@ -107,3 +107,32 @@ claim automatic ingestion or resolution of all Ubuntu advisories.
 Sources: [Canonical VEX](https://documentation.ubuntu.com/security/security-updates/vex/),
 [Trivy 0.76.1 file support](https://github.com/aquasecurity/trivy/blob/v0.76.1/docs/guide/supply-chain/vex/file.md),
 [PackageURL](https://github.com/package-url/packageurl-python).
+
+## RKNN image observations
+
+The RKNN ARM64 CI job enables `ROBOTICS_CI_CANONICAL_SOURCE_DIR` with the
+unchanged pinned originals and `ROBOTICS_CI_SECURITY_PYTHON` with the locked
+PackageURL installation. This option and `ROBOTICS_CI_VENDOR_VEX_DIR` are
+mutually exclusive. Other jobs keep their existing scan path.
+
+For each locally loaded image and selected platform, the scanner resolves the
+image ID once and retains a comprehensive inventory report as `*-raw.json`.
+It creates a stopped container from that ID and copies `/etc/os-release` with
+`docker cp -L`. The container is never started. Image ID, OS and architecture
+must agree with the original report; the created container's image and stopped
+state are checked before and after the copy. Only that container and its
+anonymous volumes are removed, including when observation fails.
+
+The existing preparation helper binds the copied bytes and exact package PURL
+to the pinned supplier statements. Missing OS bytes, an unknown package
+version or an identity mismatch fails preparation. A separate scan uses the
+same immutable image, platform and analysis cache, with database updates
+disabled for this second pass. Both passes use comprehensive detection.
+The original report is retained alongside the projected VEX, provenance,
+container observations and final report with native suppressed findings.
+The HIGH/CRITICAL gate remains unchanged; unresolved findings still block it.
+
+This composition uses stock Trivy image scanning. `trivy convert` does not
+apply VEX, and no report filter or SBOM round trip replaces the image gate.
+A binary-package disposition does not qualify the host kernel or admit a
+native profile.
