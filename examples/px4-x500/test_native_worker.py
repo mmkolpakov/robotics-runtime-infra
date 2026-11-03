@@ -1,6 +1,8 @@
 """Source-only controls: importing or executing the native SDK is forbidden."""
 
+import atexit
 import hashlib
+import shutil
 import io
 from contextlib import redirect_stderr
 import importlib.abc
@@ -24,11 +26,24 @@ class NoNative(importlib.abc.MetaPathFinder):
 
 
 sys.meta_path.insert(0, NoNative())
+_source = Path(__file__).parent
+_sibling_fixture = tempfile.TemporaryDirectory(prefix="px4-worker-import-")
+atexit.register(_sibling_fixture.cleanup)
+_sibling_root = Path(_sibling_fixture.name)
+shutil.copyfile(_source / "native_worker.py", _sibling_root / "native_worker.py")
+shutil.copyfile(
+    _source / "evaluator/src/px4_x500_evaluator/_px4_listener.py",
+    _sibling_root / "_px4_listener.py",
+)
 spec = importlib.util.spec_from_file_location(
-    "native_worker", Path(__file__).with_name("native_worker.py")
+    "native_worker", _sibling_root / "native_worker.py"
 )
 worker = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(worker)
+sys.path.insert(0, str(_sibling_root))
+try:
+    spec.loader.exec_module(worker)
+finally:
+    sys.path.remove(str(_sibling_root))
 RUN = "run-12345678-1234-4123-8123-123456789abc"
 
 

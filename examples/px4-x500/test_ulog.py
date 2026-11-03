@@ -10,6 +10,7 @@ from px4_x500_evaluator._ulog import (
     command_phase,
     original,
     sampled_facts,
+    snapshot,
     serial_actions,
 )
 
@@ -220,6 +221,77 @@ class NativeCommandControls(unittest.TestCase):
         self.assertIsNone(result["postcondition"][0])
         record["value"]["budget_ms"] = 1999
         self.assertIsNone(sampled_facts([(record, {})], config, None)["deadline"][0])
+
+
+class ListenerGrammarControls(unittest.TestCase):
+    def record(self, *, topic="vehicle_status", fields=None):
+        if fields is None:
+            fields = "    arming_state: 1\n    system_id: 1\n    component_id: 1\n"
+        return {
+            "value": {
+                "slot": "initial-land"
+                if topic == "vehicle_land_detected"
+                else "initial-status-a",
+                "argv": [
+                    "/opt/px4/build/px4_sitl_default/bin/px4-listener",
+                    "--instance",
+                    "0",
+                    topic,
+                    "-n",
+                    "1",
+                ],
+                "returncode": 0,
+                "stdout": f"TOPIC: {topic}\n    timestamp: 1000000 (0.250000 seconds ago)\n"
+                + fields,
+                "host_started_monotonic_ms": 100,
+                "host_finished_monotonic_ms": 110,
+                "parsed": {"timestamp_us": "1000000", "age_s": 0.0},
+            }
+        }
+
+    def test_original_age_is_returned_instead_of_retained_claim(self):
+        parsed = snapshot(self.record(), 1, 1)
+        self.assertEqual(parsed["age_s"], 0.25)
+        self.assertEqual(parsed["timestamp_us"], "1000000")
+
+    def test_fixed_version_grammar_rejects_permissive_variants(self):
+        original = self.record()["value"]["stdout"]
+        for raw in (
+            original.replace("0.250000", "0.25"),
+            original.replace("1000000 (", str(1 << 64) + " ("),
+            original + "    extra_field: 1\n    extra_field: 2\n",
+            original + "x" * 32768,
+        ):
+            with self.subTest(raw=raw[:100]):
+                record = self.record()
+                record["value"]["stdout"] = raw
+                with self.assertRaises(Unavailable):
+                    snapshot(record, 1, 1)
+        with self.assertRaises(Unavailable):
+            snapshot(
+                self.record(topic="vehicle_land_detected", fields="    landed: true\n"),
+                1,
+                1,
+                landed=True,
+            )
+
+    def test_identity_invocation_and_elapsed_policy_remain_separate(self):
+        for field, value in (
+            ("argv", ["listener"]),
+            ("returncode", False),
+            ("host_finished_monotonic_ms", 4000),
+            (
+                "stdout",
+                self.record()["value"]["stdout"].replace(
+                    "system_id: 1", "system_id: 2"
+                ),
+            ),
+        ):
+            with self.subTest(field=field):
+                record = self.record()
+                record["value"][field] = value
+                with self.assertRaises(Unavailable):
+                    snapshot(record, 1, 1)
 
 
 if __name__ == "__main__":
