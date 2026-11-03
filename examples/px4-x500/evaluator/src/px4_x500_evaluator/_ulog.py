@@ -10,6 +10,8 @@ from pathlib import PurePosixPath
 
 from robotics_runtime_contracts import loads_mapping
 
+from ._px4_listener import Refused, parse_listener
+
 LIMIT = 1024 * 1024
 ULOG_LIMIT = 64 * 1024 * 1024
 PX4_SOURCE = "d6f12ad1c4f70ad3230afd7d86e971421e02fef4"
@@ -58,27 +60,10 @@ def snapshot(record, expected_system, expected_component, *, landed=False):
         value.get("returncode") == 0 and type(value.get("returncode")) is int,
         "listener did not complete successfully",
     )
-    raw = value.get("stdout")
-    need(
-        isinstance(raw, str)
-        and len(raw.encode()) <= LIMIT
-        and len(re.findall(r"(?m)^TOPIC:", raw)) == 1
-        and len(re.findall(r"(?m)^TOPIC: " + topic + r"\s*$", raw)) == 1
-        and not re.search(r"(?m)^Instance |never published|ERROR|WARN", raw),
-        "listener topic is missing or ambiguous",
-    )
-
-    def field(name, pattern):
-        found = re.findall(r"(?m)^\s*" + name + r":\s*" + pattern + r"\s*$", raw)
-        need(len(found) == 1, "listener field missing or duplicated: " + name)
-        return found[0]
-
-    time, age = field("timestamp", r"([0-9]+) \(([0-9]+(?:\.[0-9]+)?) seconds ago\)")
-    timestamp, age = int(time), float(age)
-    need(
-        timestamp > 0 and math.isfinite(age) and 0 <= age and age + 0.0000005 < 1.0,
-        "listener source time or printed age is unavailable",
-    )
+    try:
+        parsed = parse_listener(value.get("stdout"), topic)
+    except Refused as error:
+        raise Unavailable(str(error)) from error
     start, end = (
         value.get("host_started_monotonic_ms"),
         value.get("host_finished_monotonic_ms"),
@@ -88,26 +73,24 @@ def snapshot(record, expected_system, expected_component, *, landed=False):
         "listener invocation has no bounded host duration",
     )
     if landed:
-        need(
-            field("landed", r"(True|False|true|false)").lower() == "true",
-            "initial listener did not observe landed",
-        )
+        need(parsed["landed"] is True, "initial listener did not observe landed")
     else:
         need(
-            int(field("system_id", r"([0-9]+)")) == expected_system
-            and int(field("component_id", r"([0-9]+)")) == expected_component,
+            parsed["system_id"] == expected_system
+            and parsed["component_id"] == expected_component,
             "listener actor differs from the SDK identity",
         )
-        arming = int(field("arming_state", r"([0-9]+)"))
-        need(arming in (1, 2), "listener arming state is unknown")
         if value.get("slot", "").startswith("initial-"):
-            need(arming == 1, "initial listener did not observe disarmed")
-    parsed = value.get("parsed", {})
+            need(
+                parsed["arming_state"] == 1, "initial listener did not observe disarmed"
+            )
+    retained = value.get("parsed", {})
     need(
-        isinstance(parsed, dict) and integer(parsed.get("timestamp_us")) == timestamp,
+        isinstance(retained, dict)
+        and integer(retained.get("timestamp_us")) == integer(parsed["timestamp_us"]),
         "listener parsed timestamp differs from original stdout",
     )
-    return timestamp
+    return parsed
 
 
 def phase(records):
@@ -148,11 +131,16 @@ def phase(records):
         "listener observations are not ordered",
     )
     system, component = identity["target_system_id"], identity["target_component_id"]
-    ta = snapshot(a, system, component)
-    snapshot(ground, system, component, landed=True)
-    tb, te = snapshot(b, system, component), snapshot(end, system, component)
+    snapshots = {
+        slot: snapshot(slots[slot][0], system, component, landed=slot == "initial-land")
+        for slot in required
+    }
+    ta, tb, te = (
+        integer(snapshots[slot]["timestamp_us"])
+        for slot in ("initial-status-a", "initial-status-b", "final-status")
+    )
     need(0 < ta < tb < te, "PX4 source clock did not progress within one phase")
-    return by_kind, identity, slots, tb, te
+    return by_kind, identity, slots, tb, te, snapshots
 
 
 def rows(ulog, name, fields):
@@ -714,7 +702,7 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
                     None,
                 )
     try:
-        kinds, identity, slots, start, end = phase(records)
+        kinds, identity, slots, start, end, snapshots = phase(records)
         actions = serial_actions(kinds)
         refusal = configuration["case"] == "unarmed-refusal"
         if refusal:
@@ -743,12 +731,7 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             )
         for slot in ("initial-status-a", "initial-land", "initial-status-b"):
             observed = slots[slot][0]["value"]
-            age = float(
-                re.search(
-                    r"timestamp:\s*[0-9]+ \(([0-9]+\.[0-9]+) seconds ago\)",
-                    observed["stdout"],
-                )[1]
-            )
+            age = snapshots[slot]["age_s"]
             began, finished = (
                 observed["host_started_monotonic_ms"],
                 observed["host_finished_monotonic_ms"],
@@ -963,8 +946,12 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
                 < actions["land"]["issued"]["sequence"],
                 "land phase is not serially bracketed",
             )
-            stamp = snapshot(
-                preland, identity["target_system_id"], identity["target_component_id"]
+            stamp = integer(
+                snapshot(
+                    preland,
+                    identity["target_system_id"],
+                    identity["target_component_id"],
+                )["timestamp_us"]
             )
             need(
                 start <= stamp < land <= end,
