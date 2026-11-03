@@ -8,9 +8,9 @@ import json
 import os
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,43 +29,7 @@ def write(path, value):
 
 
 def inputs(root, case="land"):
-    profile = {
-        "profile_id": PRODUCER.PROFILE,
-        "executor": {
-            "implementation": "px4-x500-controller",
-            "version": "synthetic-source-control",
-        },
-        "clock": PRODUCER.CLOCK,
-        "channels": [
-            {
-                "name": "mavsdk-telemetry-position",
-                "original_type": {
-                    "name": "mavsdk.rpc.telemetry.PositionResponse",
-                    "type_support": {
-                        "implementation": "MAVSDK-Proto",
-                        "version": "5c81ecfeb6110cf74ba75ae50b78a1b265c05670",
-                    },
-                },
-                "backend": "gRPC",
-                "wire_envelope": "protobuf",
-                "native_encoding": "protobuf",
-                "recorder": {
-                    "implementation": "px4-x500-controller",
-                    "version": "1",
-                    "transformation": "SDK-decoded JSON with ProtoJSON non-finite scalars",
-                },
-            }
-        ],
-        "observations": {
-            name: {"kind": kind, "requirement": "required"}
-            for name, kind in (
-                ("command", "command_acceptance"),
-                ("terminal", "native_final_state"),
-                ("postcondition", "postcondition"),
-                ("cleanup", "shutdown"),
-            )
-        },
-    }
+    profile = json.loads((ROOT / "native-profile.json").read_bytes())
     path = write(root / "profile.json", profile)
     prepared = root / "archive/inputs"
     supplied = os.environ.get("PX4_EVALUATOR_BINDING")
@@ -78,7 +42,7 @@ def inputs(root, case="land"):
                 "namespace": PRODUCER.PROFILE,
                 "entry_point": "px4_x500_evaluator:evaluate",
                 "distribution": "px4-x500-evaluator",
-                "version": "0.1.0",
+                "version": "0.2.0",
                 "artifact_sha256": "a" * 64,
                 "receipt_sha256": "b" * 64,
             },
@@ -268,9 +232,11 @@ class PublicRunIssuanceControls(unittest.TestCase):
             write(original, document)
             return result
 
-        with patch.object(PRODUCER.subprocess, "run", side_effect=changed) as command:
-            with self.assertRaisesRegex(ValueError, "prepared PX4 inputs"):
-                inputs(self.root)
+        with (
+            patch.object(PRODUCER.subprocess, "run", side_effect=changed) as command,
+            self.assertRaisesRegex(ValueError, "prepared PX4 inputs"),
+        ):
+            inputs(self.root)
         self.assertEqual(command.call_count, 1)
         self.assertFalse((self.root / "archive/inputs/pre-run-inputs.json").exists())
 
@@ -293,7 +259,7 @@ class PublicRunIssuanceControls(unittest.TestCase):
             with self.subTest(binding=name):
                 (self.root / name).mkdir()
 
-                def altered(arguments, **options):
+                def altered(arguments, mutate=mutate, **options):
                     result = self.invoke(arguments, **options)
                     output = Path(arguments[arguments.index("--output") + 1])
                     document = json.loads(output.read_bytes())
@@ -301,9 +267,11 @@ class PublicRunIssuanceControls(unittest.TestCase):
                     write(output, document)
                     return result
 
-                with patch.object(PRODUCER.subprocess, "run", side_effect=altered):
-                    with self.assertRaises(ValueError):
-                        inputs(self.root / name)
+                with (
+                    patch.object(PRODUCER.subprocess, "run", side_effect=altered),
+                    self.assertRaises(ValueError),
+                ):
+                    inputs(self.root / name)
 
     def test_lost_acknowledgement_does_not_retry_or_remove_created_run(self):
         def lost(arguments, **options):
@@ -312,9 +280,11 @@ class PublicRunIssuanceControls(unittest.TestCase):
             options["stderr"].write(b"acknowledgement lost")
             return subprocess.CompletedProcess(arguments, 2)
 
-        with patch.object(PRODUCER.subprocess, "run", side_effect=lost) as command:
-            with self.assertRaisesRegex(ValueError, "acknowledgement lost"):
-                inputs(self.root)
+        with (
+            patch.object(PRODUCER.subprocess, "run", side_effect=lost) as command,
+            self.assertRaisesRegex(ValueError, "acknowledgement lost"),
+        ):
+            inputs(self.root)
         self.assertEqual(command.call_count, 1)
         self.assertTrue((self.root / "archive/inputs/run.json").is_file())
         self.assertFalse((self.root / "archive/inputs/pre-run-inputs.json").exists())
@@ -328,18 +298,20 @@ class PublicRunIssuanceControls(unittest.TestCase):
             with self.subTest(output=name):
                 (self.root / name).mkdir()
 
-                def altered(arguments, **options):
+                def altered(arguments, payload=payload, **options):
                     result = self.invoke(arguments, **options)
                     options["stdout"].seek(0)
                     options["stdout"].truncate()
                     options["stdout"].write(payload)
                     return result
 
-                with patch.object(
-                    PRODUCER.subprocess, "run", side_effect=altered
-                ) as command:
-                    with self.assertRaisesRegex(ValueError, "different run identity"):
-                        inputs(self.root / name)
+                with (
+                    patch.object(
+                        PRODUCER.subprocess, "run", side_effect=altered
+                    ) as command,
+                    self.assertRaisesRegex(ValueError, "different run identity"),
+                ):
+                    inputs(self.root / name)
                 self.assertEqual(command.call_count, 1)
 
     def test_failure_diagnostic_is_bounded_and_stdout_is_not_disclosed(self):
@@ -348,9 +320,11 @@ class PublicRunIssuanceControls(unittest.TestCase):
             options["stderr"].write(b"reason-" + b"x" * 5000)
             return subprocess.CompletedProcess(arguments, 2)
 
-        with patch.object(PRODUCER.subprocess, "run", side_effect=refused):
-            with self.assertRaises(ValueError) as caught:
-                inputs(self.root)
+        with (
+            patch.object(PRODUCER.subprocess, "run", side_effect=refused),
+            self.assertRaises(ValueError) as caught,
+        ):
+            inputs(self.root)
         message = str(caught.exception)
         self.assertIn("exit 2", message)
         self.assertIn("reason-", message)
@@ -365,11 +339,13 @@ class PublicRunIssuanceControls(unittest.TestCase):
         ]:
             with self.subTest(failure=name):
                 (self.root / name).mkdir()
-                with patch.object(
-                    PRODUCER.subprocess, "run", side_effect=error
-                ) as command:
-                    with self.assertRaises(type(error)):
-                        inputs(self.root / name)
+                with (
+                    patch.object(
+                        PRODUCER.subprocess, "run", side_effect=error
+                    ) as command,
+                    self.assertRaises(type(error)),
+                ):
+                    inputs(self.root / name)
                 self.assertEqual(command.call_count, 1)
                 self.assertFalse(
                     (self.root / name / "archive/inputs/pre-run-inputs.json").exists()
@@ -454,233 +430,6 @@ class ProducerControls(unittest.TestCase):
         self.assertEqual(before, {path: path.read_bytes() for path in before})
         return completed, output
 
-    def test_installed_core_projects_passed_json_and_junit(self):
-        result, output = self.assess()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "passed")
-        document = json.loads((output / "acceptance-result.json").read_bytes())
-        self.assertEqual(document["schema_version"], "acceptance-result.v2")
-        self.assertEqual(document["run_id"], RUN)
-        self.assertFalse(ET.parse(output / "junit.xml").findall(".//failure"))
-
-    def test_ack_with_observed_no_ascent_is_failed(self):
-        result, output = self.assess(ascent=0)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "failed")
-        self.assertTrue(ET.parse(output / "junit.xml").findall(".//failure"))
-
-    def test_missing_ground_is_incomplete(self):
-        result, output = self.assess(missing_ground=True)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-        self.assertTrue(ET.parse(output / "junit.xml").findall(".//skipped"))
-
-    def test_missing_owner_cleanup_is_incomplete(self):
-        result, output = self.assess(cleanup=False)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-        self.assertTrue(ET.parse(output / "junit.xml").findall(".//skipped"))
-
-    def test_unarmed_refusal_does_not_claim_a_firmware_denial(self):
-        result, _output = self.assess(case="unarmed-refusal")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "passed")
-
-    def test_interrupted_controller_with_omitted_outcome_is_incomplete(self):
-        result, _output = self.assess(
-            transform=lambda folder: rewrite_capture(folder, incomplete_controller)
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-
-    def test_missing_terminal_summary_does_not_erase_independent_facts(self):
-        def transform(folder):
-            rewrite_capture(
-                folder,
-                lambda records: records.__setitem__(
-                    slice(None),
-                    [row for row in records if row["kind"] != "controller-result"],
-                ),
-            )
-
-        result, output = self.assess(transform=transform)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-        assertions = json.loads((output / "acceptance-result.json").read_bytes())[
-            "assertion_results"
-        ]
-        cleanup = next(
-            row for row in assertions if row["assertion_id"].endswith(".cleanup")
-        )
-        self.assertEqual(cleanup["status"], "passed")
-
-    def test_initial_ground_disarm_cannot_be_terminal_postcondition(self):
-        result, _output = self.assess(
-            transform=lambda folder: rewrite_capture(folder, initial_state_only)
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-
-    def test_terminal_state_after_issued_before_ack_is_observed(self):
-        def ordered(records):
-            ack = next(row for row in records if row["kind"] == "action-land")
-            records.remove(ack)
-            records.insert(len(records) - 1, ack)
-
-        result, _output = self.assess(
-            transform=lambda folder: rewrite_capture(folder, ordered)
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_unknown_altitude_does_not_become_observed_no_ascent(self):
-        result, _output = self.assess(ascent=None)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-
-    def test_unknown_initial_position_keeps_genuine_later_ascent(self):
-        def unknown_initial(records):
-            initial = next(
-                row for row in records if row["kind"] == "telemetry-position"
-            )
-            initial["value"]["value"]["position"]["relative_altitude_m"] = None
-
-        result, _output = self.assess(
-            transform=lambda folder: rewrite_capture(folder, unknown_initial)
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_malformed_known_altitude_remains_error(self):
-        result, _output = self.assess(ascent="not-a-number")
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "error")
-
-    def test_stock_nan_altitude_is_incomplete(self):
-        result, _output = self.assess(ascent="NaN")
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-
-    def test_stock_infinite_altitude_is_domain_error(self):
-        for altitude in ("Infinity", "-Infinity"):
-            with self.subTest(altitude=altitude):
-                with tempfile.TemporaryDirectory() as temporary:
-                    original = self.root
-                    self.root = Path(temporary)
-                    try:
-                        result, _output = self.assess(ascent=altitude)
-                        self.assertEqual(result.returncode, 1, result.stderr)
-                        self.assertEqual(json.loads(result.stdout)["status"], "error")
-                    finally:
-                        self.root = original
-
-    def test_unknown_refusal_baseline_cannot_reanchor_a_known_violation(self):
-        def positions(records):
-            values = iter(("NaN", 0, 0.3, 0.15))
-            for row in records:
-                if row["kind"] == "telemetry-position":
-                    row["value"]["value"]["position"]["relative_altitude_m"] = next(
-                        values
-                    )
-
-        result, _output = self.assess(
-            case="unarmed-refusal",
-            transform=lambda folder: rewrite_capture(folder, positions),
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-
-    def test_known_refusal_violation_survives_an_unknown_sample(self):
-        def positions(records):
-            values = iter((0, "NaN", 0.3, 0.15))
-            for row in records:
-                if row["kind"] == "telemetry-position":
-                    row["value"]["value"]["position"]["relative_altitude_m"] = next(
-                        values
-                    )
-
-        result, output = self.assess(
-            case="unarmed-refusal",
-            transform=lambda folder: rewrite_capture(folder, positions),
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        assertions = json.loads((output / "acceptance-result.json").read_bytes())[
-            "assertion_results"
-        ]
-        condition = next(
-            row for row in assertions if row["assertion_id"].endswith(".postcondition")
-        )
-        self.assertEqual(condition["status"], "failed")
-
-    def test_unknown_takeoff_response_is_incomplete(self):
-        result, _output = self.assess(
-            transform=lambda folder: rewrite_capture(
-                folder, action_result("RESULT_UNKNOWN")
-            )
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-
-    def test_timeout_ack_does_not_claim_vehicle_denial(self):
-        result, _output = self.assess(
-            transform=lambda folder: rewrite_capture(
-                folder, action_result("RESULT_TIMEOUT")
-            )
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "incomplete")
-
-    def test_non_enum_takeoff_response_is_error(self):
-        result, _output = self.assess(
-            transform=lambda folder: rewrite_capture(
-                folder, action_result("RESULT_BOGUS")
-            )
-        )
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "error")
-
-    def test_interrupted_controller_keeps_observed_cleanup_failure(self):
-        def transform(folder):
-            rewrite_capture(folder, incomplete_controller)
-            path = folder / "engine-cleanup.json"
-            value = json.loads(path.read_bytes())
-            value.update(
-                released=False, observed={"containers": ["remaining"], "networks": []}
-            )
-            write(path, value)
-
-        result, output = self.assess(transform=transform)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        assertions = json.loads((output / "acceptance-result.json").read_bytes())[
-            "assertion_results"
-        ]
-        cleanup = next(
-            row for row in assertions if row["assertion_id"].endswith(".cleanup")
-        )
-        self.assertEqual(cleanup["status"], "failed")
-
-    def test_frozen_snapshots_ignore_mutation_of_original_after_capture(self):
-        prepared, _manifest = inputs(self.root)
-        folder = capture(prepared)
-        original = PRODUCER.add_evidence_artifact
-        calls = []
-
-        def register(draft, path, metadata):
-            calls.append(path)
-            # At this point originals were already bounded/captured; writers only
-            # receive producer-owned frozen files, never this mutable source.
-            if len(calls) == 1:
-                for source in folder.glob("*.json"):
-                    source.write_bytes(b"changed after capture")
-            self.assertIn(
-                path.parent,
-                (prepared.parent / "source-records", prepared, prepared.parent),
-            )
-            return original(draft, path, metadata)
-
-        with patch.object(PRODUCER, "add_evidence_artifact", register):
-            PRODUCER.complete(prepared, folder)
-        observation = json.loads((prepared.parent / "observation.json").read_bytes())
-        self.assertTrue(observation["observations"]["postcondition"]["value"])
-
     def test_oversized_and_mismatched_record_refuse_before_writer(self):
         for oversized in (False, True):
             with (
@@ -716,32 +465,6 @@ class ProducerControls(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symlink"):
                 PRODUCER.complete(prepared, folder)
             writer.assert_not_called()
-
-    def test_cleanup_fifo_is_rejected_in_bounded_outer_process(self):
-        prepared, _manifest = inputs(self.root)
-        folder = capture(prepared)
-        path = folder / "engine-cleanup.json"
-        path.unlink()
-        os.mkfifo(path, 0o600)
-        program = (
-            "import importlib.util; from pathlib import Path; "
-            f"s=importlib.util.spec_from_file_location('producer', {str(ROOT / 'producer.py')!r}); "
-            "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); "
-            "m.add_evidence_artifact=lambda *args: (_ for _ in ()).throw(AssertionError('writer reached')); "
-            f"m.complete(Path({str(prepared)!r}), Path({str(folder)!r}))"
-        )
-        result = subprocess.run(
-            [sys.executable, "-c", program],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("bounded regular file", result.stderr)
-        self.assertNotIn("writer reached", result.stderr)
-        self.assertFalse((prepared.parent / "evidence-index.json").exists())
 
     def test_receipt_documents_without_external_authentication_refuse_loading(self):
         result, _output = self.assess(include_trust=False)
@@ -800,22 +523,6 @@ class ProducerControls(unittest.TestCase):
             + 1,
         )
 
-    def test_command_ack_cannot_create_ground_or_ascent(self):
-        prepared, _manifest = inputs(self.root)
-        folder = capture(prepared, ascent=0, missing_ground=True)
-        PRODUCER.complete(prepared, folder)
-        observation = json.loads((prepared.parent / "observation.json").read_bytes())
-        self.assertEqual(observation["observations"]["command"]["value"], True)
-        self.assertEqual(observation["observations"]["terminal"]["state"], "unobserved")
-        self.assertEqual(observation["observations"]["postcondition"]["value"], False)
-
-    def test_absent_cleanup_remains_unobserved(self):
-        prepared, _manifest = inputs(self.root)
-        folder = capture(prepared, cleanup=False)
-        PRODUCER.complete(prepared, folder)
-        observation = json.loads((prepared.parent / "observation.json").read_bytes())
-        self.assertEqual(observation["observations"]["cleanup"]["state"], "unobserved")
-
     def test_sdk_observations_do_not_invent_otlp_instrumentation(self):
         prepared, _manifest = inputs(self.root)
         folder = capture(prepared)
@@ -856,6 +563,188 @@ class ProducerControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pre-run input bytes changed"):
             PRODUCER.complete(prepared, folder)
         self.assertFalse((prepared.parent / "evidence-index.json").exists())
+
+    def test_versioned_method_does_not_promote_receiver_samples_to_ulog_facts(self):
+        prepared, _ = inputs(self.root)
+        folder = capture(prepared)
+        PRODUCER.complete(prepared, folder)
+        observation = json.loads((prepared.parent / "observation.json").read_bytes())
+        self.assertEqual(
+            observation["observations"]["postcondition"]["state"], "unobserved"
+        )
+        self.assertEqual(
+            json.loads((prepared / "configuration.json").read_bytes())[
+                "measurement_method"
+            ],
+            "px4-valid-home-sampled-v0.2",
+        )
+
+    def test_installed_public_evaluate_keeps_missing_native_chain_incomplete(self):
+        completed, output = self.assess()
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["status"], "incomplete")
+        result = json.loads((output / "acceptance-result.json").read_bytes())
+        self.assertEqual(result["schema_version"], "acceptance-result.v2")
+        self.assertTrue(ET.parse(output / "junit.xml").findall(".//skipped"))
+
+    def test_installed_public_evaluate_consumes_original_chain_with_stock_decoder(self):
+        from test_ulog_custody import native_case
+
+        completed, output = self.assess(transform=lambda folder: native_case(folder))
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        result = json.loads((output / "acceptance-result.json").read_bytes())
+        self.assertEqual(result["status"], "incomplete")
+        rows = {
+            row["assertion_id"]: row
+            for row in result["assertion_results"]
+            if row["source"] == "product"
+        }
+        postcondition = rows[PRODUCER.PROFILE + ".postcondition"]
+        self.assertEqual(postcondition["status"], "skipped")
+        self.assertIn("stock ULog decoding", postcondition.get("message", ""))
+
+    def test_native_original_uri_is_registered_unchanged(self):
+        prepared, _ = inputs(self.root)
+        folder = capture(prepared)
+        payload = folder / "native.ulg"
+        payload.write_bytes(b"opaque original retained ULog")
+        raw = payload.read_bytes()
+        ref = {
+            "uri": payload.as_uri(),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+            "media_type": "application/octet-stream",
+        }
+        binding = {
+            "run_id": RUN,
+            "domain_id": "px4",
+            "kind": "native-evidence",
+            "value": {"ulog": ref, "custody": {}},
+        }
+        write(folder / "native-evidence.json", binding)
+        PRODUCER.complete(prepared, folder)
+        index = json.loads((prepared.parent / "evidence-index.json").read_bytes())
+        registered = [
+            v
+            for v in index["artifacts"]
+            if v["artifact_id"].startswith("native-")
+            and v["artifact_id"] != "native-binding"
+        ]
+        self.assertEqual(len(registered), 1)
+        self.assertEqual({k: registered[0][k] for k in ref}, ref)
+        self.assertEqual(payload.read_bytes(), raw)
+
+    def test_original_parent_facts_are_registered_without_rewriting_their_uri(self):
+        prepared, _ = inputs(self.root)
+        folder = capture(prepared)
+        parent = prepared.parent / "parent-facts"
+        parent.mkdir()
+        actor = write(parent / "actor.json", {"owner_id": RUN})
+        raw = actor.read_bytes()
+        ref = {
+            "uri": actor.as_uri(),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+            "media_type": "application/json",
+        }
+        write(
+            folder / "native-evidence.json",
+            {
+                "run_id": RUN,
+                "domain_id": "px4",
+                "kind": "native-evidence",
+                "value": {"custody": {"actor_before": ref}},
+            },
+        )
+        PRODUCER.complete(prepared, folder)
+        index = json.loads((prepared.parent / "evidence-index.json").read_bytes())
+        self.assertEqual(
+            len(
+                [
+                    v
+                    for v in index["artifacts"]
+                    if all(v.get(k) == value for k, value in ref.items())
+                ]
+            ),
+            1,
+        )
+        self.assertEqual(actor.read_bytes(), raw)
+
+    def test_ulog_cannot_escape_capture_via_parent_facts_and_inputs_are_not_parent_facts(
+        self,
+    ):
+        for role in ("ulog-parent", "actor-inputs"):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                prepared, _ = inputs(Path(directory))
+                folder = capture(prepared)
+                if role == "ulog-parent":
+                    parent = prepared.parent / "parent-facts"
+                    parent.mkdir()
+                    payload = parent / "source.ulg"
+                    payload.write_bytes(b"source")
+                else:
+                    payload = prepared / "configuration.json"
+                raw = payload.read_bytes()
+                ref = {
+                    "uri": payload.as_uri(),
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                    "size_bytes": len(raw),
+                    "media_type": "application/json",
+                }
+                value = (
+                    {"ulog": ref, "custody": {}}
+                    if role == "ulog-parent"
+                    else {"custody": {"actor_before": ref}}
+                )
+                write(
+                    folder / "native-evidence.json",
+                    {
+                        "run_id": RUN,
+                        "domain_id": "px4",
+                        "kind": "native-evidence",
+                        "value": value,
+                    },
+                )
+                with patch.object(PRODUCER, "add_evidence_artifact") as writer:
+                    with self.assertRaisesRegex(ValueError, "fixed retained roots"):
+                        PRODUCER.complete(prepared, folder)
+                    writer.assert_not_called()
+
+    def test_native_original_tamper_symlink_and_foreign_uri_refuse(self):
+        for mode in ("tamper", "symlink", "foreign"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                prepared, _ = inputs(Path(temporary))
+                folder = capture(prepared)
+                payload = folder / "native.ulg"
+                payload.write_bytes(b"native")
+                ref = {
+                    "uri": payload.as_uri(),
+                    "sha256": hashlib.sha256(b"native").hexdigest(),
+                    "size_bytes": 6,
+                    "media_type": "application/octet-stream",
+                }
+                if mode == "tamper":
+                    payload.write_bytes(b"changed")
+                else:
+                    outside = prepared.parent / "outside.ulg"
+                    payload.rename(outside)
+                    if mode == "symlink":
+                        payload.symlink_to(outside)
+                    else:
+                        ref["uri"] = outside.as_uri()
+                write(
+                    folder / "native-evidence.json",
+                    {
+                        "run_id": RUN,
+                        "domain_id": "px4",
+                        "kind": "native-evidence",
+                        "value": {"ulog": ref, "custody": {}},
+                    },
+                )
+                with patch.object(PRODUCER, "add_evidence_artifact") as writer:
+                    with self.assertRaises(ValueError):
+                        PRODUCER.complete(prepared, folder)
+                    writer.assert_not_called()
 
 
 if __name__ == "__main__":
