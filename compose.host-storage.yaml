@@ -1,7 +1,7 @@
 ---
 services:
   storage-init:
-    image: node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697
+    image: node:24.21.0-trixie-slim@sha256:c83040f7e24bacea68e58a0b96a484ba430bf24abb2973eab7ba4701144b7b63
     pull_policy: never
     user: "0:0"
     network_mode: none
@@ -13,7 +13,7 @@ services:
     labels:
       org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
   storage-worker:
-    image: node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697
+    image: node:24.21.0-trixie-slim@sha256:c83040f7e24bacea68e58a0b96a484ba430bf24abb2973eab7ba4701144b7b63
     pull_policy: never
     user: "10001:1000"
     network_mode: none
@@ -33,7 +33,7 @@ services:
       org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
   storage-host:
     init: true
-    image: node:24.21.0-trixie-slim@sha256:b64fccfbcd1ae10d11b969a868b50e1c2530a7054813d5cdea04ac3bce551697
+    image: node:24.21.0-trixie-slim@sha256:c83040f7e24bacea68e58a0b96a484ba430bf24abb2973eab7ba4701144b7b63
     pull_policy: never
     user: "1000:1000"
     network_mode: none
