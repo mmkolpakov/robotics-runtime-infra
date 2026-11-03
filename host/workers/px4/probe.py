@@ -11,14 +11,74 @@ import threading
 import time
 from pathlib import Path
 
-from google.protobuf.json_format import MessageToDict
-from gz.transport import Node
-from gz.msgs.boolean_pb2 import Boolean
-from gz.msgs.empty_pb2 import Empty
-from gz.msgs.scene_pb2 import Scene
-from gz.msgs.pose_v_pb2 import Pose_V
-from gz.msgs.world_control_pb2 import WorldControl
-from gz.msgs.world_stats_pb2 import WorldStatistics
+
+def actor_identity(
+    owner_id: str, container_id: str, instance: int, proc_root: Path = Path("/proc")
+) -> dict:
+    executable = "/opt/px4/build/px4_sitl_default/bin/px4"
+    if type(instance) is not int or not 0 <= instance <= 255:
+        raise ValueError("invalid PX4 instance")
+    if len(container_id) != 64 or any(
+        c not in "0123456789abcdef" for c in container_id
+    ):
+        raise ValueError("exact container ID required")
+    candidates = []
+    examined = 0
+    for entry in proc_root.iterdir():
+        if not entry.name.isdecimal() or int(entry.name) <= 1:
+            continue
+        examined += 1
+        if examined > 4096:
+            raise RuntimeError("process inventory exceeds bound")
+        if len(candidates) >= 2:
+            raise RuntimeError("multiple matching PX4 processes")
+        try:
+            if os.readlink(entry / "exe") != executable:
+                continue
+            before = (entry / "stat").read_text()
+            ticks = before[before.rfind(")") + 2 :].split()[19]
+            with (entry / "cmdline").open("rb") as stream:
+                command = stream.read(16385)
+            if len(command) > 16384:
+                raise RuntimeError("PX4 command line exceeds bound")
+            argv = command.split(b"\0")
+            options = [
+                i for i, value in enumerate(argv) if value in (b"-i", b"--instance")
+            ]
+            if len(options) != 1 or options[0] + 1 >= len(argv):
+                raise RuntimeError("explicit PX4 process instance required")
+            if argv[options[0] + 1] != str(instance).encode():
+                raise RuntimeError("PX4 process instance differs")
+            digest = hashlib.sha256()
+            size = 0
+            with (entry / "exe").open("rb") as stream:
+                while chunk := stream.read(1048576):
+                    size += len(chunk)
+                    if size > 134217728:
+                        raise RuntimeError("PX4 executable exceeds bound")
+                    digest.update(chunk)
+            after = (entry / "stat").read_text()
+            if after[after.rfind(")") + 2 :].split()[19] != ticks:
+                raise RuntimeError("PX4 process changed during observation")
+            candidates.append(
+                {
+                    "pid": int(entry.name),
+                    "start_ticks": ticks,
+                    "executable": executable,
+                    "executable_sha256": digest.hexdigest(),
+                    "instance": instance,
+                }
+            )
+        except FileNotFoundError:
+            continue
+    if len(candidates) != 1:
+        raise RuntimeError("exactly one matching PX4 process required")
+    return {
+        "owner_id": owner_id,
+        "container_id": container_id,
+        "captured_unix_ns": str((time.time_ns() // 1000000) * 1000000),
+        "px4_process": candidates[0],
+    }
 
 
 def ns(value) -> str:
@@ -26,6 +86,15 @@ def ns(value) -> str:
 
 
 def run(args) -> dict:
+    from google.protobuf.json_format import MessageToDict
+    from gz.transport import Node
+    from gz.msgs.boolean_pb2 import Boolean
+    from gz.msgs.empty_pb2 import Empty
+    from gz.msgs.scene_pb2 import Scene
+    from gz.msgs.pose_v_pb2 import Pose_V
+    from gz.msgs.world_control_pb2 import WorldControl
+    from gz.msgs.world_stats_pb2 import WorldStatistics
+
     node = Node()
     service = f"/world/{args.world}"
     executed, scene = node.request(service + "/scene/info", Empty(), Empty, Scene, 3000)
@@ -127,8 +196,12 @@ def run(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--mode", choices=("ready", "observe", "last-state"), required=True
+        "--mode",
+        choices=("ready", "observe", "last-state", "actor-identity"),
+        required=True,
     )
+    parser.add_argument("--instance", type=int, default=0)
+    parser.add_argument("--container-id")
     parser.add_argument("--world", default="default")
     parser.add_argument("--model", default="x500_0")
     parser.add_argument("--owner-id", required=True)
@@ -140,7 +213,11 @@ def main() -> int:
     # Reserve output before native effects. An earlier attempt is never overwritten.
     with args.output.open("x") as stream:
         try:
-            facts = run(args)
+            facts = (
+                actor_identity(args.owner_id, args.container_id, args.instance)
+                if args.mode == "actor-identity"
+                else run(args)
+            )
         except Exception as error:
             json.dump(
                 {"owner_id": args.owner_id, "ready": False, "diagnostic": str(error)},
@@ -150,6 +227,15 @@ def main() -> int:
             raise
         json.dump(facts, stream, allow_nan=False)
         stream.write("\n")
+        if args.mode == "actor-identity":
+            stream.flush()
+            os.fsync(stream.fileno())
+    if args.mode == "actor-identity":
+        descriptor = os.open(args.output.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     return 0
 
 
