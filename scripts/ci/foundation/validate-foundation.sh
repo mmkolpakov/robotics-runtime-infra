@@ -9,7 +9,7 @@ foundation_bin="${root}/${foundation_project}/.venv/bin"
 
 bash scripts/ci/foundation/render-compatibility.sh \
   docs/foundation-compatibility.md --check
-uv sync --project "${foundation_project}" --locked --all-packages --extra mcap --no-default-groups --no-editable
+uv sync --project "${foundation_project}" --locked --all-packages --extra mcap --extra pytest --no-default-groups --no-editable
 uv pip check --python "${foundation_bin}/python"
 ROBOTICS_CONTRACTS_CLI="${foundation_bin}/robotics-contracts" \
   bats test/qualification/qualification.bats
