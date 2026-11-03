@@ -169,6 +169,29 @@ def parse_listener(stdout, topic, *, maximum_age_s=1.0):
     return parsed
 
 
+def check_initial_freshness(observations, checked_at_ms):
+    # This is a conservative acceptance budget, not a host/PX4 clock mapping.
+    required = {"initial-status-a", "initial-land", "initial-status-b"}
+    if set(observations) != required or not finite(checked_at_ms):
+        raise Refused("initial source observations or dispatch clock unavailable")
+    for slot in sorted(required):
+        observation = observations[slot]
+        started = observation["host_started_monotonic_ms"]
+        finished = observation["host_finished_monotonic_ms"]
+        age = observation["parsed"]["age_s"]
+        if (
+            not all(finite(value) for value in (started, finished, age))
+            or not 0 <= started <= finished <= checked_at_ms
+            or age < 0
+        ):
+            raise Refused("initial observation clocks are unordered or unavailable")
+        budget_ms = (
+            age * 1000 + 0.0005 + (finished - started) + (checked_at_ms - finished)
+        )
+        if budget_ms >= 1000:
+            raise Refused("initial snapshot freshness budget exceeded: " + slot)
+
+
 def process_identity(config, *, proc_root=Path("/proc")):
     pid = config.get("px4_pid")
     ticks = config.get("px4_start_ticks")
@@ -337,7 +360,7 @@ def run_case(
     before = None
     last_source = 0
     initial_source = 0
-    last_snapshot_finished = None
+    initial_observations = {}
     readiness_ms = 45000
     settlement_ms = 45000
 
@@ -358,7 +381,7 @@ def run_case(
             sleep(0.1)
 
     def observation(slot, topic, *, initial=False):
-        nonlocal last_source, initial_source, last_snapshot_finished
+        nonlocal last_source, initial_source
         if actor_probe(config) != before:
             raise Refused("PX4 process changed during listener observation")
         started = now()
@@ -418,17 +441,14 @@ def run_case(
             journal.retain("listener-observation", value)
             raise
         journal.retain("listener-observation", value)
-        last_snapshot_finished = job["host_finished_monotonic_ms"]
+        if initial:
+            initial_observations[slot] = value
         return parsed
 
     def invoke(method):
         nonlocal serial, may_have_armed
         if actor_probe(config) != before:
             raise Refused("PX4 process changed before action dispatch")
-        if method == "arm" and (
-            last_snapshot_finished is None or now() - last_snapshot_finished > 1000
-        ):
-            raise Refused("listener-to-dispatch controller delay exceeds bound")
         serial += 1
         invocation = f"action-{serial:04d}"
         journal.retain(
@@ -439,9 +459,9 @@ def run_case(
             check_stop()
         if actor_probe(config) != before:
             raise Refused("PX4 process changed during durable issuance")
-        if method == "arm" and now() - last_snapshot_finished > 1000:
-            raise Refused("durable issuance exceeded listener-to-dispatch bound")
+        dispatch_ms = now()
         if method == "arm":
+            check_initial_freshness(initial_observations, dispatch_ms)
             may_have_armed = True
         try:
             result = getattr(action, method)()
@@ -457,6 +477,7 @@ def run_case(
                     "invocation_id": invocation,
                     "method": method,
                     "monotonic_ms": now(),
+                    "dispatch_monotonic_ms": dispatch_ms,
                     "sdk_result": native_result,
                     "error_type": type(failure).__name__,
                     "message": str(failure),
@@ -471,6 +492,7 @@ def run_case(
                 "invocation_id": invocation,
                 "method": method,
                 "monotonic_ms": now(),
+                "dispatch_monotonic_ms": dispatch_ms,
                 "sdk_result": result,
             },
         )
@@ -521,6 +543,7 @@ def run_case(
         sleep(0.6)
         observation("initial-status-b", "vehicle_status", initial=True)
         if name == "unarmed-refusal":
+            check_initial_freshness(initial_observations, now())
             journal.retain(
                 "caller-refusal",
                 {
