@@ -1,0 +1,15 @@
+{
+  "profile_id": "px4-x500-native-sdk-0.2.0",
+  "scope": "source-only; SDK and image admission required",
+  "provider_mode": "native-sdk-v2",
+  "compose": "compose.px4-sdk.yaml",
+  "process_instance": 0,
+  "python": "/opt/px4-native-venv/bin/python",
+  "worker": "/opt/robotics/px4/native_worker.py",
+  "native_api": [
+    "MAVSDK 4.1 synchronous Action and Telemetry",
+    "stock PX4 listener and logger",
+    "Gz readiness and pause"
+  ],
+  "image_admission": "required"
+}
