@@ -1,9 +1,10 @@
 # Live neutral source fixture
 
 This fixture runs the existing neutral scenario through the native Gazebo provider
-and retained finalization service. It uses the public contracts 0.19.0 and harness
-0.20.0 CLI. The installed package versions are checked against the foundation lock
-before runtime-manifest creation. The identity sidecar keeps the declared workspace
+and retained finalization service. It uses the public contracts and harness CLIs
+selected by the [foundation lock](../../../../config/foundation-lock.json).
+The installed package versions are checked against that lock before
+runtime-manifest creation. The identity sidecar keeps the declared workspace
 source pin and observed installed versions separate: matching versions alone do not
 prove a source commit.
 
