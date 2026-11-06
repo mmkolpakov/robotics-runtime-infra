@@ -63,6 +63,8 @@ class Transport:
         self.node._namespace = "/simulator"
         self.node._timeout_sec = 1.0
         self.node._clock_ns = 100
+        self.node._diagnostics = None
+        self.node._clock_callback_times = None
         self.elapsed = 0.0
         self.phase = "initial"
         self.actual_state = STATE.STATE_PAUSED

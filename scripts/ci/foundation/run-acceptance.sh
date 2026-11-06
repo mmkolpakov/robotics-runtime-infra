@@ -8,6 +8,8 @@ source "${script_dir}/lib.sh"
 readonly evidence_metrics_segment_index=900000
 observer_mode="${ROBOTICS_FOUNDATION_OBSERVER:-embedded}"
 native_trace="${ROBOTICS_NATIVE_UST_TRACE:-0}"
+native_trace_capture_attempted=0
+native_trace_capture_result=68
 playback_completion="${ROBOTICS_FOUNDATION_PLAYBACK_COMPLETION:-controlled-stop}"
 case "${playback_completion}" in
   controlled-stop|natural-eof) ;;
@@ -43,6 +45,10 @@ run_id="$(foundation_run_id)"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
 project="$(foundation_project_name acceptance "${run_id}" "${run_attempt}")"
 artifact_dir="$(foundation_artifact_dir "${root}" "${project}")"
+if [[ "${native_trace}" == 1 && -e "${artifact_dir}/native-ust" ]]; then
+  printf 'existing diagnostic destination cannot be reused by this invocation\n' >&2
+  exit 65
+fi
 run_dir="${root}/runs/${project}"
 scenario_source="${ROBOTICS_FOUNDATION_SCENARIO:-examples/minimal-consumer/scenario.yaml}"
 [[ -f "${scenario_source}" ]] || {
@@ -278,6 +284,8 @@ if [[ "${native_trace:-0}" == 1 ]]; then
   foundation_files+=(compose.native-trace.yaml)
   if [[ "${data_source}" == recording_playback ]]; then
     foundation_files+=(compose.native-trace-playback.yaml)
+  else
+    foundation_files+=(compose.native-trace-simulation.yaml)
   fi
 fi
 foundation_compose=(docker compose "${compose_environment[@]}" -p "${project}")
@@ -292,6 +300,14 @@ consumer_model="${run_dir}/consumer-compose.json"
 resolved_model="${run_dir}/resolved-compose.json"
 policy_input="${run_dir}/foundation-policy-input.json"
 "${foundation_compose[@]}" "${profiles[@]}" config --format json >"${foundation_model}"
+if [[ "${native_trace:-0}" == 1 && "${data_source}" == simulator ]]; then
+  trace_program="${run_dir}/configuration/native-trace-program"
+  bash "${root}/scripts/ci/diagnostics/prepare-simulation-trace-command.sh" \
+    "${foundation_model}" "${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID}" "${trace_program}"
+  foundation_compose+=(-f "${trace_program}/compose.json")
+  foundation_paths+=("${trace_program}/compose.json")
+  "${foundation_compose[@]}" "${profiles[@]}" config --format json >"${foundation_model}"
+fi
 if ((${#FOUNDATION_EXTENSION_SCHEMA_ARGUMENTS[@]})); then
   schema_override="${run_dir}/configuration/extension-observer-compose.json"
   foundation_schema_observer_override "${foundation_model}" acceptance-observer \
@@ -411,8 +427,8 @@ publish_acceptance_results() {
 }
 capture_native_ros_trace() {
   [[ "${native_trace}" == 1 ]] || return 0
-  local service container destination running status=0 current_status
-  local services=(runtime-metrics runtime-probe-publisher)
+  local service container destination running status=0 current_status expected_command expected_entrypoint
+  local services=(runtime-metrics runtime-probe-publisher simulation simulation-stepper)
   [[ "${data_source}" != recording_playback ]] || services=(runtime-metrics playback)
   local -A trace_containers=()
 
@@ -421,18 +437,30 @@ capture_native_ros_trace() {
   for service in "${services[@]}"; do
     container="$(timeout 10 "${compose[@]}" ps --all --quiet "${service}")" || return
     [[ "${container}" =~ ^[a-f0-9]{64}$ ]] || return 65
+    expected_command="$(jq -ec --arg service "${service}" '
+      .services[$service].command |
+      select(type == "array" and all(.[]; type == "string") and
+        all(.[]; (gsub("\\$\\$"; "") | contains("$")) | not)) |
+      map(gsub("\\$\\$"; "$"))
+    ' "${resolved_model}")" || return
+    expected_entrypoint="$(jq -ec --arg service "${service}" '
+      (.services[$service].entrypoint // ["/usr/local/bin/robotics-entrypoint"]) |
+      select(type == "array")
+    ' "${resolved_model}")" || return
     destination="${artifact_dir}/native-ust/${service}"
     mkdir -p "${destination}"
     timeout 10 docker inspect "${container}" |
       jq -e --arg project "${project}" --arg service "${service}" \
         --arg container "${container}" --arg image "${ROBOTICS_SIMULATION_LOCAL_IMAGE_ID}" \
         --arg run "${ROBOTICS_RUN_ID}" --arg domain "${ROBOTICS_DOMAIN_ID}" \
-        --arg ros_domain "${ROS_DOMAIN_ID:-0}" --arg partition "${GZ_PARTITION:-robotics-runtime}" '
+        --arg ros_domain "${ROS_DOMAIN_ID:-0}" --arg partition "${GZ_PARTITION:-robotics-runtime}" \
+        --argjson command "${expected_command}" --argjson entrypoint "${expected_entrypoint}" '
         .[0] |
         def marker($name):
           [.Config.Env[] | select(startswith($name + "=")) | ltrimstr($name + "=")] |
           if length == 1 then .[0] else error("ambiguous or missing run marker") end;
         select(.Id == $container and .Image == $image and
+          .Config.Cmd == $command and .Config.Entrypoint == $entrypoint and
           .Config.Labels["com.docker.compose.project"] == $project and
           .Config.Labels["com.docker.compose.service"] == $service and
           marker("ROBOTICS_RUN_ID") == $run and marker("ROBOTICS_DOMAIN_ID") == $domain and
@@ -440,7 +468,7 @@ capture_native_ros_trace() {
         {container_id: .Id, image_id: .Image, project: $project, service: $service,
          run_id: $run, domain_id: $domain, ros_domain_id: $ros_domain, partition: $partition,
          state: (.State | {Status, Running, StartedAt, FinishedAt, ExitCode}),
-         command: .Config.Cmd}
+         command: .Config.Cmd, entrypoint: .Config.Entrypoint}
       ' >"${destination}/identity.json" || return
     trace_containers["${service}"]="${container}"
   done
@@ -473,11 +501,76 @@ capture_native_ros_trace() {
     if ((status == 0 && current_status != 0)); then status=${current_status}; fi
     timeout 15 docker cp "${container}:/tmp/robotics-native-ust/trace" \
       "${destination}/trace" || current_status=$?
+    if [[ "${service}" == simulation-stepper ]]; then
+      local log_status=0 log_bytes log_lines log_truncated=false
+      timeout 10 docker logs --timestamps --tail 4097 "${container}" 2>&1 |
+        head -c 2097153 >"${destination}/phase.log" || log_status=$?
+      log_bytes="$(wc -c <"${destination}/phase.log")"
+      log_lines="$(wc -l <"${destination}/phase.log")"
+      if ((log_bytes > 2097152)); then
+        truncate -s 2097152 "${destination}/phase.log"
+        log_truncated=true
+      fi
+      if ((log_lines >= 4097 || log_status != 0)); then log_truncated=true; fi
+      jq -n --argjson command_exit "${log_status}" --argjson truncated "${log_truncated}" '
+        {scope: "diagnostic-only", command_exit: $command_exit,
+         byte_cap: 2097152, tail_line_cap: 4097, truncated: $truncated,
+         truncation_scope: "docker-log-capture", event_stream_completeness: "unverified",
+         absence_proven: false}
+      ' >"${destination}/phase-capture.json"
+      if [[ "${log_truncated}" == true ]]; then
+        printf 'phase log is a bounded prefix of a recent-tail suffix or failed capture; absence is unproven\n' \
+          >"${destination}/partial-phase.log"
+        if ((current_status == 0)); then current_status=69; fi
+      fi
+    fi
     printf '%s\n' "${current_status}" >"${destination}/capture.exit"
     if ((status == 0 && current_status != 0)); then status=${current_status}; fi
   done
   return "${status}"
 }
+capture_native_ros_trace_once() {
+  [[ "${native_trace:-0}" == 1 ]] || return 0
+  if ((${native_trace_capture_attempted:-0} == 1)); then
+    return "${native_trace_capture_result}"
+  fi
+  native_trace_capture_attempted=1
+  native_trace_capture_result=68
+  local phase="$1" captured_status=0 destination="${artifact_dir}/native-ust"
+  if [[ -e "${destination}" ]]; then
+    printf 'existing diagnostic destination cannot be reused by this invocation\n' >&2
+    native_trace_capture_result=65
+    return 65
+  fi
+  mkdir -p "${artifact_dir}" || {
+    native_trace_capture_result=$?
+    return "${native_trace_capture_result}"
+  }
+  # Acquire this diagnostic leaf exclusively; never join another invocation.
+  if ! mkdir "${destination}" 2>/dev/null; then
+    printf 'diagnostic destination is unavailable or already owned by another invocation\n' >&2
+    native_trace_capture_result=65
+    return 65
+  fi
+  mkdir "${destination}/capture-attempt" || {
+    native_trace_capture_result=$?
+    return "${native_trace_capture_result}"
+  }
+  jq -n --arg phase "${phase}" '
+    {scope: "diagnostic-only", capture_phase: $phase, absence_proven: false}
+  ' >"${destination}/capture-attempt/phase.json" || {
+    native_trace_capture_result=$?
+    return "${native_trace_capture_result}"
+  }
+  capture_native_ros_trace || captured_status=$?
+  native_trace_capture_result="${captured_status}"
+  printf '%s\n' "${captured_status}" >"${destination}/capture.exit" || {
+    native_trace_capture_result=$?
+    return "${native_trace_capture_result}"
+  }
+  return "${captured_status}"
+}
+
 capture_runtime_metrics_diagnostics() {
   local phase="$1"
   local destination="${artifact_dir}/runtime-metrics-diagnostics"
@@ -630,6 +723,9 @@ cleanup() {
   if [[ "${observer_status:-}" =~ ^[1-9][0-9]{0,2}$ ]] &&
     ((observer_status <= 255)); then
     status="${observer_status}"
+  fi
+  if [[ "${native_trace:-0}" == 1 && "${native_trace_capture_attempted:-0}" == 0 ]]; then
+    capture_native_ros_trace_once before_owned_cleanup || true
   fi
   foundation_compose_logs \
     "${artifact_dir}/foundation-e2e.cleanup.log" \
@@ -932,11 +1028,7 @@ fi
 "${compose[@]}" --profile record stop recorder
 capture_runtime_metrics_diagnostics before_metrics_stop || true
 if [[ "${native_trace:-0}" == 1 ]]; then
-  native_trace_capture_status=0
-  capture_native_ros_trace || native_trace_capture_status=$?
-  mkdir -p "${artifact_dir}/native-ust"
-  printf '%s\n' "${native_trace_capture_status}" \
-    >"${artifact_dir}/native-ust/capture.exit"
+  capture_native_ros_trace_once after_measurement || true
 fi
 if [[ "${data_source}" == recording_playback ]]; then
   "${compose[@]}" --profile observability stop runtime-metrics

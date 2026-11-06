@@ -1,10 +1,9 @@
 # Minimal Runtime Consumer
 
-This example defines the stock UInt64 ROS v1 profile, which passed on released
-R9. It is a source/released invocation example, not the current neutral-robot B3
-acceptance result. [The baseline](../../docs/qualification-baseline.md) records
-that R10 was published and the later neutral-robot caller failed. Architecture C
-is the selected target; native providers are qualified by their own profiles.
+This example defines the stock UInt64 ROS v1 stepped-simulation profile.
+It uses the public consumer workflow and retains each profile's original inputs
+and observations. Native providers require their own admitted composition and
+qualification profiles.
 
 A successful run qualifies a stepped simulation and a declared UInt64 topic,
 retaining original ROS recordings, telemetry, logs, JSON/JUnit results and a signed
@@ -96,3 +95,30 @@ definitions from trusted foundation services; consumer build definitions,
 foreign image pins and mutable image references are rejected. The verified lock
 overrides ambient image variables, and its unchanged bytes, verification reports
 and selected image identities enter the signed qualification package.
+
+## Optional telemetry diagnostics
+
+The foundation workflow's `native_ust_trace` input selects a separate diagnostic
+profile. Its existing user-space LTTng wrapper observes ROS publish/take calls for
+simulation, stepper, metrics and probe actors without extra kernel tracing or
+container privileges. This environment does not qualify baseline latency.
+
+The profile supports the tooling-owned simulation image with its canonical
+`robotics-entrypoint`. It preserves the exact original image `Config.Cmd` or
+declared Compose command and checks the final actor command, wrapper, image and
+run identity before extraction. Existing policy and admission refusals remain.
+
+The optional stepper `--diagnostics` flag
+(`ROBOTICS_SIMULATION_DIAGNOSTICS=1` in this profile) records request issuance,
+response receipt, the latest decoded Clock callback used by a step, and actual
+PAUSED state readback. UTC and process-monotonic timestamps use nanoseconds;
+simulation source time is separate. Clock receipt can precede the response.
+Neither a response nor PAUSED readback establishes a physical postcondition.
+
+Phase payloads have a 4096-event/2-MiB cap and an explicit
+`diagnostics_truncated` marker. UST buffers rotate; Docker phase logs retain at
+most 4097 recent lines and 2 MiB. `phase-capture.json.truncated` concerns log
+transport only; event-stream completeness stays unverified. Capture is attempted
+once before owned cleanup, including failures. Missing/foreign identity refuses,
+partial outcomes remain explicit, and pre-existing diagnostic destinations are
+preserved and refused. Gaps or bounded captures never prove event absence.

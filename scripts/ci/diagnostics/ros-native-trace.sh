@@ -19,7 +19,7 @@ prepare_native_trace() {
   timeout 5 lttng enable-channel --userspace --buffers-pid \
     --subbuf-size=65536 --num-subbuf=2 --tracefile-size=1048576 --tracefile-count=2 native-ros || return
   timeout 5 lttng enable-event --userspace --channel=native-ros \
-    'ros2:rcl_init,ros2:rcl_node_init,ros2:rcl_publisher_init,ros2:rmw_publisher_init,ros2:rcl_subscription_init,ros2:rmw_subscription_init,ros2:rcl_publish,ros2:rmw_publish,ros2:rcl_take,ros2:rmw_take' || return
+    'ros2:rcl_init,ros2:rcl_node_init,ros2:rcl_publisher_init,ros2:rmw_publisher_init,ros2:rcl_subscription_init,ros2:rmw_subscription_init,ros2:rcl_client_init,ros2:rcl_service_init,ros2:rcl_publish,ros2:rmw_publish,ros2:rcl_take,ros2:rmw_take' || return
   timeout 5 lttng add-context --userspace --channel=native-ros \
     --type=vpid --type=vtid || return
   timeout 5 lttng start robotics-native-diagnostic
