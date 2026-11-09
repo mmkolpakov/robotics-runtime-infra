@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.14
 FROM ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f4e2dcf2e22c2d12cc715f29873e0f AS ca-source
-FROM ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG UBUNTU_SNAPSHOT=20260930T000000Z
 ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC GZ_DISTRO=jetty PYTHONDONTWRITEBYTECODE=1

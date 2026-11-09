@@ -315,7 +315,7 @@ jobs:
       PERMIT_PREFLIGHT_CI_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/permit-preflight-ci:ci
       HOST_IO_FIXTURE_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/host-io-fixture:ci
       # yamllint disable-line rule:line-length
-      CAN_CLIENT_IMAGE: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
+      CAN_CLIENT_IMAGE: busybox:1.37.0-musl@sha256:f6a95d611e0a8780fabdb2aec43e31275b2720dfefa3e41b16835bfc42454478
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
