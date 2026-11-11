@@ -253,6 +253,20 @@
         "@robotics-runtime/host"
       ],
       "enabled": false
+    },
+    {
+      "description": "Ubuntu base digest is governed by the canonical UBUNTU_SNAPSHOT; exclude from digest refresh",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "ubuntu"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "enabled": false
     }
   ],
   "automerge": false,
