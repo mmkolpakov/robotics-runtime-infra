@@ -85,3 +85,13 @@ See [Docker's imagetools API](https://docs.docker.com/reference/cli/docker/build
 and Moby's containerd implementations of
 [inspect](https://github.com/moby/moby/blob/v28.0.0/daemon/containerd/image_inspect.go)
 and [local digest lookup](https://github.com/moby/moby/blob/v28.0.0/daemon/containerd/image.go).
+
+## Supplier update SLA
+
+Distro-owned findings are handled by a rebuild SLA, not blanket suppression.
+The Ubuntu base advances only by a deliberate UBUNTU_SNAPSHOT update with
+re-qualification; blind digest refresh of the base is excluded. Residual distro
+CVEs are accepted only as exact Canonical not_affected records (version, arch,
+distro) with evidence, and are reviewed on any version change. Uncovered
+HIGH/CRITICAL findings remain blocking; a supplier rebuild is scheduled within
+the SLA and re-scanned before release.
