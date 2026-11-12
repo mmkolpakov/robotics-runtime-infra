@@ -10,81 +10,11 @@ setup() {
   mkdir -p "${FAKE_BIN}" "${SECURITY_DIR}" "${TRIVY_CACHE_DIR}"
 }
 
-# Fake docker: log the invocation, materialise the scan report from
-# SCAN_FIXTURE (empty results by default) and always succeed at conversion,
-# mirroring the unfiltered SARIF export.
-write_gate_fake_docker() {
-  cat >"${FAKE_BIN}/docker" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-printf '%s\n' "$*" >>"${DOCKER_LOG}"
-mode=scan
-output=
-previous=
-for argument in "$@"; do
-  if test "${argument}" = convert; then
-    mode=convert
-  fi
-  if test "${previous}" = --output; then
-    output="${argument}"
-  fi
-  previous="${argument}"
-done
-if test -n "${output}"; then
-  host_output="${output/#\/reports\//${ROBOTICS_CI_SECURITY_ARTIFACT_DIR}/}"
-  if test "${mode}" = scan; then
-    if test -n "${SCAN_FIXTURE:-}"; then
-      cat "${SCAN_FIXTURE}" >"${host_output}"
-    else
-      printf '{"Results":[]}\n' >"${host_output}"
-    fi
-  else
-    printf '{"runs":[]}\n' >"${host_output}"
-  fi
-fi
-EOF
-  chmod +x "${FAKE_BIN}/docker"
+teardown() {
+  rm -f "${REPO_ROOT}/.trivyignore.gate-test"
 }
 
-write_finding_fixture() {
-  jq -n \
-    --arg class "$1" --arg type "$2" --arg status "$3" --arg severity "$4" '
-    {
-      Results: [
-        {
-          Target: "fixture-image",
-          Class: $class,
-          Type: $type,
-          Vulnerabilities: [
-            {
-              VulnerabilityID: "CVE-2026-0001",
-              PkgName: "fixture-package",
-              Severity: $severity,
-              Status: $status
-            }
-          ]
-        }
-      ]
-    }
-  ' >"${BATS_TEST_TMPDIR}/fixture.json"
-}
-
-run_image_scan() {
-  local environment=(
-    "PATH=${FAKE_BIN}:${PATH}"
-    "DOCKER_LOG=${DOCKER_LOG}"
-    "HOME=${BATS_TEST_TMPDIR}"
-    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}"
-    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}"
-    "SCAN_FIXTURE=${BATS_TEST_TMPDIR}/fixture.json"
-    TRIVY_IMAGE=trivy:test
-  )
-  if test "$#" -gt 0; then
-    environment+=("ROBOTICS_CI_TRIVY_IGNORE_FILE=$1")
-  fi
-  run env "${environment[@]}" \
-    scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
-}
+load helpers/security-scanning
 
 @test "image scanner accepts a quoted platform CSV without word splitting" {
   write_gate_fake_docker
@@ -110,6 +40,9 @@ run_image_scan() {
   [ "${status}" -eq 0 ]
   run grep -F -- '--platform linux/arm64' "${DOCKER_LOG}"
   [ "${status}" -eq 0 ]
+  # jq is the only exception authority: trivy never reads the ignore policy.
+  run grep -F -- '--ignorefile' "${DOCKER_LOG}"
+  [ "${status}" -ne 0 ]
 }
 
 @test "Bake group scanner derives and scans every tagged image" {
@@ -126,40 +59,7 @@ run_image_scan() {
   }
 }
 EOF
-  cat >"${FAKE_BIN}/docker" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-if test "$1 $2 $3 $4 $5" = "buildx bake --file docker-bake.hcl --print"; then
-  case "${BAKE_PLAN_MODE:-valid}" in
-    empty) printf '{"target":{}}\n' ;;
-    multi) jq '.target.runtime.tags += ["registry.example/runtime:latest"]' "${BAKE_PLAN}" ;;
-    valid) cat "${BAKE_PLAN}" ;;
-  esac
-  exit 0
-fi
-printf '%s\n' "$*" >>"${DOCKER_LOG}"
-mode=scan
-output=
-previous=
-for argument in "$@"; do
-  if test "${argument}" = convert; then
-    mode=convert
-  fi
-  if test "${previous}" = --output; then
-    output="${argument}"
-  fi
-  previous="${argument}"
-done
-if test -n "${output}"; then
-  host_output="${output/#\/reports\//${ROBOTICS_CI_SECURITY_ARTIFACT_DIR}/}"
-  if test "${mode}" = scan; then
-    printf '{"Results":[]}\n' >"${host_output}"
-  else
-    printf '{"runs":[]}\n' >"${host_output}"
-  fi
-fi
-EOF
-  chmod +x "${FAKE_BIN}/docker"
+  write_bake_fake_docker
 
   environment=(
     "PATH=${FAKE_BIN}:${PATH}"
@@ -316,7 +216,7 @@ EOF
       Results: [
         {
           Target: "fixture-image",
-          Class: "os",
+          Class: "os-pkgs",
           Type: "ubuntu",
           Vulnerabilities: [
             {
@@ -330,40 +230,7 @@ EOF
       ]
     }
   ' >"${BATS_TEST_TMPDIR}/conformance-fixture.json"
-  cat >"${FAKE_BIN}/docker" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-if test "$1 $2 $3 $4 $5" = "buildx bake --file docker-bake.hcl --print"; then
-  cat "${BAKE_PLAN}"
-  exit 0
-fi
-printf '%s\n' "$*" >>"${DOCKER_LOG}"
-mode=scan
-output=
-previous=
-for argument in "$@"; do
-  if test "${argument}" = convert; then
-    mode=convert
-  fi
-  if test "${previous}" = --output; then
-    output="${argument}"
-  fi
-  previous="${argument}"
-done
-if test -n "${output}"; then
-  host_output="${output/#\/reports\//${ROBOTICS_CI_SECURITY_ARTIFACT_DIR}/}"
-  if test "${mode}" = scan; then
-    if test "${@: -1}" = registry.example/conformance:test; then
-      cat "${CONFORMANCE_FIXTURE}" >"${host_output}"
-    else
-      printf '{"Results":[]}\n' >"${host_output}"
-    fi
-  else
-    printf '{"runs":[]}\n' >"${host_output}"
-  fi
-fi
-EOF
-  chmod +x "${FAKE_BIN}/docker"
+  write_bake_fake_docker
 
   run env \
     "PATH=${FAKE_BIN}:${PATH}" \
@@ -410,7 +277,7 @@ EOF
 
 @test "image scanner propagates the vulnerability gate failure" {
   write_gate_fake_docker
-  write_finding_fixture os ubuntu fixed HIGH
+  write_finding_fixture os-pkgs ubuntu fixed HIGH
 
   run env \
     "PATH=${FAKE_BIN}:${PATH}" \
@@ -435,20 +302,20 @@ EOF
 @test "image gate blocks fixable HIGH and CRITICAL findings only at those severities" {
   write_gate_fake_docker
 
-  write_finding_fixture os ubuntu fixed HIGH
+  write_finding_fixture os-pkgs ubuntu fixed HIGH
   run_image_scan
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"blocking: CVE-2026-0001 HIGH fixed fixture-package (fixture-image)"* ]]
 
-  write_finding_fixture os ubuntu fixed CRITICAL
+  write_finding_fixture os-pkgs ubuntu fixed CRITICAL
   run_image_scan
   [ "${status}" -eq 1 ]
 
-  write_finding_fixture os ubuntu fixed MEDIUM
+  write_finding_fixture os-pkgs ubuntu fixed MEDIUM
   run_image_scan
   [ "${status}" -eq 0 ]
 
-  write_finding_fixture os ubuntu fixed LOW
+  write_finding_fixture os-pkgs ubuntu fixed LOW
   run_image_scan
   [ "${status}" -eq 0 ]
 }
@@ -456,19 +323,33 @@ EOF
 @test "image gate tolerates will_not_fix and fix_deferred for Ubuntu OS packages" {
   write_gate_fake_docker
 
-  write_finding_fixture os ubuntu will_not_fix HIGH
+  write_finding_fixture os-pkgs ubuntu will_not_fix HIGH
   run_image_scan
   [ "${status}" -eq 0 ]
 
-  write_finding_fixture os ubuntu fix_deferred CRITICAL
+  write_finding_fixture os-pkgs ubuntu fix_deferred HIGH
   run_image_scan
+  [ "${status}" -eq 0 ]
+
+  write_finding_fixture os-pkgs ubuntu fix_deferred CRITICAL
+  run_image_scan
+  [ "${status}" -eq 0 ]
+
+  # A CRITICAL will_not_fix is a permanent risk: it needs an exception.
+  write_finding_fixture os-pkgs ubuntu will_not_fix CRITICAL
+  run_image_scan
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"blocking: CVE-2026-0001 CRITICAL will_not_fix"* ]]
+
+  write_gate_exception "SEC-42" "$(gate_date_offset +30)"
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 0 ]
 }
 
 @test "image gate blocks end_of_life findings even for Ubuntu OS packages" {
   write_gate_fake_docker
 
-  write_finding_fixture os ubuntu end_of_life HIGH
+  write_finding_fixture os-pkgs ubuntu end_of_life HIGH
   run_image_scan
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"blocking: CVE-2026-0001 HIGH end_of_life"* ]]
@@ -481,72 +362,364 @@ EOF
 @test "image gate blocks language and Alpine findings regardless of status" {
   write_gate_fake_docker
 
-  local type status
+  local type finding_status
   for type in gobinary python-pkg; do
-    for status in fixed affected will_not_fix fix_deferred; do
-      write_finding_fixture lang-pkgs "${type}" "${status}" HIGH
+    for finding_status in fixed affected will_not_fix fix_deferred unknown under_investigation; do
+      write_finding_fixture lang-pkgs "${type}" "${finding_status}" HIGH
       run_image_scan
       [ "${status}" -eq 1 ] || {
-        printf 'gate accepted %s %s\n' "${type}" "${status}" >&2
+        printf 'gate accepted %s %s\n' "${type}" "${finding_status}" >&2
         return 1
       }
     done
   done
 
-  write_finding_fixture os alpine will_not_fix HIGH
+  # Alpine is an OS ecosystem, not a language package, and never Ubuntu.
+  write_finding_fixture os-pkgs alpine will_not_fix HIGH
   run_image_scan
   [ "${status}" -eq 1 ]
 
-  write_finding_fixture os alpine affected CRITICAL
+  write_finding_fixture os-pkgs alpine affected CRITICAL
   run_image_scan
+  [ "${status}" -eq 1 ]
+
+  write_finding_fixture os-pkgs alpine fix_deferred CRITICAL
+  run_image_scan
+  [ "${status}" -eq 1 ]
+}
+
+@test "image gate fails closed on unknown, under_investigation and missing status" {
+  write_gate_fake_docker
+
+  local finding_status
+  for finding_status in unknown under_investigation missing; do
+    write_finding_fixture os-pkgs ubuntu "${finding_status}" HIGH
+    run_image_scan
+    [ "${status}" -eq 1 ] || {
+      printf 'gate accepted ubuntu status %s\n' "${finding_status}" >&2
+      return 1
+    }
+    [[ "${output}" == *"blocking: CVE-2026-0001 HIGH ${finding_status}"* ]]
+
+    write_finding_fixture os-pkgs ubuntu "${finding_status}" CRITICAL
+    run_image_scan
+    [ "${status}" -eq 1 ]
+
+    write_finding_fixture lang-pkgs gobinary "${finding_status}" HIGH
+    run_image_scan
+    [ "${status}" -eq 1 ]
+  done
+
+  # An exception cannot rescue a fail-closed status.
+  write_gate_exception "#42" "$(gate_date_offset +30)"
+  write_finding_fixture os-pkgs ubuntu under_investigation CRITICAL
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
 }
 
 @test "image gate allows affected Ubuntu findings only with a ticketed unexpired exception" {
   write_gate_fake_docker
-  write_finding_fixture os ubuntu affected HIGH
-  local ignore="${BATS_TEST_TMPDIR}/trivyignore"
+  write_finding_fixture os-pkgs ubuntu affected HIGH
+  local exp
+  exp="$(gate_date_offset +30)"
 
   run_image_scan
   [ "${status}" -eq 1 ]
 
-  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42; exp:2999-01-01' >"${ignore}"
-  run_image_scan "${ignore}"
+  write_gate_exception "SEC-42" "${exp}"
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 0 ]
 
-  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42; exp:2000-01-01' >"${ignore}"
-  run_image_scan "${ignore}"
+  write_gate_exception "#42" "${exp}"
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 0 ]
+
+  write_gate_exception "issue-42" "${exp}"
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
 
-  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; exp:2999-01-01' >"${ignore}"
-  run_image_scan "${ignore}"
+  write_gate_exception "SEC-42" "$(gate_date_offset -1)"
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
 
-  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42' >"${ignore}"
-  run_image_scan "${ignore}"
+  write_gate_ignore 'CVE-2026-0001 # reason: distro backlog; exp:2999-01-01'
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
 
-  printf '%s\n' '# nothing accepted' >"${ignore}"
-  run_image_scan "${ignore}"
+  write_gate_ignore 'CVE-2026-0001 #reason: distro backlog;pkg:fixture-package;target:fixture-image;exp:2999-01-01'
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
 
-  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42; exp:2999-01-01' >"${ignore}"
+  write_gate_ignore '# nothing accepted'
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 1 ]
+
+  # Exceptions are scoped to a package and a target, never a whole image.
+  write_gate_exception "SEC-42" "${exp}" "other-package"
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 1 ]
+
+  write_gate_exception "SEC-42" "${exp}" "fixture-package" "other-target"
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 1 ]
+
+  write_gate_exception "SEC-42" "${exp}"
   write_finding_fixture lang-pkgs gobinary affected HIGH
-  run_image_scan "${ignore}"
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
 
-  write_finding_fixture os ubuntu fixed HIGH
-  run_image_scan "${ignore}"
+  write_finding_fixture os-pkgs ubuntu fixed HIGH
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
 
-  write_finding_fixture os ubuntu end_of_life HIGH
-  run_image_scan "${ignore}"
+  write_finding_fixture os-pkgs ubuntu end_of_life HIGH
+  run_image_scan ".trivyignore.gate-test"
   [ "${status}" -eq 1 ]
+}
+
+@test "image gate exceptions expire strictly after today and within 90 days" {
+  write_gate_fake_docker
+  write_finding_fixture os-pkgs ubuntu affected HIGH
+
+  write_gate_exception "SEC-42" "$(gate_date_offset 0)"
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 1 ]
+
+  write_gate_exception "SEC-42" "$(gate_date_offset +90)"
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 0 ]
+
+  write_gate_exception "SEC-42" "$(gate_date_offset +91)"
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 1 ]
+}
+
+@test "ignore policy lint rejects broken and expired entries" {
+  local exp
+  exp="$(gate_date_offset +30)"
+
+  run scripts/ci/security/lint-trivyignore.sh .trivyignore
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "[]" ]
+
+  write_gate_ignore \
+    '# a comment' \
+    '' \
+    "CVE-2026-0001 #reason: distro backlog;pkg:fixture-package;target:fixture-image;review:SEC-42;exp:${exp}"
+  run scripts/ci/security/lint-trivyignore.sh .trivyignore.gate-test
+  [ "${status}" -eq 0 ]
+  run jq -e 'length == 1 and .[0].cve == "CVE-2026-0001" and .[0].review == "SEC-42"' <<<"${output}"
+  [ "${status}" -eq 0 ]
+
+  local line
+  for line in \
+    'garbage line' \
+    'CVE-2026-0001' \
+    'CVE-2026-0001 # reason: old style; exp:2999-01-01' \
+    "CVE-2026-0001 #reason: x;pkg:p;target:t;review:issue-42;exp:${exp}" \
+    "CVE-2026-0001 #reason: x;pkg:p;target:t;review:#42;exp: ${exp}" \
+    "CVE-2026-0001 #reason: x;pkg:p;target:t;review:#42;exp:2026-02-30" \
+    "CVE-2026-0001 #reason: x;pkg:p;target:t;review:#42;exp:$(gate_date_offset 0)" \
+    "CVE-2026-0001 #reason: x;pkg:p;target:t;review:#42;exp:$(gate_date_offset -1)" \
+    "CVE-2026-0001 #reason: x;pkg:p;target:t;review:#42;exp:$(gate_date_offset +91)" \
+    "CVE-2026-0001 #reason: ;pkg:p;target:t;review:#42;exp:${exp}" \
+    "CVE-2026-0001 #reason: x;pkg:p;target: ;review:#42;exp:${exp}" \
+    "CVE-2026-0001 #reason: x;pkg:p;target:t;review:#42;exp:${exp};extra:field"; do
+    write_gate_ignore "${line}"
+    run scripts/ci/security/lint-trivyignore.sh .trivyignore.gate-test
+    [ "${status}" -eq 1 ] || {
+      printf 'lint accepted: %s\n' "${line}" >&2
+      return 1
+    }
+    [[ "${output}" == *"invalid .trivyignore entries"* ]]
+  done
+
+  run scripts/ci/security/lint-trivyignore.sh .trivyignore.does-not-exist
+  [ "${status}" -ne 0 ]
+}
+
+@test "ignore file override stays repository-relative" {
+  write_gate_fake_docker
+  write_finding_fixture os-pkgs ubuntu fixed LOW
+
+  run env \
+    "PATH=${FAKE_BIN}:${PATH}" \
+    "DOCKER_LOG=${DOCKER_LOG}" \
+    "HOME=${BATS_TEST_TMPDIR}" \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    "ROBOTICS_CI_TRIVY_IGNORE_FILE=${BATS_TEST_TMPDIR}/trivyignore" \
+    TRIVY_IMAGE=trivy:test \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+  [ "${status}" -eq 64 ]
+  [[ "${output}" == *"repository-relative"* ]]
+
+  local escape
+  for escape in '../trivyignore' 'sub/../.trivyignore' '..'; do
+    run env \
+      "PATH=${FAKE_BIN}:${PATH}" \
+      "DOCKER_LOG=${DOCKER_LOG}" \
+      "HOME=${BATS_TEST_TMPDIR}" \
+      "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+      "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+      "ROBOTICS_CI_TRIVY_IGNORE_FILE=${escape}" \
+      TRIVY_IMAGE=trivy:test \
+      scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+    [ "${status}" -eq 64 ]
+    [[ "${output}" == *"must not leave the repository"* ]]
+  done
+
+  run env \
+    "PATH=${FAKE_BIN}:${PATH}" \
+    "DOCKER_LOG=${DOCKER_LOG}" \
+    "HOME=${BATS_TEST_TMPDIR}" \
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    "ROBOTICS_CI_TRIVY_IGNORE_FILE=.trivyignore.missing" \
+    TRIVY_IMAGE=trivy:test \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+  [ "${status}" -eq 66 ]
+}
+
+@test "image gate evaluates each platform report independently" {
+  write_gate_fake_docker
+  printf '{"Results":[]}\n' >"${BATS_TEST_TMPDIR}/clean.json"
+  write_finding_fixture os-pkgs ubuntu fixed CRITICAL
+  cp "${BATS_TEST_TMPDIR}/fixture.json" "${BATS_TEST_TMPDIR}/blocking.json"
+
+  SCAN_FIXTURE_LINUX_AMD64="${BATS_TEST_TMPDIR}/clean.json" \
+    SCAN_FIXTURE_LINUX_ARM64="${BATS_TEST_TMPDIR}/blocking.json" \
+    run_image_scan "" linux/amd64,linux/arm64
+
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"vulnerability gate failed: registry.example/runtime:test linux-arm64"* ]]
+  [[ "${output}" != *"linux-amd64"* ]]
+  [ -s "${SECURITY_DIR}/candidate-linux-amd64.sarif" ]
+  [ -s "${SECURITY_DIR}/candidate-linux-arm64.sarif" ]
+  [ "$(wc -l <"${DOCKER_LOG}")" -eq 5 ]
+}
+
+@test "tolerated findings are written to the job summary" {
+  write_gate_fake_docker
+  jq -n '
+    {
+      Results: [
+        {
+          Target: "fixture-image",
+          Class: "os-pkgs",
+          Type: "ubuntu",
+          Vulnerabilities: [
+            {VulnerabilityID: "CVE-2026-0001", PkgName: "fixture-package", Severity: "HIGH", Status: "will_not_fix"},
+            {VulnerabilityID: "CVE-2026-0002", PkgName: "fixture-package", Severity: "CRITICAL", Status: "fix_deferred"},
+            {VulnerabilityID: "CVE-2026-0003", PkgName: "fixture-package", Severity: "CRITICAL", Status: "affected"},
+            {VulnerabilityID: "CVE-2026-0004", PkgName: "fixture-package", Severity: "CRITICAL", Status: "fixed"}
+          ]
+        }
+      ]
+    }
+  ' >"${BATS_TEST_TMPDIR}/fixture.json"
+  write_gate_ignore \
+    "CVE-2026-0003 #reason: distro backlog;pkg:fixture-package;target:fixture-image;review:SEC-42;exp:$(gate_date_offset +30)"
+
+  GITHUB_STEP_SUMMARY="${BATS_TEST_TMPDIR}/summary.md"
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"tolerated: CVE-2026-0001 HIGH will_not_fix"* ]]
+  [[ "${output}" == *"tolerated: CVE-2026-0002 CRITICAL fix_deferred"* ]]
+  [[ "${output}" == *"tolerated: CVE-2026-0003 CRITICAL affected"* ]]
+  [ -s "${GITHUB_STEP_SUMMARY}" ]
+  run grep -F 'Tolerated Ubuntu findings: registry.example/runtime:test (local)' "${GITHUB_STEP_SUMMARY}"
+  [ "${status}" -eq 0 ]
+  run grep -F '| CVE-2026-0001 | HIGH | will_not_fix | fixture-package | fixture-image | no |' "${GITHUB_STEP_SUMMARY}"
+  [ "${status}" -eq 0 ]
+  run grep -F '| CVE-2026-0003 | CRITICAL | affected | fixture-package | fixture-image | SEC-42 |' "${GITHUB_STEP_SUMMARY}"
+  [ "${status}" -eq 0 ]
+  run grep -F 'CVE-2026-0004' "${GITHUB_STEP_SUMMARY}"
+  [ "${status}" -ne 0 ]
+
+  # Without a job summary the gate still reports tolerated findings on stdout.
+  GITHUB_STEP_SUMMARY=""
+  run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"tolerated: CVE-2026-0001 HIGH will_not_fix"* ]]
+}
+
+@test "golden Trivy report pins the os-pkgs and lang-pkgs schema" {
+  # Trimmed from a real aquasec/trivy:0.75.0 scan of its own image
+  # (docker.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa,
+  # alpine 3.24.2 base, gobinary /usr/local/bin/trivy); finding objects are
+  # verbatim, only the finding selection and package lists were trimmed.
+  local golden="test/ci/fixtures/trivy-0.75.0-os-lang.json"
+
+  run jq -e '
+    .SchemaVersion == 2
+    and .ArtifactType == "container_image"
+    and .Trivy.Version == "0.75.0"
+    and ([.Results[].Class] == ["os-pkgs", "lang-pkgs"])
+    and ([.Results[].Type] == ["alpine", "gobinary"])
+    and all(.Results[].Vulnerabilities[];
+      has("VulnerabilityID") and has("PkgName") and has("PkgID")
+      and has("InstalledVersion") and has("Status") and has("Severity")
+      and (.PkgIdentifier.PURL | type == "string")
+      and (.Layer.DiffID | startswith("sha256:"))
+      and (.DataSource | has("ID") and has("Name") and has("URL"))
+      and (.Status == "fixed"))
+  ' "${golden}"
+  [ "${status}" -eq 0 ]
+
+  # The gate reads the real schema: Alpine OS and Go findings block, and
+  # UNKNOWN-severity findings never reach the HIGH/CRITICAL gate.
+  write_gate_fake_docker
+  SCAN_FIXTURE="${REPO_ROOT}/${golden}" run_image_scan
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"blocking: CVE-2026-111497 CRITICAL fixed brotli-libs"* ]]
+  [[ "${output}" == *"blocking: CVE-2026-116587 HIGH fixed github.com/go-jose/go-jose/v4"* ]]
+  [[ "${output}" != *"CVE-2026-114467"* ]]
+  [[ "${output}" != *"GO-2026-5932"* ]]
+}
+
+@test "VEX-suppressed findings stay out of the gate" {
+  # Real aquasec/trivy:0.75.0 scan of alpine:3.10.9 with a not_affected
+  # OpenVEX statement and --show-suppressed: the suppressed finding lives in
+  # ExperimentalModifiedFindings, never in Vulnerabilities.
+  local suppressed="test/ci/fixtures/trivy-0.75.0-vex-suppressed.json"
+
+  run jq -e '
+    .SchemaVersion == 2
+    and (.Results[0].Class == "os-pkgs")
+    and (.Results[0].Vulnerabilities == null)
+    and (.Results[0].ExperimentalModifiedFindings | length == 1)
+    and (.Results[0].ExperimentalModifiedFindings[0] | (
+      .Type == "vulnerability"
+      and .Status == "not_affected"
+      and .Statement == "vulnerable_code_not_present"
+      and (.Source | endswith(".json"))
+      and .Finding.VulnerabilityID == "CVE-2021-36159"
+      and .Finding.PkgName == "apk-tools"
+      and .Finding.Severity == "CRITICAL"))
+  ' "${suppressed}"
+  [ "${status}" -eq 0 ]
+
+  write_gate_fake_docker
+  SCAN_FIXTURE="${REPO_ROOT}/${suppressed}" run_image_scan
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"blocking:"* ]]
+}
+
+@test "trivy.yaml and the gate scan keep severity and status filtering out" {
+  run grep -nE '(^|[[:space:]])(severity|ignore-unfixed|ignore-status)[[:space:]]*:' trivy.yaml
+  [ "${status}" -ne 0 ]
+
+  run grep -nE -- '--ignorefile|--ignore-unfixed|--ignore-status' scripts/ci/security/scan-image.sh
+  [ "${status}" -ne 0 ]
+
+  run grep -F -- '--ignorefile' .github/workflows/rk3588-qualification.yml
+  [ "${status}" -ne 0 ]
 }
 
 @test "SARIF export stays unfiltered and never decides the gate" {
   write_gate_fake_docker
-  write_finding_fixture os ubuntu fixed HIGH
+  write_finding_fixture os-pkgs ubuntu fixed HIGH
   : >"${DOCKER_LOG}"
 
   run_image_scan
@@ -560,6 +733,8 @@ EOF
   [[ "${sarif_line}" != *--ignore-unfixed* ]]
   [[ "${sarif_line}" != *--ignore-status* ]]
   scan_line="$(grep -F -- 'image --config' "${DOCKER_LOG}")"
+  [[ "${scan_line}" != *--ignorefile* ]]
+  [[ "${scan_line}" != *--severity* ]]
   [[ "${scan_line}" != *--ignore-status* ]]
   [[ "${scan_line}" != *--ignore-unfixed* ]]
 
@@ -567,6 +742,59 @@ EOF
   run_image_scan
   [ "${status}" -eq 0 ]
   [ -s "${SECURITY_DIR}/candidate-local.sarif" ]
+}
+
+@test "real trivy keeps ticketless ignore entries blocking" {
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    skip "docker is not available for the real-trivy regression"
+  fi
+  local image="docker.io/library/alpine:3.10.9@sha256:451eee8bedcb2f029756dc3e9d73bab0e7943c1ac55cff3a4861c52a0fdd3e98"
+  local trivy_image="${TRIVY_IMAGE:-aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa}"
+  docker pull "${image}"
+
+  local environment=(
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}"
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${REPO_ROOT}/.trivy-cache"
+    "TRIVY_IMAGE=${trivy_image}"
+  )
+  run env "${environment[@]}" \
+    scripts/ci/security/scan-image.sh "${image}" regression
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"blocking: CVE-2021-36159 CRITICAL fixed apk-tools"* ]]
+  run jq -e '
+    [.Results[].Vulnerabilities[]?
+      | select(.VulnerabilityID == "CVE-2021-36159")] | length > 0
+  ' "${SECURITY_DIR}/regression-local.json"
+  [ "${status}" -eq 0 ]
+
+  # A well-formed ticketed exception still cannot pass: Alpine is not Ubuntu,
+  # and trivy itself must not apply the ignore policy during the scan.
+  local target exp
+  target="$(jq -r '.Results[0].Target' "${SECURITY_DIR}/regression-local.json")"
+  exp="$(gate_date_offset +30)"
+  write_gate_ignore \
+    "CVE-2021-36159 #reason: regression;pkg:apk-tools;target:${target};review:#107;exp:${exp}"
+  run env "${environment[@]}" "ROBOTICS_CI_TRIVY_IGNORE_FILE=.trivyignore.gate-test" \
+    scripts/ci/security/scan-image.sh "${image}" regression
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"blocking: CVE-2021-36159 CRITICAL fixed apk-tools"* ]]
+  run jq -e '
+    [.Results[].Vulnerabilities[]?
+      | select(.VulnerabilityID == "CVE-2021-36159")] | length > 0
+  ' "${SECURITY_DIR}/regression-local.json"
+  [ "${status}" -eq 0 ]
+  run jq -e '
+    [.Results[].ExperimentalModifiedFindings[]?
+      | select(.Finding.VulnerabilityID == "CVE-2021-36159")] | length == 0
+  ' "${SECURITY_DIR}/regression-local.json"
+  [ "${status}" -eq 0 ]
+
+  # A ticketless entry fails the lint before any scan runs.
+  write_gate_ignore 'CVE-2021-36159 # reason: accepted without review; exp:2999-01-01'
+  run env "${environment[@]}" "ROBOTICS_CI_TRIVY_IGNORE_FILE=.trivyignore.gate-test" \
+    scripts/ci/security/scan-image.sh "${image}" regression
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"invalid .trivyignore entries"* ]]
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {

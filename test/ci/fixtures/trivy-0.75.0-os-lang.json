@@ -1,0 +1,523 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2026-11-12T06:10:34.942047455Z",
+  "ArtifactName": "/work/trivy.tar",
+  "ArtifactType": "container_image",
+  "ReportID": "01a1ce61-233e-70b2-8c31-052b45c276da",
+  "ArtifactID": "sha256:75e5dad9d4f4c2db6e8b5eaa6dbc118bf73bc9fb6aac20920ee1cefb0ec16dc0",
+  "Metadata": {
+    "Size": 195323392,
+    "OS": {
+      "Family": "alpine",
+      "Name": "3.24.2"
+    },
+    "ImageID": "sha256:6d93f1ec925b37c5ce785e416b86cba056e10c8c2914a59a8ea7be18115d6764",
+    "DiffIDs": [
+      "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
+      "sha256:ed34867eefa0e1a2ed62f4742054527ecaaf677329cb08b003fe411e0d63c33a",
+      "sha256:b0fd5d86b3cab72925c3ed1d2dba5228b6b2607ebe477f7caf83c82209ef9564",
+      "sha256:55ca405b1d0817ec6cb543c046b84719ea87f3004c0c9416f940227e6baea6e5"
+    ],
+    "RepoTags": [
+      "docker.io/aquasec/trivy:0.75.0"
+    ],
+    "Reference": "docker.io/aquasec/trivy:0.75.0",
+    "ImageConfig": {
+      "architecture": "amd64",
+      "created": "2026-10-01T13:32:14.589205355Z",
+      "history": [
+        {
+          "created": "2026-09-17T20:37:20.889221879Z",
+          "created_by": "ADD alpine-minirootfs-3.24.2-x86_64.tar.gz / # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2026-09-17T20:37:20.889221879Z",
+          "created_by": "CMD [\"/bin/sh\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        },
+        {
+          "created": "2026-10-01T13:32:11.21941837Z",
+          "created_by": "RUN /bin/sh -c apk --no-cache add ca-certificates git # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2026-10-01T13:32:14.556488212Z",
+          "created_by": "ARG TARGETPLATFORM=linux/amd64",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        },
+        {
+          "created": "2026-10-01T13:32:14.556488212Z",
+          "created_by": "COPY linux/amd64/trivy /usr/local/bin/trivy # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2026-10-01T13:32:14.589205355Z",
+          "created_by": "COPY contrib/*.tpl contrib/ # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2026-10-01T13:32:14.589205355Z",
+          "created_by": "ENTRYPOINT [\"trivy\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
+          "sha256:ed34867eefa0e1a2ed62f4742054527ecaaf677329cb08b003fe411e0d63c33a",
+          "sha256:b0fd5d86b3cab72925c3ed1d2dba5228b6b2607ebe477f7caf83c82209ef9564",
+          "sha256:55ca405b1d0817ec6cb543c046b84719ea87f3004c0c9416f940227e6baea6e5"
+        ]
+      },
+      "config": {
+        "Entrypoint": [
+          "trivy"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "Labels": {
+          "org.opencontainers.image.created": "2026-10-01T12:52:48Z",
+          "org.opencontainers.image.description": "A Fast Vulnerability Scanner for Containers",
+          "org.opencontainers.image.documentation": "https://trivy.dev/v0.75.0/",
+          "org.opencontainers.image.revision": "591e9799316a602e703f0b484f6c6d7b234ec8f3",
+          "org.opencontainers.image.source": "https://github.com/aquasecurity/trivy",
+          "org.opencontainers.image.title": "trivy",
+          "org.opencontainers.image.url": "https://www.aquasec.com/products/trivy/",
+          "org.opencontainers.image.vendor": "Aqua Security",
+          "org.opencontainers.image.version": "0.75.0"
+        },
+        "WorkingDir": "/"
+      }
+    },
+    "Layers": [
+      {
+        "Size": 8704000,
+        "DiffID": "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711"
+      },
+      {
+        "Size": 13823488,
+        "DiffID": "sha256:ed34867eefa0e1a2ed62f4742054527ecaaf677329cb08b003fe411e0d63c33a"
+      },
+      {
+        "Size": 172768768,
+        "DiffID": "sha256:b0fd5d86b3cab72925c3ed1d2dba5228b6b2607ebe477f7caf83c82209ef9564"
+      },
+      {
+        "Size": 27136,
+        "DiffID": "sha256:55ca405b1d0817ec6cb543c046b84719ea87f3004c0c9416f940227e6baea6e5"
+      }
+    ]
+  },
+  "Trivy": {
+    "Version": "0.75.0"
+  },
+  "Results": [
+    {
+      "Target": "/work/trivy.tar (alpine 3.24.2)",
+      "Class": "os-pkgs",
+      "Type": "alpine",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-111497",
+          "PkgID": "brotli-libs@1.2.0-r1",
+          "PkgName": "brotli-libs",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/brotli-libs@1.2.0-r1?arch=x86_64&distro=3.24.2",
+            "UID": "34680ab8e4de744b"
+          },
+          "InstalledVersion": "1.2.0-r1",
+          "FixedVersion": "1.2.1-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:ed34867eefa0e1a2ed62f4742054527ecaaf677329cb08b003fe411e0d63c33a"
+          },
+          "SeveritySource": "nvd",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-111497",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Fingerprint": "sha256:3edc81f76de9d41f7089693d6686c1645e177848c122a945667754f0e98ee3ca",
+          "Title": "brotli: Out-of-Bounds Write in Google Brotli Decoder",
+          "Description": "A buffer overflow vulnerability in the Brotli decoder (c/dec/decode.c) in Google Brotli versions 1.0.3 through 1.2.0 on all platforms allows a remote unauthenticated attacker to corrupt adjacent decoder state memory, disclose sensitive memory contents, cause a denial of service, or potentially execute arbitrary code using a crafted Brotli-compressed stream.\n\n\n\n\n\nUsers need to update any Brotli libraries or binaries between 1.0.3 through 1.2.0 to the latest available version: 1.0.10 or 1.1.1 or 1.2.1.",
+          "Severity": "CRITICAL",
+          "CweIDs": [
+            "CWE-252",
+            "CWE-787"
+          ],
+          "VendorSeverity": {
+            "alma": 3,
+            "amazon": 3,
+            "azure": 4,
+            "bitnami": 4,
+            "ghsa": 4,
+            "nvd": 4,
+            "oracle-oval": 3,
+            "photon": 4,
+            "redhat": 3,
+            "rocky": 3,
+            "ubuntu": 3
+          },
+          "CVSS": {
+            "bitnami": {
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+              "V40Score": 9.2
+            },
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+              "V3Score": 9.8,
+              "V40Score": 9.2
+            },
+            "nvd": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 9.8
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 8.1
+            }
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2026/10/23/25",
+            "http://www.openwall.com/lists/oss-security/2026/10/24/6",
+            "http://www.openwall.com/lists/oss-security/2026/10/26/12",
+            "http://www.openwall.com/lists/oss-security/2026/10/26/13",
+            "http://www.openwall.com/lists/oss-security/2026/10/26/16",
+            "http://www.openwall.com/lists/oss-security/2026/11/03/2",
+            "https://access.redhat.com/errata/RHSA-2026:90495",
+            "https://access.redhat.com/errata/RHSA-2026:92420",
+            "https://access.redhat.com/security/cve/CVE-2026-111497",
+            "https://broccoli2shell.com",
+            "https://bugzilla.redhat.com/2558973",
+            "https://bugzilla.redhat.com/2562054",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2558973",
+            "https://cert-portal.siemens.com/productcert/html/ssa-045512.html",
+            "https://cert-portal.siemens.com/productcert/html/ssa-242944.html",
+            "https://cert-portal.siemens.com/productcert/html/ssa-443410.html",
+            "https://cert-portal.siemens.com/productcert/html/ssa-678870.html",
+            "https://cert-portal.siemens.com/productcert/html/ssa-898633.html",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-111497",
+            "https://devblogs.microsoft.com/dotnet/dotnet-october-2026-oob-security-updates",
+            "https://ellio.tech/en/blog/node2shell-cve-2026-111497-rce-on-stock-nodejs-builds",
+            "https://ellio.tech/en/blog/node2shell-cve-2026-111497-rce-on-stock-nodejs-builds/",
+            "https://errata.almalinux.org/8/ALSA-2026-92420.html",
+            "https://errata.rockylinux.org/RLSA-2026:90495",
+            "https://github.com/advisories/GHSA-9v8h-qqgm-4m35",
+            "https://github.com/andybalholm/brotli/releases/tag/v1.2.7",
+            "https://github.com/dotnet/announcements/issues/494",
+            "https://github.com/google/brotli",
+            "https://github.com/google/brotli/commit/0ed4268a4401abcb4472096340477cf4af7d1a2b",
+            "https://github.com/google/brotli/commit/50a9b70a4d5e1443fc40927952276b68fffa83a0",
+            "https://github.com/google/brotli/commit/b418fa81c48262a86a95332b0bc6d62c30aa78b6",
+            "https://github.com/google/brotli/commit/da9806362874b9bd4b552a3af360b5d6347beb12",
+            "https://github.com/google/brotli/releases/tag/v1.0.10",
+            "https://github.com/google/brotli/releases/tag/v1.1.1",
+            "https://github.com/google/brotli/releases/tag/v1.2.1",
+            "https://github.com/pypa/advisory-database/tree/main/vulns/brotli/PYSEC-2026-4322.yaml",
+            "https://github.com/pypa/advisory-database/tree/main/vulns/brotlicffi/PYSEC-2026-4323.yaml",
+            "https://linux.oracle.com/cve/CVE-2026-111497.html",
+            "https://linux.oracle.com/errata/ELSA-2026-92492.html",
+            "https://lists.debian.org/debian-lts-announce/2026/10/msg00049.html",
+            "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-114148",
+            "https://nodejs.org/en/blog/vulnerability/october-2026-security-releases",
+            "https://nodejs.org/en/blog/vulnerability/october-2026-security-releases#nodejs-brotli-decoder-out-of-bounds-write-permits-remote-code-execution-cve-2026-111497---high",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-111497",
+            "https://opensourcemalware.com/blog/node2shell-affects-python",
+            "https://patchtheplanet.org/brotli",
+            "https://pypi.org/project/Brotli",
+            "https://pypi.org/project/brotlicffi",
+            "https://ubuntu.com/security/notices/USN-8956-1",
+            "https://ubuntu.com/security/notices/USN-8956-2",
+            "https://ubuntu.com/security/notices/USN-8958-1",
+            "https://www.aikido.dev/blog/node2shell-nodejs-brotli-rce-cve-2026-111497",
+            "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+            "https://www.cisa.gov/known-exploited-vulnerabilities-catalog?field_cve=CVE-2026-111497",
+            "https://www.cve.org/CVERecord?id=CVE-2026-111497"
+          ],
+          "PublishedDate": "2026-10-22T14:17:37.19Z",
+          "LastModifiedDate": "2026-11-10T20:25:59.13Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-114467",
+          "PkgID": "git@2.54.0-r0",
+          "PkgName": "git",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/git@2.54.0-r0?arch=x86_64&distro=3.24.2",
+            "UID": "cb4b3f1a1899bd2c"
+          },
+          "InstalledVersion": "2.54.0-r0",
+          "FixedVersion": "2.54.1-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:ed34867eefa0e1a2ed62f4742054527ecaaf677329cb08b003fe411e0d63c33a"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-114467",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Fingerprint": "sha256:0c22e4b96dec3f6fb8f980de70f0e4891c96827f2b7f7b56ddffd1c2b05a15c0",
+          "Title": "[Stack corruption when removing signatures]",
+          "Description": "Description Not Available",
+          "Severity": "UNKNOWN"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-107891",
+          "PkgID": "musl@1.2.6-r2",
+          "PkgName": "musl",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/musl@1.2.6-r2?arch=x86_64&distro=3.24.2",
+            "UID": "1f8cb44befe503d4"
+          },
+          "InstalledVersion": "1.2.6-r2",
+          "FixedVersion": "1.2.6-r3",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-107891",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Fingerprint": "sha256:eaa1fdd331617aff6d38d22692e8839060bfe41ad7876decaacb62e82e2cc2a0",
+          "Title": "musl: musl: Arbitrary code execution via integer overflow in regcomp",
+          "Description": "musl libc before 1.2.7, when an untrusted regular expression is used with regcomp, has multiple integer overflows, possibly leading to incorrect allocation sizes and out-of-bounds heap writes.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-190"
+          ],
+          "VendorSeverity": {
+            "redhat": 3
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 8.1
+            }
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2026/10/21/18",
+            "https://access.redhat.com/security/cve/CVE-2026-107891",
+            "https://git.musl-libc.org/cgit/musl/commit/?id=7813e9119eb5fe681b6750b8a033a0490bca0941",
+            "https://musl.libc.org",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-107891",
+            "https://www.cve.org/CVERecord?id=CVE-2026-107891",
+            "https://www.openwall.com/lists/musl/2026/10/21/1"
+          ],
+          "PublishedDate": "2026-11-05T16:17:32.15Z",
+          "LastModifiedDate": "2026-11-09T22:18:22.6Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-4738",
+          "PkgID": "zlib@1.3.2-r0",
+          "PkgName": "zlib",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/zlib@1.3.2-r0?arch=x86_64&distro=3.24.2",
+            "UID": "e37054a2982d6c16"
+          },
+          "InstalledVersion": "1.3.2-r0",
+          "FixedVersion": "1.4-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-4738",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Fingerprint": "sha256:d009a6acf995c91c30286d51f5e560239d0950d9b4b071bb4323d9b1bcd22340",
+          "Title": "Improper Restriction of Operations within the Bounds of a Memory Buffe ...",
+          "Description": "Improper Restriction of Operations within the Bounds of a Memory Buffer vulnerability in OSGeo gdal (frmts/zlib/contrib/infback9 modules). This vulnerability is associated with program files inftree9.C‎.\n\nThis issue affects gdal: before 3.11.0.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-119"
+          ],
+          "VendorSeverity": {
+            "bitnami": 4,
+            "julia": 4,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "bitnami": {
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/S:P/AU:Y/R:U/V:C/RE:L/U:Amber",
+              "V40Score": 9.4
+            },
+            "julia": {
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/S:P/AU:Y/R:U/V:C/RE:L/U:Amber",
+              "V40Score": 9.4
+            }
+          },
+          "References": [
+            "https://github.com/OSGeo/gdal/pull/12244",
+            "https://github.com/advisories/GHSA-hp6p-5qh5-w9fj",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-4738",
+            "https://www.cve.org/CVERecord?id=CVE-2026-4738"
+          ],
+          "PublishedDate": "2026-03-24T04:17:29Z",
+          "LastModifiedDate": "2026-06-17T10:57:09.03Z"
+        }
+      ]
+    },
+    {
+      "Target": "usr/local/bin/trivy",
+      "Class": "lang-pkgs",
+      "Type": "gobinary",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-116587",
+          "VendorIDs": [
+            "GHSA-mgcc-cww5-fp2q"
+          ],
+          "PkgID": "github.com/go-jose/go-jose/v4@v4.1.5",
+          "PkgName": "github.com/go-jose/go-jose/v4",
+          "PkgIdentifier": {
+            "PURL": "pkg:golang/github.com/go-jose/go-jose/v4@v4.1.5",
+            "UID": "978de24ae5138430"
+          },
+          "InstalledVersion": "v4.1.5",
+          "FixedVersion": "4.1.6",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:b0fd5d86b3cab72925c3ed1d2dba5228b6b2607ebe477f7caf83c82209ef9564"
+          },
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-116587",
+          "DataSource": {
+            "ID": "ghsa",
+            "Name": "GitHub Security Advisory Go",
+            "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Ago"
+          },
+          "Fingerprint": "sha256:4a9be6c66d5bbcf100a3252d4eeb50e39e831915a65d2ce75e5fb52769edb74f",
+          "Title": "github.com/go-jose/go-jose: go-jose: Denial of Service via crafted RSA parameters in JWKs",
+          "Description": "Go JOSE provides an implementation of the Javascript Object Signing and Encryption set of standards in Go, including support for JSON Web Encryption (JWE), JSON Web Signature (JWS), and JSON Web Token (JWT) standards. Prior to 4.1.6, go-jose parses attacker-controlled RSA modulus and prime values from JWKs without enforcing size and consistency bounds before passing them to crypto/rsa.PrivateKey.Validate. On Go 1.24 and later, crafted large or degenerate RSA parameters can make that validation consume cubic CPU time, allowing remote denial of service in applications that parse JWKs from untrusted sources. This issue is fixed in version 4.1.6.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-407",
+            "CWE-770"
+          ],
+          "VendorSeverity": {
+            "ghsa": 3,
+            "redhat": 3
+          },
+          "CVSS": {
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-116587",
+            "https://github.com/go-jose/go-jose",
+            "https://github.com/go-jose/go-jose/commit/a0111f82742fa92bceec9ede40845e73319e6230",
+            "https://github.com/go-jose/go-jose/releases/tag/v4.1.6",
+            "https://github.com/go-jose/go-jose/security/advisories/GHSA-mgcc-cww5-fp2q",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-116587",
+            "https://www.cve.org/CVERecord?id=CVE-2026-116587"
+          ],
+          "PublishedDate": "2026-10-26T22:16:55.193Z",
+          "LastModifiedDate": "2026-10-27T15:16:40.99Z"
+        },
+        {
+          "VulnerabilityID": "GO-2026-5932",
+          "PkgID": "golang.org/x/crypto@v0.57.0",
+          "PkgName": "golang.org/x/crypto",
+          "PkgIdentifier": {
+            "PURL": "pkg:golang/golang.org/x/crypto@v0.57.0",
+            "UID": "490278341e56ec01"
+          },
+          "InstalledVersion": "v0.57.0",
+          "FixedVersion": "0.58.1-0.20261009181718-2f1f834330b2",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:b0fd5d86b3cab72925c3ed1d2dba5228b6b2607ebe477f7caf83c82209ef9564"
+          },
+          "DataSource": {
+            "ID": "govulndb",
+            "Name": "The Go Vulnerability Database",
+            "URL": "https://pkg.go.dev/vuln/"
+          },
+          "Fingerprint": "sha256:f65353ff900e253bc2494418320c259a017672eb4022a29205da15be76cda791",
+          "Title": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+          "Description": "The golang.org/x/crypto/openpgp package is unsafe by design, has numerous known security issues, is not maintained, and should not be used.\n\nIf you are required to interoperate with OpenPGP systems and need a maintained package, consider github.com/ProtonMail/go-crypto/openpgp which is a maintained fork that aims to be a drop-in replacement for this package.",
+          "Severity": "UNKNOWN",
+          "References": [
+            "https://go.dev/issue/44226",
+            "https://go.dev/issue/81227",
+            "https://pkg.go.dev/vuln/GO-2026-5932"
+          ]
+        },
+        {
+          "VulnerabilityID": "CVE-2026-78661",
+          "VendorIDs": [
+            "GO-2026-6860"
+          ],
+          "PkgID": "golang.org/x/net@v0.59.0",
+          "PkgName": "golang.org/x/net",
+          "PkgIdentifier": {
+            "PURL": "pkg:golang/golang.org/x/net@v0.59.0",
+            "UID": "757541b12f1c1680"
+          },
+          "InstalledVersion": "v0.59.0",
+          "FixedVersion": "0.62.0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:b0fd5d86b3cab72925c3ed1d2dba5228b6b2607ebe477f7caf83c82209ef9564"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-78661",
+          "DataSource": {
+            "ID": "govulndb",
+            "Name": "The Go Vulnerability Database",
+            "URL": "https://pkg.go.dev/vuln/"
+          },
+          "Fingerprint": "sha256:2e02efdc3541bc997ca4adaedbcdf169eb249a1fafdcfbab6babd8e6acd23735",
+          "Title": "golang.org/x/net/html: golang.org/x/net/html: Denial of Service via crafted HTML input",
+          "Description": "When coalescing adjacent text nodes in addText and fosterParent, appending to an existing TextNode's Data via string concatenation (n.Data += text) reallocated and copied the accumulated string on every token. Inputs containing many short text runs separated by ignored end tags (such as \"a</x>\") caused O(n^2) allocations and byte copies. Accumulate coalesced text in per-node byte slices during parsing and materialize Data strings once at the end of parse.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-407"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "redhat": 3
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-78661",
+            "https://go.dev/cl/849365",
+            "https://go.dev/issue/82224",
+            "https://groups.google.com/g/golang-announce/c/sqrs2vTx_Xs",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-78661",
+            "https://pkg.go.dev/vuln/GO-2026-6860",
+            "https://www.cve.org/CVERecord?id=CVE-2026-78661"
+          ],
+          "PublishedDate": "2026-10-27T22:18:05.93Z",
+          "LastModifiedDate": "2026-11-04T17:17:37.673Z"
+        }
+      ]
+    }
+  ]
+}
