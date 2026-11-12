@@ -231,6 +231,8 @@ jobs:
         run: scripts/ci/static-analysis/verify-hardware-workflow-policy.sh
       - name: Lint shell entrypoints
         run: scripts/ci/static-analysis/lint-shell-entrypoints.sh
+      - name: Lint the Trivy ignore policy
+        run: scripts/ci/security/lint-trivyignore.sh
       - name: Lint Dockerfile
         run: >-
           docker run --rm

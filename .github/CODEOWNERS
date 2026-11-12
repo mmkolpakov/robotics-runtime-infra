@@ -1,1 +1,11 @@
 * @mmkolpakov
+
+# The vulnerability gate, VEX records and the ignore policy are owner-reviewed.
+# CODEOWNERS records the owners; required review is a branch-protection setting.
+/scripts/ci/security/ @mmkolpakov
+/security/ @mmkolpakov
+/.trivyignore @mmkolpakov
+/trivy.yaml @mmkolpakov
+/test/ci/security-scanning.bats @mmkolpakov
+/compose.security.yaml @mmkolpakov
+/.github/workflows/ @mmkolpakov
