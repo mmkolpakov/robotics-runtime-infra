@@ -1,12 +1,23 @@
 ---
-name: ci
+name: ci-supply-chain
 
 on:
   workflow_call:
+    inputs:
+      force:
+        description: Run the full build and scan regardless of changed paths.
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
+    inputs:
+      force:
+        description: Run the full build and scan regardless of changed paths.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,283 +27,60 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-supply-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  HADOLINT_IMAGE: hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
-  # yamllint disable-line rule:line-length
-  RENOVATE_IMAGE: renovate/renovate:43.257.5@sha256:3c9169d402da098f57eaf16d03947777a195bb91383d9000ad02dee92e0a0a7d
-  # yamllint disable-line rule:line-length
-  SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
 
 jobs:
-  consumer-examples:
+  changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: examples/nav2-turtlebot3
+    outputs:
+      affected: ${{ steps.classify.outputs.affected }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
-        with:
-          version: "0.11.28"
-          enable-cache: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
-        with:
-          node-version: "24.21.0"
-          package-manager-cache: false
-      - name: Install public consumer packages and wheel
-        run: |
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python --require-hashes -r requirements.lock
-          uv build --wheel --out-dir dist evaluator
-          uv pip install --python .venv/bin/python --no-deps --no-compile-bytecode \
-            dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl
-          npm ci --ignore-scripts --no-fund
-      - name: Test portable consumer interfaces without simulation
+      - name: Determine whether image inputs are affected
+        id: classify
         env:
-          PYTHONDONTWRITEBYTECODE: "1"
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          FORCE: ${{ inputs.force }}
         run: |
-          node --test native-identity.test.mjs
-          .venv/bin/python test_evaluator.py
-          .venv/bin/python test_derivation.py
-          .venv/bin/python test_capture_controls.py
-          .venv/bin/python test_result_output.py
-          .venv/bin/python qualify-evaluator.py \
-            --wheel dist/nav2_turtlebot3_evaluator-0.2.1-py3-none-any.whl \
-            --tests test_evaluator.py --native-cases evaluator/tests/fixtures \
-            --python "${PWD}/.venv/bin/python" --contracts "${PWD}/.venv/bin/robotics-contracts" \
-            --output results/evaluator
-          .venv/bin/python make-scenario.py --case success \
-            --evaluator-receipt results/evaluator/receipt.json --middleware-profile fastdds.xml \
-            --schema nav2.schema.json --output results/scenario.json
-          .venv/bin/robotics-acceptance create-run --scenario results/scenario.json \
-            --output results/run-context.json --domain nav2=simulation \
-            --time-authority sim_clock --time-source gazebo-harmonic-clock \
-            --extension-schema "urn:nav2-turtlebot3:scenario:v1=${PWD}/nav2.schema.json"
-          NAV2_CONTEXT_FIXTURE="${PWD}/results" \
-            NAV2_CONTRACTS_CLI="${PWD}/.venv/bin/robotics-contracts" \
-            node --test admit-context.test.mjs
-      - name: Test portable X500 consumer interfaces without simulation
-        working-directory: examples/px4-x500
-        run: |
-          npm ci --ignore-scripts --no-fund
-          npm test
-          ../nav2-turtlebot3/.venv/bin/python ../../host/tools/test_px4_proof_selector.py
-  product-helm:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-buildx
-      - name: Check product Helm packaging without cluster access
-        run: scripts/ci/check-product-helm.sh
-  product-terraform:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-buildx
-      - name: Check product AWS configuration without account or backend access
-        run: scripts/ci/check-product-terraform.sh
-  product-ansible:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-buildx
-      - name: Check product node provisioning without applying host services
-        run: scripts/ci/check-product-ansible.sh
-  static-analysis:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-buildx
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
-        with:
-          version: "0.11.28"
-          enable-cache: false
-      - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43  # 4.0.0
-        with:
-          bats-version: "1.14.0"
-      - name: Check the pinned foundation workspace
-        run: bash scripts/ci/foundation/import-sources.sh
-      - name: Test foundation pin generation and complete package origins
-        run: |
-          uv venv --python 3.12 artifacts/foundation-build-venv
-          uv pip install --python artifacts/foundation-build-venv/bin/python \
-            --require-hashes --no-deps -r docker/python/foundation-build.lock
-          ROBOTICS_FOUNDATION_BUILD_PYTHON="${PWD}/artifacts/foundation-build-venv/bin/python" \
-            python3 -m unittest discover -s test/ci -p test_workspace_pins.py -v
-      - name: Install the pinned foundation CLIs for producer tests
-        run: |
-          uv sync --project dependencies/robotics-runtime --locked \
-            --all-packages --extra mcap --no-default-groups --no-editable
-          contracts_cli="${PWD}/dependencies/robotics-runtime/.venv/bin/robotics-contracts"
-          echo "ROBOTICS_CONTRACTS_CLI=${contracts_cli}" >> "$GITHUB_ENV"
-          echo "ROBOTICS_FOUNDATION_PYTHON=${PWD}/dependencies/robotics-runtime/.venv/bin/python" >> "$GITHUB_ENV"
-      - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
-        with:
-          version: v5.3.1
-      - name: Test installed consumer preparation and native document boundaries
-        run: |
-          bash scripts/ci/host/run-installed-legacy.sh --check-config
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover \
-            -s host/test/fixtures/installed-webots -p test_prepare.py -v
-          dependencies/robotics-runtime/.venv/bin/python \
-            host/test/fixtures/installed-webots/worker/test_document_checks.py -v
-      - name: Test simulation provider evidence
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
-          -s test/ci -p test_simulation_provider.py -v
-      - name: Test simulation control state and clock boundaries
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
-          -s test/ci -p test_simulation_control.py -v
-      - name: Test declared consumer topic configuration
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
-          -s test/ci -p test_consumer_configuration.py -v
-      - name: Test native provider qualification documents
-        run: |
-          NATIVE_PRODUCER_DIRECTORY="${PWD}/host/producers" \
-          NATIVE_FIXTURE_DIRECTORY="${PWD}/host/test/fixtures/provider-qualification" \
-          NATIVE_SCHEMA_DIRECTORY="${PWD}/config/qualification" \
-          ROBOTICS_FOUNDATION_LOCK="${PWD}/config/foundation-lock.json" \
-            dependencies/robotics-runtime/.venv/bin/python \
-            host/test/fixtures/provider-qualification/test_native_documents.py
-      - name: Test synthetic physical runtime observations
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
-          -s test/ci -p test_physical_runtime.py -v
-      - name: Test model manifest evidence binding
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
-          -s test/ci -p test_model_manifest.py -v
-      - name: Test the resolved attach verifier commands
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
-          -s test/ci -p test_attach_commands.py -v
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
-        with:
-          cosign-release: v3.1.3
-      - name: Test retained artifact signatures and version binding
-        run: >-
-          dependencies/robotics-runtime/.venv/bin/python -m unittest discover
-          -s test/ci -p test_retained_artifact.py -v
-      - name: Verify the pinned Cosign publisher
-        run: bash scripts/ci/static-analysis/verify-cosign-publisher.sh
-      - name: Run repository hooks
-        run: uvx --from pre-commit==4.6.0 pre-commit run --all-files --show-diff-on-failure
-      - name: Test CI workflow architecture
-        run: bats test/ci
-      - name: Build and check the pinned host assets
-        run: bash scripts/ci/host/build-assets.sh
-      - name: Validate Docker Bake definition
-        run: scripts/ci/static-analysis/validate-docker-bake-definition.sh
-      - name: Build the pinned policy engine
-        env:
-          REGISTRY: local
-          VERSION: ci
-        run: |
-          docker buildx bake --file docker-bake.hcl policy-tooling --load --set '*.platform=linux/amd64'
-          docker run --rm local/robotics-runtime-infra/policy-tooling:ci version
-      - name: Verify policies on consumer execution inputs
-        run: bats test/policy/run-policy.bats
-      - name: Verify policy format and unit tests
-        run: scripts/ci/static-analysis/verify-policy-format-and-tests.sh
-      - name: Verify execution authorization policy
-        run: scripts/ci/static-analysis/verify-execution-policy.sh
-      - name: Verify runtime Compose policy
-        run: scripts/ci/static-analysis/verify-compose-runtime-policy.sh
-      - name: Verify the consumer composition trust boundary
-        run: bash scripts/ci/static-analysis/verify-foundation-consumer-policy.sh
-      - name: Verify physical runtime policy
-        run: scripts/ci/static-analysis/verify-physical-runtime-policy.sh
-      - name: Verify host I/O policy
-        run: scripts/ci/static-analysis/verify-host-io-policy.sh
-      - name: Verify scenario policy
-        run: scripts/ci/static-analysis/verify-scenario-policy.sh
-      - name: Verify hardware workflow policy
-        run: scripts/ci/static-analysis/verify-hardware-workflow-policy.sh
-      - name: Lint shell entrypoints
-        run: scripts/ci/static-analysis/lint-shell-entrypoints.sh
-      - name: Lint the Trivy ignore policy
-        run: scripts/ci/security/lint-trivyignore.sh
-      - name: Lint Dockerfile
-        run: >-
-          docker run --rm
-          --volume "${PWD}:/work:ro"
-          --workdir /work
-          "${HADOLINT_IMAGE}"
-          /bin/hadolint --config .hadolint.yaml Dockerfile docker/rknn.Dockerfile
-          docker/product-kubernetes-tools.Dockerfile
-      - name: Validate Renovate configuration
-        run: >-
-          docker run --rm
-          --volume "${PWD}:/work:ro"
-          --workdir /work
-          "${RENOVATE_IMAGE}"
-          renovate-config-validator --strict renovate.json
-      - name: Test Renovate foundation extraction and updates
-        run: >-
-          docker run --rm
-          --volume "${PWD}:/work:ro"
-          --workdir /work
-          "${RENOVATE_IMAGE}"
-          node test/renovate/check-pins.mjs /usr/local/renovate
-      - name: Audit GitHub Actions
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: uvx --from zizmor==1.26.1 zizmor .github
-  compose-version:
-    name: compose-${{ matrix.version }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        version: [v2.35.1, v5.3.1]
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: docker/setup-compose-action@16feee727cbdc83b6a014e6cc26fec4a79bcf30c  # v2.2.0
-        with:
-          version: ${{ matrix.version }}
-      - uses: ./.github/actions/setup-buildx
-      - name: Verify Compose version
-        env:
-          EXPECTED_COMPOSE_VERSION: ${{ matrix.version }}
-        run: >-
-          test "v$(docker compose version --short | sed 's/^v//')" =
-          "${EXPECTED_COMPOSE_VERSION}"
-      - name: Validate every Compose model
-        run: scripts/ci/validate-compose-models.sh
-      - name: Build the pinned policy engine
-        env:
-          REGISTRY: local
-          VERSION: ci
-        run: >-
-          docker buildx bake --file docker-bake.hcl policy-tooling --load
-          --set '*.platform=linux/amd64'
-      - name: Verify the consumer composition trust boundary
-        run: bash scripts/ci/static-analysis/verify-foundation-consumer-policy.sh
+          set -euo pipefail
+          forced=false
+          if test "${FORCE}" = "true"; then
+            forced=true
+          elif test "${EVENT_NAME}" = pull_request; then
+            git fetch --no-tags origin "${BASE_REF}"
+            base="$(git merge-base FETCH_HEAD HEAD)"
+            git diff --name-only "${base}" HEAD >changed-paths.txt || forced=true
+          elif test "${EVENT_NAME}" = push && [[ "${BEFORE_SHA}" =~ ^0+$ ]]; then
+            forced=true
+          elif test "${EVENT_NAME}" = push; then
+            git diff --name-only "${BEFORE_SHA}" HEAD >changed-paths.txt || forced=true
+          else
+            git diff --name-only HEAD~1 HEAD >changed-paths.txt || forced=true
+          fi
+          if test "${forced}" = true; then
+            printf 'affected=true\n' >>"${GITHUB_OUTPUT}"
+            printf 'supply chain: full build+scan (forced or diff unavailable)\n' >>"${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          scripts/ci/supply-chain/image-inputs.sh classify --github-output <changed-paths.txt
+          if grep -Fxq 'affected=false' "${GITHUB_OUTPUT}"; then
+            printf 'supply chain: not affected — image inputs unchanged\n' >>"${GITHUB_STEP_SUMMARY}"
+          else
+            printf 'supply chain: image inputs affected — full build+scan\n' >>"${GITHUB_STEP_SUMMARY}"
+          fi
   integration:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -327,6 +115,7 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build the amd64 CPU product
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           docker buildx bake --file docker-bake.hcl cpu ci-only
           --load
           --set '*.platform=linux/amd64'
@@ -377,9 +166,9 @@ jobs:
         if: always()
         run: scripts/ci/integration/capture-runtime-evidence.sh
       - name: Scan images and enforce vulnerability policy
-        run: scripts/ci/security/scan-bake-group.sh cpu
+        run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh cpu
       - name: Scan CI-only images and enforce vulnerability policy
-        run: scripts/ci/security/scan-bake-group.sh ci-only
+        run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh ci-only
       - name: Stop runtime
         if: always()
         run: docker compose --profile test --profile acceptance down --volumes --remove-orphans
@@ -402,6 +191,8 @@ jobs:
           retention-days: 7
 
   nvidia-image:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -416,6 +207,7 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build the NVIDIA runtime image
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           docker buildx bake --file docker-bake.hcl nvidia
           --load
           --set '*.platform=linux/amd64'
@@ -424,7 +216,7 @@ jobs:
       - name: Verify the ONNX Runtime GPU ABI
         run: scripts/ci/nvidia-image/verify-the-onnx-runtime-gpu-abi.sh
       - name: Scan NVIDIA runtime images
-        run: scripts/ci/security/scan-bake-group.sh nvidia
+        run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh nvidia
       - name: Upload NVIDIA scan results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -434,6 +226,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   nvidia-jetson-supply-chain:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -445,6 +239,7 @@ jobs:
         run: scripts/ci/nvidia-jetson-supply-chain/verify-pinned-nvidia-base-manifests.sh
       - name: Resolve and verify the ONNX Runtime source context
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           docker buildx bake --file docker-bake.hcl onnxruntime-jetson-source-verification
           --set '*.output=type=cacheonly'
           --set '*.cache-from=type=gha,scope=runtime-infra-onnxruntime-source'
@@ -455,6 +250,8 @@ jobs:
         run: docker buildx bake --file docker-bake.hcl --print nvidia-jetson >/dev/null
 
   rknn-supply-chain:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -466,9 +263,12 @@ jobs:
         run: scripts/ci/rknn-supply-chain/verify-the-rknn-source-and-dependency-policy.sh
       - name: Run the official RKNN conversion fixture
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           docker buildx bake --file docker-bake.hcl rknn-converter-verification
           --set '*.output=type=cacheonly'
   rknn-arm64-image:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     env:
@@ -485,12 +285,13 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build the RK3588 runtime without publishing vendor artifacts
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           docker buildx bake --file docker-bake.hcl
           inference-rknn-rk3588
           provider-conformance-rknn-rk3588
           --set '*.output=type=docker'
       - name: Scan RK3588 runtime images
-        run: scripts/ci/security/scan-bake-group.sh rknn
+        run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh rknn
       - name: Upload RK3588 scan results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -500,6 +301,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   amd-supply-chain:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -522,6 +325,7 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build the AMD runtime and conformance images
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           docker buildx bake --file docker-bake.hcl amd
           --set '*.platform=linux/amd64'
           --set '*.output=type=docker'
@@ -529,7 +333,7 @@ jobs:
           --set 'provider-conformance-amd.cache-from=type=gha,scope=runtime-infra-amd-amd64'
           --set 'provider-conformance-amd.cache-to=type=gha,mode=max,scope=runtime-infra-amd-amd64'
       - name: Scan AMD runtime images
-        run: scripts/ci/security/scan-bake-group.sh amd
+        run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh amd
       - name: Upload AMD scan results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -539,6 +343,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   intel-image:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -569,6 +375,7 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build the Intel runtime and conformance images
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           docker buildx bake --file docker-bake.hcl intel simulation
           --load
           --set '*.platform=linux/amd64'
@@ -588,7 +395,7 @@ jobs:
             artifacts/sensor-inference/runtime-manifest.json \
             artifacts/sensor-inference/model/model-manifest.json
       - name: Scan Intel runtime images
-        run: scripts/ci/security/scan-bake-group.sh intel
+        run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh intel
       - name: Upload Intel scan results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -601,6 +408,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   portable-arm64:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     env:
@@ -617,6 +426,7 @@ jobs:
         run: scripts/ci/set-build-metadata.sh
       - name: Build and scan every portable target for ARM64
         run: >-
+          scripts/ci/supply-chain/run-guarded.sh
           scripts/ci/security/scan-bake-group.sh multiarch linux/arm64
           --set '*.cache-from=type=gha,scope=runtime-infra-arm64'
           --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
@@ -629,6 +439,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   reproducibility:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -649,7 +461,9 @@ jobs:
           chmod 0555 "${binary}"
           printf '%s\n' "${RUNNER_TEMP}/diffoci-bin" >>"${GITHUB_PATH}"
       - name: Rebuild the same OCI image twice
-        run: scripts/ci/reproducibility/rebuild-the-same-oci-image-twice.sh
+        run: >-
+          scripts/ci/supply-chain/run-guarded.sh
+          scripts/ci/reproducibility/rebuild-the-same-oci-image-twice.sh
       - name: Upload OCI manifests and file differences
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -658,15 +472,10 @@ jobs:
           path: artifacts/reproducibility/
           if-no-files-found: warn
           retention-days: 7
-  ci:
+  ci-supply-chain:
     if: always()
     needs:
-      - product-helm
-      - product-terraform
-      - product-ansible
-      - static-analysis
-      - consumer-examples
-      - compose-version
+      - changes
       - integration
       - amd-supply-chain
       - intel-image
@@ -679,7 +488,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require every CI gate
+      - name: Require the supply-chain gate
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: printf '%s\n' "${NEEDS_JSON}" | jq -e 'all(.[]; .result == "success")'
+          AFFECTED: ${{ needs.changes.outputs.affected }}
+        run: |
+          printf '%s\n' "${NEEDS_JSON}" | jq -e --arg affected "${AFFECTED}" '
+            .changes.result == "success" and
+            (del(.changes) | all(.[];
+              .result == "success" or
+              (.result == "skipped" and $affected == "false")
+            ))
+          '
+          if test "${AFFECTED}" = "false"; then
+            printf 'supply chain: not affected — image inputs unchanged\n' >>"${GITHUB_STEP_SUMMARY}"
+          fi

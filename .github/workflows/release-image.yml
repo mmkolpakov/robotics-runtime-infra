@@ -43,11 +43,19 @@ jobs:
             exit 1
           fi
 
-  quality-gates:
+  domain-gate:
     needs: verify-source
     permissions:
       contents: read
-    uses: ./.github/workflows/ci.yml
+    uses: ./.github/workflows/ci-domain.yml
+
+  supply-chain-gate:
+    needs: verify-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-supply-chain.yml
+    with:
+      force: true
 
   foundation-gate:
     needs: verify-source
@@ -88,7 +96,8 @@ jobs:
 
   prepare:
     needs:
-      - quality-gates
+      - domain-gate
+      - supply-chain-gate
       - foundation-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5

@@ -11,7 +11,7 @@ assert.ok(process.argv[2], "pass the directory of the installed renovate package
 const renovate = resolve(process.argv[2]);
 const load = (path) => import(pathToFileURL(resolve(renovate, "dist", path)));
 const config = JSON.parse(await readFile(resolve(root, "renovate.json"), "utf8"));
-const ci = await readFile(resolve(root, ".github/workflows/ci.yml"), "utf8");
+const ci = await readFile(resolve(root, ".github/workflows/ci-domain.yml"), "utf8");
 const installed = JSON.parse(await readFile(resolve(renovate, "package.json"), "utf8"));
 assert.equal(installed.version, ci.match(/renovate\/renovate:([\d.]+)@/)[1]);
 console.log(`Loading Renovate ${installed.version} extraction and update pipeline...`);
@@ -30,7 +30,7 @@ const packageFile = "foundation.repos";
 const candidateFiles = [
   packageFile, "config/foundation-lock.json", "docker-bake.hcl",
   "docker/python/acceptance-observer.in", "docker/python/permit-preflight.in",
-  ".github/workflows/ci.yml", "nested/foundation.repos",
+  ".github/workflows/ci-domain.yml", "nested/foundation.repos",
 ];
 const managers = config.customManagers.filter((manager) =>
   getMatchingFiles(manager, candidateFiles).includes(packageFile));
