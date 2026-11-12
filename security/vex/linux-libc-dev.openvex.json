@@ -2,8 +2,8 @@
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/linux-libc-dev/2026-09-08",
   "author": "mmkolpakov",
-  "timestamp": "2026-11-12T09:06:57Z",
-  "version": 18,
+  "timestamp": "2026-11-12T08:36:32Z",
+  "version": 17,
   "statements": [
     {
       "vulnerability": {
@@ -902,6 +902,33 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "This binary package, while built from a source package related to the CVE, has been determined to not be affected by the issue. Projected from Canonical Ltd. OpenVEX document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2025/CVE-2025-71315 (version 96, timestamp 2026-11-11T01:10:33.442368Z), which records linux-libc-dev 6.8.0-149.149 distro=noble as not_affected; narrowed to the amd64/arm64 ubuntu-24.04 binary packages observed in the pinned Ubuntu snapshot 20261112T000000Z. Sources: https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2025/CVE-2025-71315.json; https://git.kernel.org/linus/02e2681ffe1addde1fc8c35d05657b16bfa79613; https://git.kernel.org/stable/c/02e2681ffe1addde1fc8c35d05657b16bfa79613; https://git.kernel.org/stable/c/a0582cc923985c6b72fe871b5f7aa7c682bfc230; https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2025/71xxx/CVE-2025-71315.json. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-100074",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-100074",
+          "https://git.kernel.org/stable/c/61e655391cb19c31f94ecd4354f624c81ce4cf75",
+          "https://git.kernel.org/stable/c/e42cede6f90177f4f92f80d3de18f628e61d2087",
+          "https://git.kernel.org/stable/c/641f814965d733936ca3618d4d5a12a8fa9be00e",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-100074"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/btf.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-100074, version 33); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/100xxx/CVE-2026-100074.json; https://git.kernel.org/stable/c/61e655391cb19c31f94ecd4354f624c81ce4cf75; https://git.kernel.org/stable/c/e42cede6f90177f4f92f80d3de18f628e61d2087; https://git.kernel.org/stable/c/641f814965d733936ca3618d4d5a12a8fa9be00e; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-100074.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
     },
     {
       "vulnerability": {
@@ -3091,6 +3118,37 @@
     },
     {
       "vulnerability": {
+        "name": "CVE-2026-80668",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-80668",
+          "https://git.kernel.org/linus/b8b09dc2bf35a00d4e0556b5d6308c7b917ebda2 (7.2-rc1)",
+          "https://git.kernel.org/stable/c/7ec786f4230c2a9b2eaf97a2d45368933b49d2b2",
+          "https://git.kernel.org/stable/c/b8b09dc2bf35a00d4e0556b5d6308c7b917ebda2",
+          "https://ubuntu.com/security/notices/USN-8888-1",
+          "https://ubuntu.com/security/notices/USN-8889-1",
+          "https://ubuntu.com/security/notices/USN-8887-1",
+          "https://ubuntu.com/security/notices/USN-8888-2",
+          "https://ubuntu.com/security/notices/USN-8887-2",
+          "https://ubuntu.com/security/notices/USN-8887-3",
+          "https://ubuntu.com/security/notices/USN-9002-1",
+          "https://ubuntu.com/security/notices/USN-9003-1",
+          "https://ubuntu.com/security/CVE-2026-80668"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The patch adds NF_CT_EXPECT_DEAD to include/uapi/linux/netfilter/nf_conntrack_common.h only under the __KERNEL__ guard; that macro is absent from the exported header in the reviewed 6.8.0-149.149 packages for both architectures (grep NF_CT_EXPECT_DEAD returns nothing). The conntrack expectation race and its fix live in non-exported net/netfilter implementation. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-80668, version 53); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/80xxx/CVE-2026-80668.json; https://git.kernel.org/linus/b8b09dc2bf35a00d4e0556b5d6308c7b917ebda2; https://git.kernel.org/stable/c/7ec786f4230c2a9b2eaf97a2d45368933b49d2b2; https://git.kernel.org/stable/c/b8b09dc2bf35a00d4e0556b5d6308c7b917ebda2; https://ubuntu.com/security/notices/USN-8888-1; https://ubuntu.com/security/notices/USN-8889-1; https://ubuntu.com/security/notices/USN-8887-1; https://ubuntu.com/security/notices/USN-8888-2; https://ubuntu.com/security/notices/USN-8887-2; https://ubuntu.com/security/notices/USN-8887-3; https://ubuntu.com/security/notices/USN-9002-1; https://ubuntu.com/security/notices/USN-9003-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-80668.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
         "name": "CVE-2026-80692",
         "aliases": [
           "https://www.cve.org/CVERecord?id=CVE-2026-80692",
@@ -3368,6 +3426,1588 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "This binary package, while built from a source package related to the CVE, has been determined to not be affected by the issue. Projected from Canonical Ltd. OpenVEX document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-89675 (version 43, timestamp 2026-11-11T01:28:00.239114Z), which records linux-libc-dev 6.8.0-149.149 distro=noble as not_affected; narrowed to the amd64/arm64 ubuntu-24.04 binary packages observed in the pinned Ubuntu snapshot 20261112T000000Z. Sources: https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-89675.json; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://git.kernel.org/linus/62c0f6eaf050bb9284c1f9cac6ed1770092e6b95; https://git.kernel.org/stable/c/62c0f6eaf050bb9284c1f9cac6ed1770092e6b95; https://git.kernel.org/stable/c/9031493ef7369d5c59c4bacc96f0c85965f09a98; https://git.kernel.org/stable/c/a385cf5e016b748babf94cc664e43a26e17db117; https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/89xxx/CVE-2026-89675.json. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-89788",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-89788",
+          "https://git.kernel.org/linus/b5ec6c462aab1062cf5d1e667ba7c6442f737055 (7.3-rc2)",
+          "https://git.kernel.org/stable/c/4e30fbd26e84efa2e5cbec4eb11e126ac0c79313",
+          "https://git.kernel.org/stable/c/b5ec6c462aab1062cf5d1e667ba7c6442f737055",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9002-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-89788"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/mgmt/tree_connect.c, fs/smb/server/smb2pdu.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-89788, version 44); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/89xxx/CVE-2026-89788.json; https://git.kernel.org/linus/b5ec6c462aab1062cf5d1e667ba7c6442f737055; https://git.kernel.org/stable/c/4e30fbd26e84efa2e5cbec4eb11e126ac0c79313; https://git.kernel.org/stable/c/b5ec6c462aab1062cf5d1e667ba7c6442f737055; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9002-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-89788.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-89810",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-89810",
+          "https://git.kernel.org/linus/960c4a8069bfd352c48cc88592618f1ebe24c69e (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9002-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-89810"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/gpu/drm/amd/amdkfd/kfd_migrate.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-89810, version 41); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/89xxx/CVE-2026-89810.json; https://git.kernel.org/linus/960c4a8069bfd352c48cc88592618f1ebe24c69e; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9002-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-89810.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-89913",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-89913",
+          "https://git.kernel.org/linus/f5b8f203bfc07a5a257dff859e66d2c500f9f509 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-89913"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (arch/arm64/kvm/vgic/vgic-v3.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-89913, version 40); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/89xxx/CVE-2026-89913.json; https://git.kernel.org/linus/f5b8f203bfc07a5a257dff859e66d2c500f9f509; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-89913.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90093",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90093",
+          "https://git.kernel.org/linus/ca2c4c26498643f421d35ffe258fafbd3ed461c3 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90093"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/bluetooth/l2cap_sock.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90093, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90093.json; https://git.kernel.org/linus/ca2c4c26498643f421d35ffe258fafbd3ed461c3; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90093.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90104",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90104",
+          "https://git.kernel.org/linus/8fa4804fe62ca4155a2d8fc2789d630376cbf2fc (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90104"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/nfs/callback_xdr.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90104, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90104.json; https://git.kernel.org/linus/8fa4804fe62ca4155a2d8fc2789d630376cbf2fc; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90104.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90111",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90111",
+          "https://git.kernel.org/linus/235b42b5860189eb8c27c36435ad932cae65a734 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90111"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/ipv6/ip6mr.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90111, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90111.json; https://git.kernel.org/linus/235b42b5860189eb8c27c36435ad932cae65a734; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90111.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90149",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90149",
+          "https://git.kernel.org/linus/2b03ebbf8d5e8f6af4ecd6c65375232dd1ec32cc (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90149"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/nfs/flexfilelayout/flexfilelayout.c, fs/nfs/nfs4session.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90149, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90149.json; https://git.kernel.org/linus/2b03ebbf8d5e8f6af4ecd6c65375232dd1ec32cc; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90149.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90155",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90155",
+          "https://git.kernel.org/linus/215e8816b1ac25176d911abb8704390413ccee4b (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90155"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/smb2pdu.c, fs/smb/server/vfs_cache.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90155, version 41); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90155.json; https://git.kernel.org/linus/215e8816b1ac25176d911abb8704390413ccee4b; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90155.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90161",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90161",
+          "https://git.kernel.org/linus/862427ebb81d1f6abbf74d799790e1694b37b187 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90161"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/erofs/decompressor.c, fs/erofs/zmap.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90161, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90161.json; https://git.kernel.org/linus/862427ebb81d1f6abbf74d799790e1694b37b187; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90161.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90162",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90162",
+          "https://git.kernel.org/linus/29f74f0f2e6df3b393b7b66e810136d0c64e3c59 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90162"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/smb2pdu.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90162, version 42); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90162.json; https://git.kernel.org/linus/29f74f0f2e6df3b393b7b66e810136d0c64e3c59; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90162.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90167",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90167",
+          "https://git.kernel.org/linus/b0148dc5625dbfd50596ac63c7487c12e8a8ab03 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90167"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/oplock.c, fs/smb/server/oplock.h, fs/smb/server/smb2pdu.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90167, version 41); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90167.json; https://git.kernel.org/linus/b0148dc5625dbfd50596ac63c7487c12e8a8ab03; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90167.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90204",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90204",
+          "https://git.kernel.org/linus/bb88131c9831075b8dc08cdd375743e5d44c7ca2 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90204"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/ocfs2/inode.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90204, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90204.json; https://git.kernel.org/linus/bb88131c9831075b8dc08cdd375743e5d44c7ca2; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90204.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90205",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90205",
+          "https://git.kernel.org/linus/b2d31acbd3b182755b019183fb46949ba5e39b9f (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90205"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/ocfs2/inode.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90205, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90205.json; https://git.kernel.org/linus/b2d31acbd3b182755b019183fb46949ba5e39b9f; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90205.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90217",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90217",
+          "https://git.kernel.org/linus/83608e303b95d07afba1c15da0b5d9e513c2f15a (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90217"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/states.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90217, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90217.json; https://git.kernel.org/linus/83608e303b95d07afba1c15da0b5d9e513c2f15a; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90217.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90237",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90237",
+          "https://git.kernel.org/linus/3679da4ad8be84cddaf40bc307fef1fe13e051ff (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90237"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only internal kernel headers (include/net/netfilter/nf_conntrack_helper.h), which are not exported by these UAPI-header packages; the vulnerable implementation is in non-exported kernel code. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90237, version 42); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90237.json; https://git.kernel.org/linus/3679da4ad8be84cddaf40bc307fef1fe13e051ff; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90237.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90256",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90256",
+          "https://git.kernel.org/linus/2b66c83ff1751d6bd3201b3017206262ab46dc05 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90256"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/bluetooth/l2cap_core.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90256, version 42); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90256.json; https://git.kernel.org/linus/2b66c83ff1751d6bd3201b3017206262ab46dc05; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90256.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90317",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90317",
+          "https://git.kernel.org/linus/180c7000712db77063b3a26f4c97e7dd9038f449 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90317"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90317, version 41); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90317.json; https://git.kernel.org/linus/180c7000712db77063b3a26f4c97e7dd9038f449; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90317.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90320",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90320",
+          "https://git.kernel.org/linus/2cf82b46d5e43be0dfbaac7fa1073cec2fc1f5e6 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90320"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/ocfs2/xattr.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90320, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90320.json; https://git.kernel.org/linus/2cf82b46d5e43be0dfbaac7fa1073cec2fc1f5e6; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90320.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90321",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90321",
+          "https://git.kernel.org/linus/8914a3330b72378136c2c02d6328a826f6abdad7 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90321"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/ocfs2/inode.c, fs/ocfs2/xattr.c, fs/ocfs2/xattr.h); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90321, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90321.json; https://git.kernel.org/linus/8914a3330b72378136c2c02d6328a826f6abdad7; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90321.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90324",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90324",
+          "https://git.kernel.org/linus/3831568792af75b6523fa93bb91560e29189cf55 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90324"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/block/ublk_drv.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90324, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90324.json; https://git.kernel.org/linus/3831568792af75b6523fa93bb91560e29189cf55; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90324.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90343",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90343",
+          "https://git.kernel.org/linus/6c5fc504d0d6934132637aa3db4b9b58148eaa78 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90343"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/wireless/core.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90343, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90343.json; https://git.kernel.org/linus/6c5fc504d0d6934132637aa3db4b9b58148eaa78; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90343.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90380",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90380",
+          "https://git.kernel.org/linus/217f9e7bb02558759be9d9ecfe532e9708741c50 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90380"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/net/wireless/mediatek/mt76/mt7925/main.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90380, version 42); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90380.json; https://git.kernel.org/linus/217f9e7bb02558759be9d9ecfe532e9708741c50; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90380.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-90417",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-90417",
+          "https://git.kernel.org/linus/373f3716a2de7adc739269ebb4d87e5bf4dc180c (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-90417"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/infiniband/hw/cxgb4/mem.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-90417, version 42); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/90xxx/CVE-2026-90417.json; https://git.kernel.org/linus/373f3716a2de7adc739269ebb4d87e5bf4dc180c; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-90417.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-92499",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-92499",
+          "https://git.kernel.org/linus/bc4b7b0414c33b2c8898eb04386df0d21a13dad8 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-92499"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/ext4/dir.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-92499, version 42); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/92xxx/CVE-2026-92499.json; https://git.kernel.org/linus/bc4b7b0414c33b2c8898eb04386df0d21a13dad8; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-92499.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93125",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93125",
+          "https://git.kernel.org/linus/2aaf67f0516fde29620d0edfc29c01b9ea7ad430 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93125"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93125, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93125.json; https://git.kernel.org/linus/2aaf67f0516fde29620d0edfc29c01b9ea7ad430; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93125.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93144",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93144",
+          "https://git.kernel.org/linus/ac65c710cc643cbc52b899627577357867249530 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93144"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93144, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93144.json; https://git.kernel.org/linus/ac65c710cc643cbc52b899627577357867249530; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93144.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93148",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93148",
+          "https://git.kernel.org/linus/9c9ee0324c774490ae953162aaaf4561d222bd93 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93148"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only internal kernel headers (include/linux/bpf.h), which are not exported by these UAPI-header packages; the vulnerable implementation is in non-exported kernel code. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93148, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93148.json; https://git.kernel.org/linus/9c9ee0324c774490ae953162aaaf4561d222bd93; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93148.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93154",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93154",
+          "https://git.kernel.org/linus/f67d8a08f60c9217df6d40da56422d2049f5e334 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93154"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/infiniband/hw/irdma/utils.c, drivers/infiniband/hw/irdma/verbs.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93154, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93154.json; https://git.kernel.org/linus/f67d8a08f60c9217df6d40da56422d2049f5e334; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93154.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93175",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93175",
+          "https://git.kernel.org/linus/0aeed866cb938943908c3ba46422128e49d2d080 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93175"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_crtc.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93175, version 42); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93175.json; https://git.kernel.org/linus/0aeed866cb938943908c3ba46422128e49d2d080; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93175.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93176",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93176",
+          "https://git.kernel.org/linus/98cad4bd1443975d972f4c7f705980da03722a22 (7.3-rc1)",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93176"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93176, version 43); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93176.json; https://git.kernel.org/linus/98cad4bd1443975d972f4c7f705980da03722a22; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93176.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93221",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93221",
+          "https://git.kernel.org/stable/c/11a5fe42e1811f793e04ef885b639ea7668f439d",
+          "https://git.kernel.org/stable/c/df5922fe09a8131c793ffa86adf204999b0470f8",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9002-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93221"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/nfsd/netns.h, fs/nfsd/nfs4proc.c, fs/nfsd/nfs4recover.c, fs/nfsd/nfs4state.c, fs/nfsd/nfsctl.c, fs/nfsd/nfssvc.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93221, version 33); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93221.json; https://git.kernel.org/stable/c/11a5fe42e1811f793e04ef885b639ea7668f439d; https://git.kernel.org/stable/c/df5922fe09a8131c793ffa86adf204999b0470f8; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9002-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93221.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-93282",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-93282",
+          "https://git.kernel.org/stable/c/35d5c59fe6b1d9fe43fb14eb384f69ee1a120f9c",
+          "https://git.kernel.org/stable/c/cc2f133e80eb2c4a04bfa77a2f207749fe2f516a",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-93282"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/smb2pdu.c, fs/smb/server/smbacl.c, fs/smb/server/smbacl.h); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-93282, version 35); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93282.json; https://git.kernel.org/stable/c/35d5c59fe6b1d9fe43fb14eb384f69ee1a120f9c; https://git.kernel.org/stable/c/cc2f133e80eb2c4a04bfa77a2f207749fe2f516a; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-93282.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-97493",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-97493",
+          "https://git.kernel.org/stable/c/a99cd231cd924b7160fecb9fb3a94b801522323b",
+          "https://git.kernel.org/stable/c/f8f0985375c3b977757fd73e2b691ff1bf1ea7b9",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-97493"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/gpu/drm/amd/amdgpu/amdgpu_atombios.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-97493, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/97xxx/CVE-2026-97493.json; https://git.kernel.org/stable/c/a99cd231cd924b7160fecb9fb3a94b801522323b; https://git.kernel.org/stable/c/f8f0985375c3b977757fd73e2b691ff1bf1ea7b9; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-97493.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-97513",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-97513",
+          "https://git.kernel.org/stable/c/04cda0b5c4ca3f61cbc86e41ead3c462c8cfd659",
+          "https://git.kernel.org/stable/c/7cdbd7bb21949a8fda10c7104a2b12ee363cbf5c",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-97513"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/media/platform/chips-media/wave5/wave5-helper.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-97513, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/97xxx/CVE-2026-97513.json; https://git.kernel.org/stable/c/04cda0b5c4ca3f61cbc86e41ead3c462c8cfd659; https://git.kernel.org/stable/c/7cdbd7bb21949a8fda10c7104a2b12ee363cbf5c; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-97513.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-97565",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-97565",
+          "https://git.kernel.org/stable/c/0f1f77b821506a4dacab6ce7d29cf9e0c26f14cd",
+          "https://git.kernel.org/stable/c/e6142a8bfc230c7263eb8b0475249c958ce49367",
+          "https://git.kernel.org/stable/c/aaa221c1b1d288845b55e9c366e5ef608dfff49d",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-97565"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/client/cifssmb.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-97565, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/97xxx/CVE-2026-97565.json; https://git.kernel.org/stable/c/0f1f77b821506a4dacab6ce7d29cf9e0c26f14cd; https://git.kernel.org/stable/c/e6142a8bfc230c7263eb8b0475249c958ce49367; https://git.kernel.org/stable/c/aaa221c1b1d288845b55e9c366e5ef608dfff49d; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-97565.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-97603",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-97603",
+          "https://git.kernel.org/stable/c/cd7a1598645b6917a8676b7e2efe8d97ce68a952",
+          "https://git.kernel.org/stable/c/7e4312953788244d47074987d40d76702cf929f1",
+          "https://git.kernel.org/stable/c/7dd4c829bac2916be98a3e34b41daaba7f42b4c4",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-97603"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/net/ethernet/intel/idpf/idpf_txrx.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-97603, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/97xxx/CVE-2026-97603.json; https://git.kernel.org/stable/c/cd7a1598645b6917a8676b7e2efe8d97ce68a952; https://git.kernel.org/stable/c/7e4312953788244d47074987d40d76702cf929f1; https://git.kernel.org/stable/c/7dd4c829bac2916be98a3e34b41daaba7f42b4c4; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-97603.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-97960",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-97960",
+          "https://git.kernel.org/stable/c/a5fe19dd8b3ed5fad6e5e0f0c58c7245043ee4af",
+          "https://git.kernel.org/stable/c/a56c03a397e2cd0c4cf8da96dcd6214f7d0e7d8c",
+          "https://git.kernel.org/stable/c/c55599c0ec2aa020e41a0599c3044c56d8a2e7d9",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-97960"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (arch/x86/events/intel/core.c, arch/x86/events/intel/ds.c, arch/x86/events/perf_event.h); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-97960, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/97xxx/CVE-2026-97960.json; https://git.kernel.org/stable/c/a5fe19dd8b3ed5fad6e5e0f0c58c7245043ee4af; https://git.kernel.org/stable/c/a56c03a397e2cd0c4cf8da96dcd6214f7d0e7d8c; https://git.kernel.org/stable/c/c55599c0ec2aa020e41a0599c3044c56d8a2e7d9; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-97960.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-97988",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-97988",
+          "https://git.kernel.org/stable/c/e4f4761879a230aa59e569102a6ab9851847d833",
+          "https://git.kernel.org/stable/c/4a454af8e56c1596ada1421ae5eba90c8896c7c7",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-97988"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/vhost/net.c, drivers/vhost/vhost.c, drivers/vhost/vhost.h, drivers/vhost/vsock.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-97988, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/97xxx/CVE-2026-97988.json; https://git.kernel.org/stable/c/e4f4761879a230aa59e569102a6ab9851847d833; https://git.kernel.org/stable/c/4a454af8e56c1596ada1421ae5eba90c8896c7c7; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-97988.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98019",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98019",
+          "https://git.kernel.org/stable/c/69a9ad004ccf5d45e534c7d503f47f643abe64b7",
+          "https://git.kernel.org/stable/c/1a3a10b030c96ea88868ccc060a16827c01eaa5a",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98019"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c, tools/testing/selftests/bpf/progs/verifier_subprog_precision.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98019, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98019.json; https://git.kernel.org/stable/c/69a9ad004ccf5d45e534c7d503f47f643abe64b7; https://git.kernel.org/stable/c/1a3a10b030c96ea88868ccc060a16827c01eaa5a; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98019.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98033",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98033",
+          "https://git.kernel.org/stable/c/66ff2eff093d2a0838f39c713eeb590bc0946c2a",
+          "https://git.kernel.org/stable/c/b90c5d770dad910fb89e6c1b15052a8a1e8db752",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98033"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98033, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98033.json; https://git.kernel.org/stable/c/66ff2eff093d2a0838f39c713eeb590bc0946c2a; https://git.kernel.org/stable/c/b90c5d770dad910fb89e6c1b15052a8a1e8db752; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98033.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98034",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98034",
+          "https://git.kernel.org/stable/c/86168208737bdd267d92d855d453d1d2f840df19",
+          "https://git.kernel.org/stable/c/ecdc5043794c9184aa8e6c814603899479c46b35",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98034"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98034, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98034.json; https://git.kernel.org/stable/c/86168208737bdd267d92d855d453d1d2f840df19; https://git.kernel.org/stable/c/ecdc5043794c9184aa8e6c814603899479c46b35; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98034.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98084",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98084",
+          "https://git.kernel.org/stable/c/e3e4f66cc4b72333d0886ae2673c360248987889",
+          "https://git.kernel.org/stable/c/f83890dfed9efc5e19df1dbc1ad707a142936923",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98084"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/backtrack.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98084, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98084.json; https://git.kernel.org/stable/c/e3e4f66cc4b72333d0886ae2673c360248987889; https://git.kernel.org/stable/c/f83890dfed9efc5e19df1dbc1ad707a142936923; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98084.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98085",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98085",
+          "https://git.kernel.org/stable/c/387b1baefbb776e3f48dc2261e77a49213f470f7",
+          "https://git.kernel.org/stable/c/671b7b9a660ef15b25faa3df161205b9dc8d1eb2",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98085"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/backtrack.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98085, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98085.json; https://git.kernel.org/stable/c/387b1baefbb776e3f48dc2261e77a49213f470f7; https://git.kernel.org/stable/c/671b7b9a660ef15b25faa3df161205b9dc8d1eb2; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98085.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98115",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98115",
+          "https://git.kernel.org/stable/c/d12168084c8c1b6d883c8eca5853929ac5136a9e",
+          "https://git.kernel.org/stable/c/a7e6df0bb92642bee4431b2b85c69ada1e463b21",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98115"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/connection.c, fs/smb/server/mgmt/user_session.c, fs/smb/server/mgmt/user_session.h, fs/smb/server/smb2pdu.c, fs/smb/server/vfs_cache.c, fs/smb/server/vfs_cache.h); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98115, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98115.json; https://git.kernel.org/stable/c/d12168084c8c1b6d883c8eca5853929ac5136a9e; https://git.kernel.org/stable/c/a7e6df0bb92642bee4431b2b85c69ada1e463b21; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98115.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98134",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98134",
+          "https://git.kernel.org/stable/c/d3ef6c097ba078e1f8c7239d76a0ce8b61e75095",
+          "https://git.kernel.org/stable/c/b55c9f019e169ed0d01394f96e172286a8b21b99",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98134"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98134, version 34); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98134.json; https://git.kernel.org/stable/c/d3ef6c097ba078e1f8c7239d76a0ce8b61e75095; https://git.kernel.org/stable/c/b55c9f019e169ed0d01394f96e172286a8b21b99; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98134.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98332",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98332",
+          "https://git.kernel.org/linus/6f0a100df8539ce90f37c14e1945f396ca2410bc (7.3-rc4)",
+          "https://git.kernel.org/stable/c/0cd452ccaa5c5971440256ce72c64611eca176c1",
+          "https://git.kernel.org/stable/c/6f0a100df8539ce90f37c14e1945f396ca2410bc",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98332"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/mac80211/tdls.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98332, version 23); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98332.json; https://git.kernel.org/linus/6f0a100df8539ce90f37c14e1945f396ca2410bc; https://git.kernel.org/stable/c/0cd452ccaa5c5971440256ce72c64611eca176c1; https://git.kernel.org/stable/c/6f0a100df8539ce90f37c14e1945f396ca2410bc; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98332.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98333",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98333",
+          "https://git.kernel.org/linus/78183e8331958fda11cd2b6850bb424a9747c4b2 (7.3-rc4)",
+          "https://git.kernel.org/stable/c/78183e8331958fda11cd2b6850bb424a9747c4b2",
+          "https://git.kernel.org/stable/c/de6f9561db572df86d65c05545eb2397313bb8a5",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98333"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/mac80211/iface.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98333, version 23); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98333.json; https://git.kernel.org/linus/78183e8331958fda11cd2b6850bb424a9747c4b2; https://git.kernel.org/stable/c/78183e8331958fda11cd2b6850bb424a9747c4b2; https://git.kernel.org/stable/c/de6f9561db572df86d65c05545eb2397313bb8a5; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98333.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98341",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98341",
+          "https://git.kernel.org/linus/dab68a74e90b8e07f08ed9deaa5884857a3cfe89 (7.3-rc4)",
+          "https://git.kernel.org/stable/c/cf6da29d17994865f73ca70976495ea856909c63",
+          "https://git.kernel.org/stable/c/dab68a74e90b8e07f08ed9deaa5884857a3cfe89",
+          "https://git.kernel.org/stable/c/e8c75736cfd0c6c87562cda2312e3fe5e2227955",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98341"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/wireless/core.c, net/wireless/core.h, net/wireless/rdev-ops.h, net/wireless/scan.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98341, version 23); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98341.json; https://git.kernel.org/linus/dab68a74e90b8e07f08ed9deaa5884857a3cfe89; https://git.kernel.org/stable/c/cf6da29d17994865f73ca70976495ea856909c63; https://git.kernel.org/stable/c/dab68a74e90b8e07f08ed9deaa5884857a3cfe89; https://git.kernel.org/stable/c/e8c75736cfd0c6c87562cda2312e3fe5e2227955; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98341.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98364",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98364",
+          "https://git.kernel.org/linus/9fa903b24b1f46b4ff5443bcd4aca23e5c57f9c1 (7.3-rc4)",
+          "https://git.kernel.org/stable/c/8d85d6bc9c46dc41cb2be0eac53f8ab068c3a807",
+          "https://git.kernel.org/stable/c/9fa903b24b1f46b4ff5443bcd4aca23e5c57f9c1",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98364"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/xfrm/xfrm_policy.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98364, version 23); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98364.json; https://git.kernel.org/linus/9fa903b24b1f46b4ff5443bcd4aca23e5c57f9c1; https://git.kernel.org/stable/c/8d85d6bc9c46dc41cb2be0eac53f8ab068c3a807; https://git.kernel.org/stable/c/9fa903b24b1f46b4ff5443bcd4aca23e5c57f9c1; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98364.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98420",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98420",
+          "https://git.kernel.org/stable/c/d7fd1f98607f2cd358e583f9548bdf0173090a86",
+          "https://git.kernel.org/stable/c/c99ea7855124ca1428a1e59c2b4590aaef34eacf",
+          "https://ubuntu.com/security/CVE-2026-98420"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/connection.c, fs/smb/server/connection.h, fs/smb/server/mgmt/user_session.c, fs/smb/server/mgmt/user_session.h, fs/smb/server/proc.c, fs/smb/server/server.c, fs/smb/server/smb2pdu.c, fs/smb/server/smb2pdu.h, fs/smb/server/stats.h); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98420, version 13); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98420.json; https://git.kernel.org/stable/c/d7fd1f98607f2cd358e583f9548bdf0173090a86; https://git.kernel.org/stable/c/c99ea7855124ca1428a1e59c2b4590aaef34eacf; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98420.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98439",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98439",
+          "https://git.kernel.org/stable/c/0947087678f465b64eba2acebe808d5c6cfea036",
+          "https://git.kernel.org/stable/c/4fd5bad647bfa45eb86bfd2f03ba1bef3fcd5851",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98439"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (fs/smb/server/connection.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98439, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98439.json; https://git.kernel.org/stable/c/0947087678f465b64eba2acebe808d5c6cfea036; https://git.kernel.org/stable/c/4fd5bad647bfa45eb86bfd2f03ba1bef3fcd5851; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98439.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98570",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98570",
+          "https://git.kernel.org/stable/c/36c07127924f11fc5741a780abcaaf808fe9ef13",
+          "https://git.kernel.org/stable/c/87cd6b717e4069dca34e0866e57eaeb44d3b173e",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98570"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only internal kernel headers (include/net/dst.h), which are not exported by these UAPI-header packages; the vulnerable implementation is in non-exported kernel code. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98570, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98570.json; https://git.kernel.org/stable/c/36c07127924f11fc5741a780abcaaf808fe9ef13; https://git.kernel.org/stable/c/87cd6b717e4069dca34e0866e57eaeb44d3b173e; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98570.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98589",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98589",
+          "https://git.kernel.org/stable/c/0b6b2bb9b90ad1e2d94d18f626258a1dbbdee0ea",
+          "https://git.kernel.org/stable/c/a6c1edfbe240e4377038a0e1d233ad81fde9a21b",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98589"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98589, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98589.json; https://git.kernel.org/stable/c/0b6b2bb9b90ad1e2d94d18f626258a1dbbdee0ea; https://git.kernel.org/stable/c/a6c1edfbe240e4377038a0e1d233ad81fde9a21b; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98589.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98599",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98599",
+          "https://git.kernel.org/stable/c/89a7241fc7ecc1b5e47c3f071081e314523b8d9d",
+          "https://git.kernel.org/stable/c/79a9172f3ab4ad8392c5e5c8944b9b7710ade620",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98599"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/verifier.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98599, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98599.json; https://git.kernel.org/stable/c/89a7241fc7ecc1b5e47c3f071081e314523b8d9d; https://git.kernel.org/stable/c/79a9172f3ab4ad8392c5e5c8944b9b7710ade620; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98599.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98652",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98652",
+          "https://git.kernel.org/stable/c/f3a557067d57ce6ae98d485c8009b223e16f5f36",
+          "https://git.kernel.org/stable/c/7a33007b95c8908ae3980eb2b4c508f8936766df",
+          "https://ubuntu.com/security/notices/USN-8959-1",
+          "https://ubuntu.com/security/notices/USN-8960-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98652"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (arch/s390/kvm/interrupt.c, arch/s390/kvm/s390/interrupt.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98652, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98652.json; https://git.kernel.org/stable/c/f3a557067d57ce6ae98d485c8009b223e16f5f36; https://git.kernel.org/stable/c/7a33007b95c8908ae3980eb2b4c508f8936766df; https://ubuntu.com/security/notices/USN-8959-1; https://ubuntu.com/security/notices/USN-8960-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98652.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98799",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98799",
+          "https://git.kernel.org/stable/c/17637e1a581a22466ac3620a91e099683ff9cc6f",
+          "https://git.kernel.org/stable/c/967566ad325b42150483e81acb09ea9d800c00b8",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98799"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only internal kernel headers (include/linux/bpf.h), which are not exported by these UAPI-header packages; the vulnerable implementation is in non-exported kernel code. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98799, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98799.json; https://git.kernel.org/stable/c/17637e1a581a22466ac3620a91e099683ff9cc6f; https://git.kernel.org/stable/c/967566ad325b42150483e81acb09ea9d800c00b8; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98799.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98800",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98800",
+          "https://git.kernel.org/stable/c/40955f6512a03f0e046f5256b0706b26ba191018",
+          "https://git.kernel.org/stable/c/0fb5751a6e411b1b466c06e50021818d9391df98",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98800"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only internal kernel headers (include/linux/bpf.h), which are not exported by these UAPI-header packages; the vulnerable implementation is in non-exported kernel code. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98800, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98800.json; https://git.kernel.org/stable/c/40955f6512a03f0e046f5256b0706b26ba191018; https://git.kernel.org/stable/c/0fb5751a6e411b1b466c06e50021818d9391df98; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98800.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98803",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98803",
+          "https://git.kernel.org/stable/c/88095728511e0df9c89528944f5a1762ad298983",
+          "https://git.kernel.org/stable/c/a7cff44543f66f3a19151060cb549691d191d44c",
+          "https://git.kernel.org/stable/c/358d5ac5a5d57ce21c3814c4e3e8f3fbcb7304b4",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98803"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (drivers/net/ethernet/stmicro/stmmac/stmmac_main.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98803, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98803.json; https://git.kernel.org/stable/c/88095728511e0df9c89528944f5a1762ad298983; https://git.kernel.org/stable/c/a7cff44543f66f3a19151060cb549691d191d44c; https://git.kernel.org/stable/c/358d5ac5a5d57ce21c3814c4e3e8f3fbcb7304b4; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98803.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98813",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98813",
+          "https://git.kernel.org/stable/c/ab39974240a0cff765f3bb9cce81d8001ffdb144",
+          "https://git.kernel.org/stable/c/b506f5699e145196ee29d76cf1ca1cbb2202c055",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98813"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (kernel/bpf/hashtab.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98813, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98813.json; https://git.kernel.org/stable/c/ab39974240a0cff765f3bb9cce81d8001ffdb144; https://git.kernel.org/stable/c/b506f5699e145196ee29d76cf1ca1cbb2202c055; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98813.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98824",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98824",
+          "https://git.kernel.org/stable/c/b1961a61ab6fbe11f16f7f9b64c57a9908c6c3a8",
+          "https://git.kernel.org/stable/c/6bdcdb31318c10e6369cff8e5b32c37397e98091",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98824"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/mac80211/rc80211_minstrel_ht.c, net/mac80211/status.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98824, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98824.json; https://git.kernel.org/stable/c/b1961a61ab6fbe11f16f7f9b64c57a9908c6c3a8; https://git.kernel.org/stable/c/6bdcdb31318c10e6369cff8e5b32c37397e98091; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98824.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98829",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98829",
+          "https://git.kernel.org/stable/c/870b8cb9baa9bd859deceb33ae158011e6ba2360",
+          "https://git.kernel.org/stable/c/5e4f3509793b4db2c0835340224743db680e861f",
+          "https://git.kernel.org/stable/c/9338b2dea74cb0fc80a4c958b68e687610ba2261",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98829"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (net/mac80211/drop.h, net/mac80211/rx.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98829, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98829.json; https://git.kernel.org/stable/c/870b8cb9baa9bd859deceb33ae158011e6ba2360; https://git.kernel.org/stable/c/5e4f3509793b4db2c0835340224743db680e861f; https://git.kernel.org/stable/c/9338b2dea74cb0fc80a4c958b68e687610ba2261; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98829.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-98863",
+        "aliases": [
+          "https://www.cve.org/CVERecord?id=CVE-2026-98863",
+          "https://git.kernel.org/stable/c/525694a6021ec6c8f7ce1f38acdf2dd77698fec1",
+          "https://git.kernel.org/stable/c/942192dbcd3a06695ef6b31cf10a41a21cf014d8",
+          "https://git.kernel.org/stable/c/10180a277549339020b08000206092c07e0bff5a",
+          "https://ubuntu.com/security/notices/USN-9018-1",
+          "https://ubuntu.com/security/notices/USN-9020-1",
+          "https://ubuntu.com/security/notices/USN-9019-1",
+          "https://ubuntu.com/security/CVE-2026-98863"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Assessed 2026-11-12 for Ubuntu noble linux-libc-dev 6.8.0-149.149, amd64/arm64 only. The fix modifies only kernel implementation files (arch/x86/kvm/x86.c); none of that code is exported by these UAPI-header packages. Independently downloaded binary packages from the pinned Ubuntu snapshot 20261112T000000Z match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff. Stock dpkg-deb inspection finds 988 amd64 / 960 arm64 exported usr/include headers plus changelog/copyright only, with no executable files, ELF binaries, modules or .c implementation. Canonical tracks the linux source package as affected for noble (document https://github.com/canonical/ubuntu-security-notices/blob/main/vex/cve/2026/CVE-2026-98863, version 18); this records binary-content applicability of the exported header package, not a kernel fix. Sources: https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/98xxx/CVE-2026-98863.json; https://git.kernel.org/stable/c/525694a6021ec6c8f7ce1f38acdf2dd77698fec1; https://git.kernel.org/stable/c/942192dbcd3a06695ef6b31cf10a41a21cf014d8; https://git.kernel.org/stable/c/10180a277549339020b08000206092c07e0bff5a; https://ubuntu.com/security/notices/USN-9018-1; https://ubuntu.com/security/notices/USN-9020-1; https://ubuntu.com/security/notices/USN-9019-1; https://raw.githubusercontent.com/canonical/ubuntu-security-notices/main/vex/cve/2026/CVE-2026-98863.json; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb; https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb. This statement applies only to the named linux-libc-dev version and architectures. It does not qualify the host kernel, hardware, other binary packages from the linux source, another package version/architecture/distribution, or any other vulnerability."
     }
   ]
 }

@@ -105,14 +105,11 @@ The gate rule is recorded in
 with `status=fixed` block. Ubuntu OS packages (`Class=os-pkgs`, `Type=ubuntu`)
 narrowly tolerate HIGH `will_not_fix` and `fix_deferred`; a CRITICAL
 `will_not_fix` or an `affected` Ubuntu finding passes only with a reviewed
-`.trivyignore` exception. The header-only package `linux-libc-dev`
-(`Class=os-pkgs`, `Type=ubuntu`) is tolerated only at HIGH for `affected`,
-`will_not_fix` and `fix_deferred`, marked `header-only (ADR 0011)` in the job
-summary; its CRITICAL and `fixed` findings block. Every other status,
-including `end_of_life`, `unknown`, `under_investigation` and a missing
-status, blocks. Alpine is an OS ecosystem, not a language package: non-Ubuntu
-OS findings and language-package findings (Go, Python, ...) block regardless
-of status. Tolerated findings are appended to the CI job summary.
+`.trivyignore` exception. Every other status, including `end_of_life`,
+`unknown`, `under_investigation` and a missing status, blocks. Alpine is an OS
+ecosystem, not a language package: non-Ubuntu OS findings and language-package
+findings (Go, Python, ...) block regardless of status. Tolerated findings are
+appended to the CI job summary.
 
 The SARIF export keeps every unsuppressed finding for reporting and never
 decides the gate; VEX-suppressed findings stay visible in the raw JSON as
@@ -126,12 +123,8 @@ over-aged entries; CI runs it as a lint step and the gate consumes its output.
 
 Accepted distro applicability decisions stay in exact Canonical `not_affected`
 OpenVEX records under `security/vex/`, scoped to package version, architecture
-and distribution; the project does not self-assess `not_affected` against
-Canonical's own applicability. Residual HIGH backlog on the header-only
-`linux-libc-dev` package is handled by the gate's header-only tolerance
-(ADR 0011), not by project-authored VEX. `.trivyignore` stays empty unless a
-finding is deliberately accepted. CODEOWNERS records the owner for
-`scripts/ci/security/`, `security/`,
+and distribution. `.trivyignore` stays empty unless a finding is deliberately
+accepted. CODEOWNERS records the owner for `scripts/ci/security/`, `security/`,
 `.trivyignore`, `trivy.yaml`, `test/ci/security-scanning.bats`,
 `compose.security.yaml` and `.github/workflows/`; it does not enforce review
 by itself. Required owner review is a branch-protection setting maintained by

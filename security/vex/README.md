@@ -2,15 +2,8 @@
 
 Image scans use `linux-libc-dev.openvex.json` to distinguish exported Ubuntu
 kernel headers from the host kernel implementations associated with their
-source package. Every statement is projected from an exact Canonical
-ubuntu-security-notices `not_affected` document for the pinned package
-version, architecture and distribution; the project does not self-assess
-`not_affected` against Canonical's applicability. The statements apply only
-to the components named in the policy. They do not qualify the host kernel,
-hardware or other binaries. Residual HIGH backlog findings (`affected`,
-`will_not_fix`, `fix_deferred`) on this header-only package are tolerated by
-the image gate's header-only rule (ADR 0011) and marked in the job summary,
-not suppressed through VEX.
+source package. Its existing statements apply only to the components named
+in the policy. They do not qualify the host kernel, hardware or other binaries.
 
 `go-modules.openvex.json` covers dependencies of the published Cosign and rclone
 binaries. Each statement names the exact binary module version as the product
