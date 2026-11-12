@@ -2,8 +2,8 @@
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@id": "https://github.com/mmkolpakov/robotics-runtime-infra/security/vex/go-modules",
   "author": "mmkolpakov",
-  "timestamp": "2026-09-30T12:00:00Z",
-  "version": 1,
+  "timestamp": "2026-11-12T21:00:00Z",
+  "version": 2,
   "statements": [
     {
       "vulnerability": {
@@ -58,6 +58,42 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
       "impact_statement": "Review 2026-09-30, rclone/rclone:1.75.1 image binary (index sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5). GO-2026-6443 (GHSA-2v4p-qf9q-27wj) panics gRPC servers created with xds.NewGRPCServer; the affected symbols are internal/transport http2Server.HandleStreams/operateHeaders and internal/xds/server RouteAndProcess. rclone v1.75.1 (source 687d264b689b8c49a67e2e52a8a5e0caa01c04ce) never calls xds.NewGRPCServer and starts no gRPC server; the evidence sink runs rclone only as an S3 client. govulncheck v1.8.0 (golang.org/x/vuln) in source mode lists GO-2026-6443 only under imported packages without a call path; the binary links the symbols through the grpc xds package. Sources: https://pkg.go.dev/vuln/GO-2026-6443; https://github.com/grpc/grpc-go/security/advisories/GHSA-2v4p-qf9q-27wj. This statement applies only to the pinned binary and dependency versions named in products."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-78661"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/sigstore/cosign/v3@v3.1.4%2Bdirty",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/golang.org/x/net@v0.61.0"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Review 2026-11-12, cgr.dev/chainguard/cosign:latest image binary (index sha256:22aef19926386aef51507db17ad256b62de1c05788eafca69072864914de1845). CVE-2026-78661 (GO-2026-6860) affects golang.org/x/net/html (quadratic text-node coalescing in addText/fosterParent). Cosign v3.1.4 (source 0e48502cf5ef34e2e60bbd3617aa19945712f705) does not import golang.org/x/net/html: go list -deps ./cmd/cosign omits the package, and govulncheck v1.8.0 (golang.org/x/vuln) source mode does not report GO-2026-6860 among called vulnerabilities. Sources: https://pkg.go.dev/vuln/GO-2026-6860. This statement applies only to the pinned binary and dependency versions named in products."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-78661"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/open-policy-agent/opa@v1.22.4%2Bdirty",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/golang.org/x/net@v0.60.0"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Review 2026-11-12, openpolicyagent/opa:1.22.4-static image binary (index sha256:12cecac5a174368f7d3f09d3a19d040ebe0c91d576e520335ae7a985a26e39d3). CVE-2026-78661 (GO-2026-6860) affects golang.org/x/net/html (quadratic text-node coalescing in addText/fosterParent). OPA v1.22.4 (source ba39415db4b3c90cd68942a74b3cc2223ec2b23c) does not import golang.org/x/net/html: govulncheck v1.8.0 (golang.org/x/vuln) binary mode on the image binary reports no called vulnerable symbols and lists GO-2026-6860 only at module level (golang.org/x/net@v0.60.0, fixed v0.62.0); go list -deps confirms golang.org/x/net/html is absent. Sources: https://pkg.go.dev/vuln/GO-2026-6860. This statement applies only to the pinned binary and dependency versions named in products."
     }
   ]
 }

@@ -231,7 +231,7 @@ EOF
   run jq -e '
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and (.statements | length == 3)
+    and (.statements | length == 5)
     and all(
       .statements[];
       (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
