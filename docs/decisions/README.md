@@ -15,3 +15,4 @@ accepted decision adds a superseding record instead of rewriting history.
 | [0008](0008-delegate-document-rules-to-contracts-writers.md) | Delegate document rules to contracts writers |
 | [0009](0009-product-deployment-boundaries.md) | Separate product deployment from application composition |
 | [0010](0010-supplier-update-policy.md) | Supplier update policy and snapshot discipline |
+| [0011](0011-image-vulnerability-gate.md) | Image vulnerability gate rule |

@@ -99,17 +99,33 @@ the SLA and re-scanned before release.
 ## Image vulnerability gate
 
 `scripts/ci/security/scan-image.sh` writes the raw Trivy JSON, converts it to
-an unfiltered SARIF report, and then decides the gate from the JSON in a
-separate step. HIGH/CRITICAL findings with `status=fixed` block. Ubuntu OS
-packages narrowly tolerate `will_not_fix` and `fix_deferred`; an `affected`
-Ubuntu finding passes only with a `.trivyignore` entry that carries a review
-ticket and an unexpired `exp` date. `end_of_life` findings and language-package
-findings (Go, Python, Alpine) block regardless of status. The SARIF export
-keeps every finding for reporting and never decides the gate.
+a SARIF report, and then decides the gate from the JSON in a separate step.
+The gate rule is recorded in
+[ADR 0011](decisions/0011-image-vulnerability-gate.md). HIGH/CRITICAL findings
+with `status=fixed` block. Ubuntu OS packages (`Class=os-pkgs`, `Type=ubuntu`)
+narrowly tolerate HIGH `will_not_fix` and `fix_deferred`; a CRITICAL
+`will_not_fix` or an `affected` Ubuntu finding passes only with a reviewed
+`.trivyignore` exception. Every other status, including `end_of_life`,
+`unknown`, `under_investigation` and a missing status, blocks. Alpine is an OS
+ecosystem, not a language package: non-Ubuntu OS findings and language-package
+findings (Go, Python, ...) block regardless of status. Tolerated findings are
+appended to the CI job summary.
+
+The SARIF export keeps every unsuppressed finding for reporting and never
+decides the gate; VEX-suppressed findings stay visible in the raw JSON as
+`ExperimentalModifiedFindings` records. The scan passes no `--ignorefile` and
+`trivy.yaml` carries no severity or status filtering: jq is the only exception
+authority. An exception names one finding scoped to a package and a target,
+with a reason, a review ticket (`#<number>` or `<PROJECT>-<number>`) and an
+`exp` date strictly after today and at most 90 days ahead.
+`scripts/ci/security/lint-trivyignore.sh` fails on malformed, expired or
+over-aged entries; CI runs it as a lint step and the gate consumes its output.
 
 Accepted distro applicability decisions stay in exact Canonical `not_affected`
 OpenVEX records under `security/vex/`, scoped to package version, architecture
 and distribution. `.trivyignore` stays empty unless a finding is deliberately
-accepted with a reason, a review ticket and an expiration date. CODEOWNERS
-requires owner review for `scripts/ci/security/`, `security/` and
-`.trivyignore`.
+accepted. CODEOWNERS records the owner for `scripts/ci/security/`, `security/`,
+`.trivyignore`, `trivy.yaml`, `test/ci/security-scanning.bats`,
+`compose.security.yaml` and `.github/workflows/`; it does not enforce review
+by itself. Required owner review is a branch-protection setting maintained by
+the repository owner.
