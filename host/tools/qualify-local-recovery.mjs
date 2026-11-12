@@ -100,6 +100,15 @@ try{
  const denied=await recoverLocalAttempt(ctx.jobs,shared.plan);assert.equal(denied.resources,'retained');assert.match(denied.diagnostic,/ownership/);
  assert.equal((await engine.remainingOwned(shared.runId)).containers.length,1);assert.equal(JSON.parse(podman(['inspect',foreignId]))[0].State.Running,true);
  report.steps.push({name:'same-project-foreign-container-refuses-before-export-or-cleanup',passed:true,outcome:denied});
+ podman(['rm','--force',foreignId]);foreign.splice(foreign.indexOf(foreignId),1);
+ const foreignUidId=podman(['run','--detach','--name',scope+'-foreign-uid','--network=none','--user','1001:1001','--label','org.robotics.runtime.fixture='+scope,'--label','com.docker.compose.project='+shared.projectName,'--label','org.robotics.runtime.run-id='+shared.runId,'--label','com.docker.compose.service=worker',image,'sleep','120']);foreign.push(foreignUidId);
+ assert.equal(JSON.parse(podman(['inspect',foreignUidId]))[0].Config.User,'1001:1001');
+ const uidDenied=await recoverLocalAttempt(ctx.jobs,shared.plan);assert.equal(uidDenied.resources,'retained');assert.match(uidDenied.diagnostic,/native resource differs/);
+ assert.ok(uidDenied.observations.some(value=>Array.isArray(value.mismatches)&&value.mismatches.includes('container.Config.User')));
+ assert.ok(!uidDenied.observations.some(value=>value.stop||value.cleanup||value.export));
+ await assert.rejects(readFile(join(shared.target,'diagnostic.txt')),{code:'ENOENT'});
+ assert.equal((await engine.remainingOwned(shared.runId)).containers.length,2);assert.equal(JSON.parse(podman(['inspect',foreignUidId]))[0].State.Running,true);
+ report.steps.push({name:'same-owner-foreign-uid-container-refuses-before-export-or-cleanup',passed:true,outcome:uidDenied});
  const volumeOnly=await fixture('unattached-owned-volume',true);await kill(volumeOnly);assert.equal((await volumeOnly.compose.run(['down','--remove-orphans','--timeout','2'])).ok,true);
  const volumeName=volumeOnly.projectName+'-protected';podman(['volume','create','--label','com.docker.compose.project='+volumeOnly.projectName,'--label','com.docker.compose.volume=protected','--label','org.robotics.runtime.run-id='+volumeOnly.runId,volumeName]);
  const volume=JSON.parse(podman(['volume','inspect',volumeName]))[0],protectedPath=join(volume.Mountpoint,'protected.txt');await writeFile(protectedPath,'protected unmounted bytes',{mode:0o400});
@@ -122,7 +131,10 @@ try{
 }catch(error){report.passed=false;report.error=String(error);process.exitCode=1}
 finally{
  for(const id of foreign){try{const actual=JSON.parse(podman(['inspect',id]))[0];assert.equal(actual.Config.Labels['org.robotics.runtime.fixture'],scope);podman(['rm','--force',id])}catch(error){report.cleanupError=String(error)}}
- for(const {compose,runId,projectName}of projects){try{const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'}),own=await engine.projectOwnership({runId,projectName});assert.equal(own.status,'complete');const result=await compose.run(['down','--volumes','--remove-orphans','--timeout','2']);assert.equal(result.ok,true)}catch(error){report.cleanupError=String(error)}}
+ for(const {compose,runId,projectName}of projects){try{const engine=await EngineMetadata.connect({socketPath:socket,operationMinApi:'1.24',operationMaxApi:'1.53'}),own=await engine.projectOwnership({runId,projectName});assert.equal(own.status,'complete');const result=await compose.run(['down','--volumes','--remove-orphans','--timeout','2']);assert.equal(result.ok,true);
+  // Compose down --volumes kept the externally created named volume; the fixture owns it and must leave nothing behind.
+  const left=(await engine.remainingOwned(runId)).volumes;for(const volume of left&&Array.isArray(left.Volumes)?left.Volumes:[]){const name=String(volume.Name),inspected=JSON.parse(podman(['volume','inspect',name]))[0];assert.equal(inspected.Labels['com.docker.compose.project'],projectName);assert.equal(inspected.Labels['org.robotics.runtime.run-id'],runId);podman(['volume','rm',name])}
+  const after=await engine.remainingOwned(runId),afterVolumes=after.volumes&&after.volumes.Volumes;assert.equal(after.containers.length,0);assert.equal(after.networks.length,0);assert.ok(afterVolumes===null||Array.isArray(afterVolumes)&&afterVolumes.length===0)}catch(error){report.cleanupError=String(error)}}
  for(const name of [...units,...(apiUnit?[apiUnit]:[])]){try{systemctl(['stop',name]);spawnSync('/usr/bin/systemctl',['--user','reset-failed',name],{encoding:'utf8',timeout:5000})}catch(error){report.cleanupError=String(error)}}
  await ctx.fiber.dispose();if(report.cleanupError){report.passed=false;process.exitCode=1}
  await writeFile(join(output,'local-recovery.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});

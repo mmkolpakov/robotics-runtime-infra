@@ -88,7 +88,8 @@ host/.tools/node host/tools/qualify-local-recovery.mjs /private/recovery-report
 ```
 
 The finite control fixture uses its own transient units and containers. It checks
-coordinator loss, a hanging process/exporter, foreign ownership, failed export,
-repeated recovery, the actual CLI/lock and byte preservation. It removes its owned
-resources and retains reports separately. It does not qualify a simulator SDK,
-physical operation, a cloud deployment or a production composition.
+coordinator loss, a hanging process/exporter, foreign ownership and a foreign UID
+under owned labels, failed export, repeated recovery, the actual CLI/lock and byte
+preservation. It removes its owned resources and retains reports separately. It
+does not qualify a simulator SDK, physical operation, a cloud deployment or a
+production composition.
