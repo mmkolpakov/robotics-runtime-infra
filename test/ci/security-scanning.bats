@@ -793,8 +793,8 @@ EOF
   [ "${status}" -eq 0 ]
   run grep -F 'ARG LIBBROTLI_VERSION=1.1.0-2ubuntu0.1' Dockerfile
   [ "${status}" -eq 0 ]
-  [ "$(grep -Fc '"apt=${APT_VERSION}"' Dockerfile)" -eq 2 ]
-  [ "$(grep -Fc '"libapt-pkg6.0t64=${APT_VERSION}"' Dockerfile)" -eq 2 ]
+  [ "$(grep -Fc '"apt=${APT_VERSION}"' Dockerfile)" -eq 3 ]
+  [ "$(grep -Fc '"libapt-pkg6.0t64=${APT_VERSION}"' Dockerfile)" -eq 3 ]
   [ "$(grep -Fc '"libbrotli1=${LIBBROTLI_VERSION}"' Dockerfile)" -eq 2 ]
   run grep -F 'default = "20261112T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
