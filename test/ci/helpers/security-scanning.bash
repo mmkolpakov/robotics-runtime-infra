@@ -119,6 +119,33 @@ write_finding_fixture() {
   ' >"${BATS_TEST_TMPDIR}/fixture.json"
 }
 
+# One-finding report for the header-only package linux-libc-dev. Pass status
+# "missing" to omit the Status field; class/type default to os-pkgs/ubuntu.
+write_header_finding() {
+  local finding_status="$1" severity="$2" class="${3:-os-pkgs}" type="${4:-ubuntu}"
+  jq -n \
+    --arg class "${class}" --arg type "${type}" \
+    --arg status "${finding_status}" --arg severity "${severity}" '
+    {
+      Results: [
+        {
+          Target: "fixture-image",
+          Class: $class,
+          Type: $type,
+          Vulnerabilities: [
+            ({
+              VulnerabilityID: "CVE-2026-0001",
+              PkgName: "linux-libc-dev",
+              Severity: $severity
+            }
+            + (if $status == "missing" then {} else {Status: $status} end))
+          ]
+        }
+      ]
+    }
+  ' >"${BATS_TEST_TMPDIR}/fixture.json"
+}
+
 # Write the repo-relative gate ignore policy; teardown() removes it.
 write_gate_ignore() {
   printf '%s\n' "$@" >"${REPO_ROOT}/.trivyignore.gate-test"

@@ -92,7 +92,7 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
-@test "reviewed OpenVEX policy is scoped to the kernel header package" {
+@test "Canonical OpenVEX policy is scoped to the kernel header package" {
   local scope_filter='
     def reviewed_headers:
       [
@@ -101,11 +101,11 @@ EOF
       ];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 17
-    and (.statements | length == 182)
+    and .version == 18
+    and (.statements | length == 118)
     and ([.statements[].vulnerability.name] | length == (unique | length))
     and ([.statements[] | select(.impact_statement | contains("Projected from Canonical Ltd. OpenVEX document"))] | length == 118)
-    and ([.statements[] | select(.impact_statement | contains("binary-content applicability"))] | length == 64)
+    and ([.statements[] | select(.impact_statement | contains("binary-content applicability"))] | length == 0)
     and all(
       .statements[];
       (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
@@ -116,15 +116,7 @@ EOF
       and (.impact_statement | contains("does not qualify the host kernel, hardware"))
       and (.impact_statement | contains("another package version/architecture/distribution"))
       and (.impact_statement | contains("any other vulnerability"))
-      and (
-        if (.impact_statement | contains("binary-content applicability")) then
-          (.impact_statement | contains("match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff"))
-          and (.impact_statement | contains("https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb"))
-          and (.impact_statement | contains("https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb"))
-        else
-          (.impact_statement | test("Projected from Canonical Ltd\\. OpenVEX document https://github\\.com/canonical/ubuntu-security-notices/blob/main/vex/cve/[0-9]{4}/CVE-[0-9]{4}-[0-9]+ \\(version [0-9]+, timestamp [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z\\)"))
-        end
-      )
+      and (.impact_statement | test("Projected from Canonical Ltd\\. OpenVEX document https://github\\.com/canonical/ubuntu-security-notices/blob/main/vex/cve/[0-9]{4}/CVE-[0-9]{4}-[0-9]+ \\(version [0-9]+, timestamp [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z\\)"))
     )
   '
 
@@ -132,7 +124,7 @@ EOF
   [ "$status" -eq 0 ]
 
   local cve product mutated="$BATS_TEST_TMPDIR/out-of-scope-vex.json"
-  for cve in CVE-2025-40344 CVE-2026-100074 CVE-2026-80668 CVE-2026-89788; do
+  for cve in CVE-2025-40344 CVE-2022-50240 CVE-2024-35948 CVE-2024-38581; do
     for product in \
       'pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.150?arch=amd64&distro=ubuntu-24.04' \
       'pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=ppc64el&distro=ubuntu-24.04' \
@@ -148,13 +140,6 @@ EOF
       [ "$status" -ne 0 ] || { printf 'policy accepted %s for %s\n' "$product" "$cve" >&2; return 1; }
     done
   done
-
-  jq --arg cve CVE-2026-100074 '
-    (.statements[] | select(.vulnerability.name == $cve).impact_statement) |=
-      gsub("e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d"; "0000000000000000000000000000000000000000000000000000000000000000")
-  ' security/vex/linux-libc-dev.openvex.json >"$mutated"
-  run jq -e "$scope_filter" "$mutated"
-  [ "$status" -ne 0 ] || { printf 'policy accepted a rewritten .deb SHA256 for CVE-2026-100074\n' >&2; return 1; }
 
   jq --arg cve CVE-2025-40344 '
     (.statements[] | select(.vulnerability.name == $cve).impact_statement) |=
@@ -317,6 +302,68 @@ EOF
 
   write_gate_exception "SEC-42" "$(gate_date_offset +30)"
   run_image_scan ".trivyignore.gate-test"
+  [ "${status}" -eq 0 ]
+}
+
+@test "image gate tolerates only HIGH header-only linux-libc-dev backlog findings" {
+  write_gate_fake_docker
+
+  # HIGH affected/will_not_fix/fix_deferred for the header-only package pass
+  # without a ticket and are marked as header-only.
+  local finding_status
+  for finding_status in affected will_not_fix fix_deferred; do
+    write_header_finding "${finding_status}" HIGH
+    run_image_scan
+    [ "${status}" -eq 0 ] || {
+      printf 'gate blocked header-only linux-libc-dev %s HIGH\n' "${finding_status}" >&2
+      return 1
+    }
+    [[ "${output}" == *"tolerated: CVE-2026-0001 HIGH ${finding_status} linux-libc-dev (fixture-image) [header-only: ADR 0011]"* ]]
+  done
+
+  # CRITICAL never passes for the header-only package, whatever the status.
+  for finding_status in affected will_not_fix fix_deferred fixed end_of_life; do
+    write_header_finding "${finding_status}" CRITICAL
+    run_image_scan
+    [ "${status}" -eq 1 ] || {
+      printf 'gate accepted header-only linux-libc-dev %s CRITICAL\n' "${finding_status}" >&2
+      return 1
+    }
+    [[ "${output}" == *"blocking: CVE-2026-0001 CRITICAL ${finding_status} linux-libc-dev"* ]]
+  done
+
+  # fixed, end_of_life and fail-closed statuses block even at HIGH.
+  for finding_status in fixed end_of_life unknown under_investigation missing; do
+    write_header_finding "${finding_status}" HIGH
+    run_image_scan
+    [ "${status}" -eq 1 ] || {
+      printf 'gate accepted header-only linux-libc-dev %s HIGH\n' "${finding_status}" >&2
+      return 1
+    }
+  done
+
+  # The exemption is scoped to os-pkgs/ubuntu: a same-named finding in another
+  # class or ecosystem still blocks.
+  write_header_finding affected HIGH lang-pkgs gobinary
+  run_image_scan
+  [ "${status}" -eq 1 ]
+
+  write_header_finding affected HIGH os-pkgs alpine
+  run_image_scan
+  [ "${status}" -eq 1 ]
+}
+
+@test "header-only tolerated findings are marked in the job summary" {
+  write_gate_fake_docker
+  write_header_finding affected HIGH
+
+  GITHUB_STEP_SUMMARY="${BATS_TEST_TMPDIR}/summary.md"
+  run_image_scan
+  [ "${status}" -eq 0 ]
+  [ -s "${GITHUB_STEP_SUMMARY}" ]
+  run grep -F 'Tolerated Ubuntu findings: registry.example/runtime:test (local)' "${GITHUB_STEP_SUMMARY}"
+  [ "${status}" -eq 0 ]
+  run grep -F '| CVE-2026-0001 | HIGH | affected | linux-libc-dev | fixture-image | header-only (ADR 0011) |' "${GITHUB_STEP_SUMMARY}"
   [ "${status}" -eq 0 ]
 }
 

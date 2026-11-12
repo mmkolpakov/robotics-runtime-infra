@@ -108,9 +108,11 @@ for platform in "${platforms[@]}"; do
   # exists. Ubuntu OS packages (Class=os-pkgs, Type=ubuntu) narrowly tolerate
   # will_not_fix/fix_deferred; a CRITICAL will_not_fix or an affected finding
   # passes only with a ticketed, unexpired, package/target-scoped exception.
-  # Every other status (including unknown, under_investigation and missing)
-  # blocks. Non-Ubuntu OS ecosystems such as Alpine and all language packages
-  # (Go, Python, ...) always block.
+  # The header-only package linux-libc-dev is tolerated only at HIGH for
+  # affected/will_not_fix/fix_deferred (ADR 0011); its CRITICAL and fixed
+  # findings block. Every other status (including unknown, under_investigation
+  # and missing) blocks. Non-Ubuntu OS ecosystems such as Alpine and all
+  # language packages (Go, Python, ...) always block.
   gate_decision="$(
     jq --argjson exceptions "${gate_exceptions}" '
       def excepted($finding; $target):
@@ -118,13 +120,21 @@ for platform in "${platforms[@]}"; do
           .cve == $finding.VulnerabilityID
           and .pkg == $finding.PkgName
           and .target == $target);
+      def header_only($finding; $result):
+        $result.Class == "os-pkgs" and $result.Type == "ubuntu"
+        and $finding.PkgName == "linux-libc-dev";
       [
         .Results[]? as $result
         | ($result.Vulnerabilities[]?
             | select(.Severity == "HIGH" or .Severity == "CRITICAL")) as $finding
         | (excepted($finding; $result.Target)) as $excepted
         | (
-            if $result.Class == "os-pkgs" and $result.Type == "ubuntu" then
+            if header_only($finding; $result) then
+              ($finding.Severity == "HIGH"
+                and ($finding.Status == "affected"
+                  or $finding.Status == "will_not_fix"
+                  or $finding.Status == "fix_deferred"))
+            elif $result.Class == "os-pkgs" and $result.Type == "ubuntu" then
               ($finding.Status == "fix_deferred")
               or ($finding.Status == "will_not_fix"
                 and ($finding.Severity == "HIGH" or $excepted))
@@ -138,6 +148,7 @@ for platform in "${platforms[@]}"; do
             status: ($finding.Status // "missing"),
             package: $finding.PkgName,
             excepted: $excepted,
+            header_only: (header_only($finding; $result) and $tolerated),
             tolerated: $tolerated
           }
       ]
@@ -151,7 +162,8 @@ for platform in "${platforms[@]}"; do
   tolerated_findings="$(jq '.tolerated' <<<"${gate_decision}")"
   if test "$(jq 'length' <<<"${tolerated_findings}")" -gt 0; then
     # Tolerated findings stay visible: stdout locally, job summary in CI.
-    jq -r '.[] | "tolerated: \(.id) \(.severity) \(.status) \(.package) (\(.target))"' \
+    jq -r '.[] | "tolerated: \(.id) \(.severity) \(.status) \(.package) (\(.target))"
+      + (if .header_only then " [header-only: ADR 0011]" else "" end)' \
       <<<"${tolerated_findings}"
     if test -n "${GITHUB_STEP_SUMMARY:-}"; then
       {
@@ -161,7 +173,8 @@ for platform in "${platforms[@]}"; do
         jq -r --argjson exceptions "${gate_exceptions}" '
           .[]
           | . as $finding
-          | (if .excepted then
+          | (if .header_only then "header-only (ADR 0011)"
+            elif .excepted then
               ([$exceptions[]
                 | select(.cve == $finding.id
                   and .pkg == $finding.package
