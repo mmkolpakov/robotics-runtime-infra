@@ -63,7 +63,7 @@ home/reset change, stale samples, corruption, dropouts or insufficient coverage
 prevent an unsupported positive result.
 
 The method requests a 64 MiB raw ULog budget. The selected harness also limits
-capture size: the document-control lock uses harness 0.22.2, whose capture ceiling
+capture size: the document-control lock uses harness 0.23.1, whose capture ceiling
 is 8 MiB. That lock is not a native install set. Native SDK/image composition
 admission is separate. `npm run flight-native` unconditionally refuses before
 native imports or Engine effects; it cannot launch a native attempt.
@@ -78,7 +78,7 @@ rejection.
 ## Install the document controls
 
 Use Python 3.12 and uv 0.11.28. Node controls use Node 24.21.0.
-[input-pins.json](input-pins.json) fixes contracts 0.21.1 and harness 0.22.2;
+[input-pins.json](input-pins.json) fixes contracts 0.22.0 and harness 0.23.1;
 [requirements.lock](requirements.lock) fixes their dependency closure and the
 method's pyulog/NumPy dependencies. From this directory:
 
@@ -97,7 +97,7 @@ uv build --wheel --out-dir dist evaluator
 Authenticate the method wheel before installing it or importing the producer.
 The acceptance CLI requires an operator trust policy outside the evidence archive.
 A receipt or verification JSON alone does not establish publisher authentication.
-See the SDK's [operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.2/packages/harness/docs/evaluator-trust.md).
+See the SDK's [operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.23.1/packages/harness/docs/evaluator-trust.md).
 
 [test_admission_fixture.py](test_admission_fixture.py) provides a disposable local
 publisher for software controls. Supply an approved Cosign tool profile containing

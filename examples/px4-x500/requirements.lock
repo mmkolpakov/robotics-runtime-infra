@@ -36,7 +36,9 @@ jsonpointer==3.1.1 \
 jsonschema==4.26.0 \
     --hash=sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326 \
     --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
-    # via robotics-runtime-contracts
+    # via
+    #   robotics-acceptance-harness
+    #   robotics-runtime-contracts
 jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
@@ -328,8 +330,8 @@ zstandard==0.25.0 \
     # via
     #   mcap
     #   robotics-runtime-contracts
-robotics-runtime-contracts==0.21.1 --hash=sha256:34a476046ce3326384780224b4e40cad72f41ce756f627d63a6503e01349e015
-robotics-acceptance-harness==0.22.2 --hash=sha256:91d76073ec915972908b4ea4df44af78d2da3f94c6c55c85eb82c03d059e5a48
+robotics-runtime-contracts==0.22.0 --hash=sha256:214cfffb554673cf27306415a2f6e53a6559dc8c05f3e1f9b582a050a0baf856
+robotics-acceptance-harness==0.23.1 --hash=sha256:3a1ddf0feb64ca220b62c2bffb0aa5f2ad573f2ef516fe43328a9c61bbb850d9
 
 numpy==2.5.3 \
     --hash=sha256:012e66aca395d795496446e52aeeb5866312a5d4d3f27da270e5a0b43f70dc5c \
