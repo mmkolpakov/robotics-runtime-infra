@@ -779,7 +779,10 @@ EOF
   run grep -F 'ARG CA_CERTIFICATES_VERSION=20260816ubuntu0.24.04.2' Dockerfile
   [ "${status}" -eq 0 ]
   run grep -F \
-    'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
+    ': "${UBUNTU_SNAPSHOT_MIRROR:=https://snapshot.ubuntu.com/ubuntu}"' \
+    docker/apt/use-package-snapshots
+  [ "${status}" -eq 0 ]
+  run grep -F 'URIs: ${UBUNTU_SNAPSHOT_MIRROR}/${UBUNTU_SNAPSHOT}' \
     docker/apt/use-package-snapshots
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"linux-libc-dev=${LINUX_LIBC_DEV_VERSION}"' Dockerfile)" -eq 2 ]
