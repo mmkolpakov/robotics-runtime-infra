@@ -309,6 +309,54 @@ class NativeCaseControls(unittest.TestCase):
             "error",
         )
 
+    def test_incomplete_success_is_error(self):
+        self.assertEqual(
+            list(
+                evaluate(
+                    self.context(
+                        "success",
+                        lambda r: r.update(observation_status="incomplete"),
+                    )
+                )
+            )[1].status,
+            "error",
+        )
+
+    def test_aborted_action_status_refuses_success(self):
+        def aborted(report):
+            report["action_status"] = 6
+
+        self.assertEqual(
+            list(evaluate(self.context(mutate=aborted)))[1].status, "failed"
+        )
+
+    def test_missing_required_tf_edge_refuses(self):
+        def missing(report):
+            required = {
+                tuple(pair) for pair in report["parameters"]["required_tf_edges"]
+            }
+            report["tf_edges"] = [
+                edge
+                for edge in report["tf_edges"]
+                if (edge["parent"], edge["child"]) not in required
+            ]
+
+        self.assertEqual(
+            list(evaluate(self.context(mutate=missing)))[1].status, "failed"
+        )
+
+    def test_unacknowledged_cancel_refuses(self):
+        self.assertEqual(
+            list(
+                evaluate(
+                    self.context(
+                        "cancel", lambda r: r.update(cancel_acknowledged=False)
+                    )
+                )
+            )[1].status,
+            "failed",
+        )
+
     def test_available_server_refuses_expected_failure(self):
         self.assertEqual(
             list(
