@@ -231,6 +231,8 @@ jobs:
         run: scripts/ci/static-analysis/verify-hardware-workflow-policy.sh
       - name: Lint shell entrypoints
         run: scripts/ci/static-analysis/lint-shell-entrypoints.sh
+      - name: Lint the Trivy ignore policy
+        run: scripts/ci/security/lint-trivyignore.sh
       - name: Lint Dockerfile
         run: >-
           docker run --rm
@@ -343,8 +345,12 @@ jobs:
       - name: Prepare synthetic physical attach prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            can-utils socat "linux-modules-extra-$(uname -r)"
+          sudo apt-get install -y --no-install-recommends can-utils socat
+          if ! sudo modprobe vcan; then
+            sudo apt-get install -y --no-install-recommends \
+              "linux-modules-extra-$(uname -r)"
+            sudo modprobe vcan
+          fi
       - name: Verify host time evidence
         run: scripts/ci/integration/verify-host-time-evidence.sh
       - name: Verify synthetic physical attach end to end

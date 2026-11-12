@@ -2,8 +2,19 @@
 #
 # Keep this file empty unless a finding is accepted deliberately. Use a
 # reviewed OpenVEX statement for package-applicability decisions.
-# Each ignored finding must include a short reason and an expiration date:
 #
-# CVE-YYYY-NNNN # reason: upstream base image; review: issue-123; exp:YYYY-MM-DD
+# jq is the only exception authority: the gate scan does not pass this file
+# to trivy. scripts/ci/security/lint-trivyignore.sh validates every entry
+# and fails on malformed, expired or over-aged lines.
+#
+# Each entry accepts one Ubuntu OS finding, scoped to a package and a target:
+#
+# CVE-YYYY-NNNN #reason:<text>;pkg:<name>;target:<target>;review:<ticket>;exp:YYYY-MM-DD
+#
+# - review ticket: #<number> or <PROJECT>-<number> (a reviewed decision)
+# - exp: a real calendar date, strictly after today and at most 90 days ahead
+# - no whitespace after the field colons; fields appear in this fixed order
+# - only HIGH affected / CRITICAL will_not_fix Ubuntu findings can use an
+#   exception; see docs/decisions/0011-image-vulnerability-gate.md
 #
 # Expired entries must be removed or renewed with a fresh review decision.
