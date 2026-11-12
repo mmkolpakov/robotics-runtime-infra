@@ -1,1 +1,6 @@
 * @mmkolpakov
+
+# The vulnerability gate, VEX records and the ignore policy are owner-reviewed.
+/scripts/ci/security/ @mmkolpakov
+/security/ @mmkolpakov
+/.trivyignore @mmkolpakov
