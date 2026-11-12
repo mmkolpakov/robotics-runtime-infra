@@ -23,11 +23,11 @@ variable "SOURCE_DATE_EPOCH" {
 }
 
 variable "UBUNTU_SNAPSHOT" {
-  default = "20260930T000000Z"
+  default = "20261112T000000Z"
 }
 
 variable "LINUX_LIBC_DEV_VERSION" {
-  default = "6.8.0-142.142"
+  default = "6.8.0-149.149"
 }
 
 variable "ROS_SNAPSHOT" {

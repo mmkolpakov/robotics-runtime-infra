@@ -105,75 +105,26 @@ EOF
   local scope_filter='
     def reviewed_headers:
       [
-        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04"},
-        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=arm64&distro=ubuntu-24.04"}
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04"},
+        {"@id": "pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=arm64&distro=ubuntu-24.04"}
       ];
-    def scoped_cves:
-      ["CVE-2024-46742", "CVE-2024-46833", "CVE-2024-52560", "CVE-2024-56591"];
-    def newly_reviewed_cves:
-      ["CVE-2022-50240", "CVE-2024-58098", "CVE-2024-58100", "CVE-2025-37743", "CVE-2025-37776", "CVE-2025-38204", "CVE-2025-39933", "CVE-2025-40074", "CVE-2025-40139", "CVE-2025-40168", "CVE-2025-40170", "CVE-2025-40274"];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 15
-    and (.statements | length == 206)
-    and ([.statements[] | select(.products == reviewed_headers)] | length == 151)
-    and (
-      [.statements[].vulnerability.name]
-      | length == (unique | length)
-    )
-    and (
-      [.statements[].vulnerability.name
-        | select(. as $name | scoped_cves | index($name) != null)]
-      | sort == scoped_cves
-    )
-    and (
-      [.statements[].vulnerability.name
-        | select(. as $name | newly_reviewed_cves | index($name) != null)]
-      | sort == newly_reviewed_cves
-    )
+    and .version == 16
+    and (.statements | length == 182)
+    and ([.statements[].vulnerability.name] | length == (unique | length))
+    and ([.statements[] | select(.impact_statement | contains("Projected from Canonical Ltd. OpenVEX document"))] | length == 118)
+    and ([.statements[] | select(.impact_statement | contains("binary-content applicability"))] | length == 64)
     and all(
       .statements[];
       (.vulnerability.name | test("^CVE-[0-9]{4}-[0-9]+$"))
-      and (
-        if (.vulnerability.name as $name | newly_reviewed_cves | index($name)) != null then
-          .products == reviewed_headers
-          and (.impact_statement | contains("binary-exclude:linux-libc-dev"))
-          and (.vulnerability.name as $name | .impact_statement
-            | contains("https://ubuntu.com/security/cves/" + $name + ".json (SHA256 "))
-          and (.impact_statement | contains("937db1a88a4fa2ea97fd4eab89f2cd9d077290f6a26bcd27b1a6d24fa3d706b6"))
-          and (.impact_statement | contains("d66451a894349eed008637ee6f0b8a10dfe426fe424613396e7decc75fa711a0"))
-          and (.impact_statement | contains("does not qualify the host kernel, hardware"))
-          and (.impact_statement | contains("another package/version/architecture/distribution or another vulnerability"))
-        elif (.vulnerability.name as $name | scoped_cves | index($name)) != null then
-          .products == reviewed_headers
-          and (.impact_statement | contains("Sources: https://"))
-          and (
-            .impact_statement
-            | contains("does not qualify")
-              and contains("host kernel")
-              and contains("hardware")
-              and contains("other binary packages from the linux source")
-              and contains("another package version/architecture")
-              and contains("any other vulnerability")
-          )
-        elif .vulnerability.name == "CVE-2025-22043" then
-          .products == reviewed_headers
-          and (.impact_statement | contains("binary-exclude:linux-libc-dev"))
-          and (.impact_statement | contains("https://ubuntu.com/security/cves/CVE-2025-22043.json"))
-          and (.impact_statement | contains("does not qualify the host kernel"))
-          and (.impact_statement | contains("another version/architecture/distribution"))
-          and (.impact_statement | contains("no exception for OPA, yq or x/net"))
-        else
-          .products == [{"@id": "pkg:deb/ubuntu/linux-libc-dev"}]
-          or (
-            .products == reviewed_headers
-            and (.impact_statement | contains("Sources: https://"))
-            and (.impact_statement | contains("does not qualify the host kernel or hardware"))
-          )
-        end
-      )
+      and .products == reviewed_headers
       and .status == "not_affected"
       and .justification == "vulnerable_code_not_present"
+      and (.impact_statement | contains("Sources: https://"))
+      and (.impact_statement | contains("does not qualify the host kernel, hardware"))
+      and (.impact_statement | contains("another package version/architecture/distribution"))
+      and (.impact_statement | contains("any other vulnerability"))
     )
   '
 
@@ -181,14 +132,13 @@ EOF
   [ "$status" -eq 0 ]
 
   local cve product mutated="$BATS_TEST_TMPDIR/out-of-scope-vex.json"
-  for cve in CVE-2022-50240 CVE-2024-58098 CVE-2024-58100 CVE-2025-37743 CVE-2025-37776 CVE-2025-38204 CVE-2025-39933 CVE-2025-40074 CVE-2025-40139 CVE-2025-40168 CVE-2025-40170 CVE-2025-40274; do
+  for cve in CVE-2025-40344 CVE-2026-100074 CVE-2026-80668 CVE-2026-89788; do
     for product in \
-      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.143?arch=amd64&distro=ubuntu-24.04' \
-      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=ppc64el&distro=ubuntu-24.04' \
-      'pkg:deb/ubuntu/linux-image-6.8.0-142-generic@6.8.0-142.142?arch=amd64&distro=ubuntu-24.04' \
-      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-142.142?arch=amd64&distro=ubuntu-22.04' \
+      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.150?arch=amd64&distro=ubuntu-24.04' \
+      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=ppc64el&distro=ubuntu-24.04' \
+      'pkg:deb/ubuntu/linux-image-6.8.0-149-generic@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04' \
+      'pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-22.04' \
       'pkg:golang/github.com/open-policy-agent/opa@v1.21.2%2Bdirty' \
-      'pkg:golang/github.com/mikefarah/yq/v4@v4.54.1' \
       'pkg:golang/golang.org/x/net@v0.60.0'; do
       jq --arg cve "$cve" --arg product "$product" '
         (.statements[] | select(.vulnerability.name == $cve).products[0]["@id"]) = $product
@@ -305,9 +255,11 @@ EOF
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
-  run grep -F 'ARG UBUNTU_SNAPSHOT=20260930T000000Z' Dockerfile
+  run grep -F 'ARG UBUNTU_SNAPSHOT=20261112T000000Z' Dockerfile
   [ "${status}" -eq 0 ]
-  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-142.142' Dockerfile
+  run grep -F 'ARG LINUX_LIBC_DEV_VERSION=6.8.0-149.149' Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -F 'ARG CA_CERTIFICATES_VERSION=20260816ubuntu0.24.04.2' Dockerfile
   [ "${status}" -eq 0 ]
   run grep -F \
     'URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}' \
@@ -317,8 +269,8 @@ EOF
   run grep -F 'ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16' Dockerfile
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"libssl3t64=${OPENSSL_VERSION}"' Dockerfile)" -eq 2 ]
-  run grep -F 'default = "20260930T000000Z"' docker-bake.hcl
+  run grep -F 'default = "20261112T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
-  run grep -F 'default = "6.8.0-142.142"' docker-bake.hcl
+  run grep -F 'default = "6.8.0-149.149"' docker-bake.hcl
   [ "${status}" -eq 0 ]
 }
