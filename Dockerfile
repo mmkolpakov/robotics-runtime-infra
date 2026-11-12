@@ -270,6 +270,7 @@ FROM ${UBUNTU_BASE_IMAGE} AS ubuntu-ca
 ARG UBUNTU_SNAPSHOT
 ARG OPENSSL_VERSION
 ARG CA_CERTIFICATES_VERSION
+ARG APT_VERSION
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=ca-bootstrap \
@@ -282,8 +283,14 @@ RUN test -s /etc/ssl/certs/ca-certificates.crt \
       /usr/local/sbin/use-package-snapshots \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+      "apt=${APT_VERSION}" \
+      "libapt-pkg6.0t64=${APT_VERSION}" \
       "ca-certificates=${CA_CERTIFICATES_VERSION}" \
       "openssl=${OPENSSL_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' apt)" = \
+      "${APT_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libapt-pkg6.0t64)" = \
+      "${APT_VERSION}" \
     && test "$(dpkg-query --show --showformat='${Version}' ca-certificates)" = \
       "${CA_CERTIFICATES_VERSION}" \
     && test "$(dpkg-query --show --showformat='${Version}' openssl)" = \
