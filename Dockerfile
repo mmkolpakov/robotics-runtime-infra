@@ -24,6 +24,8 @@ ARG UBUNTU_SNAPSHOT=20261112T000000Z
 ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16
 ARG CA_CERTIFICATES_VERSION=20260816ubuntu0.24.04.2
 ARG LINUX_LIBC_DEV_VERSION=6.8.0-149.149
+ARG APT_VERSION=2.8.4ubuntu0.1
+ARG LIBBROTLI_VERSION=1.1.0-2ubuntu0.1
 ARG ROS_SNAPSHOT=2026-09-11
 ARG ROSDISTRO_INDEX_REVISION=8e9a99d200fd312f106418b2b497b0cc5146e6a7
 
@@ -627,6 +629,8 @@ ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
 ARG OPENSSL_VERSION
+ARG APT_VERSION
+ARG LIBBROTLI_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -665,11 +669,17 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
       "openssl=${OPENSSL_VERSION}" \
-      apt \
-      libapt-pkg6.0t64 \
-      libbrotli1 \
+      "apt=${APT_VERSION}" \
+      "libapt-pkg6.0t64=${APT_VERSION}" \
+      "libbrotli1=${LIBBROTLI_VERSION}" \
     && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
       "${OPENSSL_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' apt)" = \
+      "${APT_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libapt-pkg6.0t64)" = \
+      "${APT_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libbrotli1)" = \
+      "${LIBBROTLI_VERSION}" \
     && bash /tmp/update-rosdep-cache "${ROS_DISTRO}" \
     && rosdep install \
       --from-paths /tmp/rosdep \
@@ -1188,6 +1198,8 @@ ARG VCS_REF=local
 ARG UBUNTU_SNAPSHOT
 ARG LINUX_LIBC_DEV_VERSION
 ARG OPENSSL_VERSION
+ARG APT_VERSION
+ARG LIBBROTLI_VERSION
 ARG ROS_SNAPSHOT
 ARG ROSDISTRO_INDEX_REVISION
 
@@ -1240,11 +1252,17 @@ RUN --mount=type=bind,source=docker/apt/update-rosdep-cache,target=/tmp/update-r
       "libssl3t64=${OPENSSL_VERSION}" \
       "linux-libc-dev=${LINUX_LIBC_DEV_VERSION}" \
       "openssl=${OPENSSL_VERSION}" \
-      apt \
-      libapt-pkg6.0t64 \
-      libbrotli1 \
+      "apt=${APT_VERSION}" \
+      "libapt-pkg6.0t64=${APT_VERSION}" \
+      "libbrotli1=${LIBBROTLI_VERSION}" \
     && test "$(dpkg-query --show --showformat='${Version}' libssl3t64)" = \
       "${OPENSSL_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' apt)" = \
+      "${APT_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libapt-pkg6.0t64)" = \
+      "${APT_VERSION}" \
+    && test "$(dpkg-query --show --showformat='${Version}' libbrotli1)" = \
+      "${LIBBROTLI_VERSION}" \
     && uv pip install \
       --system \
       --break-system-packages \

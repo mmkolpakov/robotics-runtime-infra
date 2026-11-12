@@ -101,7 +101,7 @@ EOF
       ];
     .["@context"] == "https://openvex.dev/ns/v0.2.0"
     and .author == "mmkolpakov"
-    and .version == 16
+    and .version == 17
     and (.statements | length == 182)
     and ([.statements[].vulnerability.name] | length == (unique | length))
     and ([.statements[] | select(.impact_statement | contains("Projected from Canonical Ltd. OpenVEX document"))] | length == 118)
@@ -116,6 +116,15 @@ EOF
       and (.impact_statement | contains("does not qualify the host kernel, hardware"))
       and (.impact_statement | contains("another package version/architecture/distribution"))
       and (.impact_statement | contains("any other vulnerability"))
+      and (
+        if (.impact_statement | contains("binary-content applicability")) then
+          (.impact_statement | contains("match published SHA256: amd64 e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d; arm64 7ab70f6ebc55fe9ea6ceb9bb087cc7df252b62b9f1b14df46e825052206d7cff"))
+          and (.impact_statement | contains("https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_amd64.deb"))
+          and (.impact_statement | contains("https://snapshot.ubuntu.com/ubuntu/20261112T000000Z/pool/main/l/linux/linux-libc-dev_6.8.0-149.149_arm64.deb"))
+        else
+          (.impact_statement | test("Projected from Canonical Ltd\\. OpenVEX document https://github\\.com/canonical/ubuntu-security-notices/blob/main/vex/cve/[0-9]{4}/CVE-[0-9]{4}-[0-9]+ \\(version [0-9]+, timestamp [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z\\)"))
+        end
+      )
     )
   '
 
@@ -130,6 +139,7 @@ EOF
       'pkg:deb/ubuntu/linux-image-6.8.0-149-generic@6.8.0-149.149?arch=amd64&distro=ubuntu-24.04' \
       'pkg:deb/ubuntu/linux-libc-dev@6.8.0-149.149?arch=amd64&distro=ubuntu-22.04' \
       'pkg:golang/github.com/open-policy-agent/opa@v1.21.2%2Bdirty' \
+      'pkg:golang/github.com/mikefarah/yq/v4@v4.54.1' \
       'pkg:golang/golang.org/x/net@v0.60.0'; do
       jq --arg cve "$cve" --arg product "$product" '
         (.statements[] | select(.vulnerability.name == $cve).products[0]["@id"]) = $product
@@ -138,6 +148,20 @@ EOF
       [ "$status" -ne 0 ] || { printf 'policy accepted %s for %s\n' "$product" "$cve" >&2; return 1; }
     done
   done
+
+  jq --arg cve CVE-2026-100074 '
+    (.statements[] | select(.vulnerability.name == $cve).impact_statement) |=
+      gsub("e4b7b9c5023ba727908868661e1113d28ed9b68e47aed00e314723dad4b2b31d"; "0000000000000000000000000000000000000000000000000000000000000000")
+  ' security/vex/linux-libc-dev.openvex.json >"$mutated"
+  run jq -e "$scope_filter" "$mutated"
+  [ "$status" -ne 0 ] || { printf 'policy accepted a rewritten .deb SHA256 for CVE-2026-100074\n' >&2; return 1; }
+
+  jq --arg cve CVE-2025-40344 '
+    (.statements[] | select(.vulnerability.name == $cve).impact_statement) |=
+      gsub(", timestamp "; ", dated ")
+  ' security/vex/linux-libc-dev.openvex.json >"$mutated"
+  run jq -e "$scope_filter" "$mutated"
+  [ "$status" -ne 0 ] || { printf 'policy accepted a broken Canonical version/timestamp pattern for CVE-2025-40344\n' >&2; return 1; }
 
   run awk '!/^[[:space:]]*(#|$)/ { print }' .trivyignore
   [ "${status}" -eq 0 ]
@@ -762,6 +786,13 @@ EOF
   run grep -F 'ARG OPENSSL_VERSION=3.0.13-0ubuntu3.16' Dockerfile
   [ "${status}" -eq 0 ]
   [ "$(grep -Fc '"libssl3t64=${OPENSSL_VERSION}"' Dockerfile)" -eq 2 ]
+  run grep -F 'ARG APT_VERSION=2.8.4ubuntu0.1' Dockerfile
+  [ "${status}" -eq 0 ]
+  run grep -F 'ARG LIBBROTLI_VERSION=1.1.0-2ubuntu0.1' Dockerfile
+  [ "${status}" -eq 0 ]
+  [ "$(grep -Fc '"apt=${APT_VERSION}"' Dockerfile)" -eq 2 ]
+  [ "$(grep -Fc '"libapt-pkg6.0t64=${APT_VERSION}"' Dockerfile)" -eq 2 ]
+  [ "$(grep -Fc '"libbrotli1=${LIBBROTLI_VERSION}"' Dockerfile)" -eq 2 ]
   run grep -F 'default = "20261112T000000Z"' docker-bake.hcl
   [ "${status}" -eq 0 ]
   run grep -F 'default = "6.8.0-149.149"' docker-bake.hcl
