@@ -7,6 +7,7 @@ if [[ ${EUID} -ne 0 ]]; then
 fi
 
 : "${UBUNTU_SNAPSHOT:?UBUNTU_SNAPSHOT is required}"
+: "${UBUNTU_SNAPSHOT_MIRROR:=https://snapshot.ubuntu.com/ubuntu}"
 
 if [[ ! ${UBUNTU_SNAPSHOT} =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
   printf 'Invalid Ubuntu snapshot ID: %s\n' "${UBUNTU_SNAPSHOT}" >&2
@@ -38,7 +39,7 @@ fi
 
 cat > "${ubuntu_sources}" <<EOF
 Types: deb
-URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}
+URIs: ${UBUNTU_SNAPSHOT_MIRROR}/${UBUNTU_SNAPSHOT}
 Suites: noble noble-updates noble-backports noble-security
 Components: main universe restricted multiverse
 Architectures: ${architecture}
@@ -47,7 +48,7 @@ EOF
 
 printf 'APT::Update::Error-Mode "any";\nAcquire::Retries "3";\n' \
   > "${snapshot_config}"
-grep -Fx "URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}" \
+grep -Fx "URIs: ${UBUNTU_SNAPSHOT_MIRROR}/${UBUNTU_SNAPSHOT}" \
   "${ubuntu_sources}" > /dev/null
 grep -Fx "Architectures: ${architecture}" "${ubuntu_sources}" > /dev/null
 apt-config dump | grep -Fx 'APT::Update::Error-Mode "any";' > /dev/null
