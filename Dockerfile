@@ -4,14 +4,14 @@ ARG ROS_BASE_IMAGE=ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f
 ARG SIMULATION_BASE_IMAGE=osrf/ros:jazzy-simulation@sha256:acb7c427deb2aaa5acd0fdfa5f6cca9ad2055a64102b4667986b70d550dc469d
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
-ARG RCLONE_IMAGE=rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
+ARG RCLONE_IMAGE=rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466
 ARG AWS_CLI_IMAGE=amazon/aws-cli:2.35.21@sha256:238583846e731f31c9848dae26c5a560769ff35c4c5368a4cb6be5816683e485
 ARG CURL_IMAGE=curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 ARG GO_BUILDER_IMAGE=golang:1.27.2@sha256:2d658507a011f1eadc0114d7a421b312b2e77d9042a24036a26e267cc9231677
 # Policy and evidence targets receive the publisher-verified image from Bake.
 ARG COSIGN_IMAGE=scratch
 # Released binary module verification and platform digests: docker/opa/README.md.
-ARG OPA_IMAGE=openpolicyagent/opa:1.21.2-static@sha256:0843d2adce51655422e8b95a803629ab9f424803c4bd27876e7f44cce9a2b84d
+ARG OPA_IMAGE=openpolicyagent/opa:1.22.4-static@sha256:12cecac5a174368f7d3f09d3a19d040ebe0c91d576e520335ae7a985a26e39d3
 ARG NVIDIA_CUDA_BASE_IMAGE=nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04@sha256:95c91edfddb448d236689f572725b8421f3e51a6808f11e37ba6834dc57b12c8
 ARG NVIDIA_CUDA_RUNTIME_IMAGE=nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 ARG NVIDIA_INFERENCE_DEVEL_IMAGE=nvcr.io/nvidia/cuda-dl-base:26.06-cuda13.3-inference-devel-ubuntu24.04@sha256:8d74c381b9842610edcd770dd2bfef12ff37dc76a6fa283215a372db99fca5fc
@@ -79,12 +79,12 @@ ADD --checksum=sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf3
 
 FROM scratch AS rclone-license
 ADD --checksum=sha256:8cd2e9e750b90a04b7d82dbbca3930c696ae0309d7c10464f90a44f45754cd04 \
-  https://raw.githubusercontent.com/rclone/rclone/be8d6044eacb843b74d335db0c5fbe09222031fe/COPYING \
+  https://raw.githubusercontent.com/rclone/rclone/e982ff36668f5130d94b4f70409babb3d964df42/COPYING \
   /COPYING
 
 FROM scratch AS opa-license
 ADD --checksum=sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 \
-  https://raw.githubusercontent.com/open-policy-agent/opa/3f7474e6b3c631821d8aac25ca444f7e75a56483/LICENSE \
+  https://raw.githubusercontent.com/open-policy-agent/opa/ba39415db4b3c90cd68942a74b3cc2223ec2b23c/LICENSE \
   /LICENSE
 
 FROM ${NVIDIA_CUDA_BASE_IMAGE} AS nvidia-cuda-runtime
