@@ -440,6 +440,59 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
         self.assertIs(result["command"][0], True, result)
         self.assertIs(result["postcondition"][0], True, result)
 
+    def test_ulog_above_document_ceiling_is_accepted_within_raw_budget(self):
+        # harness 0.23.1 honors the explicit raw-evidence budget; the 8 MiB
+        # document ceiling applies only to structured documents.
+        from urllib.parse import urlsplit
+        from urllib.request import url2pathname
+
+        for size in (8 * 1024**2 + 1, 64 * 1024**2):
+            with self.subTest(size=size), tempfile.TemporaryDirectory() as temporary:
+                self.root = Path(temporary)
+                payload = bytes([0xA5]) * size
+                records, native, refs, decoded = native_case(self.root / "capture")
+                self.refs = refs
+                ref = native["value"]["ulog"]
+                path = Path(url2pathname(urlsplit(ref["uri"]).path))
+                path.write_bytes(payload)
+                ref.update(sha256=hashlib.sha256(payload).hexdigest(), size_bytes=size)
+                self.refs[path].update(ref)
+                self.rewrite(
+                    native["value"]["custody"]["export_manifest"],
+                    lambda manifest: manifest.update(
+                        totalBytes=size,
+                        entries=[
+                            {
+                                **manifest["entries"][0],
+                                "sha256": ref["sha256"],
+                                "size_bytes": size,
+                            }
+                        ],
+                    ),
+                )
+                evidence = self.evidence(refs)
+                with patch("pyulog.ULog", return_value=decoded) as decoder:
+                    result = sampled_facts(
+                        records,
+                        {
+                            "run_id": RUN,
+                            "case": "land",
+                            "application_deadline_ms": 2000,
+                        },
+                        None,
+                        evidence=evidence,
+                        native=native,
+                    )
+                for name in (
+                    "completion",
+                    "command",
+                    "grounded",
+                    "disarmed",
+                    "postcondition",
+                ):
+                    self.assertIs(result[name][0], True, (name, result))
+                self.assertEqual(decoder.call_args[0][0].getvalue(), payload)
+
     def rewrite(self, ref, update):
         from urllib.parse import urlsplit
         from urllib.request import url2pathname

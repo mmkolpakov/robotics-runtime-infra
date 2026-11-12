@@ -62,11 +62,13 @@ float32 millimetre conversion and integer truncation. Invalid home, an in-phase
 home/reset change, stale samples, corruption, dropouts or insufficient coverage
 prevent an unsupported positive result.
 
-The method requests a 64 MiB raw ULog budget. The selected harness also limits
-capture size: the document-control lock uses harness 0.23.1, whose capture ceiling
-is 8 MiB. That lock is not a native install set. Native SDK/image composition
-admission is separate. `npm run flight-native` unconditionally refuses before
-native imports or Engine effects; it cannot launch a native attempt.
+The method requests a 64 MiB raw ULog budget. The document-control lock uses
+harness 0.23.1, which honors that explicit raw-evidence budget: the original
+ULog is read with `read_local(max_raw_evidence_bytes=ULOG_LIMIT)`. The 8 MiB
+capture ceiling applies only to structured documents. That lock is not a
+native install set. Native SDK/image composition admission is separate.
+`npm run flight-native` unconditionally refuses before native imports or
+Engine effects; it cannot launch a native attempt.
 
 These assertions concern the selected simulated X500 estimates. They do not
 establish hardware behavior, camera/media performance, model-load provenance,
