@@ -190,8 +190,8 @@ class NativeAdmissionControls(unittest.TestCase):
                 },
                 "type_support_version": "3.6.2",
                 "sdk_versions": {
-                    "robotics-runtime-contracts": "0.21.1",
-                    "robotics-acceptance-harness": "0.22.2",
+                    "robotics-runtime-contracts": "0.22.0",
+                    "robotics-acceptance-harness": "0.23.1",
                 },
                 "files": files,
                 "rendered": {

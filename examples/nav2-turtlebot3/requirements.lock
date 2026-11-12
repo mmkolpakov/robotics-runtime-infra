@@ -328,5 +328,5 @@ zstandard==0.25.0 \
     # via
     #   mcap
     #   robotics-runtime-contracts
-robotics-runtime-contracts==0.21.1 --hash=sha256:34a476046ce3326384780224b4e40cad72f41ce756f627d63a6503e01349e015
-robotics-acceptance-harness==0.22.2 --hash=sha256:91d76073ec915972908b4ea4df44af78d2da3f94c6c55c85eb82c03d059e5a48
+robotics-runtime-contracts==0.22.0 --hash=sha256:214cfffb554673cf27306415a2f6e53a6559dc8c05f3e1f9b582a050a0baf856
+robotics-acceptance-harness==0.23.1 --hash=sha256:3a1ddf0feb64ca220b62c2bffb0aa5f2ad573f2ef516fe43328a9c61bbb850d9

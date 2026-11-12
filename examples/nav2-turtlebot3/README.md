@@ -2,8 +2,8 @@
 
 This consumer separates immutable inputs, completed native observations, and offline
 assessment. The evaluator 0.3.0 uses public contracts v2, the verified evidence reader, and the
-external evaluator admission profile. It uses published contracts 0.21.1 and acceptance harness
-0.22.2. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
+external evaluator admission profile. It uses published contracts 0.22.0 and acceptance harness
+0.23.1. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
 [inputs.lock.json](inputs.lock.json); [requirements.lock](requirements.lock) fixes the SDK and
 dependency closure. Native execution additionally requires an admitted composition.
 
@@ -39,7 +39,7 @@ Use an explicit cohort wheel directory; a version number alone cannot substitute
 ## Admit the evaluator
 
 Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The
-[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.22.2/packages/harness/docs/evaluator-trust.md)
+[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.23.1/packages/harness/docs/evaluator-trust.md)
 defines those policies, wheel guards, and process boundaries. The operator profile and its
 approved verifier/key/root pins belong outside the evidence archive.
 
@@ -89,7 +89,7 @@ The requirements JSON contains exactly `evaluator_requirement` (the helper's `bi
 `case`, and `configuration`. Configuration follows [nav2.schema.json](nav2.schema.json), including
 the same case, goal, budgets, pose/freshness thresholds, odometry frame, and required TF edges.
 The required `readiness` object contains `graph`, `timeout_sec` and `stable_for_sec`.
-The self-contained graph definitions are copied from the pinned contracts 0.21.1
+The self-contained graph definitions are copied from the pinned contracts 0.22.0
 with `python sync-readiness-schema.py`; `--check` verifies equality with that SDK.
 The graph is passed unchanged to `RosGraphObserver` and `wait_for_readiness`.
 Its deadline is at most ten seconds,

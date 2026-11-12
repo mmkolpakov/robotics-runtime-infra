@@ -474,8 +474,8 @@ def check_preflight(document: dict, image_reference: str, image_id: str) -> dict
     ):
         raise ValueError("image recipe differs")
     if facts["sdk_versions"] != {
-        "robotics-runtime-contracts": "0.21.1",
-        "robotics-acceptance-harness": "0.22.2",
+        "robotics-runtime-contracts": "0.22.0",
+        "robotics-acceptance-harness": "0.23.1",
     }:
         raise ValueError("native image SDK differs from the published cohort")
     if set(facts["packages"]) != set(policy["packages"]):

@@ -12,9 +12,9 @@ ROOT = Path(__file__).parent
 
 
 def definitions():
-    if version("robotics-runtime-contracts") != "0.21.1":
+    if version("robotics-runtime-contracts") != "0.22.0":
         raise ValueError(
-            "readiness schema generation requires the pinned contracts 0.21.1"
+            "readiness schema generation requires the pinned contracts 0.22.0"
         )
     public = load_schema("acceptance-scenario.v1")
     resolver = schema_registry().resolver(base_uri=public["$id"])
