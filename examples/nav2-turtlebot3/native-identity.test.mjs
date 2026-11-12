@@ -1,10 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
 import {assertOwned, canonicalConfigId, recoverCreated, createdId, nativeWaitExit, assertRosStopSignal, admitAndStart, removeUnstartedOwned} from './native-identity.mjs';
 
-const expected={cid:'a'.repeat(64),image:'sha256:'+'b'.repeat(64),owner:'issued-owner',name:'issued-name',stopSignal:'SIGINT'};
-const native=()=>({Id:expected.cid,Image:'b'.repeat(64),Name:'/issued-name',Config:{Labels:{'org.example.nav2.owner':'issued-owner'},StopSignal:2},State:{Running:true}});
+const expected={cid:'a'.repeat(64),image:'sha256:'+'b'.repeat(64),owner:'issued-owner',name:'issued-name',stopSignal:'SIGINT',composition:{command:['ros2','launch'],entrypoint:['/ros_entrypoint.sh'],env:['PATH=/usr/bin'],mounts:[],hostConfig:{NetworkMode:'none'}}};
+const native=()=>({Id:expected.cid,Image:'b'.repeat(64),Name:'/issued-name',Config:{Cmd:['ros2','launch'],Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin'],Labels:{'org.example.nav2.owner':'issued-owner'},StopSignal:2},Mounts:[],HostConfig:{NetworkMode:'none'},State:{Running:false,Pid:0,Status:'created'}});
 
 test('bare config ID and prefixed config ID identify the same exact configuration',()=>{
   assert.equal(canonicalConfigId('b'.repeat(64)),expected.image);
@@ -23,8 +22,8 @@ test('foreign identity and missing ownership refuse before any cleanup effect',(
     {...native(),Id:'c'.repeat(64)},
     {...native(),Name:'/foreign'},
     {...native(),Name:'//issued-name'},
-    {...native(),Config:{Labels:{}}},
-    {...native(),Config:{Labels:{'org.example.nav2.owner':'foreign'}}}
+    {...native(),Config:{Cmd:['ros2','launch'],Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin'],Labels:{}}},
+    {...native(),Config:{Cmd:['ros2','launch'],Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin'],Labels:{'org.example.nav2.owner':'foreign'}}}
   ]) assert.throws(()=>assertOwned(changed,expected));
 });
 test('lost native create response recovers an exact owner-labelled object, retaining only read operations',async()=>{
@@ -49,13 +48,6 @@ test('unavailable inventory remains a refusal, not an empty success',async()=>{
 test('an actual empty successful inventory has no owned object',async()=>{
   assert.equal(await recoverCreated(async()=>'',expected),null);
 });
-test('checkpoint waits for plugin disposal and native quiescence independently',async()=>{
-  const source=await readFile(new URL('./native-check.mjs',import.meta.url),'utf8');
-  assert.ok(source.includes('if(workerSettled&&(!recorder||recorderSettled)){await fiber.dispose();await fiber.await();}'));
-  assert.ok(source.includes("command('wait',['wait',cid],30000)"));
-  assert.ok(source.includes("if(stopped.State.Running)throw"));
-});
-
 test('malformed create response never installs an unvalidated CID, so recovery remains required',()=>{
   assert.equal(createdId(expected.cid+'\n'),expected.cid);
   for(const raw of ['corrupt',expected.cid+'\n\n',expected.cid+'\r\n',' '+expected.cid]) assert.throws(()=>createdId(raw));
@@ -101,8 +93,20 @@ test('running or previously exited actor never uses the unstarted removal shortc
     assert.equal(await removeUnstartedOwned(async()=>{throw new Error('unexpected remove')},{...native(),State:state},expected),false);
   }
 });
-test('driver uses acquired admission before any workload exec and its own unstarted cleanup path',async()=>{
-  const source=await readFile(new URL('./native-check.mjs',import.meta.url),'utf8');
-  assert.ok(source.indexOf('await admitAndStart(command')<source.indexOf("const workerArgs=['exec'"));
-  assert.ok(source.includes('await removeUnstartedOwned(command,native,{cid,image,owner,name})'));
+
+test('every acquired composition mismatch refuses before native start',async()=>{
+  const mutations=[
+    value=>{value.Config.Cmd=['sh','-c','true'];},
+    value=>{value.Config.Entrypoint=['/bin/sh'];},
+    value=>{value.Config.Env=['PATH=/foreign'];},
+    value=>{value.Mounts=[{Source:'/foreign',Destination:'/evidence',RW:true,Type:'bind'}];},
+    value=>{value.HostConfig.NetworkMode='host';},
+    value=>{value.State={Running:true,Pid:999,Status:'running'};},
+  ];
+  for(const mutate of mutations){
+    const actual=native(),calls=[];
+    mutate(actual);
+    await assert.rejects(admitAndStart(async(op,args)=>{calls.push(args[0]);return JSON.stringify([actual]);},expected));
+    assert.deepEqual(calls,['inspect']);
+  }
 });

@@ -15,28 +15,88 @@ import subprocess
 import time
 from pathlib import Path
 
-import rclpy
-from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from nav2_msgs.action import NavigateToPose
-from nav2_simple_commander.robot_navigator import BasicNavigator
-from nav_msgs.msg import Odometry
-from rclpy.action import ActionClient
-from rclpy.parameter import Parameter
-from rclpy.qos import (
-    DurabilityPolicy,
-    QoSProfile,
-    ReliabilityPolicy,
-    qos_profile_sensor_data,
-)
-from rclpy.serialization import serialize_message
-from robotics_acceptance_harness.readiness import wait_for_readiness
-from robotics_acceptance_harness.ros import RosGraphObserver
-from robotics_runtime_contracts import load_mapping
-from rosgraph_msgs.msg import Clock
-from rosidl_runtime_py.convert import message_to_ordereddict
-from std_srvs.srv import Empty
-from tf2_msgs.msg import TFMessage
+
+def admit_workload(args):
+    import runpy
+
+    if args.prepared.resolve() / "scenario.json" != args.scenario.resolve():
+        raise ValueError("worker scenario differs from the admitted prepared directory")
+    if os.environ.get("NAV2_IMAGE_CONFIG_ID") != args.image_id:
+        raise ValueError("worker image identity differs from the inspected actor")
+    validate = runpy.run_path(str(Path(__file__).with_name("make-scenario.py")))[
+        "validate_prepared"
+    ]
+    admitted = validate(args.prepared, image_id=args.image_id, case=args.case)
+    if (admitted["run_id"], admitted["domain_id"]) != (args.run_id, args.domain_id):
+        raise ValueError("worker run or domain differs")
+    return admitted
+
+
+def load_ros():
+    global \
+        rclpy, \
+        GoalStatus, \
+        PoseStamped, \
+        PoseWithCovarianceStamped, \
+        NavigateToPose, \
+        BasicNavigator, \
+        Odometry, \
+        ActionClient, \
+        Parameter, \
+        DurabilityPolicy, \
+        QoSProfile, \
+        ReliabilityPolicy, \
+        qos_profile_sensor_data, \
+        serialize_message, \
+        wait_for_readiness, \
+        RosGraphObserver, \
+        Clock, \
+        message_to_ordereddict, \
+        Empty, \
+        TFMessage
+    import rclpy
+    from action_msgs.msg import GoalStatus
+    from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+    from nav2_msgs.action import NavigateToPose
+    from nav2_simple_commander.robot_navigator import BasicNavigator
+    from nav_msgs.msg import Odometry
+    from rclpy.action import ActionClient
+    from rclpy.parameter import Parameter
+    from rclpy.qos import (
+        DurabilityPolicy,
+        QoSProfile,
+        ReliabilityPolicy,
+        qos_profile_sensor_data,
+    )
+    from rclpy.serialization import serialize_message
+    from robotics_acceptance_harness.readiness import wait_for_readiness
+    from robotics_acceptance_harness.ros import RosGraphObserver
+    from rosgraph_msgs.msg import Clock
+    from rosidl_runtime_py.convert import message_to_ordereddict
+    from std_srvs.srv import Empty
+    from tf2_msgs.msg import TFMessage
+
+
+def readiness_parameters(scenario):
+    """Read this consumer's closed v2 configuration without projecting legacy fields."""
+    if scenario.get("schema_version") != "acceptance-scenario.v2":
+        raise ValueError("the Nav2 workload requires explicit v2 inputs")
+    settings = scenario["extensions"]["org.example.nav2-turtlebot3"]["readiness"]
+    budget, stability = settings["timeout_sec"], settings["stable_for_sec"]
+    if (
+        any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in (budget, stability)
+        )
+        or not 0 < budget <= 10
+        or not 0 <= stability < budget
+    ):
+        raise ValueError(
+            "declared graph readiness must fit the existing ten-second budget"
+        )
+    return settings["graph"], budget, stability
 
 
 def native_octets(values, size: int) -> list[int]:
@@ -89,6 +149,8 @@ def main() -> int:
     parser.add_argument("--domain-id", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--scenario", type=Path, required=True)
+    parser.add_argument("--prepared", type=Path, required=True)
+    parser.add_argument("--image-id", required=True)
     parser.add_argument("--goal-x", type=float, default=1.0)
     parser.add_argument("--goal-y", type=float, default=-0.5)
     parser.add_argument("--action-budget-sec", type=float, default=120.0)
@@ -138,7 +200,9 @@ def main() -> int:
         or not 0 < args.max_observation_age_sec <= 5
     ):
         parser.error("finite pose and an action budget in (0,180] are required")
-    declared_scenario = load_mapping(args.scenario)
+    admitted = admit_workload(args)
+    load_ros()
+    declared_scenario = admitted["scenario"]
     configuration = declared_scenario["extensions"]["org.example.nav2-turtlebot3"]
     actual_parameters = {
         "goal": {"x": args.goal_x, "y": args.goal_y},
@@ -149,14 +213,13 @@ def main() -> int:
         "max_observation_age_sec": args.max_observation_age_sec,
         "odometry_frame": args.odometry_frame,
         "required_tf_edges": args.required_tf_edges,
+        "readiness": configuration["readiness"],
     }
     if configuration != {**actual_parameters, "case": args.case}:
         parser.error("consumer parameters differ from the declared scenario")
-    expected_graph = declared_scenario["expected_ros_graph"]
-    graph_budget = declared_scenario["timeouts"]["graph_ready_sec"]
-    graph_stability = declared_scenario["timeouts"]["stable_for_sec"]
-    if not 0 < graph_budget <= 10 or not 0 <= graph_stability < graph_budget:
-        parser.error("declared graph readiness must fit the existing ten-second budget")
+    expected_graph, graph_budget, graph_stability = readiness_parameters(
+        declared_scenario
+    )
     package_format = (
         "-f="
         + chr(36)
@@ -213,7 +276,7 @@ def main() -> int:
         "middleware_profile_sha256": hashlib.sha256(
             Path(os.environ["FASTRTPS_DEFAULT_PROFILES_FILE"]).read_bytes()
         ).hexdigest(),
-        "scenario_sha256": hashlib.sha256(args.scenario.read_bytes()).hexdigest(),
+        "scenario_sha256": admitted["scenario_sha256"],
     }
     args.output.mkdir(mode=0o700, parents=True, exist_ok=True)
     atomic_json(
@@ -244,6 +307,7 @@ def main() -> int:
             "max_observation_age_sec": args.max_observation_age_sec,
             "odometry_frame": args.odometry_frame,
             "required_tf_edges": args.required_tf_edges,
+            "readiness": configuration["readiness"],
         },
     }
     rclpy.init(args=["--ros-args", "-p", "use_sim_time:=true"])
@@ -653,6 +717,9 @@ def main() -> int:
                         # Genuine upstream lifecycle shutdown removes the action server; it is not a fabricated result.
                         navigator.lifecycleShutdown()
                         present = client.wait_for_server(timeout_sec=1.0)
+                        report["server_after_shutdown_monotonic_ns"] = (
+                            time.monotonic_ns()
+                        )
                         record(
                             "server-after-shutdown",
                             {

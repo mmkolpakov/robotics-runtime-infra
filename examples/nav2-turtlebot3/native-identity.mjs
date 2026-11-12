@@ -59,6 +59,7 @@ export async function admitAndStart(command, expected) {
   if (!Array.isArray(records) || records.length !== 1) throw new Error('native inspect is not one object');
   const native = assertOwned(records[0], expected);
   assertRosStopSignal(native);
+  assertComposition(native, expected);
   await command('start', ['start', expected.cid]);
   return native;
 }
@@ -71,4 +72,41 @@ export async function removeUnstartedOwned(command, native, expected) {
     return true;
   }
   return false;
+}
+
+function same(actual, expected) {
+  return JSON.stringify(actual) === JSON.stringify(expected);
+}
+
+export function environment(values) {
+  const result = {};
+  for (const value of values ?? []) {
+    const split = value.indexOf('=');
+    if (split < 1 || Object.hasOwn(result, value.slice(0, split))) throw new Error('ambiguous native environment');
+    result[value.slice(0, split)] = value.slice(split + 1);
+  }
+  return Object.fromEntries(Object.entries(result).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+export function assertComposition(native, expected) {
+  const composition = expected.composition;
+  if (!composition || !same(native.Config?.Cmd, composition.command) ||
+      !same(native.Config?.Entrypoint, composition.entrypoint) ||
+      !same(environment(native.Config?.Env), environment(composition.env))) {
+    throw new Error('native command, entrypoint or environment differs from admitted composition');
+  }
+  const mounts = (native.Mounts ?? []).map(m => ({
+    source: m.Source, destination: m.Destination, readOnly: m.RW === false, type: m.Type,
+  })).sort((a, b) => a.destination.localeCompare(b.destination));
+  if (!same(mounts, [...composition.mounts].sort((a, b) => a.destination.localeCompare(b.destination)))) {
+    throw new Error('native mounts differ from admitted composition');
+  }
+  for (const [key, value] of Object.entries(composition.hostConfig)) {
+    if (!same(native.HostConfig?.[key], value)) throw new Error('native isolation differs: ' + key);
+  }
+  if (native.State?.Running !== false || native.State?.Pid !== 0 ||
+      !['created', 'configured'].includes(native.State?.Status)) {
+    throw new Error('native object was not inspected before its first start');
+  }
+  return native;
 }
