@@ -322,6 +322,36 @@ class NativeCaseControls(unittest.TestCase):
             "error",
         )
 
+    def test_incomplete_shutdown_observation_is_error(self):
+        def incomplete(report):
+            report["server_after_shutdown_monotonic_ns"] = (
+                report["goal_finished_monotonic_ns"] - 1
+            )
+            report["observation_status"] = "incomplete"
+
+        self.assertEqual(
+            list(evaluate(self.context("server-failure", incomplete)))[1].status,
+            "error",
+        )
+
+    def test_succeeded_but_missed_goal_pose_refuses(self):
+        def missed(report):
+            report["final_amcl_pose"]["x"] = report["goal_requested"]["x"] + 1.0
+            report["final_amcl_pose"]["y"] = report["goal_requested"]["y"]
+
+        self.assertEqual(
+            list(evaluate(self.context(mutate=missed)))[1].status, "failed"
+        )
+
+    def test_succeeded_without_required_displacement_refuses(self):
+        def stationary(report):
+            report["initial_amcl_pose"]["x"] = report["final_amcl_pose"]["x"]
+            report["initial_amcl_pose"]["y"] = report["final_amcl_pose"]["y"]
+
+        self.assertEqual(
+            list(evaluate(self.context(mutate=stationary)))[1].status, "failed"
+        )
+
     def test_aborted_action_status_refuses_success(self):
         def aborted(report):
             report["action_status"] = 6
@@ -357,6 +387,23 @@ class NativeCaseControls(unittest.TestCase):
             "failed",
         )
 
+    def test_cancel_race_terminal_status_without_request_refuses(self):
+        for status in (4, 6):
+            with self.subTest(action_status=status):
+                self.assertEqual(
+                    list(
+                        evaluate(
+                            self.context(
+                                "cancel",
+                                lambda r, status=status: r.update(
+                                    action_status=status, cancel_requested=False
+                                ),
+                            )
+                        )
+                    )[1].status,
+                    "failed",
+                )
+
     def test_available_server_refuses_expected_failure(self):
         self.assertEqual(
             list(
@@ -385,6 +432,19 @@ class NativeCaseControls(unittest.TestCase):
                     )
                 )
             )[1].status,
+            "failed",
+        )
+
+    def test_success_before_deadline_refuses_timeout(self):
+        def early_success(report):
+            report["action_status"] = 4
+            report["application_deadline_reached"] = False
+            report["consumer_trigger_budget_sec"] = (
+                report["parameters"]["application_timeout_sec"] + 1.0
+            )
+
+        self.assertEqual(
+            list(evaluate(self.context("timeout", early_success)))[1].status,
             "failed",
         )
 

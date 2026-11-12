@@ -71,7 +71,8 @@ def _shutdown_or_absent_result(report, config, observed):
                 and report.get("observation_status")
                 in {"server-unavailable", "complete"}
             )
-            status = "passed" if matched else "failed"
+            # Ordered timing with an incomplete observation is not a physical failure.
+            status = "passed" if matched else "error" if within_budget else "failed"
             reason = "Captured local shutdown/server observation must match the issued goal and budget"
         else:
             reason = (
