@@ -95,3 +95,21 @@ CVEs are accepted only as exact Canonical not_affected records (version, arch,
 distro) with evidence, and are reviewed on any version change. Uncovered
 HIGH/CRITICAL findings remain blocking; a supplier rebuild is scheduled within
 the SLA and re-scanned before release.
+
+## Image vulnerability gate
+
+`scripts/ci/security/scan-image.sh` writes the raw Trivy JSON, converts it to
+an unfiltered SARIF report, and then decides the gate from the JSON in a
+separate step. HIGH/CRITICAL findings with `status=fixed` block. Ubuntu OS
+packages narrowly tolerate `will_not_fix` and `fix_deferred`; an `affected`
+Ubuntu finding passes only with a `.trivyignore` entry that carries a review
+ticket and an unexpired `exp` date. `end_of_life` findings and language-package
+findings (Go, Python, Alpine) block regardless of status. The SARIF export
+keeps every finding for reporting and never decides the gate.
+
+Accepted distro applicability decisions stay in exact Canonical `not_affected`
+OpenVEX records under `security/vex/`, scoped to package version, architecture
+and distribution. `.trivyignore` stays empty unless a finding is deliberately
+accepted with a reason, a review ticket and an expiration date. CODEOWNERS
+requires owner review for `scripts/ci/security/`, `security/` and
+`.trivyignore`.
