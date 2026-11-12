@@ -10,13 +10,84 @@ setup() {
   mkdir -p "${FAKE_BIN}" "${SECURITY_DIR}" "${TRIVY_CACHE_DIR}"
 }
 
-@test "image scanner accepts a quoted platform CSV without word splitting" {
+# Fake docker: log the invocation, materialise the scan report from
+# SCAN_FIXTURE (empty results by default) and always succeed at conversion,
+# mirroring the unfiltered SARIF export.
+write_gate_fake_docker() {
   cat >"${FAKE_BIN}/docker" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\n' "$*" >>"${DOCKER_LOG}"
+mode=scan
+output=
+previous=
+for argument in "$@"; do
+  if test "${argument}" = convert; then
+    mode=convert
+  fi
+  if test "${previous}" = --output; then
+    output="${argument}"
+  fi
+  previous="${argument}"
+done
+if test -n "${output}"; then
+  host_output="${output/#\/reports\//${ROBOTICS_CI_SECURITY_ARTIFACT_DIR}/}"
+  if test "${mode}" = scan; then
+    if test -n "${SCAN_FIXTURE:-}"; then
+      cat "${SCAN_FIXTURE}" >"${host_output}"
+    else
+      printf '{"Results":[]}\n' >"${host_output}"
+    fi
+  else
+    printf '{"runs":[]}\n' >"${host_output}"
+  fi
+fi
 EOF
   chmod +x "${FAKE_BIN}/docker"
+}
+
+write_finding_fixture() {
+  jq -n \
+    --arg class "$1" --arg type "$2" --arg status "$3" --arg severity "$4" '
+    {
+      Results: [
+        {
+          Target: "fixture-image",
+          Class: $class,
+          Type: $type,
+          Vulnerabilities: [
+            {
+              VulnerabilityID: "CVE-2026-0001",
+              PkgName: "fixture-package",
+              Severity: $severity,
+              Status: $status
+            }
+          ]
+        }
+      ]
+    }
+  ' >"${BATS_TEST_TMPDIR}/fixture.json"
+}
+
+run_image_scan() {
+  local environment=(
+    "PATH=${FAKE_BIN}:${PATH}"
+    "DOCKER_LOG=${DOCKER_LOG}"
+    "HOME=${BATS_TEST_TMPDIR}"
+    "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}"
+    "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}"
+    "SCAN_FIXTURE=${BATS_TEST_TMPDIR}/fixture.json"
+    TRIVY_IMAGE=trivy:test
+  )
+  if test "$#" -gt 0; then
+    environment+=("ROBOTICS_CI_TRIVY_IGNORE_FILE=$1")
+  fi
+  run env "${environment[@]}" \
+    scripts/ci/security/scan-image.sh registry.example/runtime:test candidate
+}
+
+@test "image scanner accepts a quoted platform CSV without word splitting" {
+  write_gate_fake_docker
 
   run env \
     "PATH=${FAKE_BIN}:${PATH}" \
@@ -67,6 +138,26 @@ if test "$1 $2 $3 $4 $5" = "buildx bake --file docker-bake.hcl --print"; then
   exit 0
 fi
 printf '%s\n' "$*" >>"${DOCKER_LOG}"
+mode=scan
+output=
+previous=
+for argument in "$@"; do
+  if test "${argument}" = convert; then
+    mode=convert
+  fi
+  if test "${previous}" = --output; then
+    output="${argument}"
+  fi
+  previous="${argument}"
+done
+if test -n "${output}"; then
+  host_output="${output/#\/reports\//${ROBOTICS_CI_SECURITY_ARTIFACT_DIR}/}"
+  if test "${mode}" = scan; then
+    printf '{"Results":[]}\n' >"${host_output}"
+  else
+    printf '{"runs":[]}\n' >"${host_output}"
+  fi
+fi
 EOF
   chmod +x "${FAKE_BIN}/docker"
 
@@ -220,6 +311,25 @@ EOF
   }
 }
 EOF
+  jq -n '
+    {
+      Results: [
+        {
+          Target: "fixture-image",
+          Class: "os",
+          Type: "ubuntu",
+          Vulnerabilities: [
+            {
+              VulnerabilityID: "CVE-2026-0001",
+              PkgName: "fixture-package",
+              Severity: "HIGH",
+              Status: "fixed"
+            }
+          ]
+        }
+      ]
+    }
+  ' >"${BATS_TEST_TMPDIR}/conformance-fixture.json"
   cat >"${FAKE_BIN}/docker" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -228,8 +338,29 @@ if test "$1 $2 $3 $4 $5" = "buildx bake --file docker-bake.hcl --print"; then
   exit 0
 fi
 printf '%s\n' "$*" >>"${DOCKER_LOG}"
-if [[ " $* " == *" --format sarif "* && "$*" == *"/reports/accelerator-conformance-"* ]]; then
-  exit 1
+mode=scan
+output=
+previous=
+for argument in "$@"; do
+  if test "${argument}" = convert; then
+    mode=convert
+  fi
+  if test "${previous}" = --output; then
+    output="${argument}"
+  fi
+  previous="${argument}"
+done
+if test -n "${output}"; then
+  host_output="${output/#\/reports\//${ROBOTICS_CI_SECURITY_ARTIFACT_DIR}/}"
+  if test "${mode}" = scan; then
+    if test "${@: -1}" = registry.example/conformance:test; then
+      cat "${CONFORMANCE_FIXTURE}" >"${host_output}"
+    else
+      printf '{"Results":[]}\n' >"${host_output}"
+    fi
+  else
+    printf '{"runs":[]}\n' >"${host_output}"
+  fi
 fi
 EOF
   chmod +x "${FAKE_BIN}/docker"
@@ -237,6 +368,7 @@ EOF
   run env \
     "PATH=${FAKE_BIN}:${PATH}" \
     "BAKE_PLAN=${BATS_TEST_TMPDIR}/bake-plan.json" \
+    "CONFORMANCE_FIXTURE=${BATS_TEST_TMPDIR}/conformance-fixture.json" \
     "DOCKER_LOG=${DOCKER_LOG}" \
     "HOME=${BATS_TEST_TMPDIR}" \
     "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
@@ -250,6 +382,8 @@ EOF
   [ "$(grep -Fc -- 'registry.example/runtime:test' "${DOCKER_LOG}")" -eq 1 ]
   [ "$(grep -Fc -- 'registry.example/conformance:test' "${DOCKER_LOG}")" -eq 1 ]
   [ "$(grep -Fc -- '--format table' "${DOCKER_LOG}")" -eq 1 ]
+  [ -s "${SECURITY_DIR}/accelerator-runtime-local.sarif" ]
+  [ -s "${SECURITY_DIR}/accelerator-conformance-local.sarif" ]
 }
 
 @test "Go module OpenVEX statements are scoped to pinned binaries" {
@@ -275,17 +409,8 @@ EOF
 }
 
 @test "image scanner propagates the vulnerability gate failure" {
-  cat >"${FAKE_BIN}/docker" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-printf '%s\n' "$*" >>"${DOCKER_LOG}"
-for argument in "$@"; do
-  if [[ "${argument}" == convert ]]; then
-    exit 1
-  fi
-done
-EOF
-  chmod +x "${FAKE_BIN}/docker"
+  write_gate_fake_docker
+  write_finding_fixture os ubuntu fixed HIGH
 
   run env \
     "PATH=${FAKE_BIN}:${PATH}" \
@@ -293,6 +418,7 @@ EOF
     "HOME=${BATS_TEST_TMPDIR}" \
     "ROBOTICS_CI_SECURITY_ARTIFACT_DIR=${SECURITY_DIR}" \
     "ROBOTICS_CI_TRIVY_CACHE_DIR=${TRIVY_CACHE_DIR}" \
+    "SCAN_FIXTURE=${BATS_TEST_TMPDIR}/fixture.json" \
     TRIVY_IMAGE=trivy:test \
     scripts/ci/security/scan-image.sh \
       registry.example/runtime:test candidate linux/amd64,linux/arm64
@@ -302,6 +428,145 @@ EOF
   [ "$(grep -Fc -- '--format table' "${DOCKER_LOG}")" -eq 2 ]
   [[ "${output}" == *"vulnerability gate failed: registry.example/runtime:test linux-amd64"* ]]
   [[ "${output}" == *"vulnerability gate failed: registry.example/runtime:test linux-arm64"* ]]
+  [ -s "${SECURITY_DIR}/candidate-linux-amd64.sarif" ]
+  [ -s "${SECURITY_DIR}/candidate-linux-arm64.sarif" ]
+}
+
+@test "image gate blocks fixable HIGH and CRITICAL findings only at those severities" {
+  write_gate_fake_docker
+
+  write_finding_fixture os ubuntu fixed HIGH
+  run_image_scan
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"blocking: CVE-2026-0001 HIGH fixed fixture-package (fixture-image)"* ]]
+
+  write_finding_fixture os ubuntu fixed CRITICAL
+  run_image_scan
+  [ "${status}" -eq 1 ]
+
+  write_finding_fixture os ubuntu fixed MEDIUM
+  run_image_scan
+  [ "${status}" -eq 0 ]
+
+  write_finding_fixture os ubuntu fixed LOW
+  run_image_scan
+  [ "${status}" -eq 0 ]
+}
+
+@test "image gate tolerates will_not_fix and fix_deferred for Ubuntu OS packages" {
+  write_gate_fake_docker
+
+  write_finding_fixture os ubuntu will_not_fix HIGH
+  run_image_scan
+  [ "${status}" -eq 0 ]
+
+  write_finding_fixture os ubuntu fix_deferred CRITICAL
+  run_image_scan
+  [ "${status}" -eq 0 ]
+}
+
+@test "image gate blocks end_of_life findings even for Ubuntu OS packages" {
+  write_gate_fake_docker
+
+  write_finding_fixture os ubuntu end_of_life HIGH
+  run_image_scan
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"blocking: CVE-2026-0001 HIGH end_of_life"* ]]
+
+  write_finding_fixture lang-pkgs gobinary end_of_life CRITICAL
+  run_image_scan
+  [ "${status}" -eq 1 ]
+}
+
+@test "image gate blocks language and Alpine findings regardless of status" {
+  write_gate_fake_docker
+
+  local type status
+  for type in gobinary python-pkg; do
+    for status in fixed affected will_not_fix fix_deferred; do
+      write_finding_fixture lang-pkgs "${type}" "${status}" HIGH
+      run_image_scan
+      [ "${status}" -eq 1 ] || {
+        printf 'gate accepted %s %s\n' "${type}" "${status}" >&2
+        return 1
+      }
+    done
+  done
+
+  write_finding_fixture os alpine will_not_fix HIGH
+  run_image_scan
+  [ "${status}" -eq 1 ]
+
+  write_finding_fixture os alpine affected CRITICAL
+  run_image_scan
+  [ "${status}" -eq 1 ]
+}
+
+@test "image gate allows affected Ubuntu findings only with a ticketed unexpired exception" {
+  write_gate_fake_docker
+  write_finding_fixture os ubuntu affected HIGH
+  local ignore="${BATS_TEST_TMPDIR}/trivyignore"
+
+  run_image_scan
+  [ "${status}" -eq 1 ]
+
+  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42; exp:2999-01-01' >"${ignore}"
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 0 ]
+
+  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42; exp:2000-01-01' >"${ignore}"
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 1 ]
+
+  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; exp:2999-01-01' >"${ignore}"
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 1 ]
+
+  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42' >"${ignore}"
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 1 ]
+
+  printf '%s\n' '# nothing accepted' >"${ignore}"
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 1 ]
+
+  printf '%s\n' 'CVE-2026-0001 # reason: distro backlog; review: issue-42; exp:2999-01-01' >"${ignore}"
+  write_finding_fixture lang-pkgs gobinary affected HIGH
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 1 ]
+
+  write_finding_fixture os ubuntu fixed HIGH
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 1 ]
+
+  write_finding_fixture os ubuntu end_of_life HIGH
+  run_image_scan "${ignore}"
+  [ "${status}" -eq 1 ]
+}
+
+@test "SARIF export stays unfiltered and never decides the gate" {
+  write_gate_fake_docker
+  write_finding_fixture os ubuntu fixed HIGH
+  : >"${DOCKER_LOG}"
+
+  run_image_scan
+  [ "${status}" -eq 1 ]
+  [ -s "${SECURITY_DIR}/candidate-local.sarif" ]
+  [ "$(grep -Fc -- 'convert --format sarif' "${DOCKER_LOG}")" -eq 1 ]
+  local sarif_line scan_line
+  sarif_line="$(grep -F -- 'convert --format sarif' "${DOCKER_LOG}")"
+  [[ "${sarif_line}" != *--severity* ]]
+  [[ "${sarif_line}" != *--exit-code* ]]
+  [[ "${sarif_line}" != *--ignore-unfixed* ]]
+  [[ "${sarif_line}" != *--ignore-status* ]]
+  scan_line="$(grep -F -- 'image --config' "${DOCKER_LOG}")"
+  [[ "${scan_line}" != *--ignore-status* ]]
+  [[ "${scan_line}" != *--ignore-unfixed* ]]
+
+  printf '{"Results":[]}\n' >"${BATS_TEST_TMPDIR}/fixture.json"
+  run_image_scan
+  [ "${status}" -eq 0 ]
+  [ -s "${SECURITY_DIR}/candidate-local.sarif" ]
 }
 
 @test "Ubuntu package snapshot and kernel headers are pinned together" {
