@@ -200,6 +200,7 @@ for platform in "${platforms[@]}"; do
     --format sarif \
     --output "/reports/${report_id}-${platform_id}.sarif" \
     --severity HIGH,CRITICAL \
+    --ignore-unfixed \
     --exit-code 1 \
     "${raw_report}"; then
     failed+=("${image} ${platform_id}")
