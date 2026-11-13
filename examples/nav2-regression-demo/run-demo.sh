@@ -63,7 +63,21 @@ fi
 
 # 2. Install the published SDK cohort and build/install the native evaluator.
 PY="$VENV/bin/python"
-if [ "$REINSTALL" -eq 1 ] || [ ! -x "$PY" ] || ! "$PY" -c 'import nav2_turtlebot3_evaluator' >/dev/null 2>&1; then
+# Cache discovery reads metadata; the evaluator is authenticated before evaluation.
+if [ "$REINSTALL" -eq 1 ] || [ ! -x "$PY" ] || ! "$PY" -I - "$EXAMPLE_DIR/evaluator/pyproject.toml" <<'PY' >/dev/null 2>&1
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+import sys
+import tomllib
+
+project = tomllib.loads(Path(sys.argv[1]).read_text())["project"]
+try:
+    installed = version(project["name"])
+except PackageNotFoundError:
+    sys.exit(1)
+sys.exit(installed != project["version"])
+PY
+then
   log "Installing published acceptance SDK cohort from requirements.lock"
   if command -v uv >/dev/null 2>&1; then
     uv venv --python 3.12 --seed "$VENV"
