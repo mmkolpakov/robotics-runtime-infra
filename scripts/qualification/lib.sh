@@ -37,6 +37,8 @@ qualification_parse_cli() {
   verification_key=''
   trusted_root=''
   policy=''
+  QUALIFICATION_SCHEMA_VERSION='qualification-bundle.v1'
+  QUALIFICATION_COMPARISON_RULE=''
   runtime_manifest_specs=()
   result_specs=()
   evidence_index_specs=()
@@ -65,6 +67,16 @@ qualification_parse_cli() {
       --policy)
         [[ "$mode" == verify && $# -ge 2 ]] || usage
         policy="$2"
+        shift 2
+        ;;
+      --schema-version)
+        (($# >= 2)) || usage
+        QUALIFICATION_SCHEMA_VERSION="$2"
+        shift 2
+        ;;
+      --comparison-rule)
+        (($# >= 2)) || usage
+        QUALIFICATION_COMPARISON_RULE="$2"
         shift 2
         ;;
       --scenario)
@@ -134,6 +146,14 @@ qualification_parse_cli() {
   done
 
   [[ "$mode" == verify || -n "$output" ]] || usage
+  QUALIFICATION_PROFILE_ARGUMENTS=()
+  case "$QUALIFICATION_SCHEMA_VERSION:$QUALIFICATION_COMPARISON_RULE" in
+    qualification-bundle.v1:) ;;
+    qualification-bundle.v2:exact_assertion_outcome)
+      QUALIFICATION_PROFILE_ARGUMENTS=(--schema-version "$QUALIFICATION_SCHEMA_VERSION" --comparison-rule "$QUALIFICATION_COMPARISON_RULE")
+      ;;
+    *) qualification_fail 'unsupported qualification version or comparison rule' ;;
+  esac
 }
 
 qualification_resolve_contracts_cli() {
@@ -272,7 +292,7 @@ qualification_write_statement() {
   local output="$1"
   local result
   result="$("$QUALIFICATION_CONTRACTS_CLI" --format json qualification statement \
-    "${QUALIFICATION_INPUT_ARGUMENTS[@]}" --output "$output")" ||
+    "${QUALIFICATION_PROFILE_ARGUMENTS[@]}" "${QUALIFICATION_INPUT_ARGUMENTS[@]}" --output "$output")" ||
     qualification_fail 'qualification artifact set is invalid'
   chmod 0444 -- "$(jq -er '.output' <<<"$result")"
 }
