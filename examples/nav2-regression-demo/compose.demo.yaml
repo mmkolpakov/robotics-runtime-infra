@@ -1,0 +1,11 @@
+# Released-mode simulation image for the Nav2 regression demo.
+# Pin comes from release.env (gh release download v0.11.0-rc2 --pattern release.env).
+# Use: docker/podman compose --env-file work/release.env -f compose.demo.yaml pull simulation
+name: nav2-regression-demo
+services:
+  simulation:
+    image: "${SIMULATION_IMAGE:?source release.env first}"
+    init: true
+    environment:
+      ROBOTICS_RUNTIME_MODE: "${ROBOTICS_RUNTIME_MODE:-released}"
+    command: ["bash", "-lc", "echo released simulation image present"]
