@@ -35,6 +35,7 @@ from pathlib import Path
 
 from nav2_turtlebot3_evaluator import NAMESPACE
 from robotics_acceptance_harness.evaluator_trust import CosignKeyWheelPolicy
+from robotics_runtime_contracts.writers import write_document
 
 DEMO = Path(__file__).resolve().parent
 EXAMPLE = DEMO.parent / "nav2-turtlebot3"
@@ -211,15 +212,19 @@ def _cosign_tool(profile_arg):
     return tool
 
 
-def admit_evaluator(wheel, admission_dir, tool):
-    """Cosign key-only admission: real wheel/receipt digests, ephemeral key."""
+def admit_evaluator(wheel, admission_dir, tool, *, publisher_key=None, public_key=None):
+    """Admit the wheel with an explicit publisher, or a smoke-test-only key."""
     if admission_dir.exists():
+        if publisher_key is not None:
+            raise ValueError("operator directory must be new")
         shutil.rmtree(admission_dir)
     admission_dir.mkdir(parents=True, exist_ok=True)
     env = {
         "HOME": str(admission_dir),
         "XDG_CONFIG_HOME": str(admission_dir / "config"),
-        "COSIGN_PASSWORD": "",
+        "COSIGN_PASSWORD": os.environ.get("COSIGN_PASSWORD", "")
+        if publisher_key
+        else "",
         "LC_ALL": "C.UTF-8",
         "PATH": os.environ.get("PATH", ""),
     }
@@ -243,7 +248,12 @@ def admit_evaluator(wheel, admission_dir, tool):
 
     cosign("signing-config", "create", "--out", "signing.json")
     cosign("trusted-root", "create", "--out", "roots.json")
-    cosign("generate-key-pair", "--output-key-prefix", "publisher")
+    if publisher_key is None:
+        cosign("generate-key-pair", "--output-key-prefix", "publisher")
+        signing_key = "publisher.key"
+    else:
+        signing_key = str(publisher_key.resolve())
+        shutil.copyfile(public_key, admission_dir / "publisher.pub")
     predicate = _dump(
         admission_dir / "predicate.json",
         {
@@ -255,7 +265,7 @@ def admit_evaluator(wheel, admission_dir, tool):
         "attest-blob",
         "--yes",
         "--key",
-        "publisher.key",
+        signing_key,
         "--signing-config",
         "signing.json",
         "--trusted-root",
@@ -268,7 +278,8 @@ def admit_evaluator(wheel, admission_dir, tool):
         str(bundle),
         str(wheel),
     )
-    (admission_dir / "publisher.key").unlink()
+    if publisher_key is None:
+        (admission_dir / "publisher.key").unlink()
     key = admission_dir / "publisher.pub"
     policy = CosignKeyWheelPolicy(
         _sha256(wheel), PREDICATE_TYPE, _sha256(key), "key_only_no_tlog"
@@ -481,6 +492,18 @@ def assess_case(
     manifest = PREPARE.prepare(
         profile_path, requirements, prepared, run_id=RUN_IDS[label]
     )
+    # This is a reconstructed recorded run; its logical context precedes the capture.
+    runtime_path = prepared / "runtime.json"
+    runtime = json.loads(runtime_path.read_bytes())
+    runtime["generated_at"] = _recording_times(report)[0]
+    write_document(runtime, runtime_path)
+    manifest["runtime"] = _reference(runtime_path)
+    run_path = prepared / "run.json"
+    run = json.loads(run_path.read_bytes())
+    run["created_at"] = _recording_times(report)[0]
+    write_document(run, run_path)
+    manifest["run_context"] = _reference(run_path)
+    _dump(prepared / "pre-execution-inputs.json", manifest)
     _validate_cli(prepared)
     capture, cap_report, workload, original_run_id, cdr_raw = _capture(
         prepared,
@@ -757,6 +780,7 @@ def main(argv=None):
     parser.add_argument("--report", type=Path, default=DEMO / "work" / "report.txt")
     parser.add_argument("--cosign-profile", type=Path, default=None)
     parser.add_argument("--wheel", type=Path, default=None)
+    parser.add_argument("--operator-profile", type=Path, default=None)
     parser.add_argument("--sensitivity-tolerance", type=float, default=0.10)
     args = parser.parse_args(argv)
     args.work_dir.mkdir(parents=True, exist_ok=True)
@@ -764,10 +788,23 @@ def main(argv=None):
     wheel = args.wheel or next(
         (DEMO / "dist").glob("nav2_turtlebot3_evaluator-*-py3-none-any.whl")
     )
-    tool = _cosign_tool(args.cosign_profile)
-    binding, qualification, profile = admit_evaluator(
-        wheel, args.work_dir / "admission", tool
-    )
+    if args.operator_profile:
+        profile = args.operator_profile.resolve(strict=True)
+        if profile.is_relative_to(args.work_dir.resolve()):
+            raise ValueError(
+                "operator profile must be outside the evidence work directory"
+            )
+        values = json.loads(profile.read_bytes())
+        tool = values["verifier"]
+        qualification = args.work_dir / "admission" / "qualification"
+        if qualification.exists():
+            shutil.rmtree(qualification)
+        binding = QUALIFY.qualify(profile, qualification, installed=True)
+    else:
+        tool = _cosign_tool(args.cosign_profile)
+        binding, qualification, profile = admit_evaluator(
+            wheel, args.work_dir / "admission", tool
+        )
 
     cases = {}
     cases["baseline"] = assess_case(
