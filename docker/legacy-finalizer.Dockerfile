@@ -16,7 +16,7 @@ COPY host/workers/legacy-finalization /opt/robotics/finalizer/workers
 ENV PATH="/opt/contracts/bin:/usr/local/bin:/usr/bin:/bin" \
     HOME=/tmp/finalizer
 RUN printf '%s  %s\n' c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 /usr/share/licenses/cosign/LICENSE | sha256sum --check \
-    && cosign version --json > /usr/share/robotics-runtime/finalizer-cosign-version.json \
+    && cosign version --json | tee /usr/share/robotics-runtime/finalizer-cosign-version.json \
     && jq -e '.gitVersion == "v3.1.3+dirty" and .gitCommit == "11926fa5bbbbde47e88fc006b625a17769b743b2"' /usr/share/robotics-runtime/finalizer-cosign-version.json \
     && /opt/contracts/bin/python -c 'import json;from importlib.metadata import version;lock=json.load(open("/usr/share/robotics-runtime/foundation-lock.json"));assert all(version(p["distribution"])==p["version"] for p in lock["packages"].values())' \
     && chmod -R a-w /opt/robotics/finalizer \
