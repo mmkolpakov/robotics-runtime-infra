@@ -1,74 +1,74 @@
 #!/usr/bin/env bash
-# Live reproduction path - separate from the offline verdict demo (run-demo.sh).
-#
-# Pulls the released rc2 simulation image in released mode (digest-pinned, no
-# snapshot mirror) and launches the admitted Nav2 consumer composition. The
-# offline verdict demo does not use this image; live execution does.
-#
-# The headline live A/B pair - two fresh Nav2 recordings under one frozen
-# contract with a real goal-checker configuration change - is the gated next
-# step and is NOT produced here. This command reproduces the live environment
-# and runs the consumer's live composition; see ../nav2-turtlebot3/README.md for
-# the admitted native launch and recording recipe.
-#
-# Usage: ./run-live.sh [--pull-only]
+# Capture one admitted Nav2 attempt through the existing consumer owner.
 set -euo pipefail
 
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_TAG="${NAV2_DEMO_RELEASE_TAG:-v0.11.0-rc2}"
-REPO="${NAV2_DEMO_REPO:-mmkolpakov/robotics-runtime-infra}"
-WORK="$DEMO_DIR/work"
-RELEASE_ENV="$WORK/release.env"
+EXAMPLE_DIR="$(cd "$DEMO_DIR/../nav2-turtlebot3" && pwd)"
+IMAGE=""
+REQUIREMENTS=""
+PYTHON="$EXAMPLE_DIR/.venv/bin/python"
+OUTPUT=""
+CASE=success
 PULL_ONLY=0
-[ "${1:-}" = "--pull-only" ] && PULL_ONLY=1
 
-log() { printf '\n[live] %s\n' "$*"; }
-mkdir -p "$WORK"
+usage() {
+  cat <<'USAGE'
+Usage: run-live.sh --image REFERENCE --requirements FILE --output DIRECTORY
+                   [--python EXECUTABLE] [--case CASE]
+       run-live.sh --pull-only --image REPOSITORY@sha256:DIGEST
 
-log "Fetching release.env for $RELEASE_TAG (released mode)"
-if command -v gh >/dev/null 2>&1; then
-  gh release download "$RELEASE_TAG" --repo "$REPO" --pattern release.env \
-    --dir "$WORK" --clobber
-else
-  curl -fsSL -o "$RELEASE_ENV" \
-    "https://github.com/$REPO/releases/download/$RELEASE_TAG/release.env"
-fi
-if ! grep -q '^ROBOTICS_RUNTIME_MODE=released$' "$RELEASE_ENV"; then
-  echo "release.env is not in released mode" >&2
-  exit 1
-fi
-set -a
-# shellcheck disable=SC1090,SC1091
-. "$RELEASE_ENV"
-set +a
-log "Released mode: ${ROBOTICS_RUNTIME_MODE} (${ROBOTICS_RELEASE_SOURCE_REF})"
+Capture one fresh attempt with an already admitted consumer image and inputs.
+REFERENCE is an immutable repository digest or a local sha256 image ID.
+FILE, DIRECTORY and EXECUTABLE must be absolute paths. DIRECTORY must be new.
+CASE is success, cancel, timeout or server-failure (default: success).
+The Python default is ../nav2-turtlebot3/.venv/bin/python.
 
-engine=""
-if command -v podman >/dev/null 2>&1; then engine=podman
-elif command -v docker >/dev/null 2>&1; then engine=docker; fi
-if [ -z "$engine" ]; then
-  echo "no container engine (podman/docker) found; live reproduction requires one" >&2
-  exit 1
-fi
+The existing native owner performs image/input checks, capture and cleanup.
+Its evaluation-inputs.json is input to the separate public assessment command.
+This entry point does not qualify an image or run the recorded five-case demo.
+--pull-only downloads the explicitly selected image without starting an attempt.
+USAGE
+}
 
-compose=""
-if command -v docker-compose >/dev/null 2>&1; then compose="docker-compose"
-elif command -v podman-compose >/dev/null 2>&1; then compose="podman-compose"
-elif "$engine" compose version >/dev/null 2>&1; then compose="$engine compose"; fi
+refuse() { printf '%s\n' "$*" >&2; exit 2; }
 
-log "Pulling released simulation image: $SIMULATION_IMAGE"
-if [ -n "$compose" ] && [ -f "$DEMO_DIR/compose.demo.yaml" ]; then
-  # shellcheck disable=SC2086
-  $compose --env-file "$RELEASE_ENV" -f "$DEMO_DIR/compose.demo.yaml" pull simulation
-else
-  "$engine" pull "$SIMULATION_IMAGE"
-fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --pull-only) PULL_ONLY=1; shift ;;
+    --image|--requirements|--python|--output|--case)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || refuse "missing value for $1"
+      case "$1" in
+        --image) IMAGE="$2" ;;
+        --requirements) REQUIREMENTS="$2" ;;
+        --python) PYTHON="$2" ;;
+        --output) OUTPUT="$2" ;;
+        --case) CASE="$2" ;;
+      esac
+      shift 2 ;;
+    *) refuse "unknown option: $1" ;;
+  esac
+done
+
+[[ "$IMAGE" =~ ^([^[:space:]@]+@)?sha256:[a-f0-9]{64}$ ]] ||
+  refuse "--image requires an immutable repository digest or local sha256 ID"
+case "$CASE" in
+  success|cancel|timeout|server-failure) ;;
+  *) refuse "unsupported --case: $CASE" ;;
+esac
 
 if [ "$PULL_ONLY" -eq 1 ]; then
-  log "Image pulled (--pull-only). Live Nav2 launch: see ../nav2-turtlebot3/README.md"
-  exit 0
+  [[ "$IMAGE" == *@sha256:* ]] || refuse "--pull-only requires a repository digest"
+  exec podman pull -- "$IMAGE"
 fi
 
-log "Image present. The admitted Nav2 live composition and recording recipe are"
-log "in ../nav2-turtlebot3/README.md (native launch requires execution admission)."
-log "The offline verdict report is produced by ./run-demo.sh, not by this image."
+[[ "$REQUIREMENTS" == /* ]] && [ -f "$REQUIREMENTS" ] && [ -r "$REQUIREMENTS" ] ||
+  refuse "--requirements must name an existing readable absolute file"
+[[ "$PYTHON" == /* ]] && [ -x "$PYTHON" ] ||
+  refuse "--python must name the installed SDK environment's absolute executable"
+[[ "$OUTPUT" == /* ]] || refuse "--output must be an absolute path"
+[ ! -e "$OUTPUT" ] && [ ! -L "$OUTPUT" ] || refuse "--output must be a new directory"
+mkdir -p -- "$(dirname "$OUTPUT")"
+
+exec node "$EXAMPLE_DIR/native-check.mjs" \
+  "$OUTPUT" "$EXAMPLE_DIR" "$IMAGE" "$CASE" "$REQUIREMENTS" "$PYTHON"
