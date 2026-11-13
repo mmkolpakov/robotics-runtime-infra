@@ -25,8 +25,8 @@ fields, the measured value against its limit, the decisive assertion, the
 recording timestamps and frames, evidence validity, and the
 required/covered/unevaluated scope. Canonical `acceptance-result.v2` JSON and
 JUnit are written by the public CLI for every evaluated case; the evidence-refusal
-control intentionally has no result. A synthetic `qualification-verdict` JUnit gate fails for any non-passed verdict so a CI gate
-cannot go green on action success alone.
+control intentionally has no result. A synthetic `qualification-verdict` JUnit gate fails for
+any non-passed verdict so a CI gate cannot go green on action success alone.
 
 ## Export with your own key
 
