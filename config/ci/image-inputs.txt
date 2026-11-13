@@ -38,6 +38,7 @@ docker/rosdeps/edge/package.xml
 docker/rosdeps/sensor/package.xml
 docker/runtime/emit-runtime-manifest
 examples/minimal-consumer/*
+examples/neutral-robot/*
 foundation.repos
 host/.tools/host-asset/*
 host/source-lock.json

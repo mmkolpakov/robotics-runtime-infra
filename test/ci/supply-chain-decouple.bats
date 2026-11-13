@@ -17,7 +17,7 @@ setup() {
   for pattern in .dockerignore .trivyignore Dockerfile docker-bake.hcl 'docker/*' \
     'security/*' trivy.yaml config/foundation-lock.json \
     config/ros-cohort-source.lock.json foundation.repos host/source-lock.json \
-    'examples/minimal-consumer/*'; do
+    'examples/minimal-consumer/*' 'examples/neutral-robot/*'; do
     if ! grep -Fxq "${pattern}" <<<"${output}"; then
       printf 'missing fixed input: %s\n' "${pattern}"
     fi
@@ -70,6 +70,7 @@ host/.tools/host-asset/core.tgz
 scripts/ci/foundation/build-workspace-wheels.py
 test/provider-conformance/test_provider.py
 examples/minimal-consumer/compose.yaml
+examples/neutral-robot/verify-foundation.sh
 PATHS
 }
 
