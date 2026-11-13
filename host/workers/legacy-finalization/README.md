@@ -68,14 +68,11 @@ retained separately; only the pinned Dockerode decoder produces the declared tex
 ephemeral key fixture is not a publisher identity
 or live acceptance claim.
 
-Build the worker with the admitted immutable coordinator image containing contracts
-0.19.0 and harness 0.20.0. `docker/legacy-finalizer.Dockerfile` checks both versions
-against the foundation lock.
-Cosign uses the existing publisher-pinned image digest and checks its actual
-`v3.1.3+dirty` metadata/commit; it does not claim a pristine upstream build.
-Supply the official v3.1.3 source checkout at commit
-`11926fa5bbbbde47e88fc006b625a17769b743b2` as the `cosign-license` context.
-The Apache license SHA is checked separately.
+Build the worker with the admitted immutable coordinator image. The expected
+contracts and harness versions are defined in [`config/foundation-lock.json`](../../../config/foundation-lock.json)
+and checked by `docker/legacy-finalizer.Dockerfile`. Cosign uses the publisher image
+and version pinned in `docker-bake.hcl`; the Dockerfile checks the binary metadata
+and the Apache license digest.
 
 `host/tools/qualify-finalization-workers.py` tests exact byte retention and failures,
 the finite inventory, and real public aggregation/package/sign/portable verification

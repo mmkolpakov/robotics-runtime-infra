@@ -170,6 +170,8 @@ docker buildx build --builder "${builder}" --platform linux/amd64 --load --file 
   --build-context "cosign-license=${work}/cosign-license" --build-arg "COORDINATOR_IMAGE=${simulation}" \
   --tag "${finalizer_tag}" .
 finalizer="$(share_image "${finalizer_tag}" finalizer)"
+ROBOTICS_CONTRACTS_CLI="${root}/dependencies/robotics-runtime/.venv/bin/robotics-contracts" \
+  bash test/qualification/real-cosign.sh --offline-consumer "${finalizer}"
 evidence_tag="${registry}/installed-ros/evidence:${scope}"
 docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/evidence-source.Dockerfile \
   --build-arg "EVIDENCE_BASE_IMAGE=${finalizer}" --tag "${evidence_tag}" .

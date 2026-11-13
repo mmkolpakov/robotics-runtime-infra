@@ -18,6 +18,7 @@ usage: create-statement
   --evidence-index DOMAIN=PATH [--evidence-index DOMAIN=PATH ...]
   --recording-summary LABEL=PATH [--recording-summary LABEL=PATH ...]
   [--extension-schema URI=PATH ...]
+  [--schema-version qualification-bundle.v2 --comparison-rule exact_assertion_outcome]
   [--evidence KIND:LABEL=PATH ...]
 
 Alternatively supply the complete inventory with repeated --artifact KIND:SUBJECT=PATH.

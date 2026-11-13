@@ -686,3 +686,25 @@ EOF
   [ "$status" -ne 0 ]
   jq -e '.execution.data_source == "simulator"' "$TEST_ROOT/playback-explain.json"
 }
+
+@test "qualification profiles refuse unsupported version and comparison combinations" {
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    --schema-version qualification-bundle.v2 --output "$TEST_ROOT/statement.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"unsupported qualification version or comparison rule"* ]]
+  run "$REPOSITORY_ROOT/scripts/qualification/create-statement" \
+    --schema-version qualification-bundle.v1 --comparison-rule exact_assertion_outcome \
+    --output "$TEST_ROOT/statement.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"unsupported qualification version or comparison rule"* ]]
+}
+
+@test "v2 refuses the v1 identity policy before reading the bundle" {
+  run "$REPOSITORY_ROOT/scripts/qualification/verify-bundle" \
+    --schema-version qualification-bundle.v2 --comparison-rule exact_assertion_outcome \
+    --bundle "$TEST_ROOT/artifacts/missing-bundle.json" \
+    --trusted-root "$TEST_ROOT/artifacts/trusted-root.json" \
+    --policy "$TEST_ROOT/artifacts/policy.json"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"qualification-bundle.v2 requires an explicit trusted key"* ]]
+}
