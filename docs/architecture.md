@@ -1,15 +1,17 @@
-# Architecture
+# Execution and deployment design
 
-This repository implements execution environments and simulator providers for
-[the runtime architecture](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture.md).
-The common Python packages validate documents and evaluate evidence; the Cordis
-host manages composition and owned resources. Product repositories supply
-application-specific behavior and assets.
+The [shared target architecture](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture.md)
+defines the platform boundaries. This document specifies worker environments,
+native integration and deployment ownership. Available commands and profile
+coverage are recorded in the [qualification reference](qualification-baseline.md)
+and [compatibility reference](compatibility.md).
 
 ## Execution and native APIs
 
-A provider is a Cordis plugin plus its bounded native worker, environment and
-qualification profile. Compose/Execa owns worker execution. Engine metadata is
+The existing local provider combines a Cordis plugin with a bounded native
+worker, environment and qualification profile. The external consumer uses the
+finite attempt and evidence boundaries; it does not need Cordis types.
+Compose/Execa owns local worker execution. Engine metadata is
 read from the same actual endpoint; missing required facts are not filled from
 Compose declarations.
 
@@ -84,106 +86,48 @@ Source and released runs are independent gates. An immutable Python pair, host
 asset and infra lock retain separate source identities; release qualification
 installs the published artifacts without rebuilding them from source.
 
-The provider line is under development. The retained released profile keeps its
-current [compatibility scope](compatibility.md); the open neutral-robot
-time/readiness failure remains open until a new complete run passes.
+The [qualification reference](qualification-baseline.md) identifies each retained
+release, workload, environment and independently consumed result. Source and
+release outcomes keep their original identities and scopes.
 
-## Product deployment ownership
+## Workflow deployment
 
-[Component responsibilities](component-responsibilities.md) records the existing
-language/tool boundaries and planned Ansible, Terraform and Kubernetes paths.
-[ADR 0009](decisions/0009-product-deployment-boundaries.md) keeps product deployment
-independent of a particular development machine and of private home infrastructure.
-Cloud configuration and execution remain unqualified until their own acceptance
-checks pass; application composition does not provide cluster scheduling.
+Dagu is the selected local campaign workbench. Its stock UI, history, scheduling
+and MCP interface invoke reviewed finite commands through literal argv execution.
+The CLI remains usable without the workbench. The operator selects a Community
+or team access profile appropriate to the deployment.
 
-## Kubernetes and AWS responsibilities
+Argo Workflows is the selected Kubernetes campaign system. Standard workflow
+and resource templates launch the admitted finite workload and own general DAG
+scheduling, fan-out, workflow status and permitted retries. The platform does
+not maintain a second general Kubernetes watcher or scheduler. A narrow
+execution adapter binds the admitted request to actual Job/Pod/PVC UIDs and
+retained evidence. A campaign selects one deployment profile; Dagu and Argo
+are not successive owners of one attempt.
 
-The cloud path separates infrastructure, workload packaging, native lifecycle
-and retained evidence. This is a responsibility map; it does not describe a
-qualified cloud execution. Terraform foundation source is implemented. Helm
-packaging has offline lint, render, schema and ownership checks. The native Kubernetes
-provider, durable recovery/export and actual EKS acceptance remain
-open.
+Terraform owns AWS networking, capacity, IAM, ECR, CSI and storage foundations.
+Helm owns product identity, retained per-run storage and workload packaging.
+Product Ansible roles configure explicitly enrolled VM and edge nodes.
+Workstation administration is outside product deployment.
 
-<!-- kubernetes-boundaries:start -->
-```mermaid
-flowchart TB
-    terraform["Terraform — source implemented"]
-    helm["Helm — source packaging / offline checks"]
+One attempt owner coordinates native readiness, measurement, capture, recorder
+drain, export and observed cleanup. Retained storage has a lifetime independent
+of Workflow garbage collection. Ordinary retries can reassess immutable inputs;
+a lost or ambiguous native effect does not authorize measurement replay.
+Stop requests and exit handlers do not prove producer quiescence. Recovery
+verifies the previous writer stopped and operates only on retained data and
+owned resource identities.
 
-    subgraph cloud["AWS / EKS — actual cloud qualification open"]
-        foundation["AWS foundation: VPC / EKS / CPU nodes / IAM / CSI"]
-        shared["Shared identity and storage: ServiceAccount / gp3 Retain"]
-        spool["Per-run retained PVC: RWOP / independent lifetime"]
-        subgraph attempt["Per-attempt finite Job / Pod — source packaging"]
-            host["Run host: one lifecycle owner"]
-            workers["Native SDK workers: profile-specific control / data"]
-        end
-        api["Kubernetes API: observed Job / Pod / PVC UIDs"]
-        evidence["Evidence S3: VersionId / SHA-256 / signed bytes"]
-    end
+Reuse a selected tool through supported configuration, then compose its stock
+CLI or native client. A small domain adapter supplies only remaining semantics.
+Prefer an upstream fix or contribution to a parallel general implementation.
+A limitation of one specialized action is not a reason to replace the tool when
+its stock execution boundary supports the workload.
 
-    provider["Native Kubernetes provider — implementation pending"]
-    recovery["Export and recovery — implementation pending"]
-    product["Product repositories: models / control / media"]
-
-    terraform --> foundation
-    terraform --> evidence
-    helm --> shared
-    helm --> spool
-    helm -->|finite Job| host
-    shared -.-> host
-    host -->|retained mount| spool
-    host -->|SDK lifecycle| workers
-    workers -->|retained bytes| spool
-    provider -->|observe / cancel by UID| api
-    foundation -.-> api
-    api -.-> host
-    recovery -->|sealed attempt only| spool
-    recovery -->|export / materialize exact versions| evidence
-    product -.-> workers
-```
-<!-- kubernetes-boundaries:end -->
-
-This native Mermaid block is the editable source for this responsibility map.
-The shared runtime C4 continues to show the current local source topology.
-
-Terraform owns VPC/EKS, bounded On-Demand CPU node capacity, ECR, IAM/Pod
-Identity, EBS CSI add-ons and encrypted/versioned S3. State and evidence use
-separate buckets; standard S3 backend locking belongs to Terraform state.
-The product namespace and ServiceAccount must match the Pod Identity
-association. See [AWS foundation](../terraform/README.md).
-
-Helm separates long-lived shared identity/StorageClass, one retained RWOP PVC
-per admitted run, and a finite Job per attempt. The retained PVC has no Job
-owner reference. Job TTL or attempt cleanup does not reclaim that PVC.
-The source Job template places one lifecycle host beside finite native SDK workers;
-read-only admitted inputs stay separate from retained results, and only IPC
-and scratch are ephemeral. This packaging does not run the existing
-Docker/Compose providers inside Kubernetes.
-
-The planned native Kubernetes provider uses the official
-`@kubernetes/client-node` API to observe actual
-Job/Pod/PVC identities and implement bounded cancellation and cleanup with
-UID checks. Labels locate resources; exact owner bindings govern effects.
-SDK readiness, simulation time, control and media remain native profile facts.
-Product models, control policy and media pipelines stay in their product
-repositories and selected SDKs; the common lifecycle does not translate them.
-No custom operator, scheduler, workflow engine, distributed state database
-or lock service is introduced.
-
-Cloud recovery must retain a durable sealed attempt journal on the PVC and
-establish
-that the previous writer has stopped before recovery. RWOP, a terminal API
-phase and Job parallelism do not provide effect fencing or exactly-once
-execution. Lost or ambiguous attempts remain incomplete. Export recovery
-starts no measurement workers and never replays physical actions. It verifies
-the original S3 VersionId, SHA-256, size and signatures, then materializes
-verified bytes in an isolated POSIX root for the existing harness.
-
-Offline Terraform/Helm checks are distinct from real EKS/IAM/CSI credential,
-storage, node-loss, drain/export and cleanup acceptance. Storage encryption,
-PVC retention and signature verification do not qualify a workload.
-Product Ansible targets enrolled product nodes. Workstation administration
-remains outside the product deployment boundary.
+[Component responsibilities](component-responsibilities.md) records the language
+and tool boundaries. [Deployment decision](decisions/0009-product-deployment-boundaries.md)
+records this ownership model. The shared
+[interaction guide](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/agent-integration.md)
+defines CLI, CI and MCP access; the
+[canonical diagrams](https://github.com/mmkolpakov/robotics-runtime/tree/main/docs/architecture)
+describe the same target.
