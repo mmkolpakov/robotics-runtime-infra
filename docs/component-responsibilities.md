@@ -20,9 +20,11 @@ providers and product deployment. Consumers own models, control and vision.
   services; Dockerode observes the selected Engine. Unix sockets, namespace
   mappings and host paths belong to this provider, not public document contracts.
 - **Simulation and control — native SDK workers/generated clients.** ROS, Webots
-  and Isaac use their upstream interfaces; MAVSDK uses official protobuf/gRPC.
-  SDF, WBT/PROTO and USD assets remain provider-specific. Common lifecycle APIs
-  do not translate physics, frames or flight-controller commands.
+  and Isaac use their upstream interfaces. The public host RC's MAVSDK adapter
+  uses official protobuf/gRPC; the PX4 native consumer's worker uses the C API
+  through official MAVSDK Python bindings. Native launch requires an admitted
+  SDK/image composition. SDF, WBT/PROTO and USD assets remain provider-specific.
+  Common lifecycle APIs do not translate physics, frames or flight-controller commands.
 - **Media — GStreamer, rosbag2/MCAP and native telemetry.** Frames stay on the
   native pipeline. The host owns lifetime and references; recording drain,
   original capture identity and playback remain distinct evidence.
