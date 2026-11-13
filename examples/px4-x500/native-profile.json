@@ -1,0 +1,49 @@
+{
+  "profile_id": "org.example.px4-x500",
+  "executor": {
+    "implementation": "px4-x500-controller",
+    "version": "0.2.0"
+  },
+  "clock": {
+    "kind": "external",
+    "source_id": "controller-utc-ms"
+  },
+  "channels": [
+    {
+      "name": "px4-source-ulog",
+      "original_type": {
+        "name": "PX4 ULog",
+        "type_support": {
+          "implementation": "PX4",
+          "version": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4"
+        }
+      },
+      "backend": "PX4 logger",
+      "wire_envelope": "ULog",
+      "native_encoding": "ULog",
+      "recorder": {
+        "implementation": "PX4 logger",
+        "version": "1.17.0",
+        "transformation": "closed original ULog bytes; sampled valid-home estimated altitude in integer millimetres"
+      }
+    }
+  ],
+  "observations": {
+    "command": {
+      "kind": "command_acceptance",
+      "requirement": "required"
+    },
+    "terminal": {
+      "kind": "native_final_state",
+      "requirement": "required"
+    },
+    "postcondition": {
+      "kind": "postcondition",
+      "requirement": "required"
+    },
+    "cleanup": {
+      "kind": "shutdown",
+      "requirement": "required"
+    }
+  }
+}

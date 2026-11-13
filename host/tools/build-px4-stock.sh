@@ -10,7 +10,7 @@ if [[ ! ${PX4_DEPS_IMAGE} =~ (^sha256:|@sha256:)[a-f0-9]{64}$ ]]; then
 fi
 mkdir -p "${project_root}/host/.tools"
 if [[ ! -d ${source_root}/.git ]]; then
-  git -c http.version=HTTP/1.1 clone --depth=1 --branch=v1.17.0 --filter=blob:none --no-checkout \
+  git -c http.version=HTTP/1.1 clone --depth=1 --branch=v1.17.0 --filter=blob:none --sparse \
     https://github.com/PX4/PX4-Autopilot.git "${source_root}"
 fi
 test "$(git -C "${source_root}" rev-parse HEAD)" = d6f12ad1c4f70ad3230afd7d86e971421e02fef4

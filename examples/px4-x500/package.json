@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "flight": "node src/run.mjs"
+    "flight": "node src/run.mjs",
+    "flight-native": "node src/run-native.mjs"
   },
   "dependencies": {
     "@robotics-runtime/host": "https://github.com/mmkolpakov/robotics-runtime/releases/download/host-v0.1.0-rc.0/robotics-runtime-host-0.1.0-rc.0.tgz"

@@ -9,6 +9,31 @@
   "worker_manifest_sha256": "39c184c711d698d8c434c608946e0713dd22ea9c60361557ad87d348ffb783fa",
   "worker_image_id": "sha256:8d2c29dea9f47360bca25a889d810dc3474a416934a8a538826c1ead9536cfcb",
   "host_tgz_sha256": "51c919953f6b761e20c89eee22e7dfe2c7aacb221329b61a99a52cf13ccf1e57",
-  "public_contracts": "0.19.0",
-  "public_harness": "0.20.1"
+  "native_launch": "unsupported by the source document profile; admitted composition required",
+  "sdk_cohort": {
+    "repository": "https://github.com/mmkolpakov/robotics-runtime",
+    "releases": {
+      "contracts": {
+        "tag": "contracts-v0.22.0",
+        "pypi": "https://pypi.org/project/robotics-runtime-contracts/0.22.0/",
+        "revision": "4332689e4caeefc862c68d69115ee3ecbd52f37c"
+      },
+      "harness": {
+        "tag": "harness-v0.23.1",
+        "pypi": "https://pypi.org/project/robotics-acceptance-harness/0.23.1/",
+        "revision": "cac02862b691fc9fe87333683f7e2d9bba6c13c9"
+      }
+    },
+    "wheels": {
+      "robotics_runtime_contracts-0.22.0-py3-none-any.whl": {
+        "sha256": "214cfffb554673cf27306415a2f6e53a6559dc8c05f3e1f9b582a050a0baf856",
+        "size_bytes": 155526
+      },
+      "robotics_acceptance_harness-0.23.1-py3-none-any.whl": {
+        "sha256": "3a1ddf0feb64ca220b62c2bffb0aa5f2ad573f2ef516fe43328a9c61bbb850d9",
+        "size_bytes": 150027
+      }
+    },
+    "scope": "published SDK document/consumer controls; native composition admission is separate"
+  }
 }

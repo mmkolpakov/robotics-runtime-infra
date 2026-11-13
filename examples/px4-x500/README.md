@@ -1,63 +1,162 @@
-# External stock x500 flight consumer
+# Stock X500 consumer
 
-This source example uses the published host RC0 `Jobs` and generated `Mavsdk`
-clients against an already owned stock PX4 1.17/Gazebo Jetty x500 producer.
-It imports no private PX4 provider or source worker helper. The immutable
-worker in `input-pins.json` is a local source image, not a published OCI release.
+This example keeps flight policy outside the runtime core. It uses public host
+ownership interfaces, native MAVSDK 4.1 control, stock PX4 listener/logger commands,
+and a separate ULog evaluator. Public contracts describe the inputs and evidence;
+the acceptance CLI produces JSON and JUnit.
 
-Install with `npm ci --ignore-scripts`. `npm test` runs portable consumer policy
-controls; they do not qualify flight, hardware or producer cleanup.
+## Control and evidence
 
-The trusted operator supplies an absolute `operator.json` with
-`curlExecutable` (`/usr/bin/curl`), the selected absolute Unix `engineSocket`
-and producer-observed `engineApiVersion` (API 1.24–1.53), exact `px4Id` and
-`serverId`, `ownerId`, the actual
-`rr-px4-<24 hex>` Compose project, an unprivileged loopback `grpcPort` and the
-retained named `runVolume`.
-The producer must use the stock Compose profile, source image and labels.
-The operator JSON is captured from an unchanged regular file bounded to 4 MiB;
-symlinks, FIFOs and files changed during capture are refused.
-Fixed read-only GET routes use the producer-selected Engine API through finite
-public `Jobs`; curl config, redirects and arbitrary request URLs are not used.
-Inspection verifies actual running IDs, image/digest, issued labels,
-MAVSDK namespace parent, stock simulation command, full image environment with
-only the issued PX4 partition override and checked native identity fields,
-named retained volume, sized tmpfs and loopback port before any flight command.
-Final reinspection refuses a
-mid-case actor restart. The JSON is local operator configuration, not a remote
-authorization mechanism.
+The native path uses one owned PX4/Gazebo container. The worker calls synchronous
+MAVSDK Action methods once per application intent; the SDK owns its protocol
+retries. Cached Telemetry supplies readiness and control hints. It does not supply
+the altitude measurements used by the evaluator.
 
-Run one fresh producer per case, starting grounded and unarmed:
+Before dispatch, the worker checks valid local/global/home position health and
+reads stock listener snapshots. Their source timestamps must advance within the
+same PX4 process instance. Original listener output is retained and independently
+parsed by the evaluator using the same fixed-version grammar.
+
+The worker persists each action intent before calling the SDK. Application
+invocation IDs identify those intents, not PX4 transactions. The parent retains
+the original container/process identities and Engine exec records. A closed
+journal alone does not establish successful SDK teardown or process settlement.
+
+After verified worker settlement, the owner stops the logger while simulation
+time advances, verifies closure, pauses Gazebo and exports the original ULog.
+Only then may it remove owned resources. Stream cancellation, a timeout, an SDK
+error or a missing closure record cannot authorize cleanup. The remote worker
+uses stock GNU `timeout`; it is not a general guarantee about detached daemons.
+
+Keep these directories with the completed archive:
+
+- `inputs/`: immutable configuration, scenario, runtime and issued run.
+- `parent-facts/`: original owner, process, logger and exec observations.
+- `source-records/`: bounded frozen journal JSON written during completion.
+- `capture/`: the worker's journal and closed controller manifest.
+- `capture/retained-native-logs/`: original bytes from the existing opaque exporter.
+
+The parent writes a separate `native-evidence.json` after journal closure.
+Completion registers the original native artifact URIs, sizes and hashes; it
+does not relocate them or append to the worker's journal. Missing original
+records remain missing. Artifact URIs bind their locations; copying the archive
+does not rebind them.
+
+## Cases and measurement
+
+Method 0.2 uses stock pyulog and NumPy to evaluate sampled PX4 estimates:
+
+- `land`: start grounded and unarmed, observe home-relative estimated
+  altitude of at least 1.2 m after received takeoff and before received land, then observe
+  grounded and disarmed state after land.
+- `unarmed-refusal`: dispatch neither arm nor takeoff and capture four distinct
+  estimator samples within 0.2 m of the initial relative altitude. This checks a
+  caller precondition, not firmware command denial or continuous absence of motion.
+- `application-deadline`: observe ascent, record a two-second application interval
+  and independently request landing. This does not simulate a native deadlock.
+
+ULog received commands and ACKs bind the admitted sender/target tuple. Attributable
+SDK retries and late ACKs are allowed; ambiguous ownership or application phases
+remain incomplete. Estimated altitude follows PX4's float32 subtraction,
+float32 millimetre conversion and integer truncation. Invalid home, an in-phase
+home/reset change, stale samples, corruption, dropouts or insufficient coverage
+prevent an unsupported positive result.
+
+The method requests a 64 MiB raw ULog budget. The document-control lock uses
+harness 0.23.1, which honors that explicit raw-evidence budget: the original
+ULog is read with `read_local(max_raw_evidence_bytes=ULOG_LIMIT)`. The 8 MiB
+capture ceiling applies only to structured documents. That lock is not a
+native install set. Native SDK/image composition admission is separate.
+`npm run flight-native` unconditionally refuses before native imports or
+Engine effects; it cannot launch a native attempt.
+
+These assertions concern the selected simulated X500 estimates. They do not
+establish hardware behavior, camera/media performance, model-load provenance,
+cross-clock synchronization or physical safety. JSON and JUnit expose the same
+assertions. Missing facts yield `incomplete`; observed unmet conditions yield
+`failed`; malformed input can yield `error`. SDK timeout alone is not firmware
+rejection.
+
+## Install the document controls
+
+Use Python 3.12 and uv 0.11.28. Node controls use Node 24.21.0.
+[input-pins.json](input-pins.json) fixes contracts 0.22.0 and harness 0.23.1;
+[requirements.lock](requirements.lock) fixes their dependency closure and the
+method's pyulog/NumPy dependencies. From this directory:
 
 ```sh
-timeout --signal=TERM --kill-after=10s 240s node src/run.mjs \
-  land /absolute/operator.json /absolute/new-case-output
+uv venv --python 3.12 .venv
+.venv/bin/python -I -m ensurepip --upgrade
+.venv/bin/python -I -m pip download --index-url https://pypi.org/simple \
+  --require-hashes --only-binary=:all: --no-deps --dest sdk-wheels -r requirements.lock
+python3 check-sdk-wheels.py sdk-wheels
+.venv/bin/python -I -m pip install --no-index --find-links=sdk-wheels \
+  --require-hashes --only-binary=:all: -r requirements.lock
+.venv/bin/python -I -m pip check
+uv build --wheel --out-dir dist evaluator
 ```
 
-Other cases are `unarmed-refusal` and `application-deadline`. The latter reaches
-real takeoff, then a two-second application deadline requests `Action.land`;
-it does not prove a native deadlock timeout. Every successful flight settlement
-requires actual grounded and disarmed telemetry; command success alone is
-insufficient. Both paths use the same takeoff guard, which checks actual armed
-telemetry before dispatch. The positive path waits for armed telemetry after ARM.
-The unarmed case receives that guard's caller precondition refusal: it dispatches
-no takeoff or arm RPC and observes grounded/disarmed telemetry and no ascent.
-It does not claim firmware command denial; a takeoff mode ACK is not evidence
-of ascent. No force-arm or kill is used.
+Authenticate the method wheel before installing it or importing the producer.
+The acceptance CLI requires an operator trust policy outside the evidence archive.
+A receipt or verification JSON alone does not establish publisher authentication.
+See the SDK's [operator trust profile](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.23.1/packages/harness/docs/evaluator-trust.md).
 
-Unary action cancellation waits for the native callback before independent
-landing. SDK child disposal does not prove remote telemetry-stream quiescence.
-The script owns only its published SDK child handles and finite native read
-jobs. It does not start, remove, pause or claim cleanup of the supplied producer.
-The stock producer owner must close measurement, drain the PX4 logger while
-simulation advances, retain ULog/native observations, then clean up and verify
-actual actors/listener. On controller error retain diagnostics and settle
-the flight before that cleanup. The external `timeout` is the process bound;
-missing/partial evidence never becomes a successful producer lifecycle.
+[test_admission_fixture.py](test_admission_fixture.py) provides a disposable local
+publisher for software controls. Supply an approved Cosign tool profile containing
+`executable`, `executable_sha256` and its exact vendor `version`:
 
-Output JSON retains original action responses and telemetry observations.
-`controller-result` is not a C19 conformance document, H20 evaluator result,
-JUnit verdict, measured cross-clock synchronization or hardware safety claim.
-Public C19.0/H20.1 integration must use a separately qualified evaluator wheel,
-verified receipt and real retained producer evidence. JSON/JUnit portable
-closure and producer crash/hang retention are outside this controller's scope.
+```sh
+.venv/bin/python -I test_admission_fixture.py \
+  --wheel dist/px4_x500_evaluator-0.2.0-py3-none-any.whl \
+  --tool-profile /absolute/approved-cosign-tool.json --output results/authenticated
+.venv/bin/python -I -m pip install --no-index --no-deps \
+  results/authenticated/px4_x500_evaluator-0.2.0-py3-none-any.whl
+.venv/bin/python -I -m pip check
+PX4_SDK_WHEELS="$PWD/sdk-wheels" \
+  PX4_EVALUATOR_BINDING="$PWD/results/authenticated/binding.json" \
+  PX4_ADMISSION="$PWD/results/authenticated" \
+  .venv/bin/python -I -m unittest discover -s . -p 'test_*.py'
+npm ci --ignore-scripts --no-fund
+npm test
+```
+
+The fixture's random key is not a production publisher policy. These controls
+exercise software boundaries without importing MAVSDK or launching a simulator.
+
+## Prepare, complete and evaluate
+
+Prepare inputs before execution with the authenticated method binding:
+
+```sh
+.venv/bin/python producer.py prepare --profile native-profile.json --case land \
+  --evaluator-binding /absolute/admitted-binding.json --output case/inputs
+```
+
+The issued configuration and run identity remain immutable. After the owner has
+retained original capture and custody files, complete the archive:
+
+```sh
+.venv/bin/python producer.py complete --prepared case/inputs --capture case/capture \
+  > case/evaluate-inputs.json
+```
+
+Completion writes `observation.json` and `evidence-index.json`. Its output supplies
+the exact run/domain and receiver-window arguments for the public evaluator:
+
+```sh
+.venv/bin/robotics-acceptance evaluate \
+  --scenario case/inputs/scenario.json --runtime case/inputs/runtime.json \
+  --run-context case/inputs/run.json --run-id RUN_FROM_INPUTS --domain-id px4 \
+  --evidence-index case/evidence-index.json \
+  --window-start-ns CAPTURED_START_NS --window-end-ns CAPTURED_END_NS \
+  --evaluator-trust-profile /absolute/operator-profile.json \
+  --evaluator-receipt /absolute/receipt.json \
+  --evaluator-verification /absolute/verification.json \
+  --evaluator-receipt-dependency /absolute/statement.json \
+  --evaluator-receipt-dependency /absolute/publisher.json \
+  --evaluator-receipt-dependency /absolute/verified-report.txt --output case/assessment
+```
+
+Exit codes are 0 for `passed`, 1 for a completed non-passing assessment and 2 for
+input/admission refusal. A late cleanup observation cannot turn missing native
+measurements into a pass.
