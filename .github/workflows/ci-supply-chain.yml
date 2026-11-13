@@ -8,6 +8,10 @@ on:
         description: Run the full build and scan regardless of changed paths.
         type: boolean
         default: false
+      native_ust_trace:
+        description: Capture diagnostic ROS userspace traces
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request:
@@ -16,6 +20,10 @@ on:
     inputs:
       force:
         description: Run the full build and scan regardless of changed paths.
+        type: boolean
+        default: false
+      native_ust_trace:
+        description: Capture diagnostic ROS userspace traces
         type: boolean
         default: false
 
