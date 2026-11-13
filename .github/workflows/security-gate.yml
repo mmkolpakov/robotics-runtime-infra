@@ -40,12 +40,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          tag="$(gh release view --json tagName --jq .tagName)"
+          tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
           [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]
+          printf 'Selected published release: %s\n' "${tag}"
+          printf 'tag=%s\n' "${tag}" >>"${GITHUB_OUTPUT}"
           mkdir -p published-release/digests
           gh release download "${tag}" --pattern release.env --dir published-release
           gh release download "${tag}" --pattern '*.txt' --dir published-release/digests
-          printf 'tag=%s\n' "${tag}" >>"${GITHUB_OUTPUT}"
       - name: Scan published digests with the reviewed VEX policy
         run: >-
           scripts/ci/security/scan-published-release.sh
