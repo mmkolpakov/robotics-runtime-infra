@@ -55,8 +55,13 @@ setup() {
 }
 
 @test "release workflow gates untagged candidates before promotion" {
-  run grep -F 'uses: ./.github/workflows/ci.yml' \
+  run grep -F 'uses: ./.github/workflows/ci-domain.yml' \
     .github/workflows/release-image.yml
+  [ "${status}" -eq 0 ]
+  run grep -F 'uses: ./.github/workflows/ci-supply-chain.yml' \
+    .github/workflows/release-image.yml
+  [ "${status}" -eq 0 ]
+  run grep -F 'force: true' .github/workflows/release-image.yml
   [ "${status}" -eq 0 ]
   run grep -F 'uses: ./.github/workflows/foundation-integration.yml' \
     .github/workflows/release-image.yml
@@ -127,7 +132,7 @@ EOF
 }
 
 @test "portable ARM64 CI images build on a native runner" {
-  job="$(sed -n '/^  portable-arm64:/,/^  reproducibility:/p' .github/workflows/ci.yml)"
+  job="$(sed -n '/^  portable-arm64:/,/^  reproducibility:/p' .github/workflows/ci-supply-chain.yml)"
   grep -Fx '    runs-on: ubuntu-24.04-arm' <<<"${job}"
   grep -F 'test "$(uname -m)" = aarch64' <<<"${job}"
   run grep -F 'qemu:' <<<"${job}"
