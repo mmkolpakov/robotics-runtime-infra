@@ -1,12 +1,22 @@
 # Runtime Image Lock
 
-Source mode builds a checkout. Released mode selects immutable OCI images from
-a canonical lock. Never mix those identities within one run. The compiled host
-has its own asset identity and provider-specific execution profile.
+Select the source, package and image identities independently. A source checkout
+does not determine which packages or images have been published.
+Within one run, use either source-mode local images or the images in one
+unchanged `release.env`; never mix them.
 
-[Qualification](qualification-baseline.md) records the accepted release scopes.
-Source validation, release authenticity and native consumer acceptance remain
-separate checks.
+| Input | Authority | What it selects |
+| --- | --- | --- |
+| Source foundation | [foundation lock](../config/foundation-lock.json) and its package source revisions | Code imported for source builds and checks |
+| Published Python packages | Package release, wheel bytes and that consumer's dependency lock | Installed contracts/harness cohort |
+| Released OCI images | Unchanged `release.env` attached to the selected infra release | Published image manifest digests and their release source |
+| Compiled host and MCP | Selected release assets and the consumer's asset/source lock | Executable assets and their provider-specific profile |
+| Acceptance result | [Qualification inventory and independent verification](qualification.md) | One run's inputs, evidence and outcome |
+
+[Compatibility](compatibility.md) describes the relationships between these
+inputs. Authentication establishes the selected publisher and bytes; native
+acceptance additionally requires the exact execution composition and observed
+result. A navigation link to the latest documentation is not an execution pin.
 
 ## Source Mode
 
