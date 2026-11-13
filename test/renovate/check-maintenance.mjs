@@ -20,7 +20,7 @@ export async function checkMaintenance(root, renovate) {
     packageName: dep.packageName ?? dep.depName, ...extra,
   });
 
-  const workflow = ".github/workflows/ci.yml";
+  const workflow = ".github/workflows/ci-domain.yml";
   const source = await readFile(resolve(root, workflow), "utf8");
   const actual = await extractPackageFile("github-actions", source, workflow, {});
   const runners = actual.deps.filter((dep) => dep.datasource === "github-runners");

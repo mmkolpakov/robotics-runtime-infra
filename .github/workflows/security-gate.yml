@@ -1,0 +1,97 @@
+---
+name: security-gate
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: security-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Download the latest published release lock
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="$(gh release view --json tagName --jq .tagName)"
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]
+          mkdir -p published-release/digests
+          gh release download "${tag}" --pattern release.env --dir published-release
+          gh release download "${tag}" --pattern '*.txt' --dir published-release/digests
+          printf 'tag=%s\n' "${tag}" >>"${GITHUB_OUTPUT}"
+      - name: Scan published digests with the reviewed VEX policy
+        run: >-
+          scripts/ci/security/scan-published-release.sh
+          published-release/release.env
+          published-release/digests
+      - name: Upload published scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-published-${{ github.sha }}
+          path: artifacts/security/
+          if-no-files-found: warn
+          retention-days: 14
+  report:
+    needs: scan
+    if: always() && needs.scan.result == 'failure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update the security gate issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.scan.outputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title='Security gate: published image scan failed'
+          body="$(printf '%s\n' \
+            'The nightly or post-merge scan of the published release digests failed.' \
+            '' \
+            "- Release: ${RELEASE_TAG:-unknown}" \
+            "- Run: ${RUN_URL}" \
+            '' \
+            'SLA: triage within one business day; publish replacement digests or a reviewed' \
+            'VEX statement within the rebuild window recorded in docs/ci-decouple.md.' \
+            'The issue stays open until the gate is green again.' \
+            '' \
+            'Scan reports are attached to the run as the security-published artifact.')"
+          existing="$(gh issue list --state open --search "in:title \"${title}\"" \
+            --json number --jq '.[0].number // empty')"
+          if test -n "${existing}"; then
+            gh issue comment "${existing}" --body "${body}"
+          else
+            gh issue create --title "${title} (${RELEASE_TAG:-unknown})" --body "${body}"
+          fi

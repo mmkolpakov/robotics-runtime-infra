@@ -155,11 +155,17 @@ setup() {
     "required environment variable is unset: FOUNDATION_TEST_REQUIRED" ]
 }
 
-@test "required workflow reports a check for every pull request and main push" {
+@test "foundation workflow keeps post-merge triggers without a pull request gate" {
   run grep -E '^  pull_request:$' "${WORKFLOW}"
-  [ "${status}" -eq 0 ]
+  [ "${status}" -eq 1 ]
 
   run grep -E '^  push:$' "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+
+  run grep -E '^  workflow_call:$' "${WORKFLOW}"
+  [ "${status}" -eq 0 ]
+
+  run grep -E '^  schedule:$' "${WORKFLOW}"
   [ "${status}" -eq 0 ]
 
   run grep -E '^[[:space:]]+paths:' "${WORKFLOW}"

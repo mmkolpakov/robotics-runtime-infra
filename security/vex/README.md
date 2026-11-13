@@ -16,7 +16,11 @@ The scan retains the JSON report, including native suppressed-finding records
 with their original finding, source and rationale, and enforces HIGH/CRITICAL findings after
 applicability filtering. New findings remain blocking until assessed. Raw scan
 outputs belong in CI artifacts; local investigation notes do not belong in Git.
-No vulnerability risk acceptance is recorded in `.trivyignore`.
+Applicability decisions stay in VEX. Time-boxed risk acceptance of Ubuntu
+OS findings is recorded in `.trivyignore` as ticketed, package/target-scoped
+exceptions with a short expiration (see
+[ADR 0011](../../docs/decisions/0011-image-vulnerability-gate.md)); the gate
+scan never reads that file itself.
 
 References: [Ubuntu package](https://packages.ubuntu.com/noble-updates/linux-libc-dev),
 [OpenVEX](https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md),
