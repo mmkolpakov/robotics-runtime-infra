@@ -1,0 +1,19 @@
+---
+name: Check CI executor
+description: Validate the selected CI executor and trusted event before project commands.
+inputs:
+  executor:
+    description: hosted or home
+    required: true
+  architecture:
+    description: Expected runner architecture, x64 or arm64
+    default: x64
+  trust:
+    description: software or github-provenance
+    default: software
+  runner-environment:
+    description: GitHub runner.environment context
+    required: true
+runs:
+  using: node24
+  main: check.cjs
