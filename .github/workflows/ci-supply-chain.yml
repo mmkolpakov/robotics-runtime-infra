@@ -43,11 +43,20 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 10
     outputs:
       affected: ${{ steps.classify.outputs.affected }}
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           fetch-depth: 0
@@ -89,7 +98,9 @@ jobs:
   integration:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 120
     env:
       COMPOSE_PROJECT_NAME: runtime-infra-${{ github.run_id }}-${{ github.run_attempt }}
@@ -115,6 +126,13 @@ jobs:
       # yamllint disable-line rule:line-length
       CAN_CLIENT_IMAGE: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -171,17 +189,17 @@ jobs:
       - name: Verify versioned S3 evidence
         run: scripts/ci/integration/verify-versioned-s3-evidence.sh
       - name: Capture runtime evidence
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         run: scripts/ci/integration/capture-runtime-evidence.sh
       - name: Scan images and enforce vulnerability policy
         run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh cpu
       - name: Scan CI-only images and enforce vulnerability policy
         run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh ci-only
       - name: Stop runtime
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         run: docker compose --profile test --profile acceptance down --volumes --remove-orphans
       - name: Upload reports
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: runtime-infra-reports-${{ github.sha }}
@@ -201,12 +219,21 @@ jobs:
   nvidia-image:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 90
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
       VERSION: nvidia-ci
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -226,7 +253,7 @@ jobs:
       - name: Scan NVIDIA runtime images
         run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh nvidia
       - name: Upload NVIDIA scan results
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-nvidia-${{ github.sha }}
@@ -236,9 +263,18 @@ jobs:
   nvidia-jetson-supply-chain:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 20
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -260,9 +296,18 @@ jobs:
   rknn-supply-chain:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 30
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -277,12 +322,21 @@ jobs:
   rknn-arm64-image:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04-arm
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04-arm","home":["self-hosted","linux","arm64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 45
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
       VERSION: rknn-ci
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: arm64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -301,7 +355,7 @@ jobs:
       - name: Scan RK3588 runtime images
         run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh rknn
       - name: Upload RK3588 scan results
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-rknn-${{ github.sha }}
@@ -311,12 +365,21 @@ jobs:
   amd-supply-chain:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 90
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
       VERSION: amd-ci
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -343,7 +406,7 @@ jobs:
       - name: Scan AMD runtime images
         run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh amd
       - name: Upload AMD scan results
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-amd-${{ github.sha }}
@@ -353,7 +416,9 @@ jobs:
   intel-image:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 90
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -371,6 +436,13 @@ jobs:
       # yamllint disable-line rule:line-length
       SIMULATION_IMAGE: ghcr.io/${{ github.repository_owner }}/robotics-runtime-infra/simulation:intel-ci
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -405,7 +477,7 @@ jobs:
       - name: Scan Intel runtime images
         run: scripts/ci/supply-chain/run-guarded.sh scripts/ci/security/scan-bake-group.sh intel
       - name: Upload Intel scan results
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-intel-${{ github.sha }}
@@ -418,12 +490,21 @@ jobs:
   portable-arm64:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04-arm
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04-arm","home":["self-hosted","linux","arm64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 120
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}
       VERSION: arm64-ci
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: arm64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -439,7 +520,7 @@ jobs:
           --set '*.cache-from=type=gha,scope=runtime-infra-arm64'
           --set '*.cache-to=type=gha,mode=max,scope=runtime-infra-arm64'
       - name: Upload portable ARM64 scan results
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-portable-arm64-${{ github.sha }}
@@ -449,9 +530,18 @@ jobs:
   reproducibility:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 30
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -473,7 +563,7 @@ jobs:
           scripts/ci/supply-chain/run-guarded.sh
           scripts/ci/reproducibility/rebuild-the-same-oci-image-twice.sh
       - name: Upload OCI manifests and file differences
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: reproducibility-${{ github.sha }}
@@ -483,7 +573,9 @@ jobs:
   foundation:
     needs: changes
     if: needs.changes.outputs.affected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 120
     outputs:
       evidence-artifact-id: ${{ steps.upload-foundation-evidence.outputs.artifact-id }}
@@ -503,6 +595,13 @@ jobs:
       ROBOTICS_CAPTURE_CLOCK_POLICY: ros-time-no-reset
       ROBOTICS_RETENTION_CLASS: pull-request-7d
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -549,14 +648,14 @@ jobs:
       - name: Reject a wrong manifest digest and qualify the native neutral robot
         run: bash examples/neutral-robot/verify-foundation.sh
       - name: Capture foundation logs
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         run: |
           mkdir -p artifacts
           docker ps --all --no-trunc > artifacts/docker-containers.txt
           docker network ls --no-trunc > artifacts/docker-networks.txt
       - name: Upload foundation evidence
         id: upload-foundation-evidence
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: foundation-reports-${{ github.sha }}-${{ github.run_attempt }}
@@ -578,9 +677,18 @@ jobs:
       - portable-arm64
       - reproducibility
       - foundation
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 5
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - name: Require the supply-chain gate
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}

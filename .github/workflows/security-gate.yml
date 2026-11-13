@@ -24,11 +24,20 @@ env:
 
 jobs:
   scan:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 60
     outputs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -53,7 +62,7 @@ jobs:
           published-release/release.env
           published-release/digests
       - name: Upload published scan results
-        if: always()
+        if: always() && steps.ci-profile.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-published-${{ github.sha }}
@@ -63,12 +72,21 @@ jobs:
   report:
     needs: scan
     if: always() && needs.scan.result == 'failure'
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 5
     permissions:
       contents: read
       issues: write
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - name: Open or update the security gate issue
         env:
           GH_TOKEN: ${{ github.token }}

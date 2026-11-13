@@ -29,15 +29,25 @@ env:
 
 jobs:
   consumer-examples:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 20
     defaults:
       run:
         working-directory: examples/nav2-turtlebot3
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
           version: "0.11.28"
@@ -83,6 +93,12 @@ jobs:
           .venv/bin/python -I -m pip install --no-index --no-deps \
             results/authenticated-installer/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl
           .venv/bin/python -I -m pip check
+      - name: Test the CI executor policy and workflow routing
+        working-directory: .
+        run: |
+          node --test .github/actions/ci-profile/check.test.cjs
+          examples/nav2-turtlebot3/.venv/bin/python -m unittest discover \
+            -s test/ci -p test_home_ci_profile.py -v
       - name: Test installed document and native-boundary controls without simulation
         env:
           PYTHONDONTWRITEBYTECODE: "1"
@@ -92,6 +108,22 @@ jobs:
             ROBOTICS_COSIGN_PROFILE="$PWD/results/cosign-profile.json" \
             NAV2_EVALUATOR_WHEEL="$PWD/dist/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl" \
             .venv/bin/python -I -m unittest discover -s . -p 'test_*.py'
+      - name: Test recorded Nav2 qualification and live entrypoint controls
+        working-directory: .
+        env:
+          ROBOTICS_COSIGN_PROFILE: ${{ github.workspace }}/examples/nav2-turtlebot3/results/cosign-profile.json
+        run: |
+          set -- examples/nav2-turtlebot3/results/authenticated-installer/nav2_turtlebot3_evaluator-*.whl
+          test "$#" -eq 1
+          test -f "$1"
+          test -s "$ROBOTICS_COSIGN_PROFILE"
+          mkdir -p examples/nav2-regression-demo/dist
+          cp "$1" examples/nav2-regression-demo/dist/
+          cmp -- "$1" "examples/nav2-regression-demo/dist/${1##*/}"
+          set -- examples/nav2-regression-demo/dist/nav2_turtlebot3_evaluator-*.whl
+          test "$#" -eq 1
+          examples/nav2-turtlebot3/.venv/bin/python -m unittest discover \
+            -s examples/nav2-regression-demo -p 'test*.py' -v
       - name: Test portable X500 consumer interfaces without simulation
         working-directory: examples/px4-x500
         run: |
@@ -99,9 +131,18 @@ jobs:
           npm test
           ../nav2-turtlebot3/.venv/bin/python ../../host/tools/test_px4_proof_selector.py
   product-helm:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 20
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -109,9 +150,18 @@ jobs:
       - name: Check product Helm packaging without cluster access
         run: scripts/ci/check-product-helm.sh
   product-terraform:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 20
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -119,9 +169,18 @@ jobs:
       - name: Check product AWS configuration without account or backend access
         run: scripts/ci/check-product-terraform.sh
   product-ansible:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 20
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -129,9 +188,18 @@ jobs:
       - name: Check product node provisioning without applying host services
         run: scripts/ci/check-product-ansible.sh
   static-analysis:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 20
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -275,13 +343,22 @@ jobs:
         run: uvx --from zizmor==1.26.1 zizmor .github
   compose-version:
     name: compose-${{ matrix.version }}
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         version: [v2.35.1, v5.3.1]
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
@@ -315,9 +392,18 @@ jobs:
       - static-analysis
       - consumer-examples
       - compose-version
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 5
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - name: Require every domain gate
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
