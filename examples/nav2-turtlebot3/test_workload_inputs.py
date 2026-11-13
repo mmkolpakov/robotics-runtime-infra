@@ -120,6 +120,59 @@ class WorkloadInputs(unittest.TestCase):
                 workload_functions()["readiness_parameters"](scenario)
 
 
+class PackageLocations(unittest.TestCase):
+    def package_lookup(self, lookup):
+        import sys
+        from types import ModuleType
+        from unittest.mock import patch
+
+        package = ModuleType("ament_index_python")
+        package.__path__ = []
+        packages = ModuleType("ament_index_python.packages")
+        packages.get_package_prefix = lookup
+        return patch.dict(
+            sys.modules,
+            {"ament_index_python": package, "ament_index_python.packages": packages},
+        )
+
+    def test_mcap_header_uses_the_selected_ament_overlay(self):
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = Path(temporary) / "workspace install/mcap_vendor"
+            header = prefix / "include/mcap_vendor/mcap/writer.hpp"
+            header.parent.mkdir(parents=True)
+            header.write_bytes(b"selected header bytes")
+            lookup = Mock(return_value=str(prefix))
+            with self.package_lookup(lookup):
+                resolved = workload_functions()["mcap_writer_header_path"]()
+            self.assertEqual(resolved, header)
+            self.assertEqual(resolved.read_bytes(), b"selected header bytes")
+            lookup.assert_called_once_with("mcap_vendor")
+
+    def test_standard_ros_prefix_keeps_the_existing_header_location(self):
+        from unittest.mock import Mock
+
+        lookup = Mock(return_value="/opt/ros/jazzy")
+        with self.package_lookup(lookup):
+            header = workload_functions()["mcap_writer_header_path"]()
+        self.assertEqual(
+            header, Path("/opt/ros/jazzy/include/mcap_vendor/mcap/writer.hpp")
+        )
+        lookup.assert_called_once_with("mcap_vendor")
+
+    def test_missing_mcap_package_does_not_fall_back_to_a_system_path(self):
+        from unittest.mock import Mock
+
+        lookup = Mock(side_effect=LookupError("package not found"))
+        with (
+            self.package_lookup(lookup),
+            self.assertRaisesRegex(LookupError, "package not found"),
+        ):
+            workload_functions()["mcap_writer_header_path"]()
+        lookup.assert_called_once_with("mcap_vendor")
+
+
 class NativeAdmissionControls(unittest.TestCase):
     def setUp(self):
         import runpy
