@@ -221,7 +221,7 @@ cyber-resilience documentation — Machinery Regulation (EU) 2023/1230 (applicab
 - `run-live.sh` — finite native capture with an explicitly admitted consumer image.
 - `regression_driver.py` — five-case assessment through the public CLI.
 - `test_demo.py` — self-test demonstrating the failed robot qualification.
-- `compose.demo.yaml` — released-mode simulation service (live path only).
+- `compose.demo.yaml` — retained generic released-simulation fixture; not used by the native entry point.
 
 ## Self-test
 
