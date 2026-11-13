@@ -28,33 +28,27 @@ support in every engine.
 
 ## Architecture
 
-The local execution view shows owned worker environments and retained results.
-The shared C4 model and generated diagrams are maintained in robotics-runtime.
+The shared [target architecture](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture.md)
+defines finite attempts, native workers and retained evidence. The local campaign
+workbench uses Dagu; Kubernetes campaigns use Argo Workflows. These are deployment
+profiles at the same boundary, not a chain of schedulers.
+[Workflow deployment](docs/architecture.md#workflow-deployment) assigns their
+responsibilities. The [qualification reference](docs/qualification-baseline.md)
+records the scope of available execution profiles.
 
-![Local execution topology: composition host, owned workers and retained results](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/ExecutionDeployment.svg "Local execution — source topology")
+![Local campaign and execution deployment](https://raw.githubusercontent.com/mmkolpakov/robotics-runtime/main/docs/architecture/generated/ExecutionDeployment.svg)
 
-Source topology, not a qualification result. The published ROS profile and
-candidate providers retain their own version, environment and evidence scopes.
-
-Host lifecycle is separate from native control and video connections. The
-common document/evaluator environment does not require a simulator SDK or ROS.
-[Architecture](docs/architecture.md) describes native API boundaries and
-evidence-before-reset ordering.
-
-[Kubernetes and AWS responsibilities](docs/architecture.md#kubernetes-and-aws-responsibilities)
-defines Terraform and Helm ownership. Native Kubernetes execution and
-recovery are not implemented; configuration checks do not qualify AWS workloads.
+Control and media stay on their native SDK connections. Common document
+validation and built-in assessment need no simulator, Node host or container
+engine. Custom OCI methods have their own execution environment.
 
 Read the shared diagrams by purpose:
 
 - [Platform context](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Context.svg)
 - [Process composition](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/Container.svg)
-- [Native and consumer interfaces](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/ContainerDetail.svg)
+- [Native interfaces](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/NativeInterfaces.svg)
 - [Run ordering](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/run-sequence.svg)
 - [Retention and recovery](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture/generated/run-state.svg)
-
-[Diagram sources and scope](https://github.com/mmkolpakov/robotics-runtime/tree/main/docs/architecture)
-describe the model and its qualification boundaries.
 
 ## Run the published simulation
 
@@ -124,13 +118,14 @@ profiles; [WSL2](docs/wsl2.md) records host limitations. Image builds and
 accelerator imports are not device qualification. Real actuation is outside
 the retained profile's supported scope.
 
-## Deployment roadmap
+## Product deployment
 
-[Terraform](terraform/README.md) and [Helm](helm/README.md) define infrastructure,
-retained storage and finite workloads. The next execution provider uses the
-[official Kubernetes client and sealed-attempt recovery design](docs/architecture.md#kubernetes-and-aws-responsibilities).
-Native Kubernetes execution/recovery and AWS workload qualification are not
-supported by the existing local providers.
+[Terraform](terraform/README.md) provisions the AWS foundation;
+[Helm](helm/README.md) packages identity, retained storage and finite workloads.
+Argo coordinates Kubernetes campaigns, and Dagu supplies the local workbench.
+The execution owner retains native admission, capture, export and observed
+cleanup. [Workflow deployment](docs/architecture.md#workflow-deployment) defines
+these boundaries independently of the published profile.
 
 ## Source development
 

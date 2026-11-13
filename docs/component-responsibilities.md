@@ -48,10 +48,15 @@ hardware parameters. Workstation administration is outside this product.
 
 Terraform owns AWS networking, EKS/EC2 capacity, IAM, ECR, storage and state.
 Helm owns shared identity, retained per-run storage and finite attempt workloads.
-The native execution design uses the official Kubernetes JavaScript client and
-actual Job/Pod/PVC UIDs. Labels locate resources; exact ownership governs effects.
-Cloud execution and recovery require their own implementation and runtime checks;
-rendered manifests and mocked plans do not establish those capabilities.
+Dagu owns local campaign UI, scheduling and history; Argo owns these campaign
+responsibilities for Kubernetes. Both use the external finite attempt and
+evidence boundaries. The official Kubernetes client is confined to domain
+admission, observed UID bindings and retained recovery facts that campaign
+status cannot establish.
+
+The [shared architecture](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/architecture.md)
+defines this target. The [interaction guide](https://github.com/mmkolpakov/robotics-runtime/blob/main/docs/agent-integration.md)
+maps CLI, CI and MCP clients to the same owners and evidence.
 
 See [deployment ownership](decisions/0009-product-deployment-boundaries.md).
 
@@ -63,3 +68,8 @@ Consolidating byte capture must not add a mandatory bound where none existed.
 Compare setup, update and recovery effort, CI/build time and compute/storage/network
 cost for the same qualified workload. Include failed attempts and idle capacity.
 Source line count and checklist completion do not measure ownership cost.
+
+Ownership cost includes functionality that ready tools prevent the project from
+having to build, such as a workflow UI, queue or run history. Compare the
+complete user task and required access model; an unused optional upstream
+feature is not an integration failure.
