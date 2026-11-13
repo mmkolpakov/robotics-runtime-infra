@@ -1,506 +1,364 @@
-"""Create public retained input documents and run the offline acceptance CLI."""
+"""Bind completed Nav2 capture facts to immutable pre-execution v2 inputs."""
+
+from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import platform
-import re
-import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 
-from robotics_runtime_contracts import load_mapping, validate_document
-from robotics_runtime_contracts.serialization import read_document_bytes
+from robotics_acceptance_harness.evaluator_trust import read_once
+from robotics_runtime_contracts import (
+    dumps_canonical,
+    loads_mapping,
+    validate_document,
+    validate_role,
+)
 from robotics_runtime_contracts.writers import (
     add_evidence_artifact,
     create_evidence_index,
     finalize_evidence_index,
     write_document,
+    write_bytes_atomically,
 )
 
-PUBLIC_REVISION = "b241633181f030b23ce0639e83277a7d37b8e7ef"
-MCAP_HEADER_SHA = "5d4fa57f5b3931e50faf7832fe7dae7913715c7a42df158ef5d8acec7734cd5e"
+NAMESPACE = "org.example.nav2-turtlebot3"
+DOCUMENT_LIMIT = 1024 * 1024
 
 
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def captured(path: Path) -> tuple[bytes, dict]:
+    raw = read_once(path, DOCUMENT_LIMIT)
+    return raw, loads_mapping(raw, source_name=str(path))
 
 
-def reference(path):
-    return {
-        "uri": path.resolve().as_uri(),
-        "sha256": digest(path),
-        "size_bytes": path.stat().st_size,
-    }
-
-
-def command(argv, output):
-    result = subprocess.run(argv, capture_output=True, timeout=45, check=False)
-    output.with_suffix(".stdout").write_bytes(result.stdout)
-    output.with_suffix(".stderr").write_bytes(result.stderr)
-    output.with_suffix(".exit").write_text(str(result.returncode) + "\n")
-    return result
-
-
-def finalize(
-    capture, output, qualification, source_revision, contracts, harness, python
-):
-    if not re.fullmatch(r"[a-f0-9]{40}", source_revision):
-        raise ValueError("exact committed source revision required")
-    context = load_mapping(capture / "run-context.json")
-    scenario = load_mapping(capture / "scenario.json")
-    registry = {
-        "urn:nav2-turtlebot3:scenario:v1": (capture / "nav2.schema.json").read_bytes()
-    }
-    validate_document(context, extension_schemas=registry)
-    validate_document(scenario, extension_schemas=registry)
-    if context["scenario_sha256"] != digest(capture / "scenario.json"):
-        raise ValueError("scenario does not match its issued context")
-    if scenario["execution"]["data_plane_profile"] != "standard_isolated":
-        raise ValueError("the selected published output profile is standard_isolated")
-    case = scenario["extensions"]["org.example.nav2-turtlebot3"]["case"]
-    worker = load_mapping(capture / case / "worker-process.json")
-    facts = worker["bootstrap_before_ros_init"]
-    if (
-        worker["run_id"] != context["run_id"]
-        or facts["scenario_sha256"] != context["scenario_sha256"]
+def complete(prepared: Path, capture: Path) -> dict:
+    """Project native producer facts; do not execute or infer missing observations."""
+    prepared, capture = prepared.resolve(), capture.resolve()
+    archive = prepared.parent
+    if not capture.is_relative_to(archive) or capture == archive:
+        raise ValueError("the retained capture must be inside the original archive")
+    _raw_manifest, manifest = captured(prepared / "pre-execution-inputs.json")
+    documents = {}
+    raw_by_name = {}
+    for name, key in (
+        ("scenario.json", "scenario"),
+        ("runtime.json", "runtime"),
+        ("run.json", "run_context"),
     ):
-        raise ValueError("foreign worker context")
-    if facts["public_packages"] != {
-        "robotics-runtime-contracts": "0.20.0",
-        "robotics-acceptance-harness": "0.21.0",
+        raw, document = captured(prepared / name)
+        if (
+            sha256(raw).hexdigest() != manifest[key]["sha256"]
+            or len(raw) != manifest[key]["size_bytes"]
+        ):
+            raise ValueError("pre-execution input bytes changed")
+        raw_by_name[name] = raw
+        documents[key] = document
+    for name, key in (
+        ("nav2-configuration.json", "configuration"),
+        ("native-profile.json", "native_profile"),
+        ("nav2.schema.json", "extension_schema"),
+    ):
+        raw = read_once(prepared / name, DOCUMENT_LIMIT)
+        raw_by_name[name] = raw
+        if (
+            sha256(raw).hexdigest() != manifest[key]["sha256"]
+            or len(raw) != manifest[key]["size_bytes"]
+        ):
+            raise ValueError("pre-execution input bytes changed")
+    schema = raw_by_name["nav2.schema.json"]
+    validate_role(
+        documents["scenario"],
+        "acceptance_scenario",
+        extension_schemas={"urn:nav2-turtlebot3:scenario:v1": schema},
+    )
+    validate_role(documents["runtime"], "runtime_manifest")
+    validate_role(documents["run_context"], "acceptance_run")
+    scenario, runtime, run = (
+        documents[name] for name in ("scenario", "runtime", "run_context")
+    )
+    if (
+        scenario["profile"]["profile_id"] != NAMESPACE
+        or run["run_id"] != manifest["run_id"]
+        or run["scenario_id"] != scenario["scenario_id"]
+        or run["scenario_sha256"] != sha256(raw_by_name["scenario.json"]).hexdigest()
+        or "nav2" not in {item["domain_id"] for item in run["domains"]}
+    ):
+        raise ValueError("foreign pre-execution Nav2 inputs")
+    if runtime["scenario_sha256"] != manifest["scenario"]["sha256"]:
+        raise ValueError("runtime differs from the pre-execution scenario")
+    _raw_facts, facts = captured(capture / "completed-facts.json")
+    required = {
+        "started_at",
+        "finished_at",
+        "observations",
+        "artifacts",
+        "policy_observation",
+    }
+    if not required <= set(facts) or set(facts) - required - {
+        "measurement_window",
+        "native_model",
     }:
-        raise ValueError("foreign public package cohort")
-    middleware_sha = digest(capture / "fastdds.xml")
-    if not (
-        facts["middleware_profile_sha256"]
-        == middleware_sha
-        == scenario["data_plane_policy"]["middleware_configuration_sha256"]
-        == "8acf197c65312ff4fd856e3a10ac35dc8af0f8e02ca4221bed7a7c7d8c1caedb"
-    ):
-        raise ValueError("selected middleware bytes/configuration binding differs")
-    versions = {
-        name: version
-        for name, version, _architecture in (
-            line.split("\t") for line in facts["package_versions"].splitlines()
-        )
-    }
-    rmw_version = versions["ros-jazzy-rmw-fastrtps-cpp"].split("-", 1)[0]
-    root = Path(__file__).resolve().parent
-    repository = (
-        subprocess.check_output(
-            ["git", "-C", str(root), "rev-parse", "--show-toplevel"], timeout=10
-        )
-        .decode()
-        .strip()
-    )
-    relative = (root / "workload.py").relative_to(repository)
-    committed = subprocess.check_output(
-        ["git", "-C", repository, "show", source_revision + ":" + str(relative)],
-        timeout=10,
-    )
-    if (
-        hashlib.sha256(committed).hexdigest() != worker["source_sha256"]
-        or digest(capture / "workload.py") != worker["source_sha256"]
-    ):
-        raise ValueError("committed worker bytes differ from capture")
-    state = load_mapping(capture / "recorder-facts/capture-state.json")
-    events = json.loads(read_document_bytes(capture / "jobs-events.json"))
-    stopped = json.loads(
-        read_document_bytes(capture / "native-inspect-stopped.stdout")
-    )[0]
-    cleanup = load_mapping(capture / "cleanup.json")
-    if not (
-        state["run_id"] == context["run_id"]
-        and state["capture_status"] == "complete"
-        and state["closure_confirmed"]
-        and len(state["bag"]["members"]) == 1
-        and len(state["bag"]["topics"]) == 7
-        and all(row["message_count"] > 0 for row in state["bag"]["topics"])
-        and stopped["Id"] == cleanup["containerId"]
-        and cleanup["remaining"] == []
-        and stopped["State"]["ExitCode"] == 0
-        and not stopped["State"]["OOMKilled"]
-        and stopped["RestartCount"] == 0
-    ):
-        raise ValueError("closed native capture and owned terminal facts required")
-    checkpoint = load_mapping(capture / "checkpoint.json")
-    before = json.loads(read_document_bytes(capture / "native-inspect-before.stdout"))[
-        0
-    ]
-    owner_key = "org.example.nav2.owner"
-    if not (
-        checkpoint["runId"] == context["run_id"]
-        and checkpoint["owner"] == cleanup["owner"]
-        and before["Id"] == stopped["Id"]
-        and before["Image"] == stopped["Image"]
-        and before["Config"]["Labels"].get(owner_key) == checkpoint["owner"]
-        and stopped["Config"]["Labels"].get(owner_key) == checkpoint["owner"]
-        and before["State"]["Running"] is True
-        and stopped["State"]["Running"] is False
-    ):
-        raise ValueError(
-            "native identity/ownership differs between acquisition and terminal capture"
-        )
-    member = state["bag"]["members"][0]
-    if not re.fullmatch(r"[A-Za-z0-9_-]+\.mcap", member["path"]):
-        raise ValueError("one confined MCAP basename required")
-    bag = capture / "bag" / member["path"]
-    if bag.is_symlink() or not bag.is_file() or bag.stat().st_size > 64 * 1024**2:
-        raise ValueError("bounded regular recording required")
-    if (
-        digest(bag) != member["sha256"]
-        or bag.stat().st_size != member["size_bytes"]
-        or state["bag"]["size_bytes"] != member["size_bytes"]
-    ):
-        raise ValueError("recording bytes differ from the closed native recorder")
-    operations = [row["op"] for row in events]
-    for operation in (
-        "worker-prepare-absent",
-        "worker-" + case + "-absent",
-        "recorder-process-absent",
-    ):
-        index = operations.index(operation)
-        observed_absence = (capture / ("native-" + operation + ".stdout")).read_bytes()
-        if observed_absence not in (b"False", b"False\n"):
-            raise ValueError("native producer absence was not observed")
-        if not events[index]["ok"] or index >= operations.index("stop"):
-            raise ValueError("producer absence must precede stop")
-    if facts["mcap_writer_header_sha256"] != MCAP_HEADER_SHA:
-        raise ValueError("selected checked append-only writer required")
-    output.mkdir(exist_ok=False)
-    now = datetime.now(timezone.utc).isoformat()
-    capabilities = ["ros-topic-capture", "owned-native-cleanup"]
-    profile = {
-        "schema_version": "qualification-profile.v1",
-        "profile_id": "nav2-retained-observations",
-        "provider_kind": "simulator",
-        "requirements": [
-            {"capability": value, "required": True} for value in capabilities
-        ],
-    }
-    write_document(profile, output / "qualification-profile.json")
-    image_digest = stopped["ImageDigest"]
-    subject = {
-        "kind": "oci_image",
-        "locator": "oci://local-build/nav2@" + image_digest,
-        "digest": image_digest,
-    }
-    provider = {
-        "kind": "simulator",
-        "implementation_id": "org.example.nav2-turtlebot3",
-        "version": "source-" + source_revision[:12],
-        "configuration_sha256": context["scenario_sha256"],
-    }
-    conformance = {
-        "schema_version": "conformance-result.v1",
-        "result_id": "nav2-capture-cleanup",
-        "run_id": context["run_id"],
-        "generated_at": now,
-        "qualification_profile_sha256": digest(output / "qualification-profile.json"),
-        "execution_subject_digest": image_digest,
-        "provider": provider,
-        "target_id": "nav2-simulation",
-        "status": "passed",
-        "capabilities": capabilities,
-        "checks": [
-            {
-                "check_id": "closed-native-topics",
-                "capability": capabilities[0],
-                "status": "passed",
-                "observed_value": state["bag"]["message_count"],
-                "unit": "messages",
-                "message": "Closed seven-topic capture; no DDS-delivery or self-contained action-schema claim.",
-            },
-            {
-                "check_id": "owned-terminal-cleanup",
-                "capability": capabilities[1],
-                "status": "passed",
-                "observed_value": True,
-                "message": "Retained producer/terminal/removal facts; not full RunOwner qualification.",
-            },
-        ],
-        "evidence": [
-            reference(capture / name)
-            for name in (
-                "recorder-facts/capture-state.json",
-                "cleanup.json",
-                "native-inspect-stopped.stdout",
-                "jobs-events.json",
+        raise ValueError("closed completed Nav2 capture facts are required")
+    paths = []
+    records = []
+    for artifact in facts["artifacts"]:
+        if set(artifact) != {"source", "artifact_id", "kind", "media_type"}:
+            raise ValueError("closed native artifact metadata is required")
+        source = capture / artifact["source"]
+        resolved = source.resolve()
+        if (
+            source.is_symlink()
+            or not resolved.is_relative_to(capture)
+            or not resolved.is_file()
+        ):
+            raise ValueError("native artifact must be a confined regular capture file")
+        records.append(
+            (
+                resolved,
+                {key: artifact[key] for key in ("artifact_id", "kind", "media_type")},
             )
-        ],
-    }
-    write_document(conformance, output / "conformance-result.json")
-    host = {
-        "os": platform.system().lower(),
-        "os_version": platform.freedesktop_os_release()["VERSION_ID"],
-        "architecture": platform.machine(),
-        "kernel": platform.release(),
-    }
-    runtime = {
-        "schema_version": "runtime-manifest.v1",
-        "runtime_id": "nav2-" + context["run_id"],
-        "generated_at": now,
-        "execution_subject": subject,
-        "components": {
-            "contracts_revision": PUBLIC_REVISION,
-            "harness_revision": PUBLIC_REVISION,
-            "infra_revision": source_revision,
-        },
-        "host_platform": host,
-        "execution_platform": {
-            "os": "linux",
-            "os_version": facts["os"]["VERSION_ID"],
-            "architecture": facts["architecture"],
-            "kernel": facts["kernel"],
-        },
-        "ros": {
-            "distribution": "jazzy",
-            "rmw_implementation": facts["environment"]["RMW_IMPLEMENTATION"],
-            "rmw_version": rmw_version,
-            "domain_id": int(facts["environment"]["ROS_DOMAIN_ID"]),
-        },
-        "provider_bindings": [
-            {
-                "target_id": "nav2-simulation",
-                "provider": provider,
-                "qualification_profile_sha256": digest(
-                    output / "qualification-profile.json"
-                ),
-                "conformance_result_sha256": digest(output / "conformance-result.json"),
-                "capabilities": capabilities,
-            }
-        ],
-        "render": {
-            "mode": "software",
-            "renderer": "configured LIBGL_ALWAYS_SOFTWARE=1",
-        },
-        "workload": {"kind": "none"},
-        "execution": {
-            key: scenario["execution"][key]
-            for key in (
-                "target_environment",
-                "data_source",
-                "plant_backend",
-                "time_mode",
-                "data_plane_profile",
-            )
-        },
-        "evaluator_bindings": scenario["evaluator_requirements"],
-        "authorization": {"mode": "none"},
-        "data_plane": {
-            "rmw_implementation": facts["environment"]["RMW_IMPLEMENTATION"],
-            "ipc_namespace": facts["namespace"]["ipc"],
-            "network_namespace": facts["namespace"]["net"],
-            "shm_transport": False,
-            "data_sharing": False,
-            "private_ipc": True,
-            "middleware_configuration_sha256": facts["middleware_profile_sha256"],
-        },
-        "security": {
-            "profile": "none",
-            "strategy": "none",
-            "enclaves": [],
-            "policy_digests": [],
-        },
-        "lifecycle_states": [],
-        "physical_targets": [],
-        "clock": {
-            "basis": "ros_time",
-            "sync_protocol": "sim_clock",
-            "offset_ms": 0,
-            "drift_ppm": 0,
-        },
-    }
-    write_document(runtime, output / "runtime-manifest.json")
-    observed = capture / case / "observations.jsonl"
-    result = command(
-        [
-            python,
-            str(root / "derive-otlp.py"),
-            "--source",
-            str(observed),
-            "--source-sha256",
-            digest(observed),
-            "--output",
-            str(output / "projection"),
-            "--run-id",
-            context["run_id"],
-            "--domain-id",
-            "nav2",
-        ],
-        output / "derive",
-    )
-    if result.returncode:
-        raise RuntimeError("offline projection refused")
-    bag = capture / "bag" / state["bag"]["members"][0]["path"]
-    result = command(
-        [
-            contracts,
-            "recording-summary",
-            "from-mcap",
-            str(bag),
-            "--max-raw-evidence-bytes",
-            "67108864",
-            "--output",
-            str(output / "recording-summary.json"),
-        ],
-        output / "summary",
-    )
-    if result.returncode:
-        raise RuntimeError("public recording summary refused")
-    basis = {
-        "capture_scope": "offline-retained-evaluation",
-        "clock_basis": "Configured nominal shared ROS Clock; not measured offset/drift.",
-        "spool_basis": "Single selected stock append-only MCAP file: logical peak equals final size. No live sampler/disk-quota. Metadata/JSON/CDR are outside recording spool.",
-        "mcap_header_sha256": MCAP_HEADER_SHA,
-        "host_basis": "Post-capture host readback; execution facts captured before ROS init.",
-    }
-    (output / "basis.json").write_text(json.dumps(basis, indent=2) + "\n")
-    files = [
-        (
-            "workload",
-            "other_evidence",
-            capture / case / "workload.json",
-            "application/json",
-        ),
-        (
-            "cdr",
-            "other_evidence",
-            capture / case / "get-result-response.cdr",
-            "application/octet-stream",
-        ),
-        ("recording", "recording", bag, "application/mcap"),
-        (
-            "metadata",
-            "other_evidence",
-            capture / "bag/metadata.yaml",
-            "application/yaml",
-        ),
-        (
-            "metrics",
-            "metrics",
-            output / "projection/metrics.otlp.jsonl",
-            "application/x-ndjson",
-        ),
-        (
-            "derivation",
-            "other_evidence",
-            output / "projection/derivation.json",
-            "application/json",
-        ),
-        ("basis", "other_evidence", output / "basis.json", "application/json"),
-        (
-            "profile",
-            "qualification_profile",
-            output / "qualification-profile.json",
-            "application/json",
-        ),
-        (
-            "conformance",
-            "conformance_result",
-            output / "conformance-result.json",
-            "application/json",
-        ),
-    ]
+        )
+        paths.append(resolved)
+    if len(set(paths)) != len(paths):
+        raise ValueError("duplicate native capture artifact")
+    output = archive / "observation.json"
+    index = archive / "evidence-index.json"
+    if output.exists() or index.exists():
+        raise ValueError("completed Nav2 documents already exist")
+    policy = scenario["evidence_policy"]
+    sizes = [source.stat().st_size for source in paths]
+    if (
+        any(size > policy["max_artifact_size_bytes"] for size in sizes)
+        or sum(sizes) > policy["max_archive_size_bytes"]
+    ):
+        raise ValueError("native capture exceeds its admitted evidence byte budget")
     draft = create_evidence_index(
         {
-            "run_id": context["run_id"],
-            "generated_at": now,
-            "policy_observation": {
-                "recording_mode": "bounded",
-                "compression": "zstd",
-                "retention_class": "test-evidence",
-                "upload_mode": "local_only",
-                "remote_sink_used": False,
-                "spool_peak_size_bytes": state["bag"]["size_bytes"],
-                "upload_lag_max_sec": 0,
-            },
+            "schema_version": "evidence-index.v1",
+            "run_id": run["run_id"],
+            "generated_at": datetime.now(UTC).isoformat(),
+            "policy_observation": facts["policy_observation"],
         }
     )
-    metrics = None
-    for identifier, kind, source, media in files:
-        destination = output / "evidence" / identifier / source.name
-        destination.parent.mkdir(parents=True)
-        destination.write_bytes(source.read_bytes())
-        destination.chmod(0o444)
+    records.insert(
+        0,
+        (
+            prepared / "nav2-configuration.json",
+            {
+                "artifact_id": "nav2-configuration",
+                "sha256": sha256(raw_by_name["nav2-configuration.json"]).hexdigest(),
+                "size_bytes": len(raw_by_name["nav2-configuration.json"]),
+                "kind": "other_evidence",
+                "media_type": "application/json",
+            },
+        ),
+    )
+    for source, metadata in records:
         draft = add_evidence_artifact(
             draft,
-            destination,
-            {
-                "artifact_id": identifier,
-                "kind": kind,
-                "media_type": media,
-                "retention_class": "test-evidence",
+            source=source,
+            metadata={
+                **metadata,
+                "retention_class": policy["retention_class"],
                 "storage_state": "local",
             },
-            recording_summary=output / "recording-summary.json"
-            if kind == "recording"
-            else None,
         )
-        if identifier == "metrics":
-            metrics = str(destination.resolve())
-    write_document(finalize_evidence_index(draft), output / "evidence-index.json")
-    derivation = load_mapping(output / "projection/derivation.json")
-    argv = [
-        harness,
-        "evaluate",
-        "--scenario",
-        str(capture / "scenario.json"),
-        "--runtime",
-        str(output / "runtime-manifest.json"),
-        "--run-id",
-        context["run_id"],
-        "--domain-id",
-        "nav2",
-        "--run-context",
-        str(capture / "run-context.json"),
-        "--evidence-index",
-        str(output / "evidence-index.json"),
-        "--otel-metrics",
-        metrics,
-        "--window-start-ns",
-        derivation["window_start_ns"],
-        "--window-end-ns",
-        derivation["window_end_ns"],
-        "--extension-schema",
-        "urn:nav2-turtlebot3:scenario:v1=" + str(capture / "nav2.schema.json"),
-        "--evaluator-receipt",
-        str(qualification / "receipt.json"),
-        "--evaluator-verification",
-        str(qualification / "verification.json"),
-        "--max-raw-evidence-bytes",
-        "16777216",
-        "--output",
-        str(output / "result"),
-        "--diagnostic-output",
-        str(output / "diagnostic.json"),
-    ]
-    for name in ("statement.json", "trust-policy.pem", "verification-evidence.zip"):
-        argv.extend(["--evaluator-receipt-dependency", str(qualification / name)])
-    return command(argv, output / "evaluate").returncode
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("capture", "output", "qualification"):
-        parser.add_argument("--" + name, type=Path, required=True)
-    parser.add_argument("--source-revision", required=True)
-    parser.add_argument("--contracts", required=True)
-    parser.add_argument("--harness", required=True)
-    parser.add_argument("--python", required=True)
-    args = parser.parse_args()
-    raise SystemExit(
-        finalize(
-            args.capture.resolve(),
-            args.output.resolve(),
-            args.qualification.resolve(),
-            args.source_revision,
-            args.contracts,
-            args.harness,
-            args.python,
-        )
+    observation = {
+        "schema_version": "acceptance-observation.v2",
+        "observation_id": "nav2-completed-native-observations",
+        "run_id": run["run_id"],
+        "scenario_id": scenario["scenario_id"],
+        "domain_id": manifest["domain_id"],
+        "scenario_sha256": manifest["scenario"]["sha256"],
+        "runtime_manifest_sha256": manifest["runtime"]["sha256"],
+        **{key: facts[key] for key in ("started_at", "finished_at", "observations")},
+        "evidence": [
+            {
+                key: artifact[key]
+                for key in ("uri", "sha256", "size_bytes", "media_type")
+            }
+            for artifact in draft["index"]["artifacts"]
+        ],
+    }
+    for field in ("measurement_window", "native_model"):
+        if field in facts:
+            observation[field] = facts[field]
+    validate_document(observation)
+    final_sizes = [artifact["size_bytes"] for artifact in draft["index"]["artifacts"]]
+    final_sizes.append(len(dumps_canonical(observation)))
+    if (
+        any(size > policy["max_artifact_size_bytes"] for size in final_sizes)
+        or sum(final_sizes) > policy["max_archive_size_bytes"]
+    ):
+        raise ValueError("completed index exceeds its admitted evidence byte budget")
+    write_document(observation, output)
+    draft = add_evidence_artifact(
+        draft,
+        source=output,
+        metadata={
+            "artifact_id": "native-observation",
+            "kind": "acceptance_observation",
+            "media_type": "application/json",
+            "retention_class": policy["retention_class"],
+            "storage_state": "local",
+        },
     )
+    write_document(finalize_evidence_index(draft), index)
+    return {
+        "run_id": run["run_id"],
+        "domain_id": manifest["domain_id"],
+        "scenario": str(prepared / "scenario.json"),
+        "runtime": str(prepared / "runtime.json"),
+        "run_context": str(prepared / "run.json"),
+        "evidence_index": str(index),
+    }
+
+
+def complete_native(prepared: Path, capture: Path) -> dict:
+    """Bind closed records without turning action acknowledgements into physical facts."""
+    from shutil import copyfile
+
+    def reference(path):
+        raw = read_once(path, DOCUMENT_LIMIT)
+        return {
+            "uri": path.resolve().as_uri(),
+            "sha256": sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+            "media_type": "application/json",
+        }
+
+    manifest = loads_mapping(
+        read_once(prepared / "pre-execution-inputs.json", DOCUMENT_LIMIT)
+    )
+    scenario = loads_mapping(read_once(prepared / "scenario.json", DOCUMENT_LIMIT))
+    case = scenario["extensions"][NAMESPACE]["case"]
+    workload_path = capture / case / "workload.json"
+    report = loads_mapping(read_once(workload_path, DOCUMENT_LIMIT))
+    if (report["run_id"], report["domain_id"], report["case"]) != (
+        manifest["run_id"],
+        "nav2",
+        case,
+    ):
+        raise ValueError("native workload belongs to another execution")
+    timing = loads_mapping(read_once(capture / "native-run.json", DOCUMENT_LIMIT))
+    cleanup_path = capture / "cleanup.json"
+    cleanup = loads_mapping(read_once(cleanup_path, DOCUMENT_LIMIT))
+    recorder = loads_mapping(
+        read_once(capture / "recorder-facts/capture-state.json", DOCUMENT_LIMIT)
+    )
+    if recorder["run_id"] != manifest["run_id"] or recorder["domain_id"] != "nav2":
+        raise ValueError("native recorder belongs to another execution")
+    unknown = {
+        "state": "unobserved",
+        "reason": "the native producer did not capture this fact",
+    }
+    observations = {
+        name: dict(unknown) for name in ("command", "terminal", "condition", "cleanup")
+    }
+    evidence = reference(workload_path)
+    if type(report.get("goal_accepted")) is bool:
+        observations["command"] = {
+            "state": "measured",
+            "value": report["goal_accepted"],
+            "evidence": evidence,
+        }
+    response = report.get("result_observation")
+    cdr = capture / case / "get-result-response.cdr"
+    response_bound = False
+    if isinstance(response, dict) and cdr.is_file():
+        raw_cdr = read_once(cdr, DOCUMENT_LIMIT)
+        response_bound = response.get("sha256") == sha256(
+            raw_cdr
+        ).hexdigest() and response.get("size_bytes") == len(raw_cdr)
+    if response_bound and type(report.get("action_status")) is int:
+        observations["terminal"] = {
+            "state": "measured",
+            "value": report["action_status"],
+            "evidence": evidence,
+        }
+    pose = report.get("final_amcl_pose", {})
+    result_time = report.get("result_observed_monotonic_ns")
+    if (
+        case == "success"
+        and response_bound
+        and report.get("observation_status") == "complete"
+        and type(result_time) is int
+        and pose.get("observed_monotonic_ns", -1) >= result_time
+    ):
+        observations["condition"] = {
+            "state": "measured",
+            "value": pose,
+            "evidence": evidence,
+        }
+    if (
+        cleanup.get("remaining") == []
+        and cleanup.get("worker_settled") is True
+        and cleanup.get("recorder_settled") is True
+    ):
+        observations["cleanup"] = {
+            "state": "measured",
+            "value": [],
+            "evidence": reference(cleanup_path),
+        }
+    for name in (
+        "native-model.sdf",
+        "native-world.sdf",
+        "native-preflight.json",
+    ):
+        copyfile(prepared / name, capture / name)
+    artifacts = []
+    for index, path in enumerate(sorted(capture.rglob("*"))):
+        if path.is_symlink():
+            raise ValueError("symlink in native capture")
+        if path.is_file() and path.name != "completed-facts.json":
+            artifacts.append(
+                {
+                    "source": str(path.relative_to(capture)),
+                    "artifact_id": "native-" + str(index),
+                    "kind": "other_evidence",
+                    "media_type": "application/json"
+                    if path.suffix == ".json"
+                    else "application/octet-stream",
+                }
+            )
+    policy_observation = dict(recorder["policy_observation"])
+    if (
+        policy_observation["retention_class"]
+        != scenario["evidence_policy"]["retention_class"]
+        or policy_observation["upload_mode"] != "local_only"
+    ):
+        raise ValueError("observed recorder policy differs")
+    acquired = loads_mapping(
+        read_once(capture / "native-acquired.json", DOCUMENT_LIMIT)
+    )
+    if acquired["HostConfig"]["NetworkMode"] != "none":
+        raise ValueError("remote-free recorder isolation was not observed")
+    facts = {
+        "started_at": timing["started_at"],
+        "finished_at": timing["finished_at"],
+        "observations": observations,
+        "artifacts": artifacts,
+        "policy_observation": policy_observation,
+    }
+    if (
+        recorder.get("capture_status") != "complete"
+        or recorder.get("closure_confirmed") is not True
+    ):
+        raise ValueError("native recorder closure is not established")
+    write_bytes_atomically(dumps_canonical(facts), capture / "completed-facts.json")
+    return facts
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--prepared", type=Path, required=True)
+    parser.add_argument("--capture", type=Path, required=True)
+    parser.add_argument("--from-native", action="store_true")
+    arguments = parser.parse_args()
+    if arguments.from_native:
+        complete_native(arguments.prepared, arguments.capture)
+    print(json.dumps(complete(arguments.prepared, arguments.capture), sort_keys=True))
 
 
 if __name__ == "__main__":

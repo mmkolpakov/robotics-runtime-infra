@@ -145,5 +145,52 @@ class CaptureControls(unittest.TestCase):
             self.assertEqual(reliability.attr, "RELIABLE")
 
 
+class RecorderStorageControls(unittest.TestCase):
+    def test_stock_compression_crc_and_closed_single_segment_size(self):
+        import runpy
+        import tempfile
+        import time
+        from mcap.writer import Writer, CompressionType
+
+        recorder = runpy.run_path(str(SOURCE.with_name("record-topics.py")))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / "recording_0.mcap"
+            with path.open("wb") as stream:
+                writer = Writer(
+                    stream, compression=CompressionType.ZSTD, chunk_size=256
+                )
+                writer.start(profile="ros2")
+                schema = writer.register_schema(
+                    name="std_msgs/msg/UInt64", encoding="ros2msg", data=b"uint64 data"
+                )
+                channel = writer.register_channel(
+                    topic="/example", message_encoding="cdr", schema_id=schema
+                )
+                for number in range(20):
+                    writer.add_message(
+                        channel_id=channel,
+                        log_time=number,
+                        publish_time=number,
+                        data=b"x" * 16,
+                    )
+                writer.finish()
+            metadata = root / "metadata.yaml"
+            metadata.write_text("stock fixture metadata")
+            artifact = recorder["artifact_file"]
+            member = artifact(path, root, time.monotonic() + 5)
+            meta = artifact(metadata, root, time.monotonic() + 5)
+            observed = recorder["storage_observation"](root, [member], meta, 20)
+            self.assertEqual(observed["compression"], "zstd")
+            self.assertEqual(
+                observed["spool_peak_size_bytes"],
+                path.stat().st_size + metadata.stat().st_size,
+            )
+            with self.assertRaises(ValueError):
+                recorder["storage_observation"](root, [member, member], meta, 40)
+            with self.assertRaises(ValueError):
+                recorder["storage_observation"](root, [member], meta, 19)
+
+
 if __name__ == "__main__":
     unittest.main()
