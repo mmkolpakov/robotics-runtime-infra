@@ -77,6 +77,14 @@ def load_ros():
     from tf2_msgs.msg import TFMessage
 
 
+def mcap_writer_header_path() -> Path:
+    from ament_index_python.packages import get_package_prefix
+
+    return (
+        Path(get_package_prefix("mcap_vendor")) / "include/mcap_vendor/mcap/writer.hpp"
+    )
+
+
 def readiness_parameters(scenario):
     """Read this consumer's closed v2 configuration without projecting legacy fields."""
     if scenario.get("schema_version") != "acceptance-scenario.v2":
@@ -271,7 +279,7 @@ def main() -> int:
             for name in ("robotics-runtime-contracts", "robotics-acceptance-harness")
         },
         "mcap_writer_header_sha256": hashlib.sha256(
-            Path("/opt/ros/jazzy/include/mcap_vendor/mcap/writer.hpp").read_bytes()
+            mcap_writer_header_path().read_bytes()
         ).hexdigest(),
         "middleware_profile_sha256": hashlib.sha256(
             Path(os.environ["FASTRTPS_DEFAULT_PROFILES_FILE"]).read_bytes()
