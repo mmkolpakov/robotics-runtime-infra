@@ -24,7 +24,7 @@ from pathlib import Path
 DEMO = Path(__file__).resolve().parent
 sys.path.insert(0, str(DEMO))
 
-import regression_driver as driver
+import regression_driver as driver  # noqa: E402
 
 EXPECTED = {
     "baseline": "passed",
