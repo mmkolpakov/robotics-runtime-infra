@@ -9,7 +9,8 @@
 # the evaluation. Live reproduction is a separate command: ./run-live.sh
 #
 # Usage: ./run-demo.sh [--reinstall] [--sensitivity-tolerance M]
-#                      [--cosign-profile PATH] [--skip-release-env]
+#                      [--cosign-profile PATH] [--operator-profile PATH] [--skip-release-env]
+#                      [--prepare-only]
 set -euo pipefail
 
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,10 +24,14 @@ REINSTALL=0
 SENSITIVITY_TOLERANCE=0.10
 COSIGN_PROFILE=""
 SKIP_RELEASE_ENV=0
+PREPARE_ONLY=0
+OPERATOR_PROFILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --reinstall) REINSTALL=1; shift ;;
     --sensitivity-tolerance) SENSITIVITY_TOLERANCE="$2"; shift 2 ;;
+    --prepare-only) PREPARE_ONLY=1; shift ;;
+    --operator-profile) OPERATOR_PROFILE="$2"; shift 2 ;;
     --cosign-profile) COSIGN_PROFILE="$2"; shift 2 ;;
     --skip-release-env) SKIP_RELEASE_ENV=1; shift ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -80,12 +85,17 @@ else
   log "Reusing installed SDK cohort and evaluator"
 fi
 
+[ "$PREPARE_ONLY" -eq 0 ] || exit 0
+
 # 3. Assess the recorded capture through the five custody cases.
 log "Running the five-case Nav2 qualification assessment"
 DRIVER_ARGS=(--work-dir "$WORK" --output "$WORK/results.json"
   --report "$WORK/report.txt" --sensitivity-tolerance "$SENSITIVITY_TOLERANCE")
 if [ -n "$COSIGN_PROFILE" ]; then
   DRIVER_ARGS+=(--cosign-profile "$COSIGN_PROFILE")
+fi
+if [ -n "$OPERATOR_PROFILE" ]; then
+  DRIVER_ARGS+=(--operator-profile "$OPERATOR_PROFILE")
 fi
 "$PY" "$DEMO_DIR/regression_driver.py" "${DRIVER_ARGS[@]}"
 

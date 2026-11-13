@@ -24,9 +24,18 @@ The report shows, per case: the native action status and decoded GetResult CDR
 fields, the measured value against its limit, the decisive assertion, the
 recording timestamps and frames, evidence validity, and the
 required/covered/unevaluated scope. Canonical `acceptance-result.v2` JSON and
-JUnit are written by the public CLI for every case; a synthetic
-`qualification-verdict` JUnit gate fails for any non-passed verdict so a CI gate
+JUnit are written by the public CLI for every evaluated case; the evidence-refusal
+control intentionally has no result. A synthetic `qualification-verdict` JUnit gate fails for any non-passed verdict so a CI gate
 cannot go green on action success alone.
+
+## Export with your own key
+
+For the external-user path, follow [Export and independently verify](EXPORT.md).
+It generates a signed qualification bundle with your own publisher key and an
+external operator profile, packages the complete retained evidence, and verifies
+the export using your pinned public key. The default export is the baseline;
+failed and incomplete assessments can also be exported without changing their
+verdicts.
 
 ## Quick start
 
@@ -49,7 +58,11 @@ versions are read from the lock and the evaluator `pyproject.toml`, never
 hardcoded. It does **not** pull the simulation image and does not run physics.
 
 Options: `--reinstall`, `--sensitivity-tolerance M`, `--cosign-profile PATH`,
-`--skip-release-env`.
+`--operator-profile PATH`, `--skip-release-env`, `--prepare-only`.
+
+Without `--operator-profile`, this command creates and deletes an ephemeral
+private key for its smoke-test admission. That key is not an external trust root.
+Use the export guide to establish your own trust configuration.
 
 ### Expected output (tail)
 
@@ -128,6 +141,17 @@ gated next step and is **not** claimed by this demo.
 
 ## Boundaries
 
+The native wheel evaluator runs **in-process** in the harness Python process.
+Admission and installed-wheel RECORD-hash guards authenticate its code; they do
+not provide a resource, filesystem, or network sandbox. Use the runtime's OCI
+evaluator executor for the contained execution path.
+
+The demo reconstructs the run context and runtime manifest for the retained
+recording, assigning their logical timestamps from its recorded start time.
+Assessment and signing timestamps are current. A new signature authenticates
+the exported bytes; it does not prove that the reconstructed scenario or context
+existed before the original capture.
+
 The evidence is a recorded capture, not a fresh live Gazebo run. Cosign key-only
 admission verifies the selected key's signature and subject/predicate binding; it
 does not prove OIDC identity, transparency time, or build provenance. The verdict
@@ -147,6 +171,13 @@ release; the SDK cohort is pinned by
 [`requirements.lock`](../nav2-turtlebot3/requirements.lock) and
 [`inputs.lock.json`](../nav2-turtlebot3/inputs.lock.json).
 
+The source-foundation cohort in
+[`config/foundation-lock.json`](../../config/foundation-lock.json) remains
+contracts **0.21.1** / harness **0.22.2** at its pinned workspace revision.
+The published-example cohort used by this demo is contracts **0.22.0** /
+harness **0.23.1**, as pinned in the Nav2 `requirements.lock`. These are
+separate compositions; running this demo does not upgrade the source foundation.
+
 ## Compliance
 
 This demo produces qualification evidence that can support machinery and
@@ -157,6 +188,9 @@ cyber-resilience documentation — Machinery Regulation (EU) 2023/1230 (applicab
 ## Files
 
 - `run-demo.sh` — offline one-command verdict orchestration.
+- `run-export.sh` / `export_bundle.py` — own-key signed export and verification.
+- `EXPORT.md` — external operator bootstrap and independent verification.
+- `test_export.py` — real-signature round trip and refusal tests.
 - `run-live.sh` — separate live reproduction (image pull + live composition).
 - `regression_driver.py` — five-case assessment through the public CLI.
 - `test_demo.py` — self-test demonstrating the failed robot qualification.
