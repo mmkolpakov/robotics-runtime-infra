@@ -237,6 +237,8 @@ jobs:
             -s host/test/fixtures/installed-webots -p test_prepare.py -v
           dependencies/robotics-runtime/.venv/bin/python \
             host/test/fixtures/installed-webots/worker/test_document_checks.py -v
+      - name: Test PX4 source SDK factory inputs without loading the SDK
+        run: python3 -m unittest discover -s test/ci -p test_px4_source_sdk_factory.py -v
       - name: Test simulation provider evidence
         run: >-
           dependencies/robotics-runtime/.venv/bin/python -m unittest discover
