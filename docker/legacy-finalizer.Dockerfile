@@ -7,7 +7,7 @@ FROM ${COORDINATOR_IMAGE}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER 0:0
 COPY --from=cosign /usr/bin/cosign /usr/local/bin/cosign
-# License context is the exact v3.1.3 source checkout; the binary stays publisher pinned.
+# License context comes from the selected source release; the binary stays publisher pinned.
 # hadolint ignore=DL3022
 COPY --from=cosign-license /LICENSE /usr/share/licenses/cosign/LICENSE
 COPY scripts/qualification /opt/robotics/finalizer/scripts/qualification
