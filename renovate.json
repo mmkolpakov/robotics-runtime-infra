@@ -78,6 +78,19 @@
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track hosted runner labels in explicit CI executor selections",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "fromJSON\\('\\{\"hosted\":\"(?<depName>ubuntu)-(?<currentValue>\\d{2}\\.\\d{2}(?:-arm)?)\""
+      ],
+      "datasourceTemplate": "github-runners",
+      "depTypeTemplate": "github-runner",
+      "versioningTemplate": "docker"
     }
   ],
   "packageRules": [
