@@ -125,19 +125,46 @@ fact is synthesized.
   goal UUID and CDR bytes are preserved; the custody run identifier is the issued
   run context binding required by the evaluator.
 
-## Live reproduction (separate command)
+## Live capture through the native consumer
+
+`run-live.sh` invokes the existing `native-check.mjs` attempt owner. Supply an
+already admitted Nav2 consumer image, its evaluator requirements, and the
+installed SDK interpreter described in
+[`../nav2-turtlebot3/`](../nav2-turtlebot3/README.md). The native entry point
+also requires the consumer's admitted Node environment and installed host package;
+this wrapper does not install or update that environment:
 
 ```sh
-./run-live.sh            # pull the released rc2 image and run the live composition
-./run-live.sh --pull-only
+./run-live.sh --image "$ADMITTED_CONSUMER_IMAGE" \
+  --requirements "$PWD/nav2-requirements.json" \
+  --python "$PWD/../nav2-turtlebot3/.venv/bin/python" \
+  --output "$PWD/work/native-success" --case success
 ```
 
-The live path pulls the released `v0.11.0-rc2` simulation image (digest-pinned,
-released mode, no snapshot mirror) and uses the admitted Nav2 consumer
-composition in [`../nav2-turtlebot3/`](../nav2-turtlebot3/README.md). The headline
-live A/B pair — two fresh Nav2 recordings under one frozen contract with a real
-goal-checker configuration change, saved side by side with their diff — is the
-gated next step and is **not** claimed by this demo.
+All input paths must be absolute and the output directory must be new. The
+owner checks the selected image and inputs, records one fresh attempt, settles
+the worker and recorder, and removes only its acquired container. It retains
+`evaluation-inputs.json` for the public assessment command. The supported native
+cases are `success`, `cancel`, `timeout` and `server-failure`; the recorded
+five-case verdict demonstration remains available through `run-demo.sh`.
+
+The selected image must contain the matching consumer and SDK environment,
+including `/opt/consumer/bin/python`. The generic released simulation image is
+not a substitute for this admitted consumer image. The entry point accepts no
+remote shell environment and does not select an image from a release tag.
+
+To download an already selected immutable repository digest without starting an
+attempt:
+
+```sh
+./run-live.sh --pull-only --image "$ADMITTED_CONSUMER_IMAGE"
+```
+
+The headline A/B pair requires two fresh native captures under one frozen
+acceptance criterion and an actual goal-checker configuration change. A single
+capture does not establish that comparison. Image admission includes approval
+of the owner's isolated preflight execution before the native attempt; neither
+an image digest nor this wrapper grants that approval.
 
 ## Boundaries
 
@@ -152,7 +179,7 @@ Assessment and signing timestamps are current. A new signature authenticates
 the exported bytes; it does not prove that the reconstructed scenario or context
 existed before the original capture.
 
-The evidence is a recorded capture, not a fresh live Gazebo run. Cosign key-only
+The offline verdict demo evaluates a recorded capture, not a fresh live Gazebo run. Cosign key-only
 admission verifies the selected key's signature and subject/predicate binding; it
 does not prove OIDC identity, transparency time, or build provenance. The verdict
 covers the configured action outcome and fresh odometry/TF/AMCL pose facts; it
@@ -191,7 +218,7 @@ cyber-resilience documentation — Machinery Regulation (EU) 2023/1230 (applicab
 - `run-export.sh` / `export_bundle.py` — own-key signed export and verification.
 - `EXPORT.md` — external operator bootstrap and independent verification.
 - `test_export.py` — real-signature round trip and refusal tests.
-- `run-live.sh` — separate live reproduction (image pull + live composition).
+- `run-live.sh` — finite native capture with an explicitly admitted consumer image.
 - `regression_driver.py` — five-case assessment through the public CLI.
 - `test_demo.py` — self-test demonstrating the failed robot qualification.
 - `compose.demo.yaml` — released-mode simulation service (live path only).
