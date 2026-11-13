@@ -19,14 +19,14 @@ test('missing inputs refuse before loading the optional host package or acquirin
   assert.doesNotMatch(executed.stderr,/ERR_MODULE_NOT_FOUND/);
 });
 
-async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,local=false}={}) {
+async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,local=false,bareImage=false}={}) {
   const directory=await mkdtemp(resolve(tmpdir(),'nav2-driver-'));
   t.after(()=>rm(directory,{recursive:true,force:true}));
   const output=resolve(directory,'run'), requirements=resolve(directory,'requirements.json'), capture=resolve(output,'capture');
   await writeFile(requirements,'{}');
   const calls=[];
   let actor,started=false,removed=false,finishRecorder;
-  const packageImage={Id:image,RepoDigests:badImage?[]:[reference],Config:{Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin:/bin'],StopSignal:'SIGINT'}};
+  const packageImage={Id:bareImage?image.slice(7):image,RepoDigests:badImage?[]:[reference],Config:{Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin:/bin'],StopSignal:'SIGINT'}};
   const jobs={async run(request){
     const a=request.args;
     calls.push({executable:request.executable,args:a});
@@ -101,6 +101,14 @@ for(const mode of ['success','cancel','timeout','server-failure']){
     assert.ok(f.calls.some(c=>c.args.some(a=>a.endsWith('/finalize.py'))));
   });
 }
+test('Podman bare image Config ID preserves the exact image binding and raw preflight',async t=>{
+  const f=await fixture(t,{bareImage:true});
+  await f.promise;
+  const preflight=JSON.parse(await readFile(resolve(f.output,'native-preflight.json'),'utf8'));
+  assert.equal(preflight.image.Id,image.slice(7));
+  assert.equal(f.started,true);
+  assert.equal(f.removed,true);
+});
 test('local Config ID supports the same isolated path without a registry publication',async t=>{
   const f=await fixture(t,{local:true});
   await f.promise;

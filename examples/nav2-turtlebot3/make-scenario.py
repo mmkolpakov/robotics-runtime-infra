@@ -453,7 +453,13 @@ def check_preflight(document: dict, image_reference: str, image_id: str) -> dict
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", image_id):
         raise ValueError("an exact image Config ID is required")
     image = document["image"]
-    if image["Id"] != image_id or (
+    raw_id = image.get("Id")
+    if not isinstance(raw_id, str) or not re.fullmatch(
+        r"(?:sha256:)?[a-f0-9]{64}", raw_id
+    ):
+        raise ValueError("selected image Config ID is malformed")
+    observed_id = "sha256:" + raw_id.removeprefix("sha256:")
+    if observed_id != image_id or (
         image_reference != image_id
         if local
         else image_reference not in image.get("RepoDigests", [])
