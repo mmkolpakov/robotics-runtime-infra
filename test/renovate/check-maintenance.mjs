@@ -4,6 +4,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export async function checkMaintenance(root, renovate) {
+  const { checkRunnerSelections } = await import("./check-runners.mjs");
+  await checkRunnerSelections(root, renovate);
   const load = (path) => import(pathToFileURL(resolve(renovate, "dist", path)));
   const { extractPackageFile } = await load("modules/manager/index.js");
   const { applyPackageRules } = await load("util/package-rules/index.js");
@@ -24,7 +26,7 @@ export async function checkMaintenance(root, renovate) {
   const source = await readFile(resolve(root, workflow), "utf8");
   const actual = await extractPackageFile("github-actions", source, workflow, {});
   const runners = actual.deps.filter((dep) => dep.datasource === "github-runners");
-  assert.ok(runners.length > 0, "current workflows must expose hosted runners");
+  assert.ok(actual.deps.length > 0, "native manager must retain action dependencies");
   const fixture = await extractPackageFile("github-actions", [
     "name: Runner fixture", "on: push", "jobs:",
     "  amd64:", "    runs-on: ubuntu-24.04",

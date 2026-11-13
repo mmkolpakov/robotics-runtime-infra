@@ -145,3 +145,6 @@ deployment setup. [Supply-chain](docs/supply-chain.md),
 [architecture decisions](docs/decisions/README.md) define the claims attached
 to published artifacts. Report vulnerabilities through
 [SECURITY](SECURITY.md).
+
+[CI executors](docs/ci-executors.md) describes hosted and enrolled home checks,
+required runner isolation and the separate release-trust boundary.
