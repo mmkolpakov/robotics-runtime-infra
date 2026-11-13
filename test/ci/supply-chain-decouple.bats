@@ -16,7 +16,8 @@ setup() {
   local pattern
   for pattern in .dockerignore .trivyignore Dockerfile docker-bake.hcl 'docker/*' \
     'security/*' trivy.yaml config/foundation-lock.json \
-    config/ros-cohort-source.lock.json foundation.repos host/source-lock.json; do
+    config/ros-cohort-source.lock.json foundation.repos host/source-lock.json \
+    'examples/minimal-consumer/*'; do
     if ! grep -Fxq "${pattern}" <<<"${output}"; then
       printf 'missing fixed input: %s\n' "${pattern}"
     fi
@@ -68,6 +69,7 @@ host/.tools/host-asset/core.tgz
 .dockerignore
 scripts/ci/foundation/build-workspace-wheels.py
 test/provider-conformance/test_provider.py
+examples/minimal-consumer/compose.yaml
 PATHS
 }
 
@@ -225,7 +227,7 @@ EOF
 @test "every image job runs only when image inputs are affected" {
   run grep -c "if: needs.changes.outputs.affected == 'true'" .github/workflows/ci-supply-chain.yml
   [ "${status}" -eq 0 ]
-  [ "${output}" -eq 9 ]
+  [ "${output}" -eq 10 ]
 }
 
 @test "release requires a forced fresh supply-chain gate" {

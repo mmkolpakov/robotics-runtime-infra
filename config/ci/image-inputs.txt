@@ -37,6 +37,7 @@ docker/rosdeps/benchmark/package.xml
 docker/rosdeps/edge/package.xml
 docker/rosdeps/sensor/package.xml
 docker/runtime/emit-runtime-manifest
+examples/minimal-consumer/*
 foundation.repos
 host/.tools/host-asset/*
 host/source-lock.json

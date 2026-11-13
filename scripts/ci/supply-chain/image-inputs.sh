@@ -167,6 +167,8 @@ derive() {
     config/ros-cohort-source.lock.json
     foundation.repos
     host/source-lock.json
+    # Foundation qualification runs against this consumer project.
+    'examples/minimal-consumer/*'
   )
   printf '%s\n' "${fixed[@]}"
 
