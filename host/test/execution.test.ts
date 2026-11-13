@@ -39,6 +39,11 @@ test('native metadata requires every used resource field and never substitutes e
   assert.ok(validateObservation(facts, raw, image, [], required).mismatches.includes('mount./run/robotics/input.RW'));
   raw.Config.Labels['org.robotics.runtime.run-id'] = 'other';
   assert.ok(validateObservation(facts, raw, image, [], required).mismatches.includes('owner.run-id'));
+  const foreignUid = native();
+  foreignUid.Config.User = '1000:1000';
+  const uidObservation = validateObservation(facts, foreignUid, image, [], required);
+  assert.equal(uidObservation.status, 'incomplete');
+  assert.ok(uidObservation.mismatches.includes('container.Config.User'));
   assert.equal(validateObservation(facts, {}, {}, [], required).status, 'incomplete');
 });
 

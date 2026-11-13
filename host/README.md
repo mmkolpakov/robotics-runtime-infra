@@ -103,3 +103,11 @@ ROS. `compose.host.yaml` mounts only the actual host Engine socket as a bind;
 worker inputs/results use external named volumes. A container's private path
 is not an Engine host bind source. The released H asset and its shrinkwrap,
 provenance and immutable identity remain C20/C21 gates, independent of Python P.
+
+## Local coordinator recovery
+
+The optional [Linux/systemd recovery profile](docs/local-recovery.md) records
+exact attempt and OS ownership before native effects. It exports and verifies
+retained bytes before owned Compose cleanup, reuses completed export receipts
+and refuses unknown coordinators or foreign resources. Resource release leaves
+native cancellation, final state and robot stop unknown.
