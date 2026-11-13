@@ -243,7 +243,7 @@ assert foundation["outputs"]["evidence-artifact-id"] == (
     "${{ steps.upload-foundation-evidence.outputs.artifact-id }}")
 assert upload["with"]["name"] == (
     "foundation-reports-${{ github.sha }}-${{ github.run_attempt }}")
-assert upload["if"] == "always()"
+assert upload["if"] == "always() && steps.ci-profile.outcome == 'success'"
 assert upload["with"]["path"] == "artifacts/"
 assert upload["with"]["if-no-files-found"] == "error"
 assert not upload["with"].get("overwrite", False)

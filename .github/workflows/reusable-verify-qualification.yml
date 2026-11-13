@@ -41,9 +41,18 @@ defaults:
 
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
     timeout-minutes: 20
     steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
       - name: Validate the immutable tooling reference
         env:
           TOOLING_REF: ${{ inputs.tooling_ref }}

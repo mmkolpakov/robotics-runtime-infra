@@ -132,8 +132,33 @@ EOF
 }
 
 @test "portable ARM64 CI images build on a native runner" {
+  local python="${ROBOTICS_FOUNDATION_PYTHON:?use the installed foundation interpreter}"
+  run "${python}" -I - <<'PY'
+import json
+import re
+from pathlib import Path
+from robotics_runtime_contracts import load_mapping
+
+job = load_mapping(Path(".github/workflows/ci-supply-chain.yml"))["jobs"]["portable-arm64"]
+runner = job["runs-on"]
+assert "[vars.ROBOTICS_CI_EXECUTOR || 'hosted']" in runner
+selected = re.search(r"fromJSON\('([^']+)'\)", runner)
+assert selected is not None
+assert json.loads(selected[1]) == {
+    "hosted": "ubuntu-24.04-arm",
+    "home": ["self-hosted", "linux", "arm64", "robotics-ci-home"],
+}
+guard = job["steps"][0]
+assert guard["id"] == "ci-profile"
+assert guard["with"]["architecture"] == "arm64"
+assert guard["with"]["runner-environment"] == "${{ runner.environment }}"
+default_trust = load_mapping(Path(".github/actions/ci-profile/action.yml"))["inputs"]["trust"]["default"]
+assert default_trust == "software"
+assert guard["with"].get("trust", default_trust) == "software"
+PY
+  printf '%s\n' "${output}"
+  [ "${status}" -eq 0 ]
   job="$(sed -n '/^  portable-arm64:/,/^  reproducibility:/p' .github/workflows/ci-supply-chain.yml)"
-  grep -Fx '    runs-on: ubuntu-24.04-arm' <<<"${job}"
   grep -F 'test "$(uname -m)" = aarch64' <<<"${job}"
   run grep -F 'qemu:' <<<"${job}"
   [ "${status}" -eq 1 ]
