@@ -12,6 +12,18 @@ Build dependencies with `docker/px4-sitl-deps.Dockerfile`. The existing
 then compiles `px4_sitl_default` inside the dependency image. Keep its immutable
 dependency image ID for the final recipe.
 
+The dependency recipe pins an Ubuntu snapshot and the complete stable Jetty
+package set. Its `dependency-inputs` target retains signed APT indexes, installed
+package versions and downloaded-package hashes under `/usr/share/robotics-px4`.
+The final target checks the installed inventory against
+[the dependency closure](../../../docker/apt/px4-jetty-closure.lock) before
+installing the hash-locked Python environment. Locked APT cache mounts retain
+downloads between builds without adding the cache to the image.
+
+A new dependency composition produces a new image identity. The selected runtime
+profile must bind that identity; rebuilding dependencies does not change an
+existing profile or its recorded observations.
+
 `host/tools/prepare-px4-image.py` generates a fresh context under `host/.tools`
 and invokes Podman build. Each context records source revisions, the dependency
 image and payload/worker hashes. An existing context is not overwritten.
