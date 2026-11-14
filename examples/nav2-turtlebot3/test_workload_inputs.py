@@ -312,7 +312,10 @@ class NativeAdmissionControls(unittest.TestCase):
         )
         return prepared, manifest
 
-    def test_current_public_bundle_admits_only_exact_bound_subject_model_and_run(self):
+    def test_native_goal_bundle_keeps_hashed_inputs_without_loaded_model_claim(self):
+        import hashlib
+        from robotics_acceptance_harness.documents import load_bundle
+
         prepared, manifest = self.prepare()
         result = self.module["validate_prepared"](
             prepared, image_id=self.image_id, case="success"
@@ -320,7 +323,27 @@ class NativeAdmissionControls(unittest.TestCase):
         self.assertEqual(result["run_id"], manifest["run_id"])
         runtime = json.loads((prepared / "runtime.json").read_bytes())
         scenario = json.loads((prepared / "scenario.json").read_bytes())
-        self.assertEqual(runtime["native_model"], scenario["native_model"])
+        self.assertNotIn("native_model", scenario)
+        self.assertNotIn("native_model", runtime)
+        bundle = load_bundle(
+            prepared / "scenario.json",
+            runtime_path=prepared / "runtime.json",
+            extension_schemas={
+                "urn:nav2-turtlebot3:scenario:v1": (
+                    prepared / "nav2.schema.json"
+                ).read_bytes()
+            },
+        )
+        self.assertEqual(bundle.scenario.as_dict(), scenario)
+        self.assertEqual(bundle.runtime.as_dict(), runtime)
+        for name, key in (
+            ("native-model.sdf", "native_model"),
+            ("native-world.sdf", "expanded_world"),
+            ("native-preflight.json", "native_preflight"),
+        ):
+            raw = (prepared / name).read_bytes()
+            self.assertEqual(manifest[key]["size_bytes"], len(raw))
+            self.assertEqual(manifest[key]["sha256"], hashlib.sha256(raw).hexdigest())
         self.assertEqual(runtime["execution_subject"]["digest"], "sha256:" + "b" * 64)
         self.assertNotIn("synthetic", scenario["profile"]["executor"]["version"])
         for image, case in (
@@ -329,6 +352,67 @@ class NativeAdmissionControls(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 self.module["validate_prepared"](prepared, image_id=image, case=case)
+
+    def test_public_evaluation_keeps_declared_unobserved_model_as_a_refusal(self):
+        import hashlib
+        from robotics_acceptance_harness.application import evaluate_from_evidence
+        from robotics_acceptance_harness.documents import (
+            BundleValidationError,
+            load_bundle,
+        )
+        from robotics_runtime_contracts.writers import write_document
+        from test_v2_documents import completed, FINALIZE
+
+        prepared, manifest = self.prepare()
+        scenario_path, runtime_path, run_path = (
+            prepared / name for name in ("scenario.json", "runtime.json", "run.json")
+        )
+        scenario = json.loads(scenario_path.read_bytes())
+        runtime = json.loads(runtime_path.read_bytes())
+        run = json.loads(run_path.read_bytes())
+        model = prepared / "native-model.sdf"
+        reference = self.module["reference"](
+            model, model.read_bytes(), "application/xml"
+        )
+        scenario["native_model"] = reference
+        schemas = {
+            "urn:nav2-turtlebot3:scenario:v1": (
+                prepared / "nav2.schema.json"
+            ).read_bytes()
+        }
+        write_document(scenario, scenario_path, extension_schemas=schemas)
+        scenario_sha = hashlib.sha256(scenario_path.read_bytes()).hexdigest()
+        runtime.update(scenario_sha256=scenario_sha, native_model=reference)
+        run["scenario_sha256"] = scenario_sha
+        write_document(runtime, runtime_path)
+        write_document(run, run_path)
+        for key, path in (
+            ("scenario", scenario_path),
+            ("runtime", runtime_path),
+            ("run_context", run_path),
+        ):
+            raw = path.read_bytes()
+            manifest[key].update(
+                sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw)
+            )
+        (prepared / "pre-execution-inputs.json").write_text(json.dumps(manifest))
+        capture, _ = completed(prepared, manifest)
+        result = FINALIZE.complete(prepared, capture)
+        bundle = load_bundle(
+            scenario_path, runtime_path=runtime_path, extension_schemas=schemas
+        )
+        with self.assertRaisesRegex(BundleValidationError, "observation.native_model"):
+            evaluate_from_evidence(
+                run_id=manifest["run_id"],
+                bundle=bundle,
+                domain_id="nav2",
+                run_context_path=run_path,
+                evidence_index_path=result["evidence_index"],
+                otel_metrics_path=None,
+                window_start_ns=0,
+                window_end_ns=1,
+                output_dir=self.root / "declared-model-assessment",
+            )
 
     def test_native_inputs_require_declared_active_lifecycle_nodes(self):
         requirements = json.loads(self.requirements.read_bytes())

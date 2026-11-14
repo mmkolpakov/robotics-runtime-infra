@@ -234,12 +234,8 @@ def prepare(
                 facts["rendered"][kind]["base64"], validate=True
             )
             write_bytes_atomically(raw_by_name[name], output / name)
-        model = output / "native-model.sdf"
         raw_by_name["native-preflight.json"] = native_raw
         write_bytes_atomically(native_raw, output / "native-preflight.json")
-        scenario["native_model"] = reference(
-            model, raw_by_name["native-model.sdf"], "application/xml"
-        )
     scenario_path, runtime_path = output / "scenario.json", output / "runtime.json"
     write_document(scenario, scenario_path, extension_schemas={schema_uri: schema_raw})
     raw_by_name["scenario.json"] = read_once(scenario_path, DOCUMENT_LIMIT)
@@ -253,7 +249,6 @@ def prepare(
         "evaluator_bindings": scenario["evaluator_requirements"],
     }
     if native is not None:
-        runtime["native_model"] = scenario["native_model"]
         runtime["execution_subject"] = {
             "kind": "oci_image",
             "locator": (
@@ -670,11 +665,6 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
             raise ValueError(
                 "mounted native input differs from captured preflight: " + kind
             )
-    if any(
-        scenario["native_model"][field] != manifest["native_model"][field]
-        for field in ("sha256", "size_bytes")
-    ):
-        raise ValueError("scenario model does not bind captured native bytes")
     subject = {
         "kind": "oci_image",
         "locator": (
