@@ -134,7 +134,19 @@ export async function launchNative([caseName, operatorPath, inputPath], loadHost
 }
 
 async function main() {
-  const result = await launchNative(process.argv.slice(2));
+  let result, host;
+  try { result = await launchNative(process.argv.slice(2), async () => {
+    host = await import('@robotics-runtime/host'); return host;
+  }); }
+  catch (error) {
+    const RunStartupError = host?.RunStartupError;
+    if (!RunStartupError) throw error;
+    const startup = error instanceof RunStartupError ? error
+      : error instanceof AggregateError && error.cause instanceof RunStartupError ? error.cause : undefined;
+    if (!startup) throw error;
+    result = {completion: startup.completion, startupError: startup.message};
+    if (error !== startup) result.disposalErrors = error.errors.slice(1).map(String);
+  }
   process.stdout.write(JSON.stringify(result) + '\n');
   if (result.completion.status !== 'passed' || result.evaluation?.exitCode !== 0) process.exitCode = 1;
 }

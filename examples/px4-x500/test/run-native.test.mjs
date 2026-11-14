@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {chmod, mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {chmod, copyFile, mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -232,4 +232,43 @@ test('SDK IDs are captured before asynchronous owner startup', async t => {
   args.owner.start = async (...values) => {args.sdkIds.source_system_id = 0; return start(...values)};
   await runNativeAttempt(args);
   assert.deepEqual(observed, identities);
+});
+
+
+test('CLI serializes the actual public startup completion without exposing its run context', async t => {
+  const f = await launchFixture(t), module = f.operator.profile.files[1].path;
+  await writeFile(module, `export default (ctx, config) => {
+    ctx.provide('px4', {config, async ready() {throw new Error('software readiness refusal')}});
+  };\n`);
+  for (const file of f.operator.profile.files) {
+    file.sha256 = createHash('sha256').update(await readFile(file.path)).digest('hex');
+    await chmod(file.path, 0o444);
+  }
+  await f.save();
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../src/run-native.mjs', import.meta.url)),
+    'land', f.operatorPath, f.inputPath], {encoding: 'utf8', timeout: 10000});
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0);
+  const receipt = JSON.parse(result.stdout);
+  assert.equal(receipt.startupError, 'software readiness refusal');
+  assert.equal(receipt.completion.runId, 'issued');
+  assert.notEqual(receipt.completion.status, 'passed');
+  assert.ok(receipt.completion.phases.some(phase => phase.phase === 'preloading' && phase.status === 'error'));
+  assert.equal(Object.hasOwn(receipt, 'run'), false);
+  assert.equal(Object.hasOwn(receipt, 'evaluation'), false);
+});
+
+
+test('isolated CLI without the optional host SDK preserves its argument error', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'px4-cli-no-sdk-'));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  for (const name of ['run-native.mjs', 'operator-input.mjs']) {
+    await copyFile(new URL('../src/' + name, import.meta.url), join(directory, name));
+  }
+  const result = spawnSync(process.execPath, [join(directory, 'run-native.mjs')], {encoding: 'utf8', timeout: 5000});
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unsupported native case/);
+  assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND/);
+  assert.equal(result.stdout, '');
 });
