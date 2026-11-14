@@ -21,10 +21,6 @@ test -d "${digests_dir}"
 
 : "${TRIVY_IMAGE:?TRIVY_IMAGE is required}"
 
-# The published platform set comes from the release group of the bake
-# definition; the release gate itself verifies every candidate platform.
-bake_plan="$(docker buildx bake --file docker-bake.hcl --print release)"
-
 failed=()
 while IFS='=' read -r variable reference; do
   case "${variable}" in
@@ -42,8 +38,68 @@ while IFS='=' read -r variable reference; do
       printf 'digest record does not match the release lock: %s\n' "${id}" >&2
       exit 65
     fi
-    platforms="$(jq -er --arg id "${id}" '.target[$id].platforms | join(",")' <<<"${bake_plan}")" || {
-      printf 'published image is not in the release group: %s\n' "${id}" >&2
+    if ! inspection="$(docker buildx imagetools inspect \
+      --format '{"manifest":{{json .Manifest}},"image":{{json .Image}}}' "${reference}")"; then
+      printf 'cannot inspect published image: %s\n' "${reference}" >&2
+      exit 65
+    fi
+    # Buildx config maps omit reference descriptors and collapse duplicate platforms.
+    platforms="$(jq -ser --arg digest "${reference##*@}" '
+      def image_manifest:
+        .mediaType == "application/vnd.oci.image.manifest.v1+json" or
+        .mediaType == "application/vnd.docker.distribution.manifest.v2+json";
+      def platform_name:
+        if type == "object" and .os == "linux" and
+          (.architecture == "amd64" or .architecture == "arm64") and
+          (.variant // "") == ""
+        then "linux/" + .architecture
+        else error("unsupported or missing runtime platform") end;
+      def sha256_digest: type == "string" and test("^sha256:[a-f0-9]{64}$");
+
+      if length != 1 then error("expected one inspect result") else .[0] end |
+      .manifest as $manifest |
+      if $manifest.digest != $digest then error("published digest mismatch") else . end |
+      (.image |
+        if type != "object" then error("missing image configs")
+        elif has("architecture") then [platform_name]
+        else [to_entries[] | .key as $key | .value | platform_name |
+          if . == $key then . else error("image config platform mismatch") end]
+        end) as $platforms |
+      if ($platforms | length) == 0 or
+        ($platforms | unique | length) != ($platforms | length)
+      then error("empty or duplicate runtime platforms") else . end |
+
+      if $manifest | image_manifest then
+        if ($platforms | length) != 1 then error("ambiguous single image")
+        else $platforms end
+      elif $manifest.mediaType == "application/vnd.oci.image.index.v1+json" or
+        $manifest.mediaType == "application/vnd.docker.distribution.manifest.list.v2+json"
+      then
+        $manifest.manifests |
+        if type != "array" or length == 0 then error("missing index descriptors") else . end |
+        . as $descriptors |
+        map(select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")) as $runtime |
+        [$runtime[].platform | platform_name] as $declared |
+        [$runtime[].digest] as $runtime_digests |
+        if ($declared | sort) != ($platforms | sort) or
+          ($descriptors | map(.digest) | unique | length) != ($descriptors | length)
+        then error("index does not match image configs") else . end |
+        if all($descriptors[];
+          image_manifest and (.digest | sha256_digest) and
+          (if .annotations["vnd.docker.reference.type"] == "attestation-manifest" then
+            .platform.os == "unknown" and .platform.architecture == "unknown" and
+            (.annotations["vnd.docker.reference.digest"] as $ref |
+              ($runtime_digests | index($ref) != null) and
+              (.annotations["com.docker.reference.digest"] // $ref) == $ref)
+          else
+            (.annotations["vnd.docker.reference.digest"] // null) == null and
+            (.annotations["com.docker.reference.digest"] // null) == null
+          end))
+        then $platforms else error("invalid runtime or attestation descriptor") end
+      else error("unsupported published manifest type") end |
+      sort | join(",")
+    ' <<<"${inspection}")" || {
+      printf 'invalid published image platforms: %s\n' "${reference}" >&2
       exit 65
     }
   else
