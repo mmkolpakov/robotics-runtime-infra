@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -17,6 +18,9 @@ from unittest.mock import patch
 from robotics_acceptance_harness.evidence import VerifiedEvidence
 
 ROOT = Path(__file__).parent
+EVALUATOR_VERSION = tomllib.loads((ROOT / "evaluator/pyproject.toml").read_text())[
+    "project"
+]["version"]
 SPEC = importlib.util.spec_from_file_location("px4_producer", ROOT / "producer.py")
 PRODUCER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PRODUCER)
@@ -42,7 +46,7 @@ def inputs(root, case="land"):
                 "namespace": PRODUCER.PROFILE,
                 "entry_point": "px4_x500_evaluator:evaluate",
                 "distribution": "px4-x500-evaluator",
-                "version": "0.3.2",
+                "version": EVALUATOR_VERSION,
                 "artifact_sha256": "a" * 64,
                 "receipt_sha256": "b" * 64,
             },

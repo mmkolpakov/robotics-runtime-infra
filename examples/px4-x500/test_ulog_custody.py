@@ -550,6 +550,66 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
                     result = self.assess(case, mutate=mutate)
                     self.assertIs(result["postcondition"][0], outcome, result)
 
+    def test_source_sample_roles_preserve_the_complete_publication_window(self):
+        for source_stamp, expected in ((119, False), (120, False), (121, True)):
+
+            def mutate(_records, _native, decoded):
+                source = next(
+                    d for d in decoded.data_list if d.name == "vehicle_global_position"
+                )
+                source.data["timestamp_sample"][1] = source_stamp
+                source.data["alt"][1] = 2.0
+                source.data["alt"][2] = 0.0
+
+            with self.subTest(source_stamp=source_stamp):
+                result = self.assess(mutate=mutate)
+                self.assertIs(result["postcondition"][0], expected, result)
+
+    def test_refusal_boundary_context_is_not_a_fourth_witness(self):
+        def mutate(_records, _native, decoded):
+            source = next(
+                d for d in decoded.data_list if d.name == "vehicle_global_position"
+            )
+            source.data["timestamp_sample"][1] = 100
+            source.data["alt"][1:] = 0.0
+
+        result = self.assess("unarmed-refusal", mutate=mutate)
+        self.assertIsNone(result["postcondition"][0], result)
+
+    def test_pre_command_refusal_context_does_not_become_the_excursion_anchor(self):
+        def mutate(_records, _native, decoded):
+            import numpy as np
+
+            source = next(
+                d for d in decoded.data_list if d.name == "vehicle_global_position"
+            )
+            source.data["timestamp_sample"][1] = 99
+            source.data["alt"][1] = 5.0
+            source.data["alt"][2:] = 0.0
+            for key, values in source.data.items():
+                value = values[-1].item()
+                if key == "timestamp":
+                    value = 240
+                elif key == "timestamp_sample":
+                    value = 239
+                source.data[key] = np.append(values, value).astype(values.dtype)
+
+        result = self.assess("unarmed-refusal", mutate=mutate)
+        self.assertIs(result["postcondition"][0], True, result)
+
+    def test_no_strict_post_command_witness_cannot_prove_a_positive(self):
+        for stamps in ([118, 119], [119, 120]):
+
+            def mutate(_records, _native, decoded):
+                source = next(
+                    d for d in decoded.data_list if d.name == "vehicle_global_position"
+                )
+                source.data["timestamp_sample"][1:] = stamps
+
+            with self.subTest(stamps=stamps):
+                result = self.assess(mutate=mutate)
+                self.assertIsNone(result["postcondition"][0], result)
+
     def test_same_tick_conflicting_attributable_acks_remain_ambiguous(self):
         def mutate(_records, _native, decoded):
             import numpy as np

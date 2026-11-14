@@ -8,6 +8,7 @@ from px4_x500_evaluator._ulog import (
     Unavailable,
     altitude_samples,
     altitude_condition,
+    post_command_condition,
     command_phase,
     original,
     sampled_facts,
@@ -207,11 +208,12 @@ class SampledAltitudeControls(unittest.TestCase):
             [(offset + 19, (1500,)), (offset + 29, (1500,))],
         )
 
-    def test_source_sample_and_publication_must_both_follow_received_command(self):
+    def test_pre_command_source_sample_is_retained_as_valid_context(self):
         rows, home = positions([1.5])
         rows[-1]["timestamp_sample"] = 9
-        with self.assertRaisesRegex(Unavailable, "stale"):
-            altitude_samples(rows, home, 10, 100)
+        samples = altitude_samples(rows, home, 10, 100)
+        self.assertEqual(samples, [(9, (1500,))])
+        self.assertIsNone(post_command_condition(samples, 10, refusal=False))
 
     def test_repeated_source_sample_does_not_count_as_four_observations(self):
         rows, home = positions([0, 0, 0, 0])
@@ -320,6 +322,137 @@ class CandidateConditionControls(unittest.TestCase):
                     expected,
                     values,
                 )
+
+
+class SampleRoleControls(unittest.TestCase):
+    def test_context_is_retained_and_cannot_supply_a_positive_witness(self):
+        estimates, homes = positions([5.0, 5.0, 1.2])
+        for row, stamp in zip(estimates[1:], [9, 10, 11]):
+            row["timestamp_sample"] = stamp
+        samples = altitude_samples(estimates, homes, 10, 100)
+        self.assertEqual([stamp for stamp, _heights in samples], [9, 10, 11])
+        self.assertEqual(len(samples), 3)
+        self.assertIs(post_command_condition(samples, 10, refusal=False), True)
+        self.assertIs(
+            post_command_condition([(9, (5000,)), (11, (0,))], 10, refusal=False),
+            False,
+        )
+
+    def test_boundary_height_is_context_and_cannot_witness_a_positive(self):
+        for boundary, later, expected in [
+            ((1200,), (0,), False),
+            ((0,), (1200,), True),
+            ((1199,), (0,), False),
+            ((1199, 1200), (0,), False),
+        ]:
+            with self.subTest(boundary=boundary, later=later):
+                self.assertIs(
+                    post_command_condition(
+                        [(10, boundary), (11, later)], 10, refusal=False
+                    ),
+                    expected,
+                )
+
+    def test_no_strict_witness_leaves_the_condition_unknown(self):
+        for samples in ([], [(9, (5000,))], [(10, (5000,))]):
+            for refusal in (False, True):
+                with self.subTest(samples=samples, refusal=refusal):
+                    self.assertIsNone(
+                        post_command_condition(samples, 10, refusal=refusal)
+                    )
+        self.assertIsNone(altitude_condition([], refusal=False))
+        self.assertIsNone(altitude_condition([], refusal=True))
+
+    def test_three_witnesses_and_one_context_sample_are_not_four_witnesses(self):
+        samples = [(10, (0,)), (11, (0,)), (12, (0,)), (13, (0,))]
+        self.assertIsNone(post_command_condition(samples, 10, refusal=True))
+
+    def test_refusal_first_strict_witness_is_anchor_with_correlated_home_choice(self):
+        for samples, expected in [
+            (
+                [(10, (5000,)), (11, (0, 400))] + [(t, (200,)) for t in range(12, 15)],
+                True,
+            ),
+            ([(10, (-500, 500)), (11, (0,)), (12, (201,))], False),
+            ([(10, (0,))] + [(t, (500,)) for t in range(11, 15)], True),
+        ]:
+            with self.subTest(samples=samples):
+                self.assertIs(
+                    post_command_condition(samples, 10, refusal=True), expected
+                )
+
+    def test_invalid_source_timestamps_remain_unavailable_in_all_roles(self):
+        for stamp in (0, -1, True, 1.5, "9", None, 21):
+            estimates, homes = positions([1.5])
+            estimates[-1]["timestamp_sample"] = stamp
+            with self.subTest(stamp=stamp), self.assertRaises(Unavailable):
+                altitude_samples(estimates, homes, 10, 100)
+        for stamps in ([10, 10], [9, 8]):
+            estimates, homes = positions([1.5, 1.5])
+            for row, stamp in zip(estimates[1:], stamps):
+                row["timestamp_sample"] = stamp
+            with self.subTest(stamps=stamps), self.assertRaises(Unavailable):
+                altitude_samples(estimates, homes, 10, 100)
+
+    def test_context_quality_errors_are_not_ignored(self):
+        for kind in ("altitude", "reset", "home"):
+            estimates, homes = positions([5.0, 1.5])
+            estimates[1]["timestamp_sample"] = 9
+            if kind == "altitude":
+                estimates[1]["alt"] = float("nan")
+            elif kind == "reset":
+                estimates[1]["alt_reset_counter"] = 8
+            else:
+                homes[0]["valid_alt"] = False
+            with self.subTest(kind=kind), self.assertRaises(Unavailable):
+                altitude_samples(estimates, homes, 10, 100)
+
+    def test_all_post_command_inputs_keep_the_original_classifier(self):
+        from itertools import product
+
+        choices = [(0,), (1200,), (-201, 201)]
+        for count in (1, 2, 4):
+            for values in product(choices, repeat=count):
+                samples = [(11 + i, heights) for i, heights in enumerate(values)]
+                for refusal in (False, True):
+                    self.assertIs(
+                        post_command_condition(samples, 10, refusal=refusal),
+                        altitude_condition(samples, refusal=refusal),
+                    )
+
+    def test_strict_witness_home_candidates_match_point_formula_oracle(self):
+        from itertools import product
+
+        choices = [(0,), (1200,), (-201, 201)]
+        for count in (0, 1, 3, 4):
+            for values in product(choices, repeat=count + 1):
+                samples = [(9, (5000,)), (10, values[0])]
+                samples.extend(
+                    (11 + i, heights) for i, heights in enumerate(values[1:])
+                )
+                for refusal in (False, True):
+                    outcomes = set()
+                    for world in product(*values[1:]):
+                        if not world:
+                            condition = None
+                        elif refusal:
+                            excursion = max(abs(mm - world[0]) for mm in world)
+                            condition = (
+                                False
+                                if excursion > 200
+                                else True
+                                if len(world) >= 4
+                                else None
+                            )
+                        else:
+                            condition = max(world) >= 1200
+                        outcomes.add(condition)
+                    expected = next(iter(outcomes)) if len(outcomes) == 1 else None
+                    self.assertIs(
+                        post_command_condition(samples, 10, refusal=refusal),
+                        expected,
+                        (samples, refusal),
+                    )
 
 
 class NativeCommandControls(unittest.TestCase):
