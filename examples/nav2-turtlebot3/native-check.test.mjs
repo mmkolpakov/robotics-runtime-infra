@@ -19,7 +19,7 @@ test('missing inputs refuse before loading the optional host package or acquirin
   assert.doesNotMatch(executed.stderr,/ERR_MODULE_NOT_FOUND/);
 });
 
-async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,local=false,bareImage=false}={}) {
+async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,badEntrypoint=false,local=false,bareImage=false}={}) {
   const directory=await mkdtemp(resolve(tmpdir(),'nav2-driver-'));
   t.after(()=>rm(directory,{recursive:true,force:true}));
   const output=resolve(directory,'run'), requirements=resolve(directory,'requirements.json'), capture=resolve(output,'capture');
@@ -34,7 +34,7 @@ async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=
       if(a.includes('--native-preflight')){await mkdir(resolve(output,'inputs'));return result('{}');}
       if(a.includes('--validate-prepared')){
         if(badInput&&!a.includes('--complete-capture')) return {...result(),ok:false,exitCode:2,stderr:'input mismatch'};
-        return result(JSON.stringify({run_id:'run-fixture',domain_id:'nav2',configuration,image_id:image,image_reference:reference,launch:['ros2','launch','nav2_bringup','tb3_simulation_launch.py']}));
+        return result(JSON.stringify({run_id:'run-fixture',domain_id:'nav2',configuration,image_id:image,image_reference:reference,launch:['ros2','launch','/opt/sdk-policy/native_simulation.launch.py']}));
       }
       return result(JSON.stringify({run_id:'run-fixture'}));
     }
@@ -50,7 +50,7 @@ async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=
       const overrides=new Map(env.map(value=>[value.slice(0,value.indexOf('=')),value]));
       actor={Id:cid,Image:image,Name:'/'+a[a.indexOf('--name')+1],Config:{
         Labels:{'org.example.nav2.owner':a[a.indexOf('--label')+1].split('=')[1]},
-        StopSignal:'SIGINT',Entrypoint:['/ros_entrypoint.sh'],
+        StopSignal:'SIGINT',Entrypoint:badEntrypoint?'/bin/sh':'/ros_entrypoint.sh',
         Cmd:a.slice(a.indexOf(image)+1),Env:[...packageImage.Config.Env.filter(x=>!overrides.has(x.split('=')[0])),...env]},
         Mounts:mounts,HostConfig:{NetworkMode:'none',IpcMode:'private',Privileged:false,ReadonlyRootfs:false,Memory:2147483648,PidsLimit:512},
         State:{Running:false,Pid:0,Status:'created',ExitCode:0,OOMKilled:false}};
@@ -124,6 +124,22 @@ for(const flag of ['badInput','badImage']){
 test('an altered acquired environment refuses start and removes only the owned unstarted actor',async t=>{
   const f=await fixture(t,{badActor:true});
   await assert.rejects(f.promise,/environment differs/);
+  assert.equal(f.started,false);
+  assert.equal(f.removed,true);
+});
+
+test('Podman container entrypoint string is distinct from the image entrypoint array',async t=>{
+  const f=await fixture(t);
+  await f.promise;
+  const preflight=JSON.parse(await readFile(resolve(f.output,'native-preflight.json'),'utf8'));
+  const acquired=JSON.parse(await readFile(resolve(f.output,'capture/native-acquired.json'),'utf8'));
+  assert.deepEqual(preflight.image.Config.Entrypoint,['/ros_entrypoint.sh']);
+  assert.equal(acquired.Config.Entrypoint,'/ros_entrypoint.sh');
+  assert.equal(f.started,true);
+});
+test('an altered acquired entrypoint refuses start and removes only the owned unstarted actor',async t=>{
+  const f=await fixture(t,{badEntrypoint:true});
+  await assert.rejects(f.promise,/entrypoint/);
   assert.equal(f.started,false);
   assert.equal(f.removed,true);
 });
