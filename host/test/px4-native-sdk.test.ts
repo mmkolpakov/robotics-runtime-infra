@@ -456,3 +456,15 @@ test('logger caller cancellation and the single deadline prevent later on or mea
   await assert.rejects(second.provider.startNativeLogger(new AbortController().signal));
   assert.equal(on,false);assert.equal(second.provider.loggerStarted,false);
 });
+
+
+test('logger shutdown requires stock absent-module255 rather than another nonzero exit',async t=>{
+  for(const exitCode of [-1,1,2,137]){
+    const {provider}=await setup(t,{ID:eid,ContainerID:cid,Running:false,ExitCode:0});
+    provider.workerState='settled';
+    provider.loggerCommand=async(command:string)=>({result:command==='stop'
+      ? loggerResult('') : loggerResult('INFO  [logger] not running',exitCode)});
+    await assert.rejects(provider.drainRecorders(new AbortController().signal),/shutdown is unverified/);
+    assert.equal(provider.loggerClosed,false);
+  }
+});

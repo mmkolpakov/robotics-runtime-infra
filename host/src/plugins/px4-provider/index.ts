@@ -413,7 +413,7 @@ export class Px4Native extends Service {
       const stopped=await this.loggerCommand('stop','after-case',signal);
       const status=await this.loggerCommand('status','after-case',signal);
       this.loggerStopRef=await this.nativeFact('logger-stop.json',{...stopped,status_after:status});
-      if(!stopped.result.ok||stopped.result.exitCode!==0||status.result.ok||!Number.isInteger(status.result.exitCode)||status.result.exitCode===0||
+      if(!stopped.result.ok||stopped.result.exitCode!==0||status.result.ok||status.result.exitCode!==255||
         status.result.timedOut||status.result.canceled||status.result.stderr.trim()||
         !/^(?:INFO\s+\[logger\]\s+)?not running\s*$/.test(status.result.stdout)||
         /timeout, forcing stop|server not running|error connecting/i.test(stopped.result.stdout+stopped.result.stderr+status.result.stdout))throw new Error('stock logger shutdown is unverified');
