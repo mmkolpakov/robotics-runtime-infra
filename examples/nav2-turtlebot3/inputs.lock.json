@@ -106,9 +106,9 @@
   },
   "public_packages": {
     "host": {
-      "version": "0.1.0-rc.0",
-      "release": "host-v0.1.0-rc.0",
-      "sha256": "51c919953f6b761e20c89eee22e7dfe2c7aacb221329b61a99a52cf13ccf1e57"
+      "version": "0.1.0-rc.1",
+      "release": "host-v0.1.0-rc.1",
+      "sha256": "31bdb82a7dcfde16087c33d1a5832143694fe07d7894476321a32f0ae5485121"
     }
   },
   "sdk_cohort": {
