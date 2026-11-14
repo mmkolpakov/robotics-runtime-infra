@@ -13,6 +13,8 @@ import platform
 import re
 import subprocess
 import time
+from collections import deque
+from dataclasses import asdict
 from pathlib import Path
 
 
@@ -49,6 +51,8 @@ def load_ros():
         qos_profile_sensor_data, \
         serialize_message, \
         wait_for_readiness, \
+        evaluate_graph, \
+        GraphReadinessTimeout, \
         RosGraphObserver, \
         Clock, \
         message_to_ordereddict, \
@@ -69,7 +73,11 @@ def load_ros():
         qos_profile_sensor_data,
     )
     from rclpy.serialization import serialize_message
-    from robotics_acceptance_harness.readiness import wait_for_readiness
+    from robotics_acceptance_harness.readiness import (
+        GraphReadinessTimeout,
+        evaluate_graph,
+        wait_for_readiness,
+    )
     from robotics_acceptance_harness.ros import RosGraphObserver
     from rosgraph_msgs.msg import Clock
     from rosidl_runtime_py.convert import message_to_ordereddict
@@ -111,6 +119,83 @@ def readiness_parameters(scenario):
             "declared graph readiness must fit the existing ten-second budget"
         )
     return settings["graph"], budget, stability
+
+
+def wait_for_graph_readiness(
+    expected_graph, observer, *, timeout_sec, stable_for_sec, ready_deadline, report
+):
+    snapshots = deque(maxlen=128)
+    timeout_error = None
+    diagnostic = {
+        "timeout_sec": timeout_sec,
+        "stable_for_sec": stable_for_sec,
+        "snapshot_limit": snapshots.maxlen,
+    }
+    report["graph_readiness"] = diagnostic
+    diagnostic["call_started_monotonic_ns"] = time.monotonic_ns()
+    diagnostic["call_started_unix_ns"] = time.time_ns()
+    try:
+        result = wait_for_readiness(
+            expected_graph,
+            observer,
+            timeout_sec=timeout_sec,
+            stable_for_sec=stable_for_sec,
+            on_snapshot=snapshots.append,
+        )
+        if time.monotonic() >= ready_deadline:
+            raise TimeoutError(
+                "published graph observation exceeded readiness deadline"
+            )
+        return result
+    except GraphReadinessTimeout as error:
+        timeout_error = error
+        raise
+    finally:
+        diagnostic["call_finished_monotonic_ns"] = time.monotonic_ns()
+        diagnostic["call_finished_unix_ns"] = time.time_ns()
+        diagnostic["retained_snapshot_count"] = len(snapshots)
+        diagnostic["snapshots"] = [
+            {
+                "observed_at_monotonic_ns": snapshot.observed_at_ns,
+                "topics": {
+                    name: {
+                        "types": observation.types,
+                        "publishers": observation.publishers,
+                        "subscribers": observation.subscribers,
+                        "first_message_unix_ns": observation.first_message_at_ns,
+                        "qos_compatible": observation.qos_compatible,
+                    }
+                    for name, observation in snapshot.topics.items()
+                },
+                **{
+                    name: {
+                        key: asdict(value)
+                        for key, value in getattr(snapshot, name).items()
+                    }
+                    for name in ("services", "actions")
+                },
+                "lifecycle_nodes": {
+                    name: {
+                        "state": observation.state,
+                        "observed_at_unix_ns": observation.observed_at_ns,
+                    }
+                    for name, observation in snapshot.lifecycle_nodes.items()
+                },
+                "node_names": (
+                    None if snapshot.node_names is None else sorted(snapshot.node_names)
+                ),
+            }
+            for snapshot in snapshots
+        ]
+        if snapshots:
+            diagnostic["last_snapshot"] = diagnostic["snapshots"][-1]
+            diagnostic["snapshot_issues"] = [
+                asdict(issue) for issue in evaluate_graph(expected_graph, snapshots[-1])
+            ]
+        if timeout_error is not None:
+            diagnostic["timeout_issues"] = [
+                asdict(issue) for issue in timeout_error.issues
+            ]
 
 
 def native_octets(values, size: int) -> list[int]:
@@ -513,21 +598,26 @@ def main() -> int:
             )
             initialize_navigator(navigator, args.already_initialized)
             ready_deadline = time.monotonic() + graph_budget
-            observer = RosGraphObserver(
-                expected_graph,
-                observe_clock=True,
-                node_name="nav2_public_graph_observer",
-            )
-            graph_ready = wait_for_readiness(
+            construction_started_ns = time.monotonic_ns()
+            try:
+                observer = RosGraphObserver(
+                    expected_graph,
+                    observe_clock=True,
+                    node_name="nav2_public_graph_observer",
+                )
+            finally:
+                report["graph_observer"] = {
+                    "construction_started_monotonic_ns": construction_started_ns,
+                    "construction_finished_monotonic_ns": time.monotonic_ns(),
+                }
+            graph_ready = wait_for_graph_readiness(
                 expected_graph,
                 observer,
                 timeout_sec=max(0.001, ready_deadline - time.monotonic()),
                 stable_for_sec=graph_stability,
+                ready_deadline=ready_deadline,
+                report=report,
             )
-            if time.monotonic() >= ready_deadline:
-                raise TimeoutError(
-                    "published graph observation exceeded readiness deadline"
-                )
             subscriptions = [
                 navigator.create_subscription(
                     TFMessage,
@@ -604,6 +694,8 @@ def main() -> int:
                     "api": "RosGraphObserver/wait_for_readiness",
                     "first_ready_at_ns": graph_ready.first_ready_at_ns,
                     "stable_for_sec": graph_ready.stable_for_sec,
+                    "graph_observer": report["graph_observer"],
+                    "graph_readiness": report["graph_readiness"],
                 },
             )
             while not client.wait_for_server(timeout_sec=0.1):
@@ -976,7 +1068,15 @@ def main() -> int:
             report["message_counts"] = counts
             record(
                 "observation-error",
-                {"error_type": type(error).__name__, "message": str(error)},
+                {
+                    "error_type": type(error).__name__,
+                    "message": str(error),
+                    **{
+                        name: report[name]
+                        for name in ("graph_observer", "graph_readiness")
+                        if name in report
+                    },
+                },
             )
         finally:
             if observer is not None:
