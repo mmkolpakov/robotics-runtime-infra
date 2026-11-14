@@ -17,7 +17,7 @@ The `evidence-refusal` control has no admissible result and cannot be exported.
 Use Linux, Bash, Python 3.12, uv or pip, jq, and Cosign **3.1.3 or newer**.
 Install Cosign from a source you trust and check its release checksum before
 using it. The setup below installs the published contracts **0.22.0** and harness
-**0.23.1** from the hash-pinned
+**0.24.0** from the hash-pinned
 [Nav2 lock](../nav2-turtlebot3/requirements.lock), then builds the evaluator.
 
 From this directory:
@@ -156,7 +156,7 @@ the contained evaluation path. Key-only signing does not establish OIDC
 identity, transparency time, or build provenance.
 
 The source-foundation lock remains contracts 0.21.1 / harness 0.22.2; this
-published-example path intentionally uses contracts 0.22.0 / harness 0.23.1.
+published-example path intentionally uses contracts 0.22.0 / harness 0.24.0.
 
 Run the automated controls with Cosign on PATH (or
 `ROBOTICS_COSIGN_PROFILE` set to your pinned tool profile):

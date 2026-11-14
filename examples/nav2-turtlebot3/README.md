@@ -1,9 +1,9 @@
 # Nav2 TurtleBot3 consumer
 
 This consumer separates immutable inputs, completed native observations, and offline
-assessment. The evaluator 0.3.0 uses public contracts v2, the verified evidence reader, and the
+assessment. The evaluator 0.3.1 uses public contracts v2, the verified evidence reader, and the
 external evaluator admission profile. It uses published contracts 0.22.0 and acceptance harness
-0.23.1. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
+0.24.0. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
 [inputs.lock.json](inputs.lock.json); [requirements.lock](requirements.lock) fixes the SDK and
 dependency closure. Native execution additionally requires an admitted composition.
 
@@ -72,7 +72,7 @@ Config ID for native composition admission before starting an attempt.
 ## Admit the evaluator
 
 Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The
-[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.23.1/packages/harness/docs/evaluator-trust.md)
+[runtime evaluator guide](https://github.com/mmkolpakov/robotics-runtime/blob/harness-v0.24.0/packages/harness/docs/evaluator-trust.md)
 defines those policies, wheel guards, and process boundaries. The operator profile and its
 approved verifier/key/root pins belong outside the evidence archive.
 
@@ -86,7 +86,7 @@ cosign trusted-root create --out offline-root.json
 cosign attest-blob --yes --key publisher.key --signing-config offline-signing.json \
   --trusted-root offline-root.json --type urn:nav2-turtlebot3:consumer-evaluator-qualification:v1 \
   --predicate predicate.json --bundle wheel.sigstore.json \
-  dist/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl
+  dist/nav2_turtlebot3_evaluator-0.3.1-py3-none-any.whl
 ```
 
 The external operator chooses `kind="cosign_key_no_tlog"`, the exact approved executable,
@@ -102,7 +102,7 @@ the verified installer input and writes the structural receipt/evaluator require
 .venv/bin/python qualify-evaluator.py --trust-profile /operator/nav2-trust.json \
   --output evaluator-inputs --preinstall
 .venv/bin/python -m pip install --no-index --no-deps \
-  evaluator-inputs/nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl
+  evaluator-inputs/nav2_turtlebot3_evaluator-0.3.1-py3-none-any.whl
 .venv/bin/python -m pip check
 ```
 
@@ -125,6 +125,9 @@ The required `readiness` object contains `graph`, `timeout_sec` and `stable_for_
 The self-contained graph definitions are copied from the pinned contracts 0.22.0
 with `python sync-readiness-schema.py`; `--check` verifies equality with that SDK.
 The graph is passed unchanged to `RosGraphObserver` and `wait_for_readiness`.
+The observer borrows `navigator.context`, owns its separate node and executor,
+and closes before the navigator's context is shut down. It uses the declared
+graph topics and its explicit clock subscription.
 Native attempts require `/amcl` and `/bt_navigator` declared `active`, with
 lifecycle timeout and stability fields. The startup worker initializes the pose;
 the exercise worker observes the existing lifecycle and preserves localization.

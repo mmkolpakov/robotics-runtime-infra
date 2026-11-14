@@ -604,6 +604,7 @@ def main() -> int:
                     expected_graph,
                     observe_clock=True,
                     node_name="nav2_public_graph_observer",
+                    context=navigator.context,
                 )
             finally:
                 report["graph_observer"] = {

@@ -37,7 +37,20 @@ class PublicResultOutputControls(unittest.TestCase):
                 self.assertEqual(actual["status"], "failed")
                 self.assertIn("$.observed_ros_graph", actual["unevaluated"])
                 junit = ET.parse(root / "junit.xml")
-                self.assertEqual(len(junit.findall(".//failure")), 1)
+                failures = {
+                    case.get("name")
+                    for case in junit.findall(".//testcase")
+                    if case.find("failure") is not None
+                }
+                self.assertEqual(
+                    failures,
+                    {"qualification-verdict", "synthetic-delivery-control"},
+                )
+                verdict = junit.find(
+                    ".//testcase[@classname='robotics.acceptance.verdict']/failure"
+                )
+                self.assertIsNotNone(verdict)
+                self.assertIn("failed", verdict.get("message"))
                 self.assertGreaterEqual(len(junit.findall(".//skipped")), 1)
 
     def test_unknown_profile_is_rejected_before_output(self):

@@ -121,6 +121,41 @@ class WorkloadInputs(unittest.TestCase):
 
 
 class NavigatorStartup(unittest.TestCase):
+    def test_observer_borrows_the_navigator_context(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        tree = ast.parse((ROOT / "workload.py").read_text())
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "RosGraphObserver"
+        ]
+        self.assertEqual(len(calls), 1)
+        graph = object()
+        context = object()
+        factory = Mock()
+        expression = compile(
+            ast.Expression(calls[0]), str(ROOT / "workload.py"), "eval"
+        )
+        observer = eval(
+            expression,
+            {
+                "RosGraphObserver": factory,
+                "expected_graph": graph,
+                "navigator": SimpleNamespace(context=context),
+            },
+        )
+        factory.assert_called_once_with(
+            graph,
+            observe_clock=True,
+            node_name="nav2_public_graph_observer",
+            context=context,
+        )
+        self.assertIs(observer, factory.return_value)
+
     def test_initial_phase_sets_pose_before_waiting_for_activation(self):
         from unittest.mock import Mock, call, patch
 
@@ -285,7 +320,7 @@ class NativeAdmissionControls(unittest.TestCase):
                 "type_support_version": "3.6.2",
                 "sdk_versions": {
                     "robotics-runtime-contracts": "0.22.0",
-                    "robotics-acceptance-harness": "0.23.1",
+                    "robotics-acceptance-harness": "0.24.0",
                 },
                 "files": files,
                 "rendered": {

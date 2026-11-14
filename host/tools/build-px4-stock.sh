@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-source_root="${project_root}/host/.tools/PX4-Autopilot"
+source_root="${PX4_SOURCE_ROOT:-${project_root}/host/.tools/PX4-Autopilot}"
+source_root="$(realpath -m -- "${source_root}")"
+case "${source_root}" in "${project_root}/host/.tools/"*) ;; *) exit 65 ;; esac
+owner="${PX4_BUILD_OWNER:-px4-build-${UID}-$$}"
+[[ "${owner}" =~ ^[a-z0-9][a-z0-9_.-]{1,63}$ ]] || exit 64
+container_name="${owner}-firmware"
 : "${PX4_DEPS_IMAGE:?immutable project dependency image required}"
 engine="${PX4_CONTAINER_ENGINE:-podman}"
 case "${engine}" in
@@ -17,6 +22,43 @@ if [[ ! ${PX4_DEPS_IMAGE} =~ (^sha256:|@sha256:)[a-f0-9]{64}$ ]]; then
   exit 1
 fi
 mkdir -p "${project_root}/host/.tools"
+existing="$("${engine}" ps --all --no-trunc --filter "name=^${container_name}$" --format '{{.ID}}')" || exit 1
+[[ -z "${existing}" ]] || { printf 'build container name already exists: %s\n' "${container_name}" >&2; exit 65; }
+container_id=
+attach_pid=
+# shellcheck disable=SC2329
+cleanup_build() {
+  local status=$? cleanup_status=0 ids candidate actual
+  trap - EXIT
+  if ! ids="$("${engine}" ps --all --no-trunc --filter "name=^${container_name}$" --format '{{.ID}}')"; then
+    printf 'firmware container cleanup state unknown: %s\n' "${container_name}" >&2
+    ((status != 0)) || status=1
+    exit "${status}"
+  fi
+  for candidate in ${ids}; do
+    if ! actual="$("${engine}" inspect --format '{{index .Config.Labels "org.robotics.build.owner"}}' "${candidate}")"; then
+      printf 'firmware container cleanup state unknown: %s\n' "${candidate}" >&2
+      cleanup_status=1
+    elif [[ "${actual}" != "${owner}" || ( -n "${container_id}" && "${candidate}" != "${container_id}" ) ]]; then
+      printf 'refusing foreign build container cleanup: %s\n' "${container_name}" >&2
+      cleanup_status=65
+    elif ! "${engine}" stop --time 10 "${candidate}" > /dev/null ||
+         ! "${engine}" rm "${candidate}" > /dev/null; then
+      printf 'firmware container cleanup state unknown: %s\n' "${candidate}" >&2
+      cleanup_status=1
+    fi
+  done
+  if ! ids="$("${engine}" ps --all --no-trunc --filter "name=^${container_name}$" --format '{{.ID}}')" || [[ -n "${ids}" ]]; then
+    printf 'firmware container cleanup incomplete: %s\n' "${container_name}" >&2
+    ((cleanup_status != 0)) || cleanup_status=1
+  fi
+  if [[ -n "${attach_pid}" ]]; then wait "${attach_pid}" 2>/dev/null || true; fi
+  ((status != 0)) || status=${cleanup_status}
+  exit "${status}"
+}
+trap cleanup_build EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if [[ ! -d ${source_root}/.git ]]; then
   git -c http.version=HTTP/1.1 clone --depth=1 --branch=v1.17.0 --filter=blob:none --sparse \
     https://github.com/PX4/PX4-Autopilot.git "${source_root}"
@@ -30,7 +72,11 @@ git -C "${source_root}" -c http.version=HTTP/1.1 submodule update --init --recur
   src/modules/mavlink/mavlink src/drivers/gps/devices src/lib/events/libevents \
   src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client src/lib/cdrstream/cyclonedds \
   src/lib/cdrstream/rosidl src/lib/heatshrink/heatshrink Tools/simulation/gz
-"${engine}" run --rm --init "${engine_options[@]}" \
+container_id="$("${engine}" create --init --name "${container_name}" \
+  --label "org.robotics.build.owner=${owner}" "${engine_options[@]}" \
   --user "$(id -u):$(id -g)" --env HOME=/tmp/px4-build --env GZ_DISTRO=jetty \
   --volume "${source_root}:/opt/px4:rw" --workdir /opt/px4 \
-  "${PX4_DEPS_IMAGE}" make -j4 px4_sitl_default
+  "${PX4_DEPS_IMAGE}" make -j4 px4_sitl_default)"
+"${engine}" start --attach "${container_id}" &
+attach_pid=$!
+wait "${attach_pid}"
