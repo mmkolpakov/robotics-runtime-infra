@@ -139,7 +139,20 @@ def phase(records):
         integer(snapshots[slot]["timestamp_us"])
         for slot in ("initial-status-a", "initial-status-b", "final-status")
     )
-    need(0 < ta < tb < te, "PX4 source clock did not progress within one phase")
+    clock_slots = list(required[:-1])
+    if "pre-land-status" in slots:
+        snapshots["pre-land-status"] = snapshot(
+            slots["pre-land-status"][0], system, component
+        )
+        clock_slots.append("pre-land-status")
+    clock_slots.append("final-status")
+    intervals = [snapshots[slot]["native_print_clock_us"] for slot in clock_slots]
+    need(
+        all(integer(a["upper"]) < integer(b["lower"]) for a, b in pairwise(intervals)),
+        "PX4 native print clock intervals do not prove progress",
+    )
+    need(0 < ta <= tb <= te, "PX4 publication timestamp moved backwards")
+    need(tb < te, "PX4 publication window is empty")
     return by_kind, identity, slots, tb, te, snapshots
 
 

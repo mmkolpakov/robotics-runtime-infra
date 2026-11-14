@@ -42,7 +42,7 @@ def inputs(root, case="land"):
                 "namespace": PRODUCER.PROFILE,
                 "entry_point": "px4_x500_evaluator:evaluate",
                 "distribution": "px4-x500-evaluator",
-                "version": "0.2.0",
+                "version": "0.3.0",
                 "artifact_sha256": "a" * 64,
                 "receipt_sha256": "b" * 64,
             },

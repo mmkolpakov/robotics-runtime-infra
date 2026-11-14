@@ -74,8 +74,8 @@ def status(timestamp=1000000, state=1, system=1, component=1, age="0.100000"):
     return f"\nTOPIC: vehicle_status\n vehicle_status\n    timestamp: {timestamp} ({age} seconds ago)\n    arming_state: {state}\n    system_id: {system}\n    component_id: {component}\n"
 
 
-def land(timestamp=1500000, landed=True):
-    return f"\nTOPIC: vehicle_land_detected\n vehicle_land_detected\n    timestamp: {timestamp} (0.100000 seconds ago)\n    landed: {landed}\n"
+def land(timestamp=1500000, landed=True, age="0.100000"):
+    return f"\nTOPIC: vehicle_land_detected\n vehicle_land_detected\n    timestamp: {timestamp} ({age} seconds ago)\n    landed: {landed}\n"
 
 
 class Scenario:
@@ -119,6 +119,7 @@ class Scenario:
         self.bad_initial = None
         self.bad_final = False
         self.fixed_time = False
+        self.cached_initial = False
         self.actor_changed = False
         self.in_action = False
         self.stop = False
@@ -172,10 +173,14 @@ class Scenario:
     def listener(self, topic, instance, budget):
         self.listener_calls += 1
         stamp = 1000000 if self.fixed_time else 1000000 * self.listener_calls
+        age = "0.100000"
+        if self.cached_initial and self.listener_calls <= 3:
+            stamp = 1000000
+            age = f"{self.listener_calls / 100:.6f}"
         text = (
-            status(stamp, 2 if self.armed else 1)
+            status(stamp, 2 if self.armed else 1, age=age)
             if topic == "vehicle_status"
-            else land(stamp)
+            else land(stamp, age=age)
         )
         if self.bad_initial and self.listener_calls == 1:
             text = self.bad_initial
@@ -244,6 +249,26 @@ class ListenerTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(worker.Refused):
                 worker.parse_listener(text, "vehicle_status")
 
+    def test_print_clock_interval_uses_decimal_age_and_full_uint64_timestamp(self):
+        timestamp = 9007199254740993
+        parsed = worker.parse_listener(
+            status(timestamp, age="0.123456"), "vehicle_status"
+        )
+        self.assertEqual(parsed["timestamp_us"], str(timestamp))
+        self.assertEqual(parsed["age_s"], 0.123456)
+        self.assertEqual(
+            parsed["native_print_clock_us"],
+            {"lower": str(timestamp + 123455), "upper": str(timestamp + 123457)},
+        )
+        with self.assertRaises(worker.Refused):
+            worker.parse_listener(status((1 << 64) - 1), "vehicle_status")
+        with self.assertRaises(worker.Refused):
+            worker.parse_listener(status(age="0.999999"), "vehicle_status")
+        parsed = worker.parse_listener(
+            status(age="4.999998"), "vehicle_status", maximum_age_s=5
+        )
+        self.assertEqual(parsed["native_print_clock_us"]["upper"], "5999999")
+
     def test_bool_requires_native_case_and_complete_field(self):
         self.assertTrue(
             worker.parse_listener(land(), "vehicle_land_detected")["landed"]
@@ -255,12 +280,12 @@ class ListenerTests(unittest.TestCase):
 
     def test_print_precision_margin(self):
         self.assertEqual(
-            worker.parse_listener(status(age="0.999999"), "vehicle_status")["age_s"],
-            0.999999,
+            worker.parse_listener(status(age="0.999998"), "vehicle_status")["age_s"],
+            0.999998,
         )
         with self.assertRaises(worker.Refused):
             worker.parse_listener(
-                status(age="0.999999"), "vehicle_status", maximum_age_s=0.9999994
+                status(age="0.999998"), "vehicle_status", maximum_age_s=0.9999984
             )
 
 
@@ -299,6 +324,26 @@ class WorkerTests(unittest.TestCase):
         )
         self.assertLess(refusal["receiver_monotonic_ms"], last["receiver_monotonic_ms"])
 
+    def test_cached_initial_publications_with_native_clock_progress_do_not_need_sleep(
+        self,
+    ):
+        self.scenario.cached_initial = True
+        self.assertTrue(self.scenario.run())
+        self.assertEqual(self.scenario.calls, ["arm", "takeoff", "land"])
+        initial = [
+            r["value"]["parsed"]
+            for r in self.scenario.records()
+            if r["value"].get("slot", "").startswith("initial-")
+        ]
+        self.assertEqual({value["timestamp_us"] for value in initial}, {"1000000"})
+        self.assertTrue(
+            all(
+                int(a["native_print_clock_us"]["upper"])
+                < int(b["native_print_clock_us"]["lower"])
+                for a, b in zip(initial, initial[1:])
+            )
+        )
+
     def test_missing_home_refuses_measurement_without_arm_or_takeoff(self):
         self.scenario.home = False
         self.assertFalse(self.scenario.run("unarmed-refusal"))
@@ -332,7 +377,7 @@ class WorkerTests(unittest.TestCase):
             )
         )
 
-    def test_stalled_source_clock_and_wrong_actor_refuse(self):
+    def test_nonadvancing_native_print_clock_refuses(self):
         self.scenario.fixed_time = True
         self.assertFalse(self.scenario.run())
         self.assertEqual(self.scenario.calls, [])
@@ -403,7 +448,7 @@ class WorkerTests(unittest.TestCase):
         def slow(topic, instance, budget):
             result = original(topic, instance, budget)
             if self.scenario.listener_calls == 1:
-                self.scenario.clock.sleep(0.4)
+                self.scenario.clock.sleep(0.95)
                 result["host_finished_monotonic_ms"] = self.scenario.clock.now()
             return result
 
@@ -423,7 +468,7 @@ class WorkerTests(unittest.TestCase):
         def slow(kind, value):
             result = original(kind, value)
             if kind == "action-issued":
-                self.scenario.clock.sleep(0.4)
+                self.scenario.clock.sleep(0.95)
             return result
 
         self.scenario.journal.retain = slow
@@ -441,7 +486,7 @@ class WorkerTests(unittest.TestCase):
                 self.scenario.journal.records
                 and self.scenario.records()[-1]["kind"] == "action-issued"
             ):
-                self.scenario.clock.sleep(0.4)
+                self.scenario.clock.sleep(0.95)
             return original(config)
 
         self.scenario.actor_probe = slow
@@ -513,7 +558,9 @@ class FreshnessBudgetTests(unittest.TestCase):
             slot: {
                 "host_started_monotonic_ms": 100,
                 "host_finished_monotonic_ms": 200,
-                "parsed": {"age_s": 0.1},
+                "parsed": worker.parse_listener(
+                    status(age="0.100000"), "vehicle_status"
+                ),
             }
             for slot in ("initial-status-a", "initial-land", "initial-status-b")
         }
@@ -522,7 +569,9 @@ class FreshnessBudgetTests(unittest.TestCase):
         for slot in self.observations():
             with self.subTest(slot=slot):
                 values = self.observations()
-                values[slot]["parsed"]["age_s"] = 0.9
+                values[slot]["parsed"] = worker.parse_listener(
+                    status(age="0.900000"), "vehicle_status"
+                )
                 with self.assertRaises(worker.Refused):
                     worker.check_initial_freshness(values, 300)
         worker.check_initial_freshness(self.observations(), 300)
@@ -530,10 +579,13 @@ class FreshnessBudgetTests(unittest.TestCase):
     def test_rounding_margin_and_full_listener_duration(self):
         values = self.observations()
         for value in values.values():
-            value["parsed"]["age_s"] = 0.799999
+            value["parsed"] = worker.parse_listener(
+                status(age="0.799998"), "vehicle_status"
+            )
         worker.check_initial_freshness(values, 300)
+        worker.check_initial_freshness(values, 300.0008)
         with self.assertRaises(worker.Refused):
-            worker.check_initial_freshness(values, 300.0006)
+            worker.check_initial_freshness(values, 300.0011)
 
     def test_missing_or_unordered_observation_cannot_be_fresh(self):
         values = self.observations()
