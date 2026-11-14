@@ -156,6 +156,60 @@ class NavigatorStartup(unittest.TestCase):
         )
         self.assertIs(observer, factory.return_value)
 
+    def test_action_discovery_precedes_observer_in_the_same_deadline(self):
+        tree = ast.parse((ROOT / "workload.py").read_text())
+        calls = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                calls.setdefault(node.func.id, []).append(node)
+        for name in (
+            "ActionClient",
+            "wait_for_action_server",
+            "RosGraphObserver",
+            "wait_for_graph_readiness",
+        ):
+            self.assertEqual(len(calls[name]), 1, name)
+        self.assertLess(
+            calls["ActionClient"][0].lineno,
+            calls["wait_for_action_server"][0].lineno,
+        )
+        self.assertLess(
+            calls["wait_for_action_server"][0].lineno,
+            calls["RosGraphObserver"][0].lineno,
+        )
+        self.assertLess(
+            calls["RosGraphObserver"][0].lineno,
+            calls["wait_for_graph_readiness"][0].lineno,
+        )
+        self.assertEqual(
+            [
+                ast.unparse(argument)
+                for argument in calls["wait_for_action_server"][0].args
+            ],
+            ["client", "ready_deadline", "report"],
+        )
+        graph_arguments = {
+            argument.arg: ast.unparse(argument.value)
+            for argument in calls["wait_for_graph_readiness"][0].keywords
+        }
+        self.assertEqual(graph_arguments["ready_deadline"], "ready_deadline")
+        self.assertEqual(graph_arguments["timeout_sec"], "remaining")
+        deadline_assignments = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "ready_deadline"
+                for target in node.targets
+            )
+        ]
+        self.assertEqual(len(deadline_assignments), 1)
+        self.assertEqual(
+            ast.unparse(deadline_assignments[0].value),
+            "time.monotonic() + graph_budget",
+        )
+        self.assertLess(deadline_assignments[0].lineno, calls["ActionClient"][0].lineno)
+
     def test_initial_phase_sets_pose_before_waiting_for_activation(self):
         from unittest.mock import Mock, call, patch
 
@@ -257,6 +311,9 @@ class NativeAdmissionControls(unittest.TestCase):
             }
             for name in ("/amcl", "/bt_navigator")
         ]
+        self.evaluator = json.loads((ROOT / "inputs.lock.json").read_bytes())[
+            "native_evaluator"
+        ]
         self.requirements.write_text(
             json.dumps(
                 {
@@ -264,7 +321,11 @@ class NativeAdmissionControls(unittest.TestCase):
                     "configuration": scenario["extensions"][
                         "org.example.nav2-turtlebot3"
                     ],
-                    "evaluator_requirement": scenario["evaluator_requirements"][0],
+                    "evaluator_requirement": {
+                        **scenario["evaluator_requirements"][0],
+                        "version": self.evaluator["version"],
+                        "artifact_sha256": self.evaluator["sha256"],
+                    },
                 }
             )
         )
@@ -322,6 +383,7 @@ class NativeAdmissionControls(unittest.TestCase):
                     "robotics-runtime-contracts": "0.22.0",
                     "robotics-acceptance-harness": "0.24.0",
                 },
+                "native_evaluator": copy.deepcopy(self.evaluator),
                 "files": files,
                 "rendered": {
                     key: value
@@ -490,6 +552,10 @@ class NativeAdmissionControls(unittest.TestCase):
             lambda d: d["facts"]["sdk_versions"].update(
                 {"robotics-acceptance-harness": "0.19.1"}
             ),
+            lambda d: d["facts"]["native_evaluator"].update(version="0.4.0"),
+            lambda d: d["facts"]["native_evaluator"]["installed_files"].update(
+                {"nav2_turtlebot3_evaluator/stop.py": "f" * 64}
+            ),
             lambda d: d["facts"]["files"]["model"].update(sha256="f" * 64),
             lambda d: d["facts"]["files"]["consumer_launch"].update(sha256="f" * 64),
             lambda d: d["facts"]["build"].update(dockerfile_sha256="e" * 64),
@@ -503,6 +569,15 @@ class NativeAdmissionControls(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.prepare()
                 self.assertFalse((self.root / "prepared").exists())
+
+    def test_native_evaluator_binding_cannot_select_another_wheel(self):
+        requirements = json.loads(self.requirements.read_bytes())
+        requirements["evaluator_requirement"]["artifact_sha256"] = "f" * 64
+        self.requirements.write_text(json.dumps(requirements))
+
+        with self.assertRaisesRegex(ValueError, "admitted native wheel"):
+            self.prepare()
+        self.assertFalse((self.root / "prepared").exists())
 
     def test_synthetic_document_profile_and_changed_prepared_bytes_refuse_native_worker(
         self,

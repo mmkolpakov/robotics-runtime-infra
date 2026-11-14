@@ -118,6 +118,20 @@ def require_active_nav2_lifecycle(configuration):
             )
 
 
+def require_native_evaluator(binding, evaluator):
+    if not isinstance(binding, dict) or any(
+        binding.get(key) != expected
+        for key, expected in {
+            "namespace": NAMESPACE,
+            "distribution": evaluator["distribution"],
+            "version": evaluator["version"],
+            "artifact_sha256": evaluator["sha256"],
+            "entry_point": "nav2_turtlebot3_evaluator:evaluate",
+        }.items()
+    ):
+        raise ValueError("evaluator binding differs from the admitted native wheel")
+
+
 def prepare(
     profile_path: Path | None,
     requirements_path: Path,
@@ -173,6 +187,13 @@ def prepare(
         raise ValueError("consumer readiness stability must fit its bounded deadline")
     if native is not None:
         require_active_nav2_lifecycle(requirements["configuration"])
+        require_native_evaluator(
+            requirements["evaluator_requirement"], facts["native_evaluator"]
+        )
+        if requirements["case"] != "success":
+            from nav2_turtlebot3_evaluator.stop import validate_stop_policy
+
+            validate_stop_policy(requirements["configuration"].get("stop_condition"))
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     configuration = output / "nav2-configuration.json"
     schema_path = Path(__file__).with_name("nav2.schema.json")
@@ -373,9 +394,26 @@ def inspect_image() -> dict:
     policy_root = Path("/opt/sdk-policy")
     policy = loads_mapping(read_once(policy_root / "inputs.lock.json", DOCUMENT_LIMIT))
     receipt = loads_mapping(read_once(policy_root / "image-build.json", DOCUMENT_LIMIT))
+    wheels = Path("/opt/sdk-cohort/wheels")
     runpy.run_path(str(policy_root / "check-sdk-wheels.py"))["check"](
-        Path("/opt/sdk-cohort/wheels")
+        wheels, include_native_evaluator=True
     )
+    evaluator = policy["native_evaluator"]
+    distribution = importlib.metadata.distribution(evaluator["distribution"])
+    wheel = read_once(wheels / evaluator["filename"], DOCUMENT_LIMIT)
+    evaluator_identity = {
+        "distribution": distribution.metadata["Name"],
+        "version": distribution.version,
+        "filename": evaluator["filename"],
+        "sha256": sha256(wheel).hexdigest(),
+        "size_bytes": len(wheel),
+        "installed_files": {
+            name: sha256(
+                read_once(distribution.locate_file(name), DOCUMENT_LIMIT)
+            ).hexdigest()
+            for name in evaluator["installed_files"]
+        },
+    }
     versions = {
         name: importlib.metadata.version(name)
         for name in ("robotics-runtime-contracts", "robotics-acceptance-harness")
@@ -457,6 +495,7 @@ def inspect_image() -> dict:
         "build": receipt,
         "packages": packages,
         "sdk_versions": versions,
+        "native_evaluator": evaluator_identity,
         "type_support_version": subprocess.check_output(
             [
                 "dpkg-query",
@@ -515,6 +554,8 @@ def check_preflight(document: dict, image_reference: str, image_id: str) -> dict
         "robotics-acceptance-harness": "0.24.0",
     }:
         raise ValueError("native image SDK differs from the published cohort")
+    if facts.get("native_evaluator") != policy["native_evaluator"]:
+        raise ValueError("native image evaluator differs from the pinned wheel")
     if set(facts["packages"]) != set(policy["packages"]):
         raise ValueError("native package set differs")
     for name, expected in policy["packages"].items():
@@ -656,6 +697,10 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
     preflight = loads_mapping(raw_by_name["native-preflight.json"])
     image_reference = preflight["image_reference"]
     facts = check_preflight(preflight, image_reference, image_id)
+    bindings = scenario["evaluator_requirements"]
+    if len(bindings) != 1:
+        raise ValueError("one native evaluator binding is required")
+    require_native_evaluator(bindings[0], facts["native_evaluator"])
     for kind, key in (("model", "native_model"), ("world", "expanded_world")):
         expected = facts["rendered"][kind]
         if any(

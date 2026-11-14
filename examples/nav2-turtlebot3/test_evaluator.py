@@ -207,7 +207,7 @@ class NativeCaseControls(unittest.TestCase):
                             "namespace": NAMESPACE,
                             "entry_point": "nav2_turtlebot3_evaluator:evaluate",
                             "distribution": "nav2-turtlebot3-evaluator",
-                            "version": "0.3.1",
+                            "version": "0.4.1",
                             "artifact_sha256": "0" * 64,
                             "receipt_sha256": "0" * 64,
                         }
