@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {mkdir,open,readFile,readdir,lstat,realpath,writeFile} from 'node:fs/promises';
 import Docker from 'dockerode';
 import {finished} from 'node:stream/promises';
+import {setTimeout as pause} from 'node:timers/promises';
 import {dirname,isAbsolute,join,relative,resolve} from 'node:path';
 import {ComposeExecution} from '../../compose-execution.js';
 import {EngineMetadata} from '../../engine-metadata.js';
@@ -38,6 +39,7 @@ export class Px4Native extends Service {
   private loggerStartRef:ArtifactRef|undefined;private loggerStopRef:ArtifactRef|undefined;
   private actorBeforeRef:ArtifactRef|undefined;private actorAfterRef:ArtifactRef|undefined;
   private loggerPath:string|undefined;
+  private loggerStartAttempted=false;
   private archiveRoot:string|undefined;private workerArchive:string|undefined;
   constructor(ctx:Context,readonly config:Px4Config){
     super(ctx,'px4');
@@ -214,17 +216,51 @@ export class Px4Native extends Service {
     return {owner_id:this.ownerId,container_id:this.primaryId,role,started_unix_ns,finished_unix_ns,invocation:{executable,argv},result};
   }
   async startNativeLogger(signal:AbortSignal):Promise<ArtifactRef[]>{
-    if(this.config.mode!=='native-sdk-v2'||this.loggerStarted||!this.primaryId)throw new Error('native logger start is unavailable');
-    await this.currentActor(signal);
-    const started=await this.loggerCommand('on','before-case',signal);
-    await this.nativeFact('logger-on.json',started);
-    const status=await this.loggerCommand('status','before-case',signal);
-    this.loggerStartRef=await this.nativeFact('logger-start.json',status);
-    const path=/Log file:\s*(\S+)/.exec(status.result.stdout)?.[1];
-    if(!started.result.ok||started.result.exitCode!==0||!status.result.ok||status.result.exitCode!==0||
-      status.result.timedOut||status.result.canceled||!/Full File Logging Running:/.test(status.result.stdout)||!path)throw new Error('full PX4 file logger is not active');
-    this.loggerPath=path;
-    await this.currentActor(signal);
+    if(this.config.mode!=='native-sdk-v2'||this.loggerStarted||this.loggerStartAttempted||!this.primaryId)throw new Error('native logger start is unavailable');
+    this.loggerStartAttempted=true;
+    const deadline=performance.now()+this.deadline;
+    const bounded=AbortSignal.any([signal,AbortSignal.timeout(this.deadline)]);
+    const checkBudget=()=>{
+      bounded.throwIfAborted();
+      if(performance.now()>=deadline)throw new Error('PX4 logger readiness deadline expired');
+    };
+    const waitForStatus=async(requireFile:boolean)=>{
+      checkBudget();
+      let status=await this.loggerCommand('status','before-case',bounded);
+      try{
+        for(;;){
+          checkBudget();
+          const result=status.result;
+          const transportComplete=!result.timedOut&&!result.canceled&&!result.signal&&!result.stderr.trim();
+          const running=transportComplete&&result.ok&&result.exitCode===0&&
+            /^INFO\s+\[logger\]\s+Running in mode: (?:file|all)\s*$/m.test(result.stdout)&&
+            /^INFO\s+\[logger\]\s+Number of subscriptions: \d+ \(\d+ bytes\)\s*$/m.test(result.stdout);
+          const absent=transportComplete&&!result.ok&&result.exitCode===255&&
+            /^INFO\s+\[logger\]\s+not running\s*$/.test(result.stdout);
+          if(running){
+            if(!requireFile)return status;
+            if(/Full File Logging Running:/.test(result.stdout)){
+              if(!/Log file:\s*(\S+)/.test(result.stdout))throw new Error('full PX4 file logger path is unavailable');
+              return status;
+            }
+          }else if(requireFile||!absent)throw new Error('stock logger status is unverified');
+          await pause(Math.min(50,Math.max(0,deadline-performance.now())),undefined,{signal:bounded});
+          checkBudget();
+          status=await this.loggerCommand('status','before-case',bounded);
+        }
+      }finally{
+        const ref=await this.nativeFact(requireFile?'logger-start.json':'logger-available.json',status);
+        if(requireFile)this.loggerStartRef=ref;
+      }
+    };
+    await this.currentActor(bounded);checkBudget();
+    await waitForStatus(false);
+    const started=await this.loggerCommand('on','before-case',bounded);
+    await this.nativeFact('logger-on.json',started);checkBudget();
+    if(!started.result.ok||started.result.exitCode!==0||started.result.timedOut||started.result.canceled||started.result.signal)throw new Error('stock logger on failed');
+    const status=await waitForStatus(true);
+    this.loggerPath=/Log file:\s*(\S+)/.exec(status.result.stdout)![1];
+    await this.currentActor(bounded);checkBudget();
     this.loggerStarted=true;return [...this.refs];
   }
   private async readNativeFact(path:string):Promise<{facts:Record<string,unknown>;ref:ArtifactRef}>{

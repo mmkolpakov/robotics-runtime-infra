@@ -134,7 +134,7 @@ test('original native binding points inside the same archive at the retained ULo
   provider.loggerCommand=async(command:string,role:string)=>{
     const result=command==='on'?{ok:true,exitCode:0,stdout:'',stderr:'',timedOut:false,canceled:false}
       :command==='stop'?{ok:true,exitCode:0,stdout:'',stderr:'',timedOut:false,canceled:false}
-      :role==='before-case'?{ok:true,exitCode:0,stdout:'Full File Logging Running:\nLog file: ./log/flight.ulg\n',stderr:'',timedOut:false,canceled:false}
+      :role==='before-case'?{ok:true,exitCode:0,stdout:'INFO  [logger] Running in mode: all\nINFO  [logger] Number of subscriptions: 1 (8 bytes)\nINFO  [logger] Full File Logging Running:\nINFO  [logger] Log file: ./log/flight.ulg\n',stderr:'',timedOut:false,canceled:false}
       :{ok:false,exitCode:255,stdout:'not running\n',stderr:'',timedOut:false,canceled:false};
     return {owner_id:'run-1',container_id:cid,role,started_unix_ns:'1000000',finished_unix_ns:'2000000',
       invocation:{executable:'/opt/px4/build/px4_sitl_default/bin/px4-logger',argv:['--instance','0',command]},result};
@@ -392,4 +392,67 @@ test('only ready accepts the configured extended budget; observation remains bou
     await assert.rejects(provider.probe(mode,'other.json',seconds,new AbortController().signal),/finite native probe/);
   }
   assert.equal(calls.length,1);
+});
+
+
+const loggerRunning='INFO  [logger] Running in mode: all\nINFO  [logger] Number of subscriptions: 1 (8 bytes)\n';
+const loggerInactive=loggerRunning+'INFO  [logger] Not logging\n';
+const loggerActive=loggerRunning+'INFO  [logger] Full File Logging Running:\nINFO  [logger] Log file: ./log/flight.ulg\n';
+const loggerResult=(stdout:string,exitCode=0)=>({ok:exitCode===0,exitCode,stdout,stderr:'',timedOut:false,canceled:false});
+
+async function loggerStartup(t:test.TestContext,statuses:any[],deadline=1000){
+  const {provider,facts}=await setup(t,{ID:eid,ContainerID:cid,Running:false,ExitCode:0});
+  provider.loggerStarted=false;provider.deadline=deadline;
+  const calls:string[]=[];
+  provider.loggerCommand=async(command:string)=>{
+    calls.push(command);
+    return {result:command==='status'?statuses.shift()??loggerResult(loggerActive):loggerResult('')};
+  };
+  return {provider,calls,facts};
+}
+
+test('logger waits for its module then async full file activation with one on',async t=>{
+  const {provider,calls,facts}=await loggerStartup(t,[loggerResult('INFO  [logger] not running',255),
+    loggerResult(loggerInactive),loggerResult(loggerInactive),loggerResult(loggerActive)]);
+  await provider.startNativeLogger(new AbortController().signal);
+  assert.deepEqual(calls,['status','status','on','status','status']);
+  assert.equal(provider.loggerStarted,true);assert.equal(provider.loggerPath,'./log/flight.ulg');
+  assert.ok(facts.some(f=>f.name==='logger-available.json'));assert.ok(facts.some(f=>f.name==='logger-start.json'));
+  await assert.rejects(provider.startNativeLogger(new AbortController().signal),/unavailable/);
+  assert.equal(calls.filter(c=>c==='on').length,1);
+});
+
+test('logger only waits for the exact stock absent-module status before on',async t=>{
+  for(const invalid of [loggerResult('INFO  [logger] not running',1),loggerResult('not running',255),
+    loggerResult('unrecognized status'),{...loggerResult('INFO  [logger] not running',255),timedOut:true},
+    {...loggerResult('INFO  [logger] not running',255),stderr:'transport failed'}]){
+    const {provider,calls}=await loggerStartup(t,[invalid]);
+    await assert.rejects(provider.startNativeLogger(new AbortController().signal),/status is unverified/);
+    assert.deepEqual(calls,['status']);assert.equal(provider.loggerStarted,false);
+  }
+});
+
+test('logger activation refuses missing path or vanished module and never replays on',async t=>{
+  for(const invalid of [loggerResult(loggerRunning+'INFO  [logger] Full File Logging Running:\n'),
+    loggerResult('INFO  [logger] not running',255),loggerResult('unrecognized status')]){
+    const {provider,calls}=await loggerStartup(t,[loggerResult(loggerInactive),invalid]);
+    await assert.rejects(provider.startNativeLogger(new AbortController().signal),/path is unavailable|status is unverified/);
+    assert.equal(provider.loggerStarted,false);assert.equal(calls.filter(c=>c==='on').length,1);
+    await assert.rejects(provider.startNativeLogger(new AbortController().signal),/unavailable/);
+    assert.equal(calls.filter(c=>c==='on').length,1);
+  }
+});
+
+test('logger caller cancellation and the single deadline prevent later on or measurement eligibility',async t=>{
+  const {provider,calls}=await loggerStartup(t,Array(20).fill(loggerResult('INFO  [logger] not running',255)),1000);
+  await assert.rejects(provider.startNativeLogger(AbortSignal.timeout(20)));
+  assert.deepEqual(calls,['status']);assert.equal(provider.loggerStarted,false);
+  const second=await loggerStartup(t,[],20);let on=false;
+  second.provider.loggerCommand=async(command:string)=>{
+    if(command==='on')on=true;
+    else await new Promise(resolve=>setTimeout(resolve,25));
+    return {result:loggerResult(loggerActive)};
+  };
+  await assert.rejects(second.provider.startNativeLogger(new AbortController().signal));
+  assert.equal(on,false);assert.equal(second.provider.loggerStarted,false);
 });
