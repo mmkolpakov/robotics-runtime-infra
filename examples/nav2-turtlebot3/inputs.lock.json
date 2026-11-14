@@ -137,6 +137,17 @@
     },
     "scope": "published SDK document/consumer controls; native composition admission is separate"
   },
+  "native_evaluator": {
+    "distribution": "nav2-turtlebot3-evaluator",
+    "version": "0.4.1",
+    "filename": "nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl",
+    "sha256": "0b59a92b141ee87972340fbc60b1dea0b4d4a6c7d245f822b76f284d85870714",
+    "size_bytes": 8510,
+    "installed_files": {
+      "nav2_turtlebot3_evaluator/__init__.py": "b289ab4b3375a3da1b289acd7ca63bb5f510df0c761b82a0b7373e0b0486b0cf",
+      "nav2_turtlebot3_evaluator/stop.py": "9b52c4a4f332c3f5f240df59474338b5d8beab05a17d2c62550130438d55739b"
+    }
+  },
   "apt_snapshots": {
     "ubuntu": "20261113T000000Z",
     "ros": "2026-10-05",

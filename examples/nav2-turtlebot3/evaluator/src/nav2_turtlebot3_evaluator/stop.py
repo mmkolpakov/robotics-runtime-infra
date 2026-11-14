@@ -5,6 +5,9 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 
+MAX_STOP_SAMPLES = 4096
+STOP_WORKLOAD_BYTES = 8 * 1024 * 1024
+
 STOP_POLICY = {
     "max_linear_speed_mps": 0.01,
     "max_angular_speed_radps": 0.01,
@@ -38,7 +41,11 @@ def _stamp(value):
 
 
 def _ordered(samples, anchor, cutoff, closed, gap_ns):
-    if not isinstance(samples, list) or len(samples) < 2 or len(samples) > 4096:
+    if (
+        not isinstance(samples, list)
+        or len(samples) < 2
+        or len(samples) > MAX_STOP_SAMPLES
+    ):
         raise ValueError("stop observation has insufficient or excessive samples")
     previous_source = 0
     previous_receiver = anchor
@@ -105,16 +112,15 @@ def _anchor_window(report, config, window):
     cutoff = _stamp(anchor["clock_ns"])
     closed = _stamp(window["closed_monotonic_ns"])
     deadline = _stamp(window["deadline_monotonic_ns"])
+    observed_through = _stamp(window["observation_cutoff_monotonic_ns"])
     if (
         anchored != expected
         or cutoff != expected_clock
-        or not anchored < deadline <= closed
+        or not anchored < observed_through <= min(deadline, closed)
     ):
         raise ValueError(
             "stop observation receiver window differs from its terminal anchor"
         )
-    if (deadline - anchored) / 1e9 > config["max_observation_age_sec"]:
-        raise ValueError("stop observation exceeded its receiver deadline")
     goal_started = _stamp(report["goal_started_monotonic_ns"])
     goal_accepted = _stamp(report["goal_accepted_monotonic_ns"])
     if not goal_started <= goal_accepted <= anchored:
@@ -127,14 +133,14 @@ def _anchor_window(report, config, window):
         raise ValueError("stop observation exceeded the original action deadline")
     if window.get("samples_omitted") is not False:
         raise ValueError("stop observation completeness is unavailable")
-    return anchored, cutoff, deadline, closed
+    return anchored, cutoff, observed_through, closed
 
 
 def _streams(window, bounds, policy):
-    anchored, cutoff, deadline, closed = bounds
+    anchored, cutoff, observed_through, _closed = bounds
     gap_ns = round(policy["max_sample_gap_sec"] * 1e9)
     samples, clocks, transforms = (
-        _ordered(window[name], anchored, cutoff, deadline, gap_ns)
+        _ordered(window[name], anchored, cutoff, observed_through, gap_ns)
         for name in ("samples", "clock_samples", "transforms")
     )
     end = clocks[-1]["source_ns"]
@@ -236,8 +242,28 @@ def assess_stop(report, config):
         OverflowError,
     ) as error:
         return None, None, str(error)
+    if stopped and closed >= window["deadline_monotonic_ns"]:
+        return (
+            dict(window),
+            False,
+            "sampled stop did not settle before the action deadline",
+        )
     return (
         dict(window),
         stopped,
         "sampled backend motion must satisfy the declared stop policy",
     )
+
+
+def summarize_stop(window):
+    """Project compact condition metadata from a validated workload prefix."""
+    return {
+        "anchor": dict(window["anchor"]),
+        "observation_cutoff_monotonic_ns": window["observation_cutoff_monotonic_ns"],
+        "closed_monotonic_ns": window["closed_monotonic_ns"],
+        "last_odometry_source_ns": window["samples"][-1]["source_ns"],
+        "sample_counts": {
+            name: len(window[name])
+            for name in ("samples", "transforms", "clock_samples")
+        },
+    }

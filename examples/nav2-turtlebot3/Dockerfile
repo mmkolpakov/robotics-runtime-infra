@@ -27,12 +27,15 @@ subprocess.run(["bash",str(helper)],check=True,env=dict(os.environ,UBUNTU_SNAPSH
        $(dpkg-query -W '-f=${db:Status-Status} ${Package}\n' 'ros-jazzy-*' | awk '$1 == "installed" {print $2}') \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=sdk-wheels / /opt/sdk-cohort/wheels/
-COPY inputs.lock.json requirements.lock check-sdk-wheels.py native_simulation.launch.py /opt/sdk-policy/
-RUN python3 /opt/sdk-policy/check-sdk-wheels.py /opt/sdk-cohort/wheels \
+COPY inputs.lock.json requirements.lock native-evaluator.lock check-sdk-wheels.py native_simulation.launch.py /opt/sdk-policy/
+RUN python3 /opt/sdk-policy/check-sdk-wheels.py --include-native-evaluator /opt/sdk-cohort/wheels \
     && python3 -m venv --system-site-packages /opt/consumer \
     && /opt/consumer/bin/pip install --disable-pip-version-check --only-binary=:all: \
        --require-hashes --no-cache-dir --no-index --find-links=/opt/sdk-cohort/wheels \
-       -r /opt/sdk-policy/requirements.lock
+       -r /opt/sdk-policy/requirements.lock \
+    && /opt/consumer/bin/pip install --disable-pip-version-check --only-binary=:all: \
+       --require-hashes --no-deps --no-cache-dir --no-index --find-links=/opt/sdk-cohort/wheels \
+       -r /opt/sdk-policy/native-evaluator.lock
 RUN /opt/consumer/bin/python -c '\
 import hashlib,json,subprocess,yaml; \
 from pathlib import Path; \

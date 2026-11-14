@@ -151,8 +151,10 @@ def evaluate(context: EvaluationContext):
     ]
     if len(candidates) != 1:
         raise ValueError("one verified Nav2 workload JSON artifact is required")
+    from .stop import STOP_WORKLOAD_BYTES
+
     path, link = candidates[0]
-    raw = context.evidence.read_local(path, max_raw_evidence_bytes=1024 * 1024)
+    raw = context.evidence.read_local(path, max_raw_evidence_bytes=STOP_WORKLOAD_BYTES)
     report = loads_mapping(raw, source_name=str(path))
     if (
         report.get("run_id") != context.run_id

@@ -1,7 +1,7 @@
 # Nav2 TurtleBot3 consumer
 
 This consumer separates immutable inputs, completed native observations, and offline
-assessment. The evaluator 0.4.0 uses public contracts v2, the verified evidence reader, and the
+assessment. The evaluator 0.4.1 uses public contracts v2, the verified evidence reader, and the
 external evaluator admission profile. It uses published contracts 0.22.0 and acceptance harness
 0.24.0. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
 [inputs.lock.json](inputs.lock.json); [requirements.lock](requirements.lock) fixes the SDK and
@@ -49,9 +49,13 @@ The lock installs the published host archive declared in [inputs.lock.json](inpu
 
 ## Build the native consumer
 
-Build from this directory after downloading the wheelhouse above:
+Build from this directory after downloading the wheels above and authenticating
+the local evaluator using the procedure below. Place the authenticated wheel into
+the same build context. The expected evaluator wheel and installed source hashes
+are in [inputs.lock.json](inputs.lock.json).
 
 ```sh
+cp evaluator-inputs/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl sdk-wheels/
 podman build --pull=never --platform linux/amd64 \
   --build-context apt-snapshot=../../docker/apt \
   --build-context sdk-wheels=sdk-wheels -t localhost/nav2-turtlebot3 .
@@ -60,7 +64,9 @@ podman build --pull=never --platform linux/amd64 \
 The image uses the signed Ubuntu and ROS snapshots declared in the input lock,
 checks the selected Debian package bytes before installation, and verifies all
 installed ROS package payloads. The shared snapshot helper and ROS key come from
-the repository's APT context. SDK wheels remain a separate build context.
+the repository's APT context. The image installs the published SDK closure and
+the local evaluator from hash-locked inputs. Preflight verifies the installed
+evaluator source and requires the native scenario to bind that evaluator wheel.
 
 The image-owned ROS launch composition includes stock Nav2 bringup, Waffle spawn/bridge,
 robot state publication, and the stock `ros_gz_sim` server with Harmonic's EGL headless
@@ -86,7 +92,7 @@ cosign trusted-root create --out offline-root.json
 cosign attest-blob --yes --key publisher.key --signing-config offline-signing.json \
   --trusted-root offline-root.json --type urn:nav2-turtlebot3:consumer-evaluator-qualification:v1 \
   --predicate predicate.json --bundle wheel.sigstore.json \
-  dist/nav2_turtlebot3_evaluator-0.4.0-py3-none-any.whl
+  dist/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl
 ```
 
 The external operator chooses `kind="cosign_key_no_tlog"`, the exact approved executable,
@@ -102,7 +108,7 @@ the verified installer input and writes the structural receipt/evaluator require
 .venv/bin/python qualify-evaluator.py --trust-profile /operator/nav2-trust.json \
   --output evaluator-inputs --preinstall
 .venv/bin/python -m pip install --no-index --no-deps \
-  evaluator-inputs/nav2_turtlebot3_evaluator-0.4.0-py3-none-any.whl
+  evaluator-inputs/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl
 .venv/bin/python -m pip check
 ```
 
@@ -241,14 +247,20 @@ odometry after the matching canceled result. Server failure captures it after
 observed action-server disappearance. The observation retains every received
 sample, its native pose and twist, backend TF, and advancing clock.
 
+The worker checks the full post-terminal prefix as it arrives and closes it at
+the first check with a valid half-second stop window. It uses the same installed
+evaluator as the offline assessment. The original action deadline bounds that
+wait. The two-second receiver-time limit applies to the age of the final samples
+at capture close. Samples can remain fresh while braking takes more wall time.
+
 The final half-second of native source time must remain within the declared
 speed limits. Cumulative XY travel and wrapped yaw travel must agree with those
-limits. Gaps over 0.1 seconds, stale data, invalid fields and insufficient clock
-progress leave the condition unobserved. A complete moving interval produces a
-failed stop assertion. Capture stays within the original action deadline and
-the existing two-second receiver-time freshness window. These are consumer
-engineering tolerances for sampled wheel odometry. They establish no safety
-guarantee or ground-truth physical stop.
+limits. Gaps over 0.1 seconds, stale data, invalid fields, insufficient clock
+progress or an exhausted sample bound leave the condition unobserved. Failure
+to stop by the action deadline with complete observations produces a failed
+stop assertion. The report retains up to 4096 samples per stream and the public
+condition links to that full report. The raw journal and the MCAP remain available
+for review. These tolerances describe sampled wheel odometry.
 
 This method checks the configured action outcome and fresh odometry/TF/AMCL pose facts.
 It does not establish a planned-to-loaded native model chain, Gazebo ground truth,

@@ -311,6 +311,9 @@ class NativeAdmissionControls(unittest.TestCase):
             }
             for name in ("/amcl", "/bt_navigator")
         ]
+        self.evaluator = json.loads((ROOT / "inputs.lock.json").read_bytes())[
+            "native_evaluator"
+        ]
         self.requirements.write_text(
             json.dumps(
                 {
@@ -318,7 +321,11 @@ class NativeAdmissionControls(unittest.TestCase):
                     "configuration": scenario["extensions"][
                         "org.example.nav2-turtlebot3"
                     ],
-                    "evaluator_requirement": scenario["evaluator_requirements"][0],
+                    "evaluator_requirement": {
+                        **scenario["evaluator_requirements"][0],
+                        "version": self.evaluator["version"],
+                        "artifact_sha256": self.evaluator["sha256"],
+                    },
                 }
             )
         )
@@ -376,6 +383,7 @@ class NativeAdmissionControls(unittest.TestCase):
                     "robotics-runtime-contracts": "0.22.0",
                     "robotics-acceptance-harness": "0.24.0",
                 },
+                "native_evaluator": copy.deepcopy(self.evaluator),
                 "files": files,
                 "rendered": {
                     key: value
@@ -544,6 +552,10 @@ class NativeAdmissionControls(unittest.TestCase):
             lambda d: d["facts"]["sdk_versions"].update(
                 {"robotics-acceptance-harness": "0.19.1"}
             ),
+            lambda d: d["facts"]["native_evaluator"].update(version="0.4.0"),
+            lambda d: d["facts"]["native_evaluator"]["installed_files"].update(
+                {"nav2_turtlebot3_evaluator/stop.py": "f" * 64}
+            ),
             lambda d: d["facts"]["files"]["model"].update(sha256="f" * 64),
             lambda d: d["facts"]["files"]["consumer_launch"].update(sha256="f" * 64),
             lambda d: d["facts"]["build"].update(dockerfile_sha256="e" * 64),
@@ -557,6 +569,15 @@ class NativeAdmissionControls(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.prepare()
                 self.assertFalse((self.root / "prepared").exists())
+
+    def test_native_evaluator_binding_cannot_select_another_wheel(self):
+        requirements = json.loads(self.requirements.read_bytes())
+        requirements["evaluator_requirement"]["artifact_sha256"] = "f" * 64
+        self.requirements.write_text(json.dumps(requirements))
+
+        with self.assertRaisesRegex(ValueError, "admitted native wheel"):
+            self.prepare()
+        self.assertFalse((self.root / "prepared").exists())
 
     def test_synthetic_document_profile_and_changed_prepared_bytes_refuse_native_worker(
         self,

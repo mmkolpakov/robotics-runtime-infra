@@ -67,6 +67,8 @@ jobs:
             --require-hashes --only-binary=:all: -r requirements.lock
           .venv/bin/python -I -m pip check
           uv build --wheel --out-dir dist evaluator
+          cp dist/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl sdk-wheels/
+          python3 check-sdk-wheels.py --include-native-evaluator sdk-wheels
       - name: Extract the pinned vendor Cosign executable
         run: |
           mkdir -p results
@@ -88,10 +90,10 @@ jobs:
       - name: Authenticate the wheel before installation or consumer imports
         run: |
           ROBOTICS_COSIGN_PROFILE="$PWD/results/cosign-profile.json" \
-            NAV2_EVALUATOR_WHEEL="$PWD/dist/nav2_turtlebot3_evaluator-0.4.0-py3-none-any.whl" \
+            NAV2_EVALUATOR_WHEEL="$PWD/dist/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl" \
             .venv/bin/python -I test_installed_cli.py --preinstall-output results/authenticated-installer
           .venv/bin/python -I -m pip install --no-index --no-deps \
-            results/authenticated-installer/nav2_turtlebot3_evaluator-0.4.0-py3-none-any.whl
+            results/authenticated-installer/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl
           .venv/bin/python -I -m pip check
       - name: Test the CI executor policy and workflow routing
         working-directory: .
@@ -106,7 +108,7 @@ jobs:
           node --test native-identity.test.mjs native-check.test.mjs
           NAV2_SDK_WHEELS="$PWD/sdk-wheels" \
             ROBOTICS_COSIGN_PROFILE="$PWD/results/cosign-profile.json" \
-            NAV2_EVALUATOR_WHEEL="$PWD/dist/nav2_turtlebot3_evaluator-0.4.0-py3-none-any.whl" \
+            NAV2_EVALUATOR_WHEEL="$PWD/dist/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl" \
             .venv/bin/python -I -m unittest discover -s . -p 'test_*.py'
       - name: Test recorded Nav2 qualification and live entrypoint controls
         working-directory: .

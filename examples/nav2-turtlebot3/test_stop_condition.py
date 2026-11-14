@@ -51,7 +51,8 @@ def stopped_capture(case="cancel"):
                 "receiver_monotonic_ns": anchor,
                 "clock_ns": cutoff,
             },
-            "deadline_monotonic_ns": anchor + 2_000_000_000,
+            "deadline_monotonic_ns": anchor + 119_000_000_000,
+            "observation_cutoff_monotonic_ns": anchor + 2_000_000_000,
             "closed_monotonic_ns": anchor + 2_000_001_000,
             "samples_omitted": False,
             "samples": samples,
@@ -116,6 +117,11 @@ class SampledStop(unittest.TestCase):
             lambda window: window["samples"][2].update(source_ns=1_100_000_000),
             lambda window: window["samples"][2].update(source_ns=1_900_000_000),
             lambda window: window["samples"][0].update(receiver_ns=9_000_000_000),
+            lambda window: window["samples"][-1].update(receiver_ns=12_000_000_001),
+            lambda window: window.update(
+                observation_cutoff_monotonic_ns=window["deadline_monotonic_ns"] + 1,
+                closed_monotonic_ns=window["deadline_monotonic_ns"] + 2,
+            ),
             lambda window: window["samples"][0].update(frame_id="map"),
             lambda window: window["samples"][0].update(vx=float("nan")),
             lambda window: window["samples"][0].update(
@@ -234,7 +240,8 @@ class SampledStop(unittest.TestCase):
         self.assertIn(
             "report['server_after_shutdown_clock_ns'] = latest_clock_ns", source
         )
-        self.assertIn("stop_observation['samples'].append", source)
+        self.assertIn("append_stop_sample(stop_observation, 'samples'", source)
+        self.assertIn("wait_for_sampled_stop(navigator, report, configuration)", source)
         self.assertIn("message.twist.twist.linear.x", source)
         self.assertIn("message.twist.twist.angular.z", source)
 
@@ -341,7 +348,14 @@ class SampledStop(unittest.TestCase):
 
     def test_moving_valid_window_is_measured_by_finalizer(self):
         facts = self.finalizer_observation("cancel")
-        self.assertEqual(facts["observations"]["condition"]["state"], "measured")
+        condition = facts["observations"]["condition"]
+        self.assertEqual(condition["state"], "measured")
+        self.assertEqual(
+            condition["value"]["sample_counts"],
+            {"samples": 14, "transforms": 14, "clock_samples": 14},
+        )
+        self.assertEqual(condition["value"]["last_odometry_source_ns"], 1_700_000_000)
+        self.assertTrue(condition["evidence"]["uri"].endswith("/workload.json"))
 
     def test_server_failure_preserves_terminal_fact_and_measured_motion_failure(self):
         facts = self.finalizer_observation("server-failure")
@@ -398,3 +412,149 @@ class SampledStop(unittest.TestCase):
             for sample in window["samples"]
         ]
         self.assertTrue(assess_stop(report, config)[1])
+
+
+class StopSettlement(unittest.TestCase):
+    def run_capture(self, report, config, *, assessment_cost_ns=0):
+        from pathlib import Path
+        import runpy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        worker = runpy.run_path(str(Path(__file__).with_name("workload.py")))
+        wait = worker["wait_for_sampled_stop"]
+        append = worker["append_stop_sample"]
+        window = report["stop_observation"]
+        next_rows = []
+        now = window["anchor"]["receiver_monotonic_ns"]
+        for stream in ("samples", "clock_samples", "transforms"):
+            for index, sample in enumerate(window[stream], 1):
+                next_rows.append(
+                    (stream, {**sample, "receiver_ns": now + index * 200_000_000})
+                )
+            window[stream] = []
+        next_rows.sort(key=lambda row: row[1]["receiver_ns"])
+
+        def spin(node, *, timeout_sec):
+            nonlocal now
+            now += round(timeout_sec * 1e9)
+            for stream, sample in next_rows[:]:
+                if sample["receiver_ns"] > now:
+                    break
+                append(window, stream, sample)
+                next_rows.pop(0)
+
+        def assess(report, config):
+            nonlocal now
+            result = assess_stop(report, config)
+            if result[1] is True:
+                now += assessment_cost_ns
+            return result
+
+        with (
+            patch.dict(
+                wait.__globals__,
+                {
+                    "rclpy": SimpleNamespace(spin_once=spin),
+                    "assess_stop": assess,
+                    "MAX_STOP_SAMPLES": 4096,
+                },
+            ),
+            patch.object(
+                wait.__globals__["time"], "monotonic_ns", side_effect=lambda: now
+            ),
+        ):
+            wait(object(), report, config)
+        return window
+
+    def test_slow_simulation_collects_fresh_samples_beyond_two_wall_seconds(self):
+        report, config = stopped_capture("timeout")
+        for sample in report["stop_observation"]["samples"][:2]:
+            sample["vx"] = 0.1
+        report["stop_observation"]["samples"][-1]["vx"] = 0.1
+        window = self.run_capture(report, config)
+        self.assertGreater(
+            window["closed_monotonic_ns"] - window["anchor"]["receiver_monotonic_ns"],
+            2_000_000_000,
+        )
+        self.assertLess(window["closed_monotonic_ns"], window["deadline_monotonic_ns"])
+        self.assertEqual(window["samples"][0]["vx"], 0.1)
+        self.assertEqual(len(window["samples"]), 13)
+        self.assertTrue(assess_stop(report, config)[1])
+
+    def test_continued_motion_at_action_deadline_remains_measured_and_failed(self):
+        report, config = stopped_capture("timeout")
+        window = report["stop_observation"]
+        config["action_budget_sec"] = 4
+        window["deadline_monotonic_ns"] = (
+            report["goal_started_monotonic_ns"] + 4_000_000_000
+        )
+        for sample in window["samples"]:
+            sample["vx"] = 0.1
+
+        self.run_capture(report, config)
+
+        self.assertEqual(
+            window["observation_cutoff_monotonic_ns"], window["deadline_monotonic_ns"]
+        )
+        self.assertIs(assess_stop(report, config)[1], False)
+        self.assertIsNotNone(assess_stop(report, config)[0])
+
+    def test_live_assessment_returning_after_deadline_cannot_complete(self):
+        report, config = stopped_capture("timeout")
+        window = report["stop_observation"]
+        config["action_budget_sec"] = 4
+        window["deadline_monotonic_ns"] = (
+            report["goal_started_monotonic_ns"] + 4_000_000_000
+        )
+
+        self.run_capture(report, config, assessment_cost_ns=1_000_000_000)
+
+        self.assertEqual(
+            window["observation_cutoff_monotonic_ns"], window["deadline_monotonic_ns"]
+        )
+        self.assertGreater(
+            window["closed_monotonic_ns"], window["deadline_monotonic_ns"]
+        )
+        self.assertIs(assess_stop(report, config)[1], False)
+
+    def test_quiet_samples_do_not_pass_after_action_deadline(self):
+        report, config = stopped_capture("timeout")
+        window = report["stop_observation"]
+        window["closed_monotonic_ns"] = window["deadline_monotonic_ns"]
+        for stream in ("samples", "clock_samples", "transforms"):
+            for sample in window[stream]:
+                sample["receiver_ns"] += 117_000_000_000
+        window["observation_cutoff_monotonic_ns"] = window["deadline_monotonic_ns"]
+
+        retained, stopped, reason = assess_stop(report, config)
+
+        self.assertIsNotNone(retained)
+        self.assertIs(stopped, False)
+        self.assertIn("action deadline", reason)
+
+    def test_receiver_freshness_is_still_enforced_at_capture_close(self):
+        report, config = stopped_capture()
+        report["stop_observation"]["closed_monotonic_ns"] += 1_000_000_000
+        retained, stopped, reason = assess_stop(report, config)
+        self.assertIsNone(retained)
+        self.assertIsNone(stopped)
+        self.assertIn("stale", reason)
+
+    def test_worker_sample_limit_retains_prefix_and_marks_it_incomplete(self):
+        from pathlib import Path
+        import runpy
+        from unittest.mock import patch
+
+        report, config = stopped_capture()
+        window = report["stop_observation"]
+        append = runpy.run_path(str(Path(__file__).with_name("workload.py")))[
+            "append_stop_sample"
+        ]
+        with patch.dict(
+            append.__globals__, {"MAX_STOP_SAMPLES": len(window["samples"])}
+        ):
+            append(window, "samples", dict(window["samples"][-1]))
+        self.assertTrue(window["samples_omitted"])
+        self.assertEqual(len(window["samples"]), 14)
+        self.assertIsNone(assess_stop(report, config)[0])
