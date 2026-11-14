@@ -13,7 +13,7 @@ import {EngineMetadata} from '../../engine-metadata.js';
 export interface Px4Config {
   composeExecutable:string;socketPath:string;composeFiles:readonly string[];cwd:string;
   workerImage:string;runVolume:string;outputRoot:string;grpcPort?:number;deadlineMs?:number;
-  mode?:'legacy-grpc'|'native-sdk-v2';archiveRoot?:string;
+  mode?:'legacy-grpc'|'native-sdk-v2';archiveRoot?:string;initSha256?:string;
 }
 const record=(value:unknown):Record<string,unknown>=>{
   if(!value||typeof value!=='object'||Array.isArray(value)) throw new Error('native fact is not an object');
@@ -52,6 +52,7 @@ export class Px4Native extends Service {
     if(config.mode!==undefined&&config.mode!=='legacy-grpc'&&config.mode!=='native-sdk-v2')throw new Error('unknown PX4 provider mode');
     if(config.mode!=='native-sdk-v2'&&(!Number.isSafeInteger(config.grpcPort)||config.grpcPort!<1024||config.grpcPort!>65535))throw new Error('configured unprivileged local gRPC port required');
     if(config.mode==='native-sdk-v2'){
+      if(!/^[a-f0-9]{64}$/.test(config.initSha256??''))throw new Error('admitted native init SHA-256 required');
       if(!config.archiveRoot||!isAbsolute(config.archiveRoot))throw new Error('absolute native archive required');
       const part=relative(config.outputRoot,config.archiveRoot);
       if(!part||part==='..'||part.startsWith('../')||isAbsolute(part))throw new Error('native archive must be inside the mounted output root');
@@ -99,6 +100,14 @@ export class Px4Native extends Service {
     await mkdir(join(this.output,'rootfs'),{recursive:true});
     if(this.config.mode==='native-sdk-v2')await mkdir(join(this.archiveRoot!,'parent-facts'),{mode:0o700});
     await this.compose.requireVersion();
+    if(this.config.mode==='native-sdk-v2'){
+      const planned=await this.compose.run(['config','--format','json']);
+      if(!planned.ok)throw new Error('native Compose configuration is unavailable');
+      const services=record(record(JSON.parse(planned.stdout)).services);
+      const environment=record(record(services['px4-native']).environment);
+      if(Object.keys(services).length!==1||Object.keys(environment).length!==1||
+        environment.GZ_PARTITION!==this.output.split('/').at(-1))throw new Error('native Compose environment differs');
+    }
     this.engine=await EngineMetadata.connect({socketPath:this.config.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'});
     const services=this.config.mode==='native-sdk-v2'?['px4-native']:['px4-native','mavsdk-native'];
     const started=await this.compose.run(['up','--detach',...services]);
@@ -125,6 +134,28 @@ export class Px4Native extends Service {
   }
   private actorFacts(observation:unknown,id:string):Record<string,unknown>{
     const facts=record(observation),container=record(facts.container),state=record(container.State),config=record(container.Config),labels=record(config.Labels),image=record(facts.image),host=record(container.HostConfig);
+    const environment=(input:unknown):Map<string,string>=>{
+      if(!Array.isArray(input))throw new Error('native actor environment differs');
+      const result=new Map<string,string>();
+      for(const value of input){
+        if(typeof value!=='string'||value.indexOf('=')<1)throw new Error('native actor environment differs');
+        const at=value.indexOf('='),key=value.slice(0,at);
+        if(result.has(key))throw new Error('native actor environment differs');
+        result.set(key,value.slice(at+1));
+      }
+      return result;
+    };
+    const baseline=environment(record(image.Config).Env),observed=environment(config.Env);
+    baseline.set('GZ_PARTITION',this.output.split('/').at(-1)!);
+    if(!baseline.has('HOSTNAME')&&observed.has('HOSTNAME')){
+      if(config.Hostname!==id.slice(0,12)||observed.get('HOSTNAME')!==config.Hostname)throw new Error('native actor environment differs');
+      observed.delete('HOSTNAME');
+    }
+    if(!baseline.has('container')&&observed.has('container')){
+      if(observed.get('container')!=='podman')throw new Error('native actor environment differs');
+      observed.delete('container');
+    }
+    if(baseline.size!==observed.size||[...baseline].some(([key,value])=>observed.get(key)!==value))throw new Error('native actor environment differs');
     const dropped=Array.isArray(host.CapDrop)?host.CapDrop.map(value=>typeof value==='string'?value.replace(/^CAP_/,''):'').sort():[];
     const standard=['CHOWN','DAC_OVERRIDE','FOWNER','FSETID','KILL','NET_BIND_SERVICE','SETFCAP','SETGID','SETPCAP','SETUID','SYS_CHROOT'].sort();
     const expectedCommand=['-d','/opt/px4/build/px4_sitl_default/etc','-i','0','-w',
@@ -299,7 +330,7 @@ export class Px4Native extends Service {
     }
     const facts=await this.probe('ready','gz-readiness.json',1,signal);
     if(facts.ready!==true||facts.owner_id!==this.ownerId||facts.model!=='x500_0')throw new Error('stock model readiness missing');
-    if(record(facts.oci_init).sha256!=='43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba')throw new Error('actual stock OCI init identity is unqualified');
+    if(record(facts.oci_init).sha256!==(this.config.initSha256??'43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba'))throw new Error('actual stock OCI init identity is unqualified');
     return {ready:true,evidenceRefs:[...this.refs]};
   }
   async probe(mode:'ready'|'observe'|'last-state',name:string,seconds:number,signal:AbortSignal):Promise<Record<string,unknown>>{

@@ -74,3 +74,17 @@ test('same-byte pathname replacement refuses the originally opened file', async 
   finally { interception.mock.restore(); }
   assert.equal(changed, true);
 });
+
+
+test('trusted operator capture rejects writable-by-others and archive-contained files', async t => {
+  const path = await fixture(t), archive = path + '.archive';
+  await fs.mkdir(archive); await fs.writeFile(path, '{}');
+  await fs.chmod(path, 0o666);
+  await assert.rejects(readOperatorInput(path, {trustedOutside: archive}), /group or other writable/);
+  await fs.chmod(path, 0o600);
+  assert.deepEqual(await readOperatorInput(path, {trustedOutside: archive}), {});
+  await assert.rejects(readOperatorInput(path, {trustedOutside: archive, readOnly: true}), /read-only/);
+  const inside = join(archive, 'profile.json'); await fs.writeFile(inside, '{}');
+  await assert.rejects(readOperatorInput(inside, {trustedOutside: archive}), /outside the evidence archive/);
+  assert.deepEqual(await readOperatorInput(inside), {});
+});

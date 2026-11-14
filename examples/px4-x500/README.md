@@ -1,7 +1,7 @@
 # Stock X500 consumer
 
 This example keeps flight policy outside the runtime core. It uses public host
-ownership interfaces, native MAVSDK 4.1 control, stock PX4 listener/logger commands,
+ownership interfaces, native MAVSDK control, stock PX4 listener/logger commands,
 and a separate ULog evaluator. Public contracts describe the inputs and evidence;
 the acceptance CLI produces JSON and JUnit.
 
@@ -67,8 +67,9 @@ harness 0.23.1, which honors that explicit raw-evidence budget: the original
 ULog is read with `read_local(max_raw_evidence_bytes=ULOG_LIMIT)`. The 8 MiB
 capture ceiling applies only to structured documents. That lock is not a
 native install set. Native SDK/image composition admission is separate.
-`npm run flight-native` unconditionally refuses before native imports or
-Engine effects; it cannot launch a native attempt.
+The source-built MAVSDK 4.2 composition uses `compose.px4-sdk.yaml`; rootless
+Podman also uses `compose.px4-sdk.podman.yaml` for the owned UID mapping. Select
+and admit the complete worker image and init binary before a native attempt.
 
 These assertions concern the selected simulated X500 estimates. They do not
 establish hardware behavior, camera/media performance, model-load provenance,
@@ -160,3 +161,31 @@ the exact run/domain and receiver-window arguments for the public evaluator:
 Exit codes are 0 for `passed`, 1 for a completed non-passing assessment and 2 for
 input/admission refusal. A late cleanup observation cannot turn missing native
 measurements into a pass.
+
+## Native owner bootstrap
+
+```sh
+npm run flight-native -- land /absolute/operator.json /absolute/case/inputs/run.json
+```
+
+The operator JSON supplies `archiveRoot`, `sdkIds`, absolute `producerPython`,
+`producerPath` and `harnessExecutable`, the evaluator trust paths, and an existing
+host `TrustedProfile` in `profile`. Keep the operator and evaluator trust profile
+outside the evidence archive, in a canonical directory without group or other
+write permission. Their files must also exclude group and other write access.
+
+The host profile is a read-only JSON Include document with one `px4` entry using
+`native-sdk-v2`. Its config binds `archiveRoot`, `initSha256`, the immutable
+`workerImage`, selected Engine and Compose paths, retained volume and output
+root. `profile.requiredBindings` is `[{"entryId":"px4","service":"px4"}]`, and
+`profile.isolatedServices` includes `px4`. Include the profile, provider module
+and its dependency files, and every Compose file in `profile.files` with their
+SHA-256 values. The public Admission service checks this closure before startup.
+The bootstrap does not infer trust from files inside the completed archive.
+
+The provider checks the expanded Compose environment before launch and compares
+the observed actor environment with the admitted image before SDK execution.
+The run-specific Gazebo partition and verified Engine identity fields are the
+only additions; environment values are not retained as evidence. Context disposal
+is awaited on errors. An unresolved worker still cannot authorize resource
+cleanup or a successful assessment.

@@ -180,7 +180,7 @@ test('native cleanup refuses foreign project ownership without sending down',asy
   const context=new Context();let resource:any;
   context.provide('runResources',{ownerId:'run-1',track:(value:unknown)=>{resource=value}} as any);
   context.provide('jobs',{run:async()=>({ok:true})} as any);
-  const provider:any=new Px4Native(context,{mode:'native-sdk-v2',composeExecutable:'/bin/compose',
+  const provider:any=new Px4Native(context,{mode:'native-sdk-v2',initSha256:'1'.repeat(64),composeExecutable:'/bin/compose',
     socketPath:'/tmp/engine.sock',composeFiles:['/tmp/compose.yaml'],cwd:'/tmp',
     workerImage:'example@sha256:'+'c'.repeat(64),runVolume:'run',outputRoot:'/tmp',
     archiveRoot:'/tmp/archive'});
@@ -198,18 +198,28 @@ test('actor evidence retains user and allowed mounts without environment, reject
   Object.assign(provider,{ownerId:'run-1',project:'rr-px4-'+ 'd'.repeat(24),output:'/tmp/scope',config:{runVolume:'run-volume'}});
   const container={Id:cid,Image:'sha256:'+'c'.repeat(64),RestartCount:0,
     State:{Running:true,OOMKilled:false,StartedAt:'time'},
-    Config:{User:'1000:1000',Env:['SECRET=hidden'],Entrypoint:['/opt/px4/build/px4_sitl_default/bin/px4'],
+    Config:{User:'1000:1000',Env:['SECRET=hidden','GZ_PARTITION=scope'],Entrypoint:['/opt/px4/build/px4_sitl_default/bin/px4'],
       Cmd:['-d','/opt/px4/build/px4_sitl_default/etc','-i','0','-w','/run/robotics/output/px4/scope/rootfs'],
       Labels:{'org.robotics.runtime.run-id':'run-1','com.docker.compose.project':provider.project}},
     HostConfig:{Init:true,ReadonlyRootfs:true,Memory:4294967296,Privileged:false,PidsLimit:256,CapAdd:[] as string[],
       CapDrop:['ALL'],SecurityOpt:['no-new-privileges'],Tmpfs:{'/tmp':'rw,mode=1777,size=512m'}},
     Mounts:[{Type:'volume',Destination:'/run/robotics',Name:'run-volume',RW:true,Source:'/private/path'}]};
-  const observation={status:'complete',container,image:{Id:container.Image}};
+  const observation={status:'complete',container,image:{Id:container.Image,Config:{Env:['SECRET=hidden']}}};
   const safe=provider.actorFacts(observation,cid);
   assert.equal(safe.container.Config.User,'1000:1000');
   assert.deepEqual(safe.container.Mounts,[{Type:'volume',Destination:'/run/robotics',Name:'run-volume',RW:true}]);
   assert.ok(!JSON.stringify(safe).includes('SECRET'));
   assert.ok(!JSON.stringify(safe).includes('/private/path'));
+  container.Config.Env.push('LD_PRELOAD=/secret/preload.so');
+  assert.throws(()=>provider.actorFacts(observation,cid),/^Error: native actor environment differs$/);
+  container.Config.Env.pop();
+  container.Config.Env.push('GZ_PARTITION=foreign');
+  assert.throws(()=>provider.actorFacts(observation,cid),/^Error: native actor environment differs$/);
+  container.Config.Env.pop();
+  container.Config.Env.push('container=podman','HOSTNAME='+cid.slice(0,12));
+  Object.assign(container.Config,{Hostname:cid.slice(0,12)});
+  assert.ok(!JSON.stringify(provider.actorFacts(observation,cid)).includes('SECRET'));
+  container.Config.Env.splice(-2);
   container.HostConfig.CapDrop=['CAP_CHOWN','CAP_DAC_OVERRIDE','CAP_FOWNER','CAP_FSETID','CAP_KILL','CAP_NET_BIND_SERVICE','CAP_SETFCAP','CAP_SETGID','CAP_SETPCAP','CAP_SETUID','CAP_SYS_CHROOT'];
   assert.equal(provider.actorFacts(observation,cid).container.Config.User,'1000:1000');
   container.HostConfig.CapDrop=['ALL'];
@@ -302,7 +312,7 @@ test('native provider snapshots caller config and compose files',()=>{
   const context=new Context();
   context.provide('runResources',{ownerId:'run-1',track:()=>{}} as any);
   context.provide('jobs',{run:async()=>({ok:true})} as any);
-  const config:any={mode:'native-sdk-v2',composeExecutable:'/bin/compose',socketPath:'/tmp/engine.sock',
+  const config:any={mode:'native-sdk-v2',initSha256:'1'.repeat(64),composeExecutable:'/bin/compose',socketPath:'/tmp/engine.sock',
     composeFiles:['/tmp/compose.yaml'],cwd:'/tmp',workerImage:'example@sha256:'+'c'.repeat(64),
     runVolume:'run',outputRoot:'/tmp',archiveRoot:'/tmp/archive'};
   const provider:any=new Px4Native(context,config);
@@ -322,4 +332,38 @@ test('SDK identity input is captured before asynchronous process observation',as
   selected.target_system_id=99;release();await pending;
   const actor=facts.find(item=>item.name==='native-actor-config.json')?.value;
   assert.equal(actor.target_system_id,1);
+});
+
+
+test('native init identity comes from the admitted configuration',async()=>{
+  const provider:any=Object.create(Px4Native.prototype);
+  provider.config={mode:'native-sdk-v2',initSha256:'1'.repeat(64)};
+  provider.ownerId='run-1';provider.refs=[];
+  provider.probe=async()=>({ready:true,owner_id:'run-1',model:'x500_0',oci_init:{sha256:'2'.repeat(64)}});
+  await assert.rejects(provider.ready(new AbortController().signal),/init identity/);
+  provider.probe=async()=>({ready:true,owner_id:'run-1',model:'x500_0',oci_init:{sha256:'1'.repeat(64)}});
+  assert.equal((await provider.ready(new AbortController().signal)).ready,true);
+});
+
+
+test('Compose-injected loader environment refuses before Engine connection or up',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'px4-compose-env-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const archive=join(root,'archive');await mkdir(archive);
+  const provider:any=Object.create(Px4Native.prototype),calls:string[][]=[];
+  Object.assign(provider,{config:{mode:'native-sdk-v2',outputRoot:root},archiveRoot:archive,output:join(root,'scope'),refs:[],
+    compose:{requireVersion:async()=>{},run:async(args:string[])=>{calls.push(args);return {ok:true,stdout:JSON.stringify({services:{'px4-native':{environment:{GZ_PARTITION:'scope',LD_PRELOAD:'/private/library.so'}}}})}}}});
+  await assert.rejects(provider.launch(),/^Error: native Compose environment differs$/);
+  assert.deepEqual(calls,[['config','--format','json']]);
+  assert.equal(provider.engine,undefined);
+});
+
+
+test('single-service Podman override preserves the stock fixed-worker UID mapping',async()=>{
+  const native=await readFile(new URL('../../../compose.px4-sdk.podman.yaml',import.meta.url),'utf8');
+  const legacy=await readFile(new URL('../../../compose.px4.podman.yaml',import.meta.url),'utf8');
+  const mapping=(text:string)=>[...text.matchAll(/^    userns_mode: (.+)$/gm)].map(match=>match[1]);
+  assert.deepEqual(mapping(native),[mapping(legacy)[0]]);
+  assert.equal(mapping(native)[0],'keep-id:uid=1000,gid=1000');
+  assert.match(native,/^  px4-native:$/m);assert.doesNotMatch(native,/mavsdk-native/);
 });
