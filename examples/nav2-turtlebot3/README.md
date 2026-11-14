@@ -92,6 +92,9 @@ The required `readiness` object contains `graph`, `timeout_sec` and `stable_for_
 The self-contained graph definitions are copied from the pinned contracts 0.22.0
 with `python sync-readiness-schema.py`; `--check` verifies equality with that SDK.
 The graph is passed unchanged to `RosGraphObserver` and `wait_for_readiness`.
+Native attempts require `/amcl` and `/bt_navigator` declared `active`, with
+lifecycle timeout and stability fields. The startup worker initializes the pose;
+the exercise worker observes the existing lifecycle and preserves localization.
 Its deadline is at most ten seconds,
 with a shorter non-negative stability window. The v2 scenario carries this consumer
 configuration in its extension and does not require legacy root graph/timeout fields.
