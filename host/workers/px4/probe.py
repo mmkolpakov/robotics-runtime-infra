@@ -86,6 +86,7 @@ def ns(value) -> str:
 
 
 def run(args) -> dict:
+    deadline = time.monotonic() + args.seconds if args.mode == "ready" else None
     from google.protobuf.json_format import MessageToDict
     from gz.transport import Node
     from gz.msgs.boolean_pb2 import Boolean
@@ -97,12 +98,30 @@ def run(args) -> dict:
 
     node = Node()
     service = f"/world/{args.world}"
-    executed, scene = node.request(service + "/scene/info", Empty(), Empty, Scene, 3000)
-    found = [m for m in scene.model if m.name == args.model] if executed else []
-    if len(found) != 1:
-        raise RuntimeError(
-            "native Scene response does not contain exactly one admitted model"
+    wake = threading.Event()
+    while True:
+        timeout_ms = 3000
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            timeout_ms = min(timeout_ms, int(remaining * 1000))
+            if timeout_ms < 1:
+                raise TimeoutError("native Scene readiness deadline expired")
+        executed, scene = node.request(
+            service + "/scene/info", Empty(), Empty, Scene, timeout_ms
         )
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("native Scene readiness deadline expired")
+        found = [m for m in scene.model if m.name == args.model] if executed else []
+        if len(found) == 1:
+            break
+        if len(found) > 1 or deadline is None:
+            raise RuntimeError(
+                "native Scene response does not contain exactly one admitted model"
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("native Scene readiness deadline expired")
+        wake.wait(min(0.05, remaining))
     init = Path("/proc/1/exe")
     identity = {
         "pid": 1,
@@ -208,7 +227,8 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seconds", type=float, default=3.0)
     args = parser.parse_args()
-    if not 0 < args.seconds <= 60 or not args.output.is_absolute():
+    limit = 300 if args.mode == "ready" else 60
+    if not 0 < args.seconds <= limit or not args.output.is_absolute():
         parser.error("finite duration and absolute output required")
     # Reserve output before native effects. An earlier attempt is never overwritten.
     with args.output.open("x") as stream:

@@ -337,7 +337,7 @@ test('SDK identity input is captured before asynchronous process observation',as
 
 test('native init identity comes from the admitted configuration',async()=>{
   const provider:any=Object.create(Px4Native.prototype);
-  provider.config={mode:'native-sdk-v2',initSha256:'1'.repeat(64)};
+  provider.config={mode:'native-sdk-v2',initSha256:'1'.repeat(64)};provider.deadline=120000;
   provider.ownerId='run-1';provider.refs=[];
   provider.probe=async()=>({ready:true,owner_id:'run-1',model:'x500_0',oci_init:{sha256:'2'.repeat(64)}});
   await assert.rejects(provider.ready(new AbortController().signal),/init identity/);
@@ -366,4 +366,30 @@ test('single-service Podman override preserves the stock fixed-worker UID mappin
   assert.deepEqual(mapping(native),[mapping(legacy)[0]]);
   assert.equal(mapping(native)[0],'keep-id:uid=1000,gid=1000');
   assert.match(native,/^  px4-native:$/m);assert.doesNotMatch(native,/mavsdk-native/);
+});
+
+
+test('ready passes the admitted provider budget and caller cancellation to one native probe',async()=>{
+  const provider:any=Object.create(Px4Native.prototype),calls:any[]=[];
+  provider.config={mode:'native-sdk-v2',initSha256:'1'.repeat(64)};provider.deadline=1001;
+  provider.ownerId='run-1';provider.refs=[];
+  provider.probe=async(...args:any[])=>{calls.push(args);return {ready:true,owner_id:'run-1',model:'x500_0',oci_init:{sha256:'1'.repeat(64)}}};
+  const controller=new AbortController();await provider.ready(controller.signal);
+  assert.deepEqual(calls,[['ready','gz-readiness.json',1.001,controller.signal]]);
+  controller.abort(new Error('caller canceled'));await assert.rejects(provider.ready(controller.signal),/caller canceled/);
+  assert.equal(calls.length,1);
+});
+
+test('only ready accepts the configured extended budget; observation remains bounded to 60 seconds',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'px4-probe-budget-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const provider:any=Object.create(Px4Native.prototype),calls:string[][]=[];
+  Object.assign(provider,{output:root,refs:[],ownerId:'run-1',compose:{run:async(args:string[])=>{
+    calls.push(args);await writeFile(join(root,'ready.json'),'{"ready":false}');return {ok:true};
+  }}});
+  await provider.probe('ready','ready.json',120,new AbortController().signal);
+  assert.equal(calls[0]![calls[0]!.indexOf('--seconds')+1],'120');
+  for(const [mode,seconds] of [['ready',301],['observe',61],['last-state',61]] as const){
+    await assert.rejects(provider.probe(mode,'other.json',seconds,new AbortController().signal),/finite native probe/);
+  }
+  assert.equal(calls.length,1);
 });

@@ -328,13 +328,13 @@ export class Px4Native extends Service {
       if(connected.connection_state?.is_connected!==true)throw new Error('native Core reports no connected PX4 vehicle');
       const path=join(this.output,'core-connection.json');await writeFile(path,JSON.stringify(connected));this.refs.push(await reference(path));
     }
-    const facts=await this.probe('ready','gz-readiness.json',1,signal);
+    const facts=await this.probe('ready','gz-readiness.json',this.deadline/1000,signal);
     if(facts.ready!==true||facts.owner_id!==this.ownerId||facts.model!=='x500_0')throw new Error('stock model readiness missing');
     if(record(facts.oci_init).sha256!==(this.config.initSha256??'43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba'))throw new Error('actual stock OCI init identity is unqualified');
     return {ready:true,evidenceRefs:[...this.refs]};
   }
   async probe(mode:'ready'|'observe'|'last-state',name:string,seconds:number,signal:AbortSignal):Promise<Record<string,unknown>>{
-    if(!/^[a-z][a-z0-9-]*\.json$/.test(name)||!Number.isFinite(seconds)||seconds<=0||seconds>60)throw new Error('invalid finite native probe');
+    if(!/^[a-z][a-z0-9-]*\.json$/.test(name)||!Number.isFinite(seconds)||seconds<=0||seconds>(mode==='ready'?300:60))throw new Error('invalid finite native probe');
     const relative='/run/robotics/output/px4/'+this.output.split('/').at(-1)+'/'+name;
     const result=await this.compose.run(['exec','-T','px4-native','/usr/bin/python3','-B','/opt/robotics/px4/probe.py',
       '--mode',mode,'--owner-id',this.ownerId,'--output',relative,'--seconds',String(seconds)],signal);
