@@ -15,7 +15,15 @@ from hashlib import sha256
 from pathlib import Path
 
 from robotics_acceptance_harness.evaluator_trust import read_once
-from robotics_runtime_contracts import dumps_canonical, loads_mapping, validate_role
+from robotics_runtime_contracts import (
+    dumps_canonical,
+    load_schema,
+    loads_mapping,
+    schema_registry,
+    validate_role,
+)
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 from robotics_runtime_contracts.writers import write_bytes_atomically, write_document
 
 NAMESPACE = "org.example.nav2-turtlebot3"
@@ -93,6 +101,23 @@ def check_run_binding(run: dict, run_id: str, scenario: dict, scenario_raw: byte
         raise ValueError("run context differs from the prepared Nav2 inputs")
 
 
+def require_active_nav2_lifecycle(configuration):
+    graph = configuration["readiness"]["graph"]
+    try:
+        Draft202012Validator(
+            load_schema("acceptance-scenario.v1")["properties"]["expected_ros_graph"],
+            registry=schema_registry(),
+        ).validate(graph)
+    except ValidationError as error:
+        raise ValueError("invalid native startup graph: " + error.json_path) from error
+    for name in ("/amcl", "/bt_navigator"):
+        selected = [row for row in graph["lifecycle_nodes"] if row["name"] == name]
+        if len(selected) != 1 or selected[0]["required_state"] != "active":
+            raise ValueError(
+                "native Nav2 startup requires declared active node " + name
+            )
+
+
 def prepare(
     profile_path: Path | None,
     requirements_path: Path,
@@ -146,6 +171,8 @@ def prepare(
         or not 0 <= stable < budget
     ):
         raise ValueError("consumer readiness stability must fit its bounded deadline")
+    if native is not None:
+        require_active_nav2_lifecycle(requirements["configuration"])
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     configuration = output / "nav2-configuration.json"
     schema_path = Path(__file__).with_name("nav2.schema.json")
@@ -659,6 +686,7 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
                 "executor configuration reference differs from captured bytes"
             )
     configuration = scenario["extensions"][NAMESPACE]
+    require_active_nav2_lifecycle(configuration)
     if loads_mapping(raw_by_name["nav2-configuration.json"]) != configuration:
         raise ValueError("captured configuration differs from the scenario")
     if (

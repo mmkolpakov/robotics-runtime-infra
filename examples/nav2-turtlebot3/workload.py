@@ -85,6 +85,12 @@ def mcap_writer_header_path() -> Path:
     )
 
 
+def initialize_navigator(navigator, already_initialized):
+    if not already_initialized:
+        navigator.setInitialPose(pose(navigator, -2.0, -0.5))
+        navigator.waitUntilNav2Active()
+
+
 def readiness_parameters(scenario):
     """Read this consumer's closed v2 configuration without projecting legacy fields."""
     if scenario.get("schema_version") != "acceptance-scenario.v2":
@@ -494,11 +500,18 @@ def main() -> int:
                     "basis": "selected ROS Clock payload; nominal shared-clock relation is configuration, not offset measurement",
                 },
             )
-            record("readiness-start", {"api": "BasicNavigator.waitUntilNav2Active"})
-            if not args.already_initialized:
-                navigator.setInitialPose(pose(navigator, -2.0, -0.5))
-            # The public host Jobs deadline bounds this documented blocking startup method.
-            navigator.waitUntilNav2Active()
+            record(
+                "readiness-start",
+                {
+                    "api": (
+                        "RosGraphObserver/wait_for_readiness"
+                        if args.already_initialized
+                        else "BasicNavigator.waitUntilNav2Active"
+                    ),
+                    "initial_pose_requested": not args.already_initialized,
+                },
+            )
+            initialize_navigator(navigator, args.already_initialized)
             ready_deadline = time.monotonic() + graph_budget
             observer = RosGraphObserver(
                 expected_graph,

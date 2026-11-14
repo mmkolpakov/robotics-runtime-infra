@@ -120,6 +120,33 @@ class WorkloadInputs(unittest.TestCase):
                 workload_functions()["readiness_parameters"](scenario)
 
 
+class NavigatorStartup(unittest.TestCase):
+    def test_initial_phase_sets_pose_before_waiting_for_activation(self):
+        from unittest.mock import Mock, call, patch
+
+        initialize = workload_functions()["initialize_navigator"]
+        navigator = Mock(spec=["setInitialPose", "waitUntilNav2Active"])
+        selected_pose = object()
+        with patch.dict(initialize.__globals__, {"pose": lambda *args: selected_pose}):
+            initialize(navigator, False)
+        self.assertEqual(
+            navigator.mock_calls,
+            [call.setInitialPose(selected_pose), call.waitUntilNav2Active()],
+        )
+
+    def test_exercise_does_not_call_pose_republishing_startup_method(self):
+        from unittest.mock import Mock
+
+        initialize = workload_functions()["initialize_navigator"]
+        navigator = Mock(spec=["setInitialPose", "waitUntilNav2Active"])
+        navigator.waitUntilNav2Active.side_effect = AssertionError(
+            "SDK startup may publish its stored default pose"
+        )
+        initialize(navigator, True)
+        navigator.setInitialPose.assert_not_called()
+        navigator.waitUntilNav2Active.assert_not_called()
+
+
 class PackageLocations(unittest.TestCase):
     def package_lookup(self, lookup):
         import sys
@@ -185,6 +212,16 @@ class NativeAdmissionControls(unittest.TestCase):
         fixture, _ = inputs(self.root / "fixture")
         scenario = json.loads((fixture / "scenario.json").read_bytes())
         self.requirements = self.root / "requirements.json"
+        readiness = scenario["extensions"]["org.example.nav2-turtlebot3"]["readiness"]
+        readiness["graph"]["lifecycle_nodes"] = [
+            {
+                "name": name,
+                "required_state": "active",
+                "timeout_sec": readiness["timeout_sec"],
+                "stable_for_sec": readiness["stable_for_sec"],
+            }
+            for name in ("/amcl", "/bt_navigator")
+        ]
         self.requirements.write_text(
             json.dumps(
                 {
@@ -259,8 +296,8 @@ class NativeAdmissionControls(unittest.TestCase):
             },
         }
 
-    def prepare(self):
-        prepared = self.root / "prepared"
+    def prepare(self, output_name="prepared"):
+        prepared = self.root / output_name
         manifest = self.module["prepare"](
             None,
             self.requirements,
@@ -288,6 +325,24 @@ class NativeAdmissionControls(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 self.module["validate_prepared"](prepared, image_id=image, case=case)
+
+    def test_native_inputs_require_declared_active_lifecycle_nodes(self):
+        requirements = json.loads(self.requirements.read_bytes())
+        changes = [
+            lambda graph: graph.update(lifecycle_nodes=[]),
+            lambda graph: graph["lifecycle_nodes"][0].update(name="/foreign/amcl"),
+            lambda graph: graph["lifecycle_nodes"][1].update(required_state="inactive"),
+            lambda graph: graph["lifecycle_nodes"][0].update(timeout_sec=0),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(change=change):
+                selected = copy.deepcopy(requirements)
+                change(selected["configuration"]["readiness"]["graph"])
+                self.requirements.write_text(json.dumps(selected))
+                output_name = "invalid-lifecycle-" + str(index)
+                with self.assertRaises(ValueError):
+                    self.prepare(output_name)
+                self.assertFalse((self.root / output_name).exists())
 
     def test_bare_podman_config_id_preserves_canonical_binding_and_raw_fact(self):
         bare_id = self.image_id.removeprefix("sha256:")
