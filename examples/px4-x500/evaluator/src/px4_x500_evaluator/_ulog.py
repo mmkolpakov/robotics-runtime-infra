@@ -219,11 +219,7 @@ def altitude_samples(global_rows, home_rows, start, end):
         home["valid_alt"] is True and math.isfinite(home["alt"]),
         "phase baseline home is invalid",
     )
-    baseline = (
-        home["alt"],
-        home["update_count"],
-        preceding_global[-1]["alt_reset_counter"],
-    )
+    baseline_reset = preceding_global[-1]["alt_reset_counter"]
     need(
         all(
             a["timestamp_sample"] < b["timestamp_sample"] for a, b in pairwise(selected)
@@ -232,14 +228,36 @@ def altitude_samples(global_rows, home_rows, start, end):
     )
     need(
         all(
-            h["valid_alt"] is True and (h["alt"], h["update_count"]) == baseline[:2]
+            h["valid_alt"] is True and math.isfinite(h["alt"])
             for h in home_rows
             if start < h["timestamp"] <= end
         ),
-        "home changed inside the selected measurement phase",
+        "valid finite home altitude was not captured inside the measurement phase",
+    )
+    home_times = np.asarray([h["timestamp"] for h in home_rows], dtype=np.uint64)
+    publication_times = np.asarray([r["timestamp"] for r in selected], dtype=np.uint64)
+    home_indices = np.searchsorted(home_times, publication_times, side="right") - 1
+    origin_index = int(home_indices[0])
+    if (
+        origin_index >= 0
+        and home_rows[origin_index]["timestamp"] == selected[0]["timestamp"]
+    ):
+        origin_index -= 1
+    need(origin_index >= 0, "no preceding home candidate")
+    origin = home_rows[origin_index]["timestamp"]
+    predecessors = [g for g in global_rows if g["timestamp"] < origin]
+    need(predecessors, "home origin has no preceding global reset observation")
+    predecessor = predecessors[-1]
+    need(
+        all(
+            g["alt_reset_counter"] == predecessor["alt_reset_counter"]
+            for g in global_rows
+            if predecessor["timestamp"] <= g["timestamp"] <= end
+        ),
+        "altitude reset changed since the applied home origin",
     )
     samples = []
-    for row in selected:
+    for row, home_index in zip(selected, home_indices):
         sample = row["timestamp_sample"]
         need(
             type(sample) is int and start < sample <= row["timestamp"],
@@ -249,35 +267,74 @@ def altitude_samples(global_rows, home_rows, start, end):
             row["alt_valid"] is True and math.isfinite(row["alt"]),
             "valid finite estimated altitude was not captured",
         )
-        homes = [h for h in home_rows if h["timestamp"] <= row["timestamp"]]
-        need(homes, "no preceding home altitude")
-        home = homes[-1]
+        need(home_index >= 0, "no preceding home altitude")
+        home = home_rows[home_index]
         need(
             home["valid_alt"] is True and math.isfinite(home["alt"]),
             "valid home altitude is unavailable",
         )
-        state = (home["alt"], home["update_count"], row["alt_reset_counter"])
+        candidates = [home]
+        if home["timestamp"] == row["timestamp"]:
+            need(home_index > 0, "same-tick home has no prior candidate")
+            previous = home_rows[home_index - 1]
+            need(
+                previous["valid_alt"] is True and math.isfinite(previous["alt"]),
+                "same-tick prior home candidate is invalid",
+            )
+            candidates.insert(0, previous)
         need(
-            state == baseline,
-            "home or altitude reset changed inside the measurement phase",
+            row["alt_reset_counter"] == baseline_reset,
+            "altitude reset changed inside the measurement phase",
         )
-        changed = [h for h in home_rows if start < h["timestamp"] <= row["timestamp"]]
-        need(
-            all(
-                h["valid_alt"] is True and (h["alt"], h["update_count"]) == baseline[:2]
-                for h in changed
-            ),
-            "home changed during the selected phase",
-        )
-        millimetres = np.float32(
-            np.float32(row["alt"]) - np.float32(home["alt"])
-        ) * np.float32(1000)
-        need(
-            bool(np.isfinite(millimetres)) and -2147483648 <= millimetres < 2147483648,
-            "relative altitude is outside the PX4 int32 millimetre range",
-        )
-        samples.append((sample, int(millimetres)))
+        heights = []
+        for candidate in candidates:
+            millimetres = np.float32(
+                np.float32(row["alt"]) - np.float32(candidate["alt"])
+            ) * np.float32(1000)
+            need(
+                bool(np.isfinite(millimetres))
+                and -2147483648 <= millimetres < 2147483648,
+                "relative altitude is outside the PX4 int32 millimetre range",
+            )
+            height = int(millimetres)
+            if height not in heights:
+                heights.append(height)
+        samples.append((sample, tuple(heights)))
     return samples
+
+
+def altitude_condition(samples, *, refusal):
+    if not refusal:
+        if max(min(heights) for _time, heights in samples) >= 1200:
+            return True
+        if max(max(heights) for _time, heights in samples) < 1200:
+            return False
+        return None
+    best, worst = [], []
+    for first in samples[0][1]:
+        best.append(
+            max(
+                (
+                    min(abs(mm - first) for mm in heights)
+                    for _time, heights in samples[1:]
+                ),
+                default=0,
+            )
+        )
+        worst.append(
+            max(
+                (
+                    max(abs(mm - first) for mm in heights)
+                    for _time, heights in samples[1:]
+                ),
+                default=0,
+            )
+        )
+    if min(best) > 200:
+        return False
+    if max(worst) <= 200 and len(samples) >= 4:
+        return True
+    return None
 
 
 def command_phase(command_rows, ack_rows, identity, code, window):
@@ -958,6 +1015,7 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
     phase_error = "received command phase is unavailable"
     try:
         lower, upper = start, end
+        commands = []
         if refusal and any(d.name == "vehicle_command" for d in ulog.data_list):
             commands = rows(
                 ulog,
@@ -1079,6 +1137,12 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             terminal_lower = land
         else:
             terminal_lower = start
+        need(
+            not any(
+                start < r["timestamp"] <= end and r["command"] == 179 for r in commands
+            ),
+            "received DO_SET_HOME changes the measurement reference",
+        )
         bounds = (lower, upper, terminal_lower)
     except (
         ValueError,
@@ -1159,17 +1223,13 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             ulog, "home_position", ("timestamp", "alt", "valid_alt", "update_count")
         )
         samples = altitude_samples(global_rows, home_rows, lower, upper)
-        if refusal:
-            excursion = max(abs(mm - samples[0][1]) for _time, mm in samples)
-            condition = (
-                False if excursion > 200 else True if len(samples) >= 4 else None
-            )
-        else:
-            condition = max(mm for _time, mm in samples) >= 1200
+        condition = altitude_condition(samples, refusal=refusal)
         assessed["postcondition"] = (
             condition,
             uref,
-            "four distinct refusal samples are required" if condition is None else None,
+            "home ordering or sample coverage does not determine the condition"
+            if condition is None
+            else None,
         )
     except (
         ValueError,

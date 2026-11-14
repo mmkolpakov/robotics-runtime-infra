@@ -57,7 +57,7 @@ evaluate sampled PX4 estimates:
 - `application-deadline`: observe ascent, record a two-second application interval
   and independently request landing. This does not simulate a native deadlock.
 
-Controller 0.3.0 and evaluator 0.3.1 distinguish publication time from the bounded
+The controller and evaluator distinguish publication time from the bounded
 native print clock. Publication timestamps select the original ULog phase; clock
 intervals do not trim its events or calibrate the native clock to controller UTC.
 
@@ -67,9 +67,20 @@ timestamps tie. Timestamp regressions and repeated estimator samples remain inva
 ULog received commands and ACKs bind the admitted sender/target tuple. Attributable
 SDK retries and late ACKs are allowed; ambiguous ownership or application phases
 remain incomplete. Estimated altitude follows PX4's float32 subtraction,
-float32 millimetre conversion and integer truncation. Invalid home, an in-phase
-home/reset change, stale samples, corruption, dropouts or insufficient coverage
-prevent an unsupported positive result.
+float32 millimetre conversion and integer truncation. Each global publication uses
+the last recorded home publication at or before its publication timestamp. Source
+sample timestamps still establish independent, fresh estimator observations. This
+evaluates independently sampled home-relative estimates; it does not reconstruct
+the SDK wire stream's send-time home pairing. A changed home reference sharing a
+global publication timestamp supplies both actual home-relative candidate heights.
+The condition is resolved only when all candidates imply the same verdict; an
+identical valid home republish or count-only update supplies one height. Refusal
+excursion remains relative to the first sample's chosen height. The applied home's
+origin must have a preceding global observation and unchanged altitude reset counter
+through the selected phase. Received DO_SET_HOME commands anywhere in the original
+command window prevent measurement. Invalid home, an altitude reset,
+stale samples, corruption, dropouts or insufficient coverage prevent an unsupported
+positive result.
 
 The method requests a 64 MiB raw ULog budget. The document-control lock uses
 harness 0.23.1, which honors that explicit raw-evidence budget: the original
@@ -79,6 +90,11 @@ native install set. Native SDK/image composition admission is separate.
 The source-built MAVSDK 4.2 composition uses `compose.px4-sdk.yaml`; rootless
 Podman also uses `compose.px4-sdk.podman.yaml` for the owned UID mapping. Select
 and admit the complete worker image and init binary before a native attempt.
+The `gazebo`, `mavsdk_server`, `mavsdk_proto_commit`,
+`worker_manifest_sha256` and `worker_image_id` fields in `input-pins.json`
+describe the stock gRPC fixture. The source C API composition is identified by
+the admitted worker image and its source-SDK receipt. The shared
+`sdk_cohort.wheels` pins still apply to the document controls.
 
 These assertions concern the selected simulated X500 estimates. They do not
 establish hardware behavior, camera/media performance, model-load provenance,
@@ -116,11 +132,13 @@ publisher for software controls. Supply an approved Cosign tool profile containi
 `executable`, `executable_sha256` and its exact vendor `version`:
 
 ```sh
+px4_method_wheel=$(.venv/bin/python -I -c \
+  'import tomllib; print("px4_x500_evaluator-" + tomllib.load(open("evaluator/pyproject.toml", "rb"))["project"]["version"] + "-py3-none-any.whl")')
 .venv/bin/python -I test_admission_fixture.py \
-  --wheel dist/px4_x500_evaluator-0.3.1-py3-none-any.whl \
+  --wheel "dist/$px4_method_wheel" \
   --tool-profile /absolute/approved-cosign-tool.json --output results/authenticated
 .venv/bin/python -I -m pip install --no-index --no-deps \
-  results/authenticated/px4_x500_evaluator-0.3.1-py3-none-any.whl
+  "results/authenticated/$px4_method_wheel"
 .venv/bin/python -I -m pip check
 PX4_SDK_WHEELS="$PWD/sdk-wheels" \
   PX4_EVALUATOR_BINDING="$PWD/results/authenticated/binding.json" \
