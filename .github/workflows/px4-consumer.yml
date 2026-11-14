@@ -102,11 +102,14 @@ jobs:
           PY
       - name: Authenticate method bytes and shape before installation or imports
         run: |
+          version=$(.venv/bin/python -I -c \
+            'import tomllib; print(tomllib.load(open("evaluator/pyproject.toml", "rb"))["project"]["version"])')
+          wheel="px4_x500_evaluator-${version}-py3-none-any.whl"
           .venv/bin/python -I test_admission_fixture.py \
-            --wheel dist/px4_x500_evaluator-0.2.0-py3-none-any.whl \
+            --wheel "dist/${wheel}" \
             --tool-profile results/cosign-profile.json --output results/authenticated
           .venv/bin/python -I -m pip install --no-index --no-deps \
-            results/authenticated/px4_x500_evaluator-0.2.0-py3-none-any.whl
+            "results/authenticated/${wheel}"
           .venv/bin/python -I -m pip check
       - name: Test installed public JSON/JUnit and bounded raw-byte controls
         env:

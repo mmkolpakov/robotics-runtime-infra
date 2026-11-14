@@ -118,7 +118,7 @@ class Journal:
 
 
 def check_initial_freshness(observations, checked_at_ms):
-    # This is a conservative acceptance budget, not a host/PX4 clock mapping.
+    # Bound current data age; the listener clock interval is not a host/PX4 mapping.
     required = {"initial-status-a", "initial-land", "initial-status-b"}
     if set(observations) != required or not finite(checked_at_ms):
         raise Refused("initial source observations or dispatch clock unavailable")
@@ -126,15 +126,20 @@ def check_initial_freshness(observations, checked_at_ms):
         observation = observations[slot]
         started = observation["host_started_monotonic_ms"]
         finished = observation["host_finished_monotonic_ms"]
-        age = observation["parsed"]["age_s"]
+        parsed = observation["parsed"]
+        age = parsed["age_s"]
+        age_upper_us = int(parsed["native_print_clock_us"]["upper"]) - int(
+            parsed["timestamp_us"]
+        )
         if (
             not all(finite(value) for value in (started, finished, age))
             or not 0 <= started <= finished <= checked_at_ms
             or age < 0
+            or age_upper_us < 0
         ):
             raise Refused("initial observation clocks are unordered or unavailable")
         budget_ms = (
-            age * 1000 + 0.0005 + (finished - started) + (checked_at_ms - finished)
+            age_upper_us / 1000 + (finished - started) + (checked_at_ms - finished)
         )
         if budget_ms >= 1000:
             raise Refused("initial snapshot freshness budget exceeded: " + slot)
@@ -307,7 +312,7 @@ def run_case(
     observed = "unknown"
     before = None
     last_source = 0
-    initial_source = 0
+    last_native_clock_upper = 0
     initial_observations = {}
     readiness_ms = 45000
     settlement_ms = 45000
@@ -329,7 +334,7 @@ def run_case(
             sleep(0.1)
 
     def observation(slot, topic, *, initial=False):
-        nonlocal last_source, initial_source
+        nonlocal last_source, last_native_clock_upper
         if actor_probe(config) != before:
             raise Refused("PX4 process changed during listener observation")
         started = now()
@@ -373,17 +378,15 @@ def run_case(
                 if initial and parsed["arming_state"] != 1:
                     raise Refused("initial PX4 state is not disarmed")
                 timestamp = int(parsed["timestamp_us"])
-                if timestamp < last_source or (
-                    slot == "initial-status-b" and timestamp <= last_source
-                ):
-                    raise Refused("PX4 source clock did not advance")
-                if slot == "final-status" and timestamp <= initial_source:
-                    raise Refused("final PX4 source boundary did not advance")
+                if timestamp < last_source:
+                    raise Refused("PX4 publication timestamp moved backwards")
                 last_source = timestamp
-                if slot == "initial-status-b":
-                    initial_source = timestamp
             elif initial and not parsed["landed"]:
                 raise Refused("initial PX4 state is not landed")
+            interval = parsed["native_print_clock_us"]
+            if int(interval["lower"]) <= last_native_clock_upper:
+                raise Refused("PX4 native print clock intervals do not prove progress")
+            last_native_clock_upper = int(interval["upper"])
         except Exception as failure:
             value["error"] = str(failure)
             journal.retain("listener-observation", value)
@@ -489,7 +492,6 @@ def run_case(
         wait(healthy, readiness_ms)
         observation("initial-status-a", "vehicle_status", initial=True)
         observation("initial-land", "vehicle_land_detected", initial=True)
-        sleep(0.6)
         observation("initial-status-b", "vehicle_status", initial=True)
         if name == "unarmed-refusal":
             check_initial_freshness(initial_observations, now())

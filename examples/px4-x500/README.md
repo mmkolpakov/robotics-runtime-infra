@@ -13,9 +13,10 @@ retries. Cached Telemetry supplies readiness and control hints. It does not supp
 the altitude measurements used by the evaluator.
 
 Before dispatch, the worker checks valid local/global/home position health and
-reads stock listener snapshots. Their source timestamps must advance within the
-same PX4 process instance. Original listener output is retained and independently
-parsed by the evaluator using the same fixed-version grammar.
+reads stock listener snapshots. Publication timestamps and printed ages bound the
+native print clock; successive intervals must be ordered and disjoint in the same
+PX4 process. Original listener output is retained and independently parsed using
+the pinned PX4 v1.17 grammar.
 
 The worker persists each action intent before calling the SDK. Application
 invocation IDs identify those intents, not PX4 transactions. The parent retains
@@ -44,7 +45,8 @@ does not rebind them.
 
 ## Cases and measurement
 
-Method 0.2 uses stock pyulog and NumPy to evaluate sampled PX4 estimates:
+The physical method `px4-valid-home-sampled-v0.2` uses stock pyulog and NumPy to
+evaluate sampled PX4 estimates:
 
 - `land`: start grounded and unarmed, observe home-relative estimated
   altitude of at least 1.2 m after received takeoff and before received land, then observe
@@ -54,6 +56,10 @@ Method 0.2 uses stock pyulog and NumPy to evaluate sampled PX4 estimates:
   caller precondition, not firmware command denial or continuous absence of motion.
 - `application-deadline`: observe ascent, record a two-second application interval
   and independently request landing. This does not simulate a native deadlock.
+
+Controller and evaluator 0.3.0 distinguish publication time from the bounded
+native print clock. Publication timestamps select the original ULog phase; clock
+intervals do not trim its events or calibrate the native clock to controller UTC.
 
 ULog received commands and ACKs bind the admitted sender/target tuple. Attributable
 SDK retries and late ACKs are allowed; ambiguous ownership or application phases
@@ -108,10 +114,10 @@ publisher for software controls. Supply an approved Cosign tool profile containi
 
 ```sh
 .venv/bin/python -I test_admission_fixture.py \
-  --wheel dist/px4_x500_evaluator-0.2.0-py3-none-any.whl \
+  --wheel dist/px4_x500_evaluator-0.3.0-py3-none-any.whl \
   --tool-profile /absolute/approved-cosign-tool.json --output results/authenticated
 .venv/bin/python -I -m pip install --no-index --no-deps \
-  results/authenticated/px4_x500_evaluator-0.2.0-py3-none-any.whl
+  results/authenticated/px4_x500_evaluator-0.3.0-py3-none-any.whl
 .venv/bin/python -I -m pip check
 PX4_SDK_WHEELS="$PWD/sdk-wheels" \
   PX4_EVALUATOR_BINDING="$PWD/results/authenticated/binding.json" \

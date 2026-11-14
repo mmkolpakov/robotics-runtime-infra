@@ -440,6 +440,46 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
         self.assertIs(result["command"][0], True, result)
         self.assertIs(result["postcondition"][0], True, result)
 
+    def test_takeoff_at_publication_window_edge_is_not_trimmed_by_print_precision(self):
+        def mutate(_records, _native, decoded):
+            source = next(d for d in decoded.data_list if d.name == "vehicle_command")
+            source.data["timestamp"][0] = 101
+
+        result = self.assess(mutate=mutate)
+        self.assertIs(result["command"][0], True, result)
+        self.assertIs(result["postcondition"][0], True, result)
+
+    def test_received_takeoff_at_refusal_edge_is_not_discarded_as_clock_uncertainty(
+        self,
+    ):
+        def mutate(_records, _native, decoded):
+            import numpy as np
+
+            source = next(d for d in decoded.data_list if d.name == "vehicle_command")
+            source.data = {
+                key: np.array([value], dtype=np.int8 if type(value) is bool else None)
+                for key, value in command(101).items()
+            }
+
+        result = self.assess("unarmed-refusal", mutate=mutate)
+        self.assertIs(result["command"][0], False, result)
+
+    def test_pre_land_publication_guard_remains_independent_of_print_clock_progress(
+        self,
+    ):
+        def mutate(records, _native, _decoded):
+            row = next(
+                row
+                for row, _ref in records
+                if row["value"].get("slot") == "pre-land-status"
+            )
+            row["value"]["stdout"] = row["value"]["stdout"].replace("210 (", "221 (")
+            row["value"]["parsed"]["timestamp_us"] = "221"
+
+        result = self.assess(mutate=mutate)
+        self.assertIsNone(result["postcondition"][0], result)
+        self.assertIn("received land is outside", result["postcondition"][2])
+
     def test_ulog_above_document_ceiling_is_accepted_within_raw_budget(self):
         # harness 0.23.1 honors the explicit raw-evidence budget; the 8 MiB
         # document ceiling applies only to structured documents.

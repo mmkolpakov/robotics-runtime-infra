@@ -44,13 +44,23 @@ def parse_listener(stdout, topic, *, maximum_age_s=1.0):
     if not stamp:
         raise Refused("missing source timestamp and age")
     timestamp, age = int(stamp[1]), float(stamp[2])
+    seconds, fraction = stamp[2].split(".")
+    printed_age_us = int(seconds) * 1_000_000 + int(fraction)
+    # Pinned float/%.6f age formatting is enclosed by one microsecond for age<5s.
+    lower = timestamp + printed_age_us - 1
+    upper = timestamp + printed_age_us + 1
     if (
         not 0 < timestamp <= MAX_SOURCE_TIME
         or not _finite(age)
-        or age + 0.0000005 >= maximum_age_s
+        or printed_age_us + 1 >= maximum_age_s * 1_000_000
+        or not 0 < lower <= upper <= MAX_SOURCE_TIME
     ):
         raise Refused("invalid or stale source snapshot")
-    parsed = {"timestamp_us": str(timestamp), "age_s": age}
+    parsed = {
+        "timestamp_us": str(timestamp),
+        "age_s": age,
+        "native_print_clock_us": {"lower": str(lower), "upper": str(upper)},
+    }
     if topic == "vehicle_status":
         for key in ("arming_state", "system_id", "component_id"):
             value = fields.get(key, "")
