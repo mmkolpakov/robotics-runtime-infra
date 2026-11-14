@@ -136,5 +136,13 @@
       }
     },
     "scope": "published SDK document/consumer controls; native composition admission is separate"
+  },
+  "apt_snapshots": {
+    "ubuntu": "20261113T000000Z",
+    "ros": "2026-10-05",
+    "rosdistro_index_revision": "8e9a99d200fd312f106418b2b497b0cc5146e6a7",
+    "helper_sha256": "1263e77e13c38b4f5b54c81a3bdc595e3a4c4881d891d9dbc32b8640d3fa5e22",
+    "ros_key_sha256": "2917845bafcabbf651ed70e967beb61ee467ae29292288c7ccd5d7d76e5f2a2f",
+    "ros_key_fingerprint": "4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA"
   }
 }

@@ -246,7 +246,11 @@ class NativeAdmissionControls(unittest.TestCase):
         policy = json.loads((ROOT / "inputs.lock.json").read_bytes())
         files = {}
         for key, path in self.module["NATIVE_FILES"].items():
-            raw = ("controlled fixture " + key).encode()
+            raw = (
+                (ROOT / "native_simulation.launch.py").read_bytes()
+                if key == "consumer_launch"
+                else ("controlled fixture " + key).encode()
+            )
             files[key] = {
                 "path": path,
                 "sha256": hashlib.sha256(raw).hexdigest(),
@@ -368,6 +372,7 @@ class NativeAdmissionControls(unittest.TestCase):
                 {"robotics-acceptance-harness": "0.19.1"}
             ),
             lambda d: d["facts"]["files"]["model"].update(sha256="f" * 64),
+            lambda d: d["facts"]["files"]["consumer_launch"].update(sha256="f" * 64),
             lambda d: d["facts"]["build"].update(dockerfile_sha256="e" * 64),
             lambda d: d["facts"].update(launch=["sh", "-c", "true"]),
         ]

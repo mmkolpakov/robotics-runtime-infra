@@ -36,6 +36,27 @@ The self-contained purelib admission profile supports pip's documented installat
 An installer adding other distribution metadata, such as `uv_cache.json`, is outside that profile.
 Use an explicit cohort wheel directory; a version number alone cannot substitute for its hash.
 
+## Build the native consumer
+
+Build from this directory after downloading the wheelhouse above:
+
+```sh
+podman build --pull=never --platform linux/amd64 \
+  --build-context apt-snapshot=../../docker/apt \
+  --build-context sdk-wheels=sdk-wheels -t localhost/nav2-turtlebot3 .
+```
+
+The image uses the signed Ubuntu and ROS snapshots declared in the input lock,
+checks the selected Debian package bytes before installation, and verifies all
+installed ROS package payloads. The shared snapshot helper and ROS key come from
+the repository's APT context. SDK wheels remain a separate build context.
+
+The image-owned ROS launch composition includes the stock Nav2 Waffle launcher
+and the stock `ros_gz_sim` server with Harmonic's EGL headless rendering option.
+It retains the Waffle sensors, spawn/bridge, localization, and navigation nodes.
+The upstream package files are unchanged. Select the resulting immutable image
+Config ID for native composition admission before starting an attempt.
+
 ## Admit the evaluator
 
 Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The

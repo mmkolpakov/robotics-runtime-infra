@@ -14,7 +14,7 @@ await mkdir(outputRoot,{mode:0o700});
 const output=resolve(outputRoot,'capture'), snapshot=resolve(outputRoot,'source'), prepared=resolve(outputRoot,'inputs');
 await mkdir(output,{mode:0o700});
 await mkdir(snapshot,{mode:0o700});
-for (const file of ['workload.py','make-scenario.py','record-topics.py','fastdds.xml','check-sdk-wheels.py','inputs.lock.json','Dockerfile','nav2.schema.json','finalize.py']) {
+for (const file of ['workload.py','make-scenario.py','record-topics.py','fastdds.xml','check-sdk-wheels.py','inputs.lock.json','Dockerfile','native_simulation.launch.py','nav2.schema.json','finalize.py']) {
   await copyFile(resolve(root,file),resolve(snapshot,file));
   await chmod(resolve(snapshot,file),0o444);
 }

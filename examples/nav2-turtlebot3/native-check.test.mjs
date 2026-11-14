@@ -34,7 +34,7 @@ async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=
       if(a.includes('--native-preflight')){await mkdir(resolve(output,'inputs'));return result('{}');}
       if(a.includes('--validate-prepared')){
         if(badInput&&!a.includes('--complete-capture')) return {...result(),ok:false,exitCode:2,stderr:'input mismatch'};
-        return result(JSON.stringify({run_id:'run-fixture',domain_id:'nav2',configuration,image_id:image,image_reference:reference,launch:['ros2','launch','nav2_bringup','tb3_simulation_launch.py']}));
+        return result(JSON.stringify({run_id:'run-fixture',domain_id:'nav2',configuration,image_id:image,image_reference:reference,launch:['ros2','launch','/opt/sdk-policy/native_simulation.launch.py']}));
       }
       return result(JSON.stringify({run_id:'run-fixture'}));
     }
