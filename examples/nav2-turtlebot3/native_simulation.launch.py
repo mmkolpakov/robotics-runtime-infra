@@ -11,6 +11,7 @@ from launch.actions import (
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -34,18 +35,52 @@ def generate_launch_description():
                     "on_exit_shutdown": "true",
                 }.items(),
             ),
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                name="robot_state_publisher",
+                namespace="",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "robot_description": (
+                            simulation / "urdf/turtlebot3_waffle.urdf"
+                        ).read_text(),
+                    }
+                ],
+                remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    str(bringup / "launch/tb3_simulation_launch.py")
+                    str(simulation / "launch/spawn_tb3.launch.py")
                 ),
                 launch_arguments={
-                    "world": world,
+                    "namespace": "",
+                    "use_sim_time": "True",
+                    "robot_name": "turtlebot3_waffle",
                     "robot_sdf": LaunchConfiguration("robot_sdf"),
-                    "map": LaunchConfiguration("map"),
-                    "use_simulator": "False",
-                    "headless": "True",
-                    "use_rviz": "False",
+                    "x_pose": "-2.00",
+                    "y_pose": "-0.50",
+                    "z_pose": "0.01",
+                    "roll": "0.00",
+                    "pitch": "0.00",
+                    "yaw": "0.00",
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    str(bringup / "launch/bringup_launch.py")
+                ),
+                launch_arguments={
+                    "namespace": "",
+                    "use_namespace": "False",
                     "slam": "False",
+                    "map": LaunchConfiguration("map"),
+                    "use_localization": "True",
+                    "use_sim_time": "true",
+                    "params_file": str(bringup / "params/nav2_params.yaml"),
+                    "autostart": "true",
                     "use_composition": "False",
                     "use_respawn": "False",
                 }.items(),

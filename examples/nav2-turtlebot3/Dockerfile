@@ -44,7 +44,7 @@ assert ros_packages, "ROS package inventory is empty"; \
 checked=subprocess.run(["dpkg","--verify",*ros_packages],check=True,capture_output=True); \
 assert not checked.stdout and not checked.stderr, "installed native package verification failed"; \
 base="/opt/ros/jazzy/share/"; \
-paths={"model":base+"nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro","world":base+"nav2_minimal_tb3_sim/worlds/tb3_sandbox.sdf.xacro","map":base+"nav2_bringup/maps/tb3_sandbox.yaml","launch":base+"nav2_bringup/launch/tb3_simulation_launch.py","robot_state":base+"nav2_minimal_tb3_sim/urdf/turtlebot3_waffle.urdf","params":base+"nav2_bringup/params/nav2_params.yaml","spawn_launch":base+"nav2_minimal_tb3_sim/launch/spawn_tb3.launch.py"}; \
+paths={"model":base+"nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro","world":base+"nav2_minimal_tb3_sim/worlds/tb3_sandbox.sdf.xacro","map":base+"nav2_bringup/maps/tb3_sandbox.yaml","launch":base+"nav2_bringup/launch/bringup_launch.py","robot_state":base+"nav2_minimal_tb3_sim/urdf/turtlebot3_waffle.urdf","params":base+"nav2_bringup/params/nav2_params.yaml","spawn_launch":base+"nav2_minimal_tb3_sim/launch/spawn_tb3.launch.py"}; \
 paths["consumer_launch"]="/opt/sdk-policy/native_simulation.launch.py"; \
 paths["map_image"]=str((Path(paths["map"]).parent/yaml.safe_load(Path(paths["map"]).read_text())["image"]).resolve(strict=True)); \
 files={name:{"path":path,"sha256":hashlib.sha256(raw:=Path(path).read_bytes()).hexdigest(),"size_bytes":len(raw)} for name,path in paths.items()}; \

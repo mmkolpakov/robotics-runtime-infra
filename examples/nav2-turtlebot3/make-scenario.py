@@ -349,7 +349,7 @@ NATIVE_FILES = {
     "model": "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro",
     "world": "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/worlds/tb3_sandbox.sdf.xacro",
     "map": "/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml",
-    "launch": "/opt/ros/jazzy/share/nav2_bringup/launch/tb3_simulation_launch.py",
+    "launch": "/opt/ros/jazzy/share/nav2_bringup/launch/bringup_launch.py",
     "consumer_launch": "/opt/sdk-policy/native_simulation.launch.py",
 }
 NATIVE_TOPICS = {

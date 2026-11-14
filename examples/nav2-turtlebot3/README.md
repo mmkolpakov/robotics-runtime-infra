@@ -51,8 +51,9 @@ checks the selected Debian package bytes before installation, and verifies all
 installed ROS package payloads. The shared snapshot helper and ROS key come from
 the repository's APT context. SDK wheels remain a separate build context.
 
-The image-owned ROS launch composition includes the stock Nav2 Waffle launcher
-and the stock `ros_gz_sim` server with Harmonic's EGL headless rendering option.
+The image-owned ROS launch composition includes stock Nav2 bringup, Waffle spawn/bridge,
+robot state publication, and the stock `ros_gz_sim` server with Harmonic's EGL headless
+rendering option.
 It retains the Waffle sensors, spawn/bridge, localization, and navigation nodes.
 The upstream package files are unchanged. Select the resulting immutable image
 Config ID for native composition admission before starting an attempt.
