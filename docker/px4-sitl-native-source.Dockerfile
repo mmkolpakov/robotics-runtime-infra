@@ -151,7 +151,7 @@ COPY metadata/ /usr/share/robotics-px4/source/
 COPY workers/ /opt/robotics/px4/
 WORKDIR /opt/px4
 RUN printf '%s\n' /opt/mavsdk/lib > /etc/ld.so.conf.d/mavsdk-source.conf && ldconfig \
-    && sha256sum --check /usr/share/robotics-px4/source/workers.sha256 \
+    && env --chdir=/opt/robotics/px4 sha256sum --check /usr/share/robotics-px4/source/workers.sha256 \
     && sha256sum --check /usr/share/robotics-px4/source/payload.sha256 \
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
        | LC_ALL=C sort > /usr/share/robotics-px4/sdk-source/runtime-apt-closure.tsv \
