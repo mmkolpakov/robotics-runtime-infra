@@ -12,6 +12,6 @@
     "flight-native": "node src/run-native.mjs"
   },
   "dependencies": {
-    "@robotics-runtime/host": "https://github.com/mmkolpakov/robotics-runtime/releases/download/host-v0.1.0-rc.0/robotics-runtime-host-0.1.0-rc.0.tgz"
+    "@robotics-runtime/host": "https://github.com/mmkolpakov/robotics-runtime/releases/download/host-v0.1.0-rc.1/robotics-runtime-host-0.1.0-rc.1.tgz"
   }
 }
