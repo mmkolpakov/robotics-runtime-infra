@@ -121,6 +121,34 @@ def readiness_parameters(scenario):
     return settings["graph"], budget, stability
 
 
+def wait_for_action_server(client, ready_deadline, report):
+    diagnostic = {
+        "deadline_monotonic_ns": int(ready_deadline * 1e9),
+        "server_ready": False,
+        "call_started_monotonic_ns": time.monotonic_ns(),
+        "call_started_unix_ns": time.time_ns(),
+    }
+    report["action_server_bootstrap"] = diagnostic
+    try:
+        while True:
+            remaining = ready_deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("NavigateToPose action server is unavailable")
+            diagnostic["server_ready"] = client.wait_for_server(
+                timeout_sec=min(0.1, remaining)
+            )
+            if time.monotonic() >= ready_deadline:
+                raise TimeoutError(
+                    "NavigateToPose action discovery exceeded readiness deadline"
+                )
+            if diagnostic["server_ready"]:
+                return
+    finally:
+        diagnostic["call_finished_monotonic_ns"] = time.monotonic_ns()
+        diagnostic["call_finished_unix_ns"] = time.time_ns()
+        diagnostic["remaining_budget_sec"] = max(0.0, ready_deadline - time.monotonic())
+
+
 def wait_for_graph_readiness(
     expected_graph, observer, *, timeout_sec, stable_for_sec, ready_deadline, report
 ):
@@ -666,6 +694,9 @@ def main() -> int:
             )
             initialize_navigator(navigator, args.already_initialized)
             ready_deadline = time.monotonic() + graph_budget
+            client = ActionClient(navigator, NavigateToPose, "navigate_to_pose")
+            wait_for_action_server(client, ready_deadline, report)
+            record("action-server-bootstrap", report["action_server_bootstrap"])
             construction_started_ns = time.monotonic_ns()
             try:
                 observer = RosGraphObserver(
@@ -679,10 +710,15 @@ def main() -> int:
                     "construction_started_monotonic_ns": construction_started_ns,
                     "construction_finished_monotonic_ns": time.monotonic_ns(),
                 }
+            remaining = ready_deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    "graph observer construction exceeded readiness deadline"
+                )
             graph_ready = wait_for_graph_readiness(
                 expected_graph,
                 observer,
-                timeout_sec=max(0.001, ready_deadline - time.monotonic()),
+                timeout_sec=remaining,
                 stable_for_sec=graph_stability,
                 ready_deadline=ready_deadline,
                 report=report,
@@ -731,7 +767,6 @@ def main() -> int:
                     strict=True,
                 )
             )
-            client = ActionClient(navigator, NavigateToPose, "navigate_to_pose")
             record(
                 "measurement-start",
                 {
@@ -767,10 +802,6 @@ def main() -> int:
                     "graph_readiness": report["graph_readiness"],
                 },
             )
-            while not client.wait_for_server(timeout_sec=0.1):
-                if time.monotonic() >= ready_deadline:
-                    raise TimeoutError("NavigateToPose action server is unavailable")
-            observation_deadline = time.monotonic() + 10
             while any(
                 counts[key] < minimum
                 for key, minimum in {
@@ -780,11 +811,12 @@ def main() -> int:
                     "amcl_pose": 1,
                 }.items()
             ):
-                if time.monotonic() >= observation_deadline:
+                remaining = ready_deadline - time.monotonic()
+                if remaining <= 0:
                     raise TimeoutError(
                         "required native odom/TF/Clock observations are missing"
                     )
-                rclpy.spin_once(navigator, timeout_sec=0.1)
+                rclpy.spin_once(navigator, timeout_sec=min(0.1, remaining))
             if time.monotonic() >= ready_deadline:
                 raise TimeoutError(
                     "native observation readiness exceeded its declared deadline"
@@ -1192,7 +1224,11 @@ def main() -> int:
                     "message": str(error),
                     **{
                         name: report[name]
-                        for name in ("graph_observer", "graph_readiness")
+                        for name in (
+                            "action_server_bootstrap",
+                            "graph_observer",
+                            "graph_readiness",
+                        )
                         if name in report
                     },
                 },

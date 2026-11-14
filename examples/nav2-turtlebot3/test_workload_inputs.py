@@ -156,6 +156,60 @@ class NavigatorStartup(unittest.TestCase):
         )
         self.assertIs(observer, factory.return_value)
 
+    def test_action_discovery_precedes_observer_in_the_same_deadline(self):
+        tree = ast.parse((ROOT / "workload.py").read_text())
+        calls = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                calls.setdefault(node.func.id, []).append(node)
+        for name in (
+            "ActionClient",
+            "wait_for_action_server",
+            "RosGraphObserver",
+            "wait_for_graph_readiness",
+        ):
+            self.assertEqual(len(calls[name]), 1, name)
+        self.assertLess(
+            calls["ActionClient"][0].lineno,
+            calls["wait_for_action_server"][0].lineno,
+        )
+        self.assertLess(
+            calls["wait_for_action_server"][0].lineno,
+            calls["RosGraphObserver"][0].lineno,
+        )
+        self.assertLess(
+            calls["RosGraphObserver"][0].lineno,
+            calls["wait_for_graph_readiness"][0].lineno,
+        )
+        self.assertEqual(
+            [
+                ast.unparse(argument)
+                for argument in calls["wait_for_action_server"][0].args
+            ],
+            ["client", "ready_deadline", "report"],
+        )
+        graph_arguments = {
+            argument.arg: ast.unparse(argument.value)
+            for argument in calls["wait_for_graph_readiness"][0].keywords
+        }
+        self.assertEqual(graph_arguments["ready_deadline"], "ready_deadline")
+        self.assertEqual(graph_arguments["timeout_sec"], "remaining")
+        deadline_assignments = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "ready_deadline"
+                for target in node.targets
+            )
+        ]
+        self.assertEqual(len(deadline_assignments), 1)
+        self.assertEqual(
+            ast.unparse(deadline_assignments[0].value),
+            "time.monotonic() + graph_budget",
+        )
+        self.assertLess(deadline_assignments[0].lineno, calls["ActionClient"][0].lineno)
+
     def test_initial_phase_sets_pose_before_waiting_for_activation(self):
         from unittest.mock import Mock, call, patch
 

@@ -131,8 +131,14 @@ graph topics and its explicit clock subscription.
 Native attempts require `/amcl` and `/bt_navigator` declared `active`, with
 lifecycle timeout and stability fields. The startup worker initializes the pose;
 the exercise worker observes the existing lifecycle and preserves localization.
-Its deadline is at most ten seconds,
-with a shorter non-negative stability window. The v2 scenario carries this consumer
+The worker first discovers the action server through its native `ActionClient`,
+then constructs the graph observer. Action discovery, observer construction,
+graph checks and initial native observations share one deadline of at most ten
+seconds, with a shorter non-negative stability window. The graph's first-message
+timeout starts when `wait_for_readiness` begins and includes discovery still
+pending at that point. Action discovery does not establish topic delivery.
+The worker records the action-discovery and graph-check timings and the remaining
+shared budget. The v2 scenario carries this consumer
 configuration in its extension and does not require legacy root graph/timeout fields.
 The extension's v1 schema names its consumer configuration format; the execution documents are v2.
 

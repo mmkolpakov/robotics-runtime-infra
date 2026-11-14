@@ -44,6 +44,126 @@ class Observer:
         return self.make_snapshot(self.clock.value_ns)
 
 
+class ActionServer:
+    def __init__(self, clock, *, available_at_ns=None, poll_ns=250_000_000):
+        self.clock = clock
+        self.available_at_ns = available_at_ns
+        self.poll_ns = poll_ns
+        self.timeouts = []
+
+    def wait_for_server(self, *, timeout_sec):
+        self.timeouts.append(timeout_sec)
+        self.clock.value_ns += self.poll_ns
+        return (
+            self.available_at_ns is not None
+            and self.clock.value_ns >= self.available_at_ns
+        )
+
+
+def bootstrap(clock, client, report, *, ready_deadline=10.0):
+    function = runpy.run_path(str(ROOT / "workload.py"))["wait_for_action_server"]
+    with (
+        patch.object(function.__globals__["time"], "monotonic_ns", clock.now_ns),
+        patch.object(
+            function.__globals__["time"],
+            "monotonic",
+            side_effect=lambda: clock.value_ns / 1_000_000_000,
+        ),
+        patch.object(
+            function.__globals__["time"],
+            "time_ns",
+            side_effect=lambda: 1_790_000_000_000_000_000 + clock.value_ns,
+        ),
+    ):
+        return function(client, ready_deadline, report)
+
+
+class ActionBootstrap(unittest.TestCase):
+    def test_discovery_records_the_original_deadline_and_remaining_budget(self):
+        clock = FakeTime()
+        client = ActionServer(clock, available_at_ns=250_000_000)
+        report = {}
+
+        bootstrap(clock, client, report)
+
+        self.assertEqual(client.timeouts, [0.1])
+        self.assertEqual(
+            report["action_server_bootstrap"],
+            {
+                "deadline_monotonic_ns": 10_000_000_000,
+                "server_ready": True,
+                "call_started_monotonic_ns": 0,
+                "call_started_unix_ns": 1_790_000_000_000_000_000,
+                "call_finished_monotonic_ns": 250_000_000,
+                "call_finished_unix_ns": 1_790_000_000_250_000_000,
+                "remaining_budget_sec": 9.75,
+            },
+        )
+
+    def test_absent_server_stops_at_original_ten_second_deadline(self):
+        clock = FakeTime()
+        client = ActionServer(clock)
+        report = {}
+
+        with self.assertRaisesRegex(TimeoutError, "readiness deadline"):
+            bootstrap(clock, client, report)
+
+        self.assertEqual(clock.value_ns, 10_000_000_000)
+        self.assertEqual(len(client.timeouts), 40)
+        self.assertTrue(all(timeout == 0.1 for timeout in client.timeouts))
+        diagnostic = report["action_server_bootstrap"]
+        self.assertFalse(diagnostic["server_ready"])
+        self.assertEqual(diagnostic["remaining_budget_sec"], 0.0)
+        self.assertEqual(diagnostic["call_finished_monotonic_ns"], clock.value_ns)
+
+    def test_late_server_cannot_pass_when_native_poll_exceeds_requested_timeout(self):
+        clock = FakeTime()
+        clock.value_ns = 9_900_000_000
+        client = ActionServer(clock, available_at_ns=10_000_000_000)
+        report = {}
+
+        with self.assertRaisesRegex(TimeoutError, "readiness deadline"):
+            bootstrap(clock, client, report)
+
+        self.assertAlmostEqual(client.timeouts[0], 0.1)
+        self.assertEqual(clock.value_ns, 10_150_000_000)
+        self.assertTrue(report["action_server_bootstrap"]["server_ready"])
+        self.assertEqual(report["action_server_bootstrap"]["remaining_budget_sec"], 0.0)
+
+    def test_expired_budget_does_not_call_the_native_client(self):
+        clock = FakeTime()
+        clock.value_ns = 10_000_000_000
+        client = ActionServer(clock, available_at_ns=0)
+        report = {}
+
+        with self.assertRaisesRegex(TimeoutError, "server is unavailable"):
+            bootstrap(clock, client, report)
+
+        self.assertEqual(client.timeouts, [])
+        self.assertFalse(report["action_server_bootstrap"]["server_ready"])
+        self.assertEqual(report["action_server_bootstrap"]["remaining_budget_sec"], 0.0)
+
+    def test_native_error_preserves_bootstrap_timing(self):
+        from unittest.mock import Mock
+
+        clock = FakeTime()
+        failure = RuntimeError("native discovery failed")
+        client = Mock()
+        client.wait_for_server.side_effect = failure
+        report = {}
+
+        with self.assertRaises(RuntimeError) as caught:
+            bootstrap(clock, client, report)
+
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(
+            report["action_server_bootstrap"]["remaining_budget_sec"], 10.0
+        )
+        self.assertEqual(
+            report["action_server_bootstrap"]["call_finished_monotonic_ns"], 0
+        )
+
+
 def expected_graph():
     return {
         "topics": [
@@ -225,6 +345,70 @@ class ReadinessDiagnostics(unittest.TestCase):
             "error",
         )
         self.assertEqual(diagnostic["timeout_issues"][0]["status"], "failed")
+
+    def test_nine_second_bootstrap_leaves_only_one_second_for_graph(self):
+        clock = FakeTime()
+        client = ActionServer(clock, available_at_ns=9_000_000_000)
+        report = {}
+        bootstrap(clock, client, report)
+
+        def without_message(now):
+            snapshot = ready_snapshot(now)
+            return replace(
+                snapshot,
+                topics={
+                    "/odom": replace(
+                        snapshot.topics["/odom"],
+                        publishers=0,
+                        first_message_at_ns=None,
+                    )
+                },
+            )
+
+        observer = Observer(clock, without_message)
+        with self.assertRaises(GraphReadinessTimeout):
+            self.invoke(clock, observer, report)
+
+        self.assertEqual(report["action_server_bootstrap"]["remaining_budget_sec"], 1.0)
+        self.assertEqual(report["graph_readiness"]["timeout_sec"], 1.0)
+        self.assertEqual(
+            report["graph_readiness"]["call_started_monotonic_ns"], 9_000_000_000
+        )
+        self.assertEqual(clock.value_ns, 10_000_000_000)
+        self.assertIsNone(
+            report["graph_readiness"]["last_snapshot"]["topics"]["/odom"][
+                "first_message_unix_ns"
+            ]
+        )
+
+    def test_zero_publishers_still_fail_two_seconds_after_graph_entry(self):
+        clock = FakeTime()
+        client = ActionServer(clock, available_at_ns=1_000_000_000)
+        report = {}
+        bootstrap(clock, client, report)
+
+        def absent_topic(now):
+            snapshot = ready_snapshot(now)
+            return replace(
+                snapshot,
+                topics={
+                    "/odom": replace(
+                        snapshot.topics["/odom"],
+                        publishers=0,
+                        first_message_at_ns=None,
+                    )
+                },
+            )
+
+        with self.assertRaises(GraphReadinessTimeout) as caught:
+            self.invoke(clock, Observer(clock, absent_topic), report)
+
+        self.assertEqual(clock.value_ns, 3_000_000_000)
+        self.assertEqual(
+            caught.exception.issues[0].json_path,
+            "$.expected_ros_graph.topics[0].first_message_timeout_sec",
+        )
+        self.assertEqual(report["graph_readiness"]["timeout_sec"], 9.0)
 
     def test_ready_graph_returns_the_same_public_result_after_half_second(self):
         baseline_clock = FakeTime()
