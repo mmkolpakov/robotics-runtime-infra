@@ -106,9 +106,9 @@
   },
   "public_packages": {
     "host": {
-      "version": "0.1.0-rc.0",
-      "release": "host-v0.1.0-rc.0",
-      "sha256": "51c919953f6b761e20c89eee22e7dfe2c7aacb221329b61a99a52cf13ccf1e57"
+      "version": "0.1.0-rc.1",
+      "release": "host-v0.1.0-rc.1",
+      "sha256": "31bdb82a7dcfde16087c33d1a5832143694fe07d7894476321a32f0ae5485121"
     }
   },
   "sdk_cohort": {
@@ -136,5 +136,13 @@
       }
     },
     "scope": "published SDK document/consumer controls; native composition admission is separate"
+  },
+  "apt_snapshots": {
+    "ubuntu": "20261113T000000Z",
+    "ros": "2026-10-05",
+    "rosdistro_index_revision": "8e9a99d200fd312f106418b2b497b0cc5146e6a7",
+    "helper_sha256": "1263e77e13c38b4f5b54c81a3bdc595e3a4c4881d891d9dbc32b8640d3fa5e22",
+    "ros_key_sha256": "2917845bafcabbf651ed70e967beb61ee467ae29292288c7ccd5d7d76e5f2a2f",
+    "ros_key_fingerprint": "4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA"
   }
 }

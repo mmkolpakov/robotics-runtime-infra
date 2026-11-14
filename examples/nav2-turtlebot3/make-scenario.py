@@ -234,12 +234,8 @@ def prepare(
                 facts["rendered"][kind]["base64"], validate=True
             )
             write_bytes_atomically(raw_by_name[name], output / name)
-        model = output / "native-model.sdf"
         raw_by_name["native-preflight.json"] = native_raw
         write_bytes_atomically(native_raw, output / "native-preflight.json")
-        scenario["native_model"] = reference(
-            model, raw_by_name["native-model.sdf"], "application/xml"
-        )
     scenario_path, runtime_path = output / "scenario.json", output / "runtime.json"
     write_document(scenario, scenario_path, extension_schemas={schema_uri: schema_raw})
     raw_by_name["scenario.json"] = read_once(scenario_path, DOCUMENT_LIMIT)
@@ -253,7 +249,6 @@ def prepare(
         "evaluator_bindings": scenario["evaluator_requirements"],
     }
     if native is not None:
-        runtime["native_model"] = scenario["native_model"]
         runtime["execution_subject"] = {
             "kind": "oci_image",
             "locator": (
@@ -345,13 +340,7 @@ def prepare(
 NATIVE_LAUNCH = [
     "ros2",
     "launch",
-    "nav2_bringup",
-    "tb3_simulation_launch.py",
-    "headless:=True",
-    "use_rviz:=False",
-    "slam:=False",
-    "use_composition:=False",
-    "use_respawn:=False",
+    "/opt/sdk-policy/native_simulation.launch.py",
     "robot_sdf:=/consumer/inputs/native-model.sdf",
     "world:=/consumer/inputs/native-world.sdf",
     "map:=/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml",
@@ -360,7 +349,8 @@ NATIVE_FILES = {
     "model": "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/urdf/gz_waffle.sdf.xacro",
     "world": "/opt/ros/jazzy/share/nav2_minimal_tb3_sim/worlds/tb3_sandbox.sdf.xacro",
     "map": "/opt/ros/jazzy/share/nav2_bringup/maps/tb3_sandbox.yaml",
-    "launch": "/opt/ros/jazzy/share/nav2_bringup/launch/tb3_simulation_launch.py",
+    "launch": "/opt/ros/jazzy/share/nav2_bringup/launch/bringup_launch.py",
+    "consumer_launch": "/opt/sdk-policy/native_simulation.launch.py",
 }
 NATIVE_TOPICS = {
     "/odom": "nav_msgs/msg/Odometry",
@@ -406,8 +396,22 @@ def inspect_image() -> dict:
             timeout=5,
         ).stdout.split("\t")
         packages[name] = {"version": row[0], "architecture": row[1]}
+    inventory = subprocess.check_output(
+        [
+            "dpkg-query",
+            "-W",
+            "-f=${Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n",
+        ]
+    )
+    ros_packages = [
+        row.split("\t")[0]
+        for row in inventory.decode().splitlines()
+        if row.startswith("ros-jazzy-") and row.endswith("\tinstalled")
+    ]
+    if not ros_packages or ros_packages != receipt["ros_packages"]:
+        raise ValueError("native ROS package inventory differs from build receipt")
     verified = subprocess.run(
-        ["dpkg", "--verify", *policy["packages"]],
+        ["dpkg", "--verify", *ros_packages],
         check=True,
         capture_output=True,
         text=True,
@@ -415,10 +419,10 @@ def inspect_image() -> dict:
     )
     if verified.stdout or verified.stderr:
         raise ValueError("installed native package files differ from the build receipt")
-    installed = subprocess.check_output(
-        ["dpkg-query", "-W", "-f=${Package}\t${Version}\t${Architecture}\n"]
-    )
-    if sha256(installed).hexdigest() != receipt["installed_packages_sha256"]:
+    for name, expected in receipt["snapshot_files"].items():
+        if sha256(read_once(Path(name), DOCUMENT_LIMIT)).hexdigest() != expected:
+            raise ValueError("native snapshot configuration differs: " + name)
+    if sha256(inventory).hexdigest() != receipt["dpkg_inventory_sha256"]:
         raise ValueError(
             "native transitive package inventory differs from build receipt"
         )
@@ -527,6 +531,13 @@ def check_preflight(document: dict, image_reference: str, image_id: str) -> dict
             raise ValueError("native package build chain differs: " + name)
     if facts["launch"] != NATIVE_LAUNCH:
         raise ValueError("native launch differs")
+    launch = facts["files"].get("consumer_launch", {})
+    launch_raw = read_once(root / "native_simulation.launch.py", DOCUMENT_LIMIT)
+    if (launch.get("sha256"), launch.get("size_bytes")) != (
+        sha256(launch_raw).hexdigest(),
+        len(launch_raw),
+    ):
+        raise ValueError("native consumer launch differs from the captured source")
     if set(NATIVE_FILES) - set(facts["files"]):
         raise ValueError("native model/world/map/launch evidence is missing")
     for name, expected in facts["files"].items():
@@ -654,11 +665,6 @@ def validate_prepared(prepared: Path, *, image_id: str, case: str) -> dict:
             raise ValueError(
                 "mounted native input differs from captured preflight: " + kind
             )
-    if any(
-        scenario["native_model"][field] != manifest["native_model"][field]
-        for field in ("sha256", "size_bytes")
-    ):
-        raise ValueError("scenario model does not bind captured native bytes")
     subject = {
         "kind": "oci_image",
         "locator": (

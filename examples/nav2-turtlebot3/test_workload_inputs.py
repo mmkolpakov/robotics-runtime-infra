@@ -246,7 +246,11 @@ class NativeAdmissionControls(unittest.TestCase):
         policy = json.loads((ROOT / "inputs.lock.json").read_bytes())
         files = {}
         for key, path in self.module["NATIVE_FILES"].items():
-            raw = ("controlled fixture " + key).encode()
+            raw = (
+                (ROOT / "native_simulation.launch.py").read_bytes()
+                if key == "consumer_launch"
+                else ("controlled fixture " + key).encode()
+            )
             files[key] = {
                 "path": path,
                 "sha256": hashlib.sha256(raw).hexdigest(),
@@ -308,7 +312,10 @@ class NativeAdmissionControls(unittest.TestCase):
         )
         return prepared, manifest
 
-    def test_current_public_bundle_admits_only_exact_bound_subject_model_and_run(self):
+    def test_native_goal_bundle_keeps_hashed_inputs_without_loaded_model_claim(self):
+        import hashlib
+        from robotics_acceptance_harness.documents import load_bundle
+
         prepared, manifest = self.prepare()
         result = self.module["validate_prepared"](
             prepared, image_id=self.image_id, case="success"
@@ -316,7 +323,27 @@ class NativeAdmissionControls(unittest.TestCase):
         self.assertEqual(result["run_id"], manifest["run_id"])
         runtime = json.loads((prepared / "runtime.json").read_bytes())
         scenario = json.loads((prepared / "scenario.json").read_bytes())
-        self.assertEqual(runtime["native_model"], scenario["native_model"])
+        self.assertNotIn("native_model", scenario)
+        self.assertNotIn("native_model", runtime)
+        bundle = load_bundle(
+            prepared / "scenario.json",
+            runtime_path=prepared / "runtime.json",
+            extension_schemas={
+                "urn:nav2-turtlebot3:scenario:v1": (
+                    prepared / "nav2.schema.json"
+                ).read_bytes()
+            },
+        )
+        self.assertEqual(bundle.scenario.as_dict(), scenario)
+        self.assertEqual(bundle.runtime.as_dict(), runtime)
+        for name, key in (
+            ("native-model.sdf", "native_model"),
+            ("native-world.sdf", "expanded_world"),
+            ("native-preflight.json", "native_preflight"),
+        ):
+            raw = (prepared / name).read_bytes()
+            self.assertEqual(manifest[key]["size_bytes"], len(raw))
+            self.assertEqual(manifest[key]["sha256"], hashlib.sha256(raw).hexdigest())
         self.assertEqual(runtime["execution_subject"]["digest"], "sha256:" + "b" * 64)
         self.assertNotIn("synthetic", scenario["profile"]["executor"]["version"])
         for image, case in (
@@ -325,6 +352,67 @@ class NativeAdmissionControls(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 self.module["validate_prepared"](prepared, image_id=image, case=case)
+
+    def test_public_evaluation_keeps_declared_unobserved_model_as_a_refusal(self):
+        import hashlib
+        from robotics_acceptance_harness.application import evaluate_from_evidence
+        from robotics_acceptance_harness.documents import (
+            BundleValidationError,
+            load_bundle,
+        )
+        from robotics_runtime_contracts.writers import write_document
+        from test_v2_documents import completed, FINALIZE
+
+        prepared, manifest = self.prepare()
+        scenario_path, runtime_path, run_path = (
+            prepared / name for name in ("scenario.json", "runtime.json", "run.json")
+        )
+        scenario = json.loads(scenario_path.read_bytes())
+        runtime = json.loads(runtime_path.read_bytes())
+        run = json.loads(run_path.read_bytes())
+        model = prepared / "native-model.sdf"
+        reference = self.module["reference"](
+            model, model.read_bytes(), "application/xml"
+        )
+        scenario["native_model"] = reference
+        schemas = {
+            "urn:nav2-turtlebot3:scenario:v1": (
+                prepared / "nav2.schema.json"
+            ).read_bytes()
+        }
+        write_document(scenario, scenario_path, extension_schemas=schemas)
+        scenario_sha = hashlib.sha256(scenario_path.read_bytes()).hexdigest()
+        runtime.update(scenario_sha256=scenario_sha, native_model=reference)
+        run["scenario_sha256"] = scenario_sha
+        write_document(runtime, runtime_path)
+        write_document(run, run_path)
+        for key, path in (
+            ("scenario", scenario_path),
+            ("runtime", runtime_path),
+            ("run_context", run_path),
+        ):
+            raw = path.read_bytes()
+            manifest[key].update(
+                sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw)
+            )
+        (prepared / "pre-execution-inputs.json").write_text(json.dumps(manifest))
+        capture, _ = completed(prepared, manifest)
+        result = FINALIZE.complete(prepared, capture)
+        bundle = load_bundle(
+            scenario_path, runtime_path=runtime_path, extension_schemas=schemas
+        )
+        with self.assertRaisesRegex(BundleValidationError, "observation.native_model"):
+            evaluate_from_evidence(
+                run_id=manifest["run_id"],
+                bundle=bundle,
+                domain_id="nav2",
+                run_context_path=run_path,
+                evidence_index_path=result["evidence_index"],
+                otel_metrics_path=None,
+                window_start_ns=0,
+                window_end_ns=1,
+                output_dir=self.root / "declared-model-assessment",
+            )
 
     def test_native_inputs_require_declared_active_lifecycle_nodes(self):
         requirements = json.loads(self.requirements.read_bytes())
@@ -368,6 +456,7 @@ class NativeAdmissionControls(unittest.TestCase):
                 {"robotics-acceptance-harness": "0.19.1"}
             ),
             lambda d: d["facts"]["files"]["model"].update(sha256="f" * 64),
+            lambda d: d["facts"]["files"]["consumer_launch"].update(sha256="f" * 64),
             lambda d: d["facts"]["build"].update(dockerfile_sha256="e" * 64),
             lambda d: d["facts"].update(launch=["sh", "-c", "true"]),
         ]
@@ -479,6 +568,78 @@ class NativeAdmissionControls(unittest.TestCase):
             {"json": json, "receipt": {"files": {}, "packages": {}}},
         )
         self.assertEqual(json.loads(raw), {"files": {}, "packages": {}})
+
+    def test_native_inventory_excludes_known_uninstalled_and_retains_held_packages(
+        self,
+    ):
+        import re
+        import shlex
+        import subprocess
+
+        source = (ROOT / "Dockerfile").read_text().replace("\\\n", "")
+        run = next(
+            line
+            for line in source.splitlines()
+            if line.startswith("RUN /opt/consumer/bin/python -c")
+        )
+        arguments = shlex.split(run.removeprefix("RUN "))
+        build = ast.parse(arguments[arguments.index("-c") + 1])
+        inspector = next(
+            node
+            for node in ast.parse((ROOT / "make-scenario.py").read_text()).body
+            if isinstance(node, ast.FunctionDef) and node.name == "inspect_image"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary)
+            database.joinpath("status").write_text(
+                "Package: ros-jazzy-installed\nStatus: hold ok installed\n"
+                "Architecture: amd64\nVersion: 1\nMaintainer: Fixture <fixture@example.invalid>\nDescription: held fixture\n\n"
+                "Package: ros-jazzy-absent\nStatus: unknown ok not-installed\n"
+                "Architecture: amd64\n\n"
+                "Package: ros-jazzy-config\nStatus: deinstall ok config-files\n"
+                "Architecture: amd64\nVersion: 1\nMaintainer: Fixture <fixture@example.invalid>\nDescription: residual fixture\n"
+            )
+            for tree in (build, inspector):
+                assignments = {
+                    node.targets[0].id: node.value
+                    for node in tree.body
+                    if isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                }
+                name = "inventory" if "inventory" in assignments else "installed"
+                command = ast.literal_eval(assignments[name].args[0])
+                raw = subprocess.check_output(
+                    [command[0], "--admindir=" + str(database), *command[1:]]
+                )
+                selected = eval(
+                    compile(
+                        ast.Expression(assignments["ros_packages"]),
+                        "ROS inventory",
+                        "eval",
+                    ),
+                    {name: raw},
+                )
+                self.assertEqual(selected, ["ros-jazzy-installed"])
+            queries = re.findall(
+                r"\$\((dpkg-query[^\n]+)\)", (ROOT / "Dockerfile").read_text()
+            )
+            self.assertEqual(len(queries), 2)
+            for query in queries:
+                selected = subprocess.check_output(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        query.replace("dpkg-query", 'dpkg-query --admindir="$1"', 1),
+                        "fixture",
+                        str(database),
+                    ],
+                    text=True,
+                ).splitlines()
+                self.assertEqual(selected, ["ros-jazzy-installed"])
+            self.assertEqual(
+                (ROOT / "Dockerfile").read_text().count("--reinstall --only-upgrade"), 2
+            )
 
     def test_worker_verifies_native_inputs_before_loading_ros(self):
         import os

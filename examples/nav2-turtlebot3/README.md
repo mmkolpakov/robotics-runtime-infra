@@ -36,6 +36,39 @@ The self-contained purelib admission profile supports pip's documented installat
 An installer adding other distribution metadata, such as `uv_cache.json`, is outside that profile.
 Use an explicit cohort wheel directory; a version number alone cannot substitute for its hash.
 
+## Install the native CLI
+
+Use the Node and npm versions pinned in [package.json](package.json):
+
+```sh
+npm ci --ignore-scripts
+npm test
+```
+
+The lock installs the published host archive declared in [inputs.lock.json](inputs.lock.json).
+
+## Build the native consumer
+
+Build from this directory after downloading the wheelhouse above:
+
+```sh
+podman build --pull=never --platform linux/amd64 \
+  --build-context apt-snapshot=../../docker/apt \
+  --build-context sdk-wheels=sdk-wheels -t localhost/nav2-turtlebot3 .
+```
+
+The image uses the signed Ubuntu and ROS snapshots declared in the input lock,
+checks the selected Debian package bytes before installation, and verifies all
+installed ROS package payloads. The shared snapshot helper and ROS key come from
+the repository's APT context. SDK wheels remain a separate build context.
+
+The image-owned ROS launch composition includes stock Nav2 bringup, Waffle spawn/bridge,
+robot state publication, and the stock `ros_gz_sim` server with Harmonic's EGL headless
+rendering option.
+It retains the Waffle sensors, spawn/bridge, localization, and navigation nodes.
+The upstream package files are unchanged. Select the resulting immutable image
+Config ID for native composition admission before starting an attempt.
+
 ## Admit the evaluator
 
 Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The
@@ -121,6 +154,22 @@ and preflight checks use that captured generation. The worker consumes the
 already admitted scenario mapping. The attempt owner must keep the prepared
 tree settled throughout admission and use. A read-only container mount does not
 prevent its host owner from changing the source files.
+
+## Run an admitted native case
+
+Set `IMAGE_ID` to the admitted immutable Config ID or RepoDigest. The requirements must
+select the same case and authenticated evaluator binding. Run from this directory:
+
+```sh
+mkdir -p work
+npm run native-check -- \
+  "$PWD/work/native-success-001" "$PWD" "$IMAGE_ID" success \
+  "$PWD/nav2-requirements.json" "$PWD/.venv/bin/python"
+```
+
+The arguments are output directory, source directory, image, case, requirements, and
+Python interpreter. The output directory must be new. The command captures one attempt,
+settles its producers, and prints the finalized evaluation-input paths for assessment.
 
 ## Retain completed observations
 

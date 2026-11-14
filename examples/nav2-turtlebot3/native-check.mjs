@@ -14,7 +14,7 @@ await mkdir(outputRoot,{mode:0o700});
 const output=resolve(outputRoot,'capture'), snapshot=resolve(outputRoot,'source'), prepared=resolve(outputRoot,'inputs');
 await mkdir(output,{mode:0o700});
 await mkdir(snapshot,{mode:0o700});
-for (const file of ['workload.py','make-scenario.py','record-topics.py','fastdds.xml','check-sdk-wheels.py','inputs.lock.json','Dockerfile','nav2.schema.json','finalize.py']) {
+for (const file of ['workload.py','make-scenario.py','record-topics.py','fastdds.xml','check-sdk-wheels.py','inputs.lock.json','Dockerfile','native_simulation.launch.py','nav2.schema.json','finalize.py']) {
   await copyFile(resolve(root,file),resolve(snapshot,file));
   await chmod(resolve(snapshot,file),0o444);
 }
@@ -91,7 +91,7 @@ try{
   const inherited=Object.fromEntries((selected.Config.Env??[]).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)]}));
   const env=Object.entries({...inherited,...overrides}).map(([key,value])=>key+'='+value);
   composition={
-    command:admitted.launch,entrypoint:['/ros_entrypoint.sh'],env,
+    command:admitted.launch,entrypoint:'/ros_entrypoint.sh',env,
     mounts:[
       {source:snapshot,destination:'/consumer/source',readOnly:true,type:'bind'},
       {source:prepared,destination:'/consumer/inputs',readOnly:true,type:'bind'},
