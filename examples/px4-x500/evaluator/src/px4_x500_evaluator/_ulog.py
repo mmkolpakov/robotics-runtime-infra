@@ -191,10 +191,11 @@ def rows(ulog, name, fields):
             )
             row[field] = value == 1
     times = [r["timestamp"] for r in result]
+    event_topic = name in ("vehicle_command", "vehicle_command_ack")
     need(
         all(type(t) is int and t > 0 for t in times)
-        and all(a < b for a, b in pairwise(times)),
-        "native publication timestamps are not strictly ordered",
+        and all(a <= b if event_topic else a < b for a, b in pairwise(times)),
+        "native publication timestamps are not ordered: " + name,
     )
     return result
 

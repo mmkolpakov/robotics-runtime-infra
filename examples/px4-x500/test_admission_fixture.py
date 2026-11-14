@@ -183,7 +183,7 @@ def prepare(wheel: Path, tool_profile: Path, output: Path):
             "namespace": NAMESPACE,
             "entry_point": "px4_x500_evaluator:evaluate",
             "distribution": "px4-x500-evaluator",
-            "version": "0.3.0",
+            "version": "0.3.1",
             "artifact_sha256": authenticated.sha256,
             "receipt_sha256": digest(receipt),
         },

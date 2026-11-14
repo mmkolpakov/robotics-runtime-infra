@@ -57,9 +57,12 @@ evaluate sampled PX4 estimates:
 - `application-deadline`: observe ascent, record a two-second application interval
   and independently request landing. This does not simulate a native deadlock.
 
-Controller and evaluator 0.3.0 distinguish publication time from the bounded
+Controller 0.3.0 and evaluator 0.3.1 distinguish publication time from the bounded
 native print clock. Publication timestamps select the original ULog phase; clock
 intervals do not trim its events or calibrate the native clock to controller UTC.
+
+Command and acknowledgement events retain their logged order when microsecond
+timestamps tie. Timestamp regressions and repeated estimator samples remain invalid.
 
 ULog received commands and ACKs bind the admitted sender/target tuple. Attributable
 SDK retries and late ACKs are allowed; ambiguous ownership or application phases
@@ -114,10 +117,10 @@ publisher for software controls. Supply an approved Cosign tool profile containi
 
 ```sh
 .venv/bin/python -I test_admission_fixture.py \
-  --wheel dist/px4_x500_evaluator-0.3.0-py3-none-any.whl \
+  --wheel dist/px4_x500_evaluator-0.3.1-py3-none-any.whl \
   --tool-profile /absolute/approved-cosign-tool.json --output results/authenticated
 .venv/bin/python -I -m pip install --no-index --no-deps \
-  results/authenticated/px4_x500_evaluator-0.3.0-py3-none-any.whl
+  results/authenticated/px4_x500_evaluator-0.3.1-py3-none-any.whl
 .venv/bin/python -I -m pip check
 PX4_SDK_WHEELS="$PWD/sdk-wheels" \
   PX4_EVALUATOR_BINDING="$PWD/results/authenticated/binding.json" \
