@@ -485,6 +485,78 @@ class NativeAdmissionControls(unittest.TestCase):
         )
         self.assertEqual(json.loads(raw), {"files": {}, "packages": {}})
 
+    def test_native_inventory_excludes_known_uninstalled_and_retains_held_packages(
+        self,
+    ):
+        import re
+        import shlex
+        import subprocess
+
+        source = (ROOT / "Dockerfile").read_text().replace("\\\n", "")
+        run = next(
+            line
+            for line in source.splitlines()
+            if line.startswith("RUN /opt/consumer/bin/python -c")
+        )
+        arguments = shlex.split(run.removeprefix("RUN "))
+        build = ast.parse(arguments[arguments.index("-c") + 1])
+        inspector = next(
+            node
+            for node in ast.parse((ROOT / "make-scenario.py").read_text()).body
+            if isinstance(node, ast.FunctionDef) and node.name == "inspect_image"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary)
+            database.joinpath("status").write_text(
+                "Package: ros-jazzy-installed\nStatus: hold ok installed\n"
+                "Architecture: amd64\nVersion: 1\nMaintainer: Fixture <fixture@example.invalid>\nDescription: held fixture\n\n"
+                "Package: ros-jazzy-absent\nStatus: unknown ok not-installed\n"
+                "Architecture: amd64\n\n"
+                "Package: ros-jazzy-config\nStatus: deinstall ok config-files\n"
+                "Architecture: amd64\nVersion: 1\nMaintainer: Fixture <fixture@example.invalid>\nDescription: residual fixture\n"
+            )
+            for tree in (build, inspector):
+                assignments = {
+                    node.targets[0].id: node.value
+                    for node in tree.body
+                    if isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                }
+                name = "inventory" if "inventory" in assignments else "installed"
+                command = ast.literal_eval(assignments[name].args[0])
+                raw = subprocess.check_output(
+                    [command[0], "--admindir=" + str(database), *command[1:]]
+                )
+                selected = eval(
+                    compile(
+                        ast.Expression(assignments["ros_packages"]),
+                        "ROS inventory",
+                        "eval",
+                    ),
+                    {name: raw},
+                )
+                self.assertEqual(selected, ["ros-jazzy-installed"])
+            queries = re.findall(
+                r"\$\((dpkg-query[^\n]+)\)", (ROOT / "Dockerfile").read_text()
+            )
+            self.assertEqual(len(queries), 2)
+            for query in queries:
+                selected = subprocess.check_output(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        query.replace("dpkg-query", 'dpkg-query --admindir="$1"', 1),
+                        "fixture",
+                        str(database),
+                    ],
+                    text=True,
+                ).splitlines()
+                self.assertEqual(selected, ["ros-jazzy-installed"])
+            self.assertEqual(
+                (ROOT / "Dockerfile").read_text().count("--reinstall --only-upgrade"), 2
+            )
+
     def test_worker_verifies_native_inputs_before_loading_ros(self):
         import os
         import runpy

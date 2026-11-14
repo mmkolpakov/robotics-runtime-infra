@@ -401,13 +401,17 @@ def inspect_image() -> dict:
             timeout=5,
         ).stdout.split("\t")
         packages[name] = {"version": row[0], "architecture": row[1]}
-    installed = subprocess.check_output(
-        ["dpkg-query", "-W", "-f=${Package}\t${Version}\t${Architecture}\n"]
+    inventory = subprocess.check_output(
+        [
+            "dpkg-query",
+            "-W",
+            "-f=${Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n",
+        ]
     )
     ros_packages = [
         row.split("\t")[0]
-        for row in installed.decode().splitlines()
-        if row.startswith("ros-jazzy-")
+        for row in inventory.decode().splitlines()
+        if row.startswith("ros-jazzy-") and row.endswith("\tinstalled")
     ]
     if not ros_packages or ros_packages != receipt["ros_packages"]:
         raise ValueError("native ROS package inventory differs from build receipt")
@@ -423,7 +427,7 @@ def inspect_image() -> dict:
     for name, expected in receipt["snapshot_files"].items():
         if sha256(read_once(Path(name), DOCUMENT_LIMIT)).hexdigest() != expected:
             raise ValueError("native snapshot configuration differs: " + name)
-    if sha256(installed).hexdigest() != receipt["installed_packages_sha256"]:
+    if sha256(inventory).hexdigest() != receipt["dpkg_inventory_sha256"]:
         raise ValueError(
             "native transitive package inventory differs from build receipt"
         )
