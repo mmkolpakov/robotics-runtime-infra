@@ -69,18 +69,23 @@ SDK retries and late ACKs are allowed; ambiguous ownership or application phases
 remain incomplete. Estimated altitude follows PX4's float32 subtraction,
 float32 millimetre conversion and integer truncation. Each global publication uses
 the last recorded home publication at or before its publication timestamp. Source
-sample timestamps still establish independent, fresh estimator observations. This
-evaluates independently sampled home-relative estimates; it does not reconstruct
+sample timestamps still establish independent estimator observations. Every selected
+publication and sample retains its validity, home, reset and strict sample-progress
+checks. A source sample at or before the received command is context and cannot
+witness post-command altitude or count toward refusal coverage. Only a source sample
+strictly after the command is a witness. No witnesses leave the condition incomplete.
+
+These are independently sampled home-relative estimates; they do not reconstruct
 the SDK wire stream's send-time home pairing. A changed home reference sharing a
 global publication timestamp supplies both actual home-relative candidate heights.
 The condition is resolved only when all candidates imply the same verdict; an
 identical valid home republish or count-only update supplies one height. Refusal
-excursion remains relative to the first sample's chosen height. The applied home's
+excursion remains relative to the first witness's chosen height. The applied home's
 origin must have a preceding global observation and unchanged altitude reset counter
 through the selected phase. Received DO_SET_HOME commands anywhere in the original
 command window prevent measurement. Invalid home, an altitude reset,
-stale samples, corruption, dropouts or insufficient coverage prevent an unsupported
-positive result.
+invalid source timestamps, corruption, dropouts or insufficient coverage prevent an
+unsupported positive result.
 
 The method requests a 64 MiB raw ULog budget. The document-control lock uses
 harness 0.23.1, which honors that explicit raw-evidence budget: the original

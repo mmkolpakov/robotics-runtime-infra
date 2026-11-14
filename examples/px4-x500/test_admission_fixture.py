@@ -6,6 +6,7 @@ import argparse
 import base64
 import json
 import subprocess
+import tomllib
 from dataclasses import asdict
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -21,6 +22,9 @@ from robotics_acceptance_harness.evaluator_trust import (
 )
 from robotics_runtime_contracts.writers import create_artifact_receipt, write_document
 
+EVALUATOR_VERSION = tomllib.loads(
+    (Path(__file__).parent / "evaluator/pyproject.toml").read_text()
+)["project"]["version"]
 NAMESPACE = "org.example.px4-x500"
 PREDICATE = "urn:px4-x500:source-evaluator-control:v1"
 
@@ -183,7 +187,7 @@ def prepare(wheel: Path, tool_profile: Path, output: Path):
             "namespace": NAMESPACE,
             "entry_point": "px4_x500_evaluator:evaluate",
             "distribution": "px4-x500-evaluator",
-            "version": "0.3.2",
+            "version": EVALUATOR_VERSION,
             "artifact_sha256": authenticated.sha256,
             "receipt_sha256": digest(receipt),
         },

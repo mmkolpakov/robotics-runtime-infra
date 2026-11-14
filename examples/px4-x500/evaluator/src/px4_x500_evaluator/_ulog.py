@@ -206,6 +206,14 @@ def altitude_samples(global_rows, home_rows, start, end):
     selected = [r for r in global_rows if start < r["timestamp"] <= end]
     need(selected, "no global estimates inside the selected source phase")
     need(
+        all(
+            type(r["timestamp_sample"]) is int
+            and 0 < r["timestamp_sample"] <= r["timestamp"]
+            for r in selected
+        ),
+        "fresh publication contains an invalid source sample",
+    )
+    need(
         len({r["timestamp_sample"] for r in selected}) == len(selected),
         "repeated estimator samples are not independent observations",
     )
@@ -260,10 +268,6 @@ def altitude_samples(global_rows, home_rows, start, end):
     for row, home_index in zip(selected, home_indices):
         sample = row["timestamp_sample"]
         need(
-            type(sample) is int and start < sample <= row["timestamp"],
-            "fresh publication contains a stale or invalid source sample",
-        )
-        need(
             row["alt_valid"] is True and math.isfinite(row["alt"]),
             "valid finite estimated altitude was not captured",
         )
@@ -304,6 +308,8 @@ def altitude_samples(global_rows, home_rows, start, end):
 
 
 def altitude_condition(samples, *, refusal):
+    if not samples:
+        return None
     if not refusal:
         if max(min(heights) for _time, heights in samples) >= 1200:
             return True
@@ -335,6 +341,11 @@ def altitude_condition(samples, *, refusal):
     if max(worst) <= 200 and len(samples) >= 4:
         return True
     return None
+
+
+def post_command_condition(samples, start, *, refusal):
+    witnesses = [sample for sample in samples if sample[0] > start]
+    return altitude_condition(witnesses, refusal=refusal)
 
 
 def command_phase(command_rows, ack_rows, identity, code, window):
@@ -1223,7 +1234,7 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             ulog, "home_position", ("timestamp", "alt", "valid_alt", "update_count")
         )
         samples = altitude_samples(global_rows, home_rows, lower, upper)
-        condition = altitude_condition(samples, refusal=refusal)
+        condition = post_command_condition(samples, lower, refusal=refusal)
         assessed["postcondition"] = (
             condition,
             uref,
