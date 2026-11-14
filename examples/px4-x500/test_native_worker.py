@@ -131,7 +131,12 @@ class Scenario:
                 is_home_position_ok=self.home,
             ),
             armed=lambda: self.armed,
-            position=lambda: SimpleNamespace(relative_altitude_m=self.altitude),
+            position=lambda: SimpleNamespace(
+                latitude_deg=47.397742,
+                longitude_deg=8.545594,
+                absolute_altitude_m=488.0 + self.altitude,
+                relative_altitude_m=self.altitude,
+            ),
             landed_state=lambda: SimpleNamespace(
                 name="IN_AIR" if self.armed else "ON_GROUND"
             ),
@@ -174,8 +179,8 @@ class Scenario:
         self.listener_calls += 1
         stamp = 1000000 if self.fixed_time else 1000000 * self.listener_calls
         age = "0.100000"
-        if self.cached_initial and self.listener_calls <= 3:
-            stamp = 1000000
+        if self.cached_initial and 3 <= self.listener_calls <= 5:
+            stamp = 3000000
             age = f"{self.listener_calls / 100:.6f}"
         text = (
             status(stamp, 2 if self.armed else 1, age=age)
@@ -184,7 +189,7 @@ class Scenario:
         )
         if self.bad_initial and self.listener_calls == 1:
             text = self.bad_initial
-        if self.bad_final and self.listener_calls >= 4:
+        if self.bad_final and self.listener_calls >= 6:
             text = "never published\n"
         return {
             "argv": [worker.LISTENER, "--instance", str(instance), topic, "-n", "1"],
@@ -335,7 +340,7 @@ class WorkerTests(unittest.TestCase):
             for r in self.scenario.records()
             if r["value"].get("slot", "").startswith("initial-")
         ]
-        self.assertEqual({value["timestamp_us"] for value in initial}, {"1000000"})
+        self.assertEqual({value["timestamp_us"] for value in initial}, {"3000000"})
         self.assertTrue(
             all(
                 int(a["native_print_clock_us"]["upper"])
@@ -447,7 +452,7 @@ class WorkerTests(unittest.TestCase):
 
         def slow(topic, instance, budget):
             result = original(topic, instance, budget)
-            if self.scenario.listener_calls == 1:
+            if self.scenario.listener_calls == 3:
                 self.scenario.clock.sleep(0.95)
                 result["host_finished_monotonic_ms"] = self.scenario.clock.now()
             return result
@@ -550,6 +555,263 @@ class WorkerTests(unittest.TestCase):
         self.scenario.actor_probe = changed
         self.assertFalse(self.scenario.run())
         self.assertEqual(self.scenario.calls, [])
+
+
+class PositionReadinessTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.scenario = Scenario(Path(self.tmp.name) / "capture")
+
+    def assert_phase_not_started(self):
+        records = self.scenario.records()
+        self.assertFalse(
+            any(
+                r["kind"] == "listener-observation"
+                and r["value"].get("slot", "").startswith("initial-")
+                for r in records
+            )
+        )
+        self.assertFalse(any(r["kind"] == "caller-refusal" for r in records))
+        self.assertEqual(self.scenario.calls, [])
+
+    def test_health_flags_wait_for_a_finite_received_position(self):
+        original = self.scenario.telemetry.position
+        observations = []
+
+        def position():
+            observations.append(self.scenario.clock.value)
+            value = original()
+            if self.scenario.clock.value < 300:
+                self.assert_phase_not_started()
+                value.absolute_altitude_m = float("nan")
+            return value
+
+        self.scenario.telemetry.position = position
+        self.assertTrue(self.scenario.run("unarmed-refusal"))
+        self.assertGreaterEqual(max(observations), 300)
+        readiness = [
+            r for r in self.scenario.records() if r["kind"] == "startup-position"
+        ]
+        self.assertTrue(readiness)
+        initial = [
+            r
+            for r in self.scenario.records()
+            if r["kind"] == "listener-observation"
+            and r["value"].get("slot", "").startswith("initial-")
+        ]
+        self.assertEqual(len(initial), 3)
+        self.assertLess(readiness[-1]["sequence"], initial[0]["sequence"])
+
+    def test_each_position_field_must_be_finite_before_phase_start(self):
+        for field in (
+            "latitude_deg",
+            "longitude_deg",
+            "absolute_altitude_m",
+            "relative_altitude_m",
+        ):
+            for invalid in (float("nan"), float("inf"), None, True):
+                with self.subTest(field=field, invalid=invalid):
+                    scenario = Scenario(
+                        Path(self.tmp.name)
+                        / f"missing-{field}-{len(list(Path(self.tmp.name).iterdir()))}"
+                    )
+                    original = scenario.telemetry.position
+
+                    def position():
+                        value = original()
+                        setattr(value, field, invalid)
+                        return value
+
+                    scenario.telemetry.position = position
+                    self.assertFalse(scenario.run("unarmed-refusal"))
+                    self.assertEqual(scenario.calls, [])
+                    self.assertFalse(
+                        any(
+                            r["value"].get("slot", "").startswith("initial-")
+                            for r in scenario.records()
+                        )
+                    )
+                    self.assertLess(scenario.clock.value, 45150)
+
+    def test_cached_status_must_advance_before_fresh_initial_triplet(self):
+        original = self.scenario.listener
+
+        def listener(topic, instance, budget):
+            result = original(topic, instance, budget)
+            count = self.scenario.listener_calls
+            if count <= 3:
+                self.assert_phase_not_started()
+                result["stdout"] = status(1000000, age=f"{0.1 + count * 0.01:.6f}")
+            return result
+
+        self.scenario.listener = listener
+        self.assertTrue(self.scenario.run("unarmed-refusal"))
+        self.assertGreaterEqual(self.scenario.clock.value, 2200)
+        initial = [
+            r
+            for r in self.scenario.records()
+            if r["kind"] == "listener-observation"
+            and r["value"].get("slot", "").startswith("initial-")
+        ]
+        self.assertEqual(len(initial), 3)
+        self.assertGreater(int(initial[0]["value"]["parsed"]["timestamp_us"]), 1000000)
+        self.assertLess(
+            initial[-1]["receiver_monotonic_ms"] - initial[0]["receiver_monotonic_ms"],
+            1000,
+        )
+
+    def test_status_increment_before_the_readiness_print_clock_cannot_unlock_phase(
+        self,
+    ):
+        original = self.scenario.listener
+
+        def listener(topic, instance, budget):
+            result = original(topic, instance, budget)
+            count = self.scenario.listener_calls
+            if count == 1:
+                result["stdout"] = status(1000000, age="0.100000")
+            elif count == 2:
+                result["stdout"] = status(1050000, age="0.060000")
+            elif count == 3:
+                self.assert_phase_not_started()
+            return result
+
+        self.scenario.listener = listener
+        self.assertTrue(self.scenario.run("unarmed-refusal"))
+        startup = [
+            r for r in self.scenario.records() if r["kind"] == "startup-position"
+        ]
+        self.assertEqual(len(startup), 3)
+        self.assertGreater(
+            int(startup[-1]["value"]["parsed"]["timestamp_us"]),
+            int(startup[0]["value"]["parsed"]["native_print_clock_us"]["upper"]),
+        )
+
+    def test_position_and_status_progress_share_one_readiness_deadline(self):
+        original_position = self.scenario.telemetry.position
+        original_listener = self.scenario.listener
+
+        def position():
+            value = original_position()
+            if self.scenario.clock.value < 30000:
+                value.relative_altitude_m = float("nan")
+            return value
+
+        def listener(topic, instance, budget):
+            result = original_listener(topic, instance, budget)
+            count = self.scenario.listener_calls
+            result["stdout"] = status(1000000, age=f"{0.1 + count * 0.00001:.6f}")
+            return result
+
+        self.scenario.telemetry.position = position
+        self.scenario.listener = listener
+        self.assertFalse(self.scenario.run("unarmed-refusal"))
+        self.assert_phase_not_started()
+        self.assertGreaterEqual(self.scenario.clock.value, 45000)
+        self.assertLess(self.scenario.clock.value, 45150)
+
+    def test_parent_stop_during_status_progress_leaves_phase_closed(self):
+        original = self.scenario.listener
+
+        def listener(topic, instance, budget):
+            result = original(topic, instance, budget)
+            count = self.scenario.listener_calls
+            result["stdout"] = status(1000000, age=f"{0.1 + count * 0.01:.6f}")
+            self.scenario.stop = count >= 2
+            return result
+
+        self.scenario.listener = listener
+        self.assertFalse(self.scenario.run("unarmed-refusal"))
+        self.assert_phase_not_started()
+        self.assertLess(self.scenario.clock.value, 500)
+
+    def test_actor_change_during_position_readiness_refuses_before_phase(self):
+        original = self.scenario.actor_probe
+        count = 0
+
+        def actor(config):
+            nonlocal count
+            count += 1
+            value = original(config)
+            if count >= 3:
+                value["start_ticks"] = "9999"
+            return value
+
+        self.scenario.actor_probe = actor
+        self.assertFalse(self.scenario.run("unarmed-refusal"))
+        self.assert_phase_not_started()
+
+    def test_triplet_duration_is_limited_by_remaining_readiness_budget(self):
+        original_position = self.scenario.telemetry.position
+        original_listener = self.scenario.listener
+
+        def position():
+            value = original_position()
+            if self.scenario.clock.value < 44700:
+                value.relative_altitude_m = float("nan")
+            return value
+
+        def listener(topic, instance, budget):
+            result = original_listener(topic, instance, budget)
+            if self.scenario.listener_calls == 3:
+                self.scenario.clock.sleep(0.5)
+            return result
+
+        self.scenario.telemetry.position = position
+        self.scenario.listener = listener
+        self.assertFalse(self.scenario.run("unarmed-refusal"))
+        self.assertEqual(self.scenario.calls, [])
+        self.assertFalse(
+            any(r["kind"] == "caller-refusal" for r in self.scenario.records())
+        )
+        self.assertFalse(
+            any(
+                r["value"].get("slot") == "initial-status-b"
+                for r in self.scenario.records()
+            )
+        )
+
+    def test_final_triplet_write_must_finish_within_readiness_deadline(self):
+        original_position = self.scenario.telemetry.position
+        original_retain = self.scenario.journal.retain
+
+        def position():
+            value = original_position()
+            if self.scenario.clock.value < 44700:
+                value.relative_altitude_m = float("nan")
+            return value
+
+        def retain(kind, value):
+            result = original_retain(kind, value)
+            if (
+                kind == "listener-observation"
+                and value.get("slot") == "initial-status-b"
+            ):
+                self.scenario.clock.sleep(0.4)
+            return result
+
+        self.scenario.telemetry.position = position
+        self.scenario.journal.retain = retain
+        self.assertFalse(self.scenario.run("unarmed-refusal"))
+        self.assertEqual(self.scenario.calls, [])
+        self.assertFalse(
+            any(r["kind"] == "caller-refusal" for r in self.scenario.records())
+        )
+
+    def test_parent_stop_while_waiting_for_position_leaves_phase_closed(self):
+        original = self.scenario.telemetry.position
+
+        def position():
+            value = original()
+            value.relative_altitude_m = float("nan")
+            self.scenario.stop = self.scenario.clock.value >= 200
+            return value
+
+        self.scenario.telemetry.position = position
+        self.assertFalse(self.scenario.run("unarmed-refusal"))
+        self.assert_phase_not_started()
+        self.assertLess(self.scenario.clock.value, 500)
 
 
 class FreshnessBudgetTests(unittest.TestCase):

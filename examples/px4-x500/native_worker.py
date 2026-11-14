@@ -316,6 +316,7 @@ def run_case(
     initial_observations = {}
     readiness_ms = 45000
     settlement_ms = 45000
+    readiness_deadline = now() + readiness_ms
 
     def check_stop():
         if stopped():
@@ -333,16 +334,28 @@ def run_case(
                 return value
             sleep(0.1)
 
-    def observation(slot, topic, *, initial=False):
+    def readiness_remaining():
+        remaining = readiness_deadline - now()
+        if remaining <= 0:
+            raise Refused("cached control readiness budget expired")
+        return remaining
+
+    def observation(slot, topic, *, initial=False, readiness=False):
         nonlocal last_source, last_native_clock_upper
+        kind = "startup-position" if readiness else "listener-observation"
         if actor_probe(config) != before:
             raise Refused("PX4 process changed during listener observation")
         started = now()
         try:
-            job = listener(topic, config["instance"], min(readiness_ms, 3000))
+            budget = min(readiness_ms, 3000)
+            if readiness or initial:
+                budget = min(budget, readiness_remaining())
+            job = listener(topic, config["instance"], budget)
+            if readiness or initial:
+                readiness_remaining()
         except Exception as failure:
             journal.retain(
-                "listener-observation",
+                kind,
                 {
                     "slot": slot,
                     "error": str(failure),
@@ -375,7 +388,7 @@ def run_case(
                     config["target_component_id"],
                 ):
                     raise Refused("listener actor differs from admitted SDK target")
-                if initial and parsed["arming_state"] != 1:
+                if (initial or readiness) and parsed["arming_state"] != 1:
                     raise Refused("initial PX4 state is not disarmed")
                 timestamp = int(parsed["timestamp_us"])
                 if timestamp < last_source:
@@ -389,9 +402,9 @@ def run_case(
             last_native_clock_upper = int(interval["upper"])
         except Exception as failure:
             value["error"] = str(failure)
-            journal.retain("listener-observation", value)
+            journal.retain(kind, value)
             raise
-        journal.retain("listener-observation", value)
+        journal.retain(kind, value)
         if initial:
             initial_observations[slot] = value
         return parsed
@@ -460,8 +473,22 @@ def run_case(
                 "is_home_position_ok",
             )
         )
-        return position_ready and (
-            name == "unarmed-refusal" or getattr(health, "is_armable", None) is True
+        position = telemetry.position()
+        received_position = all(
+            finite(getattr(position, key, None))
+            for key in (
+                "latitude_deg",
+                "longitude_deg",
+                "absolute_altitude_m",
+                "relative_altitude_m",
+            )
+        )
+        return (
+            position_ready
+            and received_position
+            and (
+                name == "unarmed-refusal" or getattr(health, "is_armable", None) is True
+            )
         )
 
     try:
@@ -489,10 +516,25 @@ def run_case(
         ]:
             raise Refused("SDK sender/target identity differs")
         journal.retain("sdk-identity", sdk_identity)
-        wait(healthy, readiness_ms)
+        wait(healthy, readiness_remaining())
+        position_status = observation(
+            "position-status", "vehicle_status", readiness=True
+        )
+        wait(
+            lambda: (
+                int(
+                    observation("position-progress", "vehicle_status", readiness=True)[
+                        "timestamp_us"
+                    ]
+                )
+                > int(position_status["native_print_clock_us"]["upper"])
+            ),
+            readiness_remaining(),
+        )
         observation("initial-status-a", "vehicle_status", initial=True)
         observation("initial-land", "vehicle_land_detected", initial=True)
         observation("initial-status-b", "vehicle_status", initial=True)
+        readiness_remaining()
         if name == "unarmed-refusal":
             check_initial_freshness(initial_observations, now())
             journal.retain(
