@@ -55,11 +55,14 @@ evidence-sink uses 10001. Their own entrypoints, cache needs, native identity
 and writable outputs must be qualified separately. Shared/system sockets and
 host network configuration are unchanged.
 
-Prepare the exact compiled native host npm-pack asset at the ignored fixed path
-`host/.tools/core.tgz`; the package lock records that file dependency integrity.
-TypeScript imports its public Jobs/request/result types instead of maintaining
-parallel interfaces. The image build supplies the same asset as `/host.tgz`
-through `host-asset`; C20/C21 supply the released H asset at that boundary.
+The core asset selected by [source-lock.json](source-lock.json) is an immutable
+published release. Release authentication is checked when updating that lock;
+`scripts/ci/host/build-assets.sh` downloads the selected bytes and checks the
+committed SHA-256 on every build, including a cached asset. It compiles and
+packs this private adapter against that same core version, then prepares an
+isolated installation with both archives. The core is not rebuilt from another
+source checkout. The installed pair records its actual dependency graph and
+artifact identities; it does not rely on a parent workspace installation.
 
 Build and run source checks with pinned Node 24.21.0 / npm 11.19.0:
 
