@@ -91,7 +91,7 @@ try{
   const inherited=Object.fromEntries((selected.Config.Env??[]).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)]}));
   const env=Object.entries({...inherited,...overrides}).map(([key,value])=>key+'='+value);
   composition={
-    command:admitted.launch,entrypoint:['/ros_entrypoint.sh'],env,
+    command:admitted.launch,entrypoint:'/ros_entrypoint.sh',env,
     mounts:[
       {source:snapshot,destination:'/consumer/source',readOnly:true,type:'bind'},
       {source:prepared,destination:'/consumer/inputs',readOnly:true,type:'bind'},
