@@ -2,7 +2,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {chmod, mkdir, readFile, writeFile, copyFile, access} from 'node:fs/promises';
 import {resolve, isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {assertOwned, recoverCreated, createdId, nativeWaitExit, admitAndStart, removeUnstartedOwned} from './native-identity.mjs';
+import {assertOwned, recoverCreated, createdId, nativeWaitExit, admitAndStart, removeUnstartedOwned, canonicalConfigId} from './native-identity.mjs';
 
 
 export async function runNative(options, jobs) {
@@ -67,7 +67,7 @@ try{
   const inspection=JSON.parse(await command('image-inspect',['image','inspect',imageReference]));
   if (!Array.isArray(inspection)||inspection.length!==1) throw new Error('one selected image required');
   const selected=inspection[0];
-  image=selected.Id;
+  image=canonicalConfigId(selected.Id);
   if (!/^sha256:[a-f0-9]{64}$/.test(image)||!(imageReference===image||selected.RepoDigests?.includes(imageReference))) throw new Error('RepoDigest/Config ID binding differs');
   if (JSON.stringify(selected.Config.Entrypoint)!==JSON.stringify(['/ros_entrypoint.sh'])) throw new Error('selected ROS entrypoint differs');
   const factRaw=await command('image-preflight',['run','--rm','--read-only','--network','none','--memory','268435456','--cpus','1','--pids-limit','128',
