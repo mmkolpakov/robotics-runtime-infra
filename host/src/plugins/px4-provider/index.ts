@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {mkdir,open,readFile,readdir,lstat,realpath,writeFile} from 'node:fs/promises';
 import Docker from 'dockerode';
 import {finished} from 'node:stream/promises';
+import {setTimeout as pause} from 'node:timers/promises';
 import {dirname,isAbsolute,join,relative,resolve} from 'node:path';
 import {ComposeExecution} from '../../compose-execution.js';
 import {EngineMetadata} from '../../engine-metadata.js';
@@ -13,7 +14,7 @@ import {EngineMetadata} from '../../engine-metadata.js';
 export interface Px4Config {
   composeExecutable:string;socketPath:string;composeFiles:readonly string[];cwd:string;
   workerImage:string;runVolume:string;outputRoot:string;grpcPort?:number;deadlineMs?:number;
-  mode?:'legacy-grpc'|'native-sdk-v2';archiveRoot?:string;
+  mode?:'legacy-grpc'|'native-sdk-v2';archiveRoot?:string;initSha256?:string;
 }
 const record=(value:unknown):Record<string,unknown>=>{
   if(!value||typeof value!=='object'||Array.isArray(value)) throw new Error('native fact is not an object');
@@ -38,6 +39,7 @@ export class Px4Native extends Service {
   private loggerStartRef:ArtifactRef|undefined;private loggerStopRef:ArtifactRef|undefined;
   private actorBeforeRef:ArtifactRef|undefined;private actorAfterRef:ArtifactRef|undefined;
   private loggerPath:string|undefined;
+  private loggerStartAttempted=false;
   private archiveRoot:string|undefined;private workerArchive:string|undefined;
   constructor(ctx:Context,readonly config:Px4Config){
     super(ctx,'px4');
@@ -52,6 +54,7 @@ export class Px4Native extends Service {
     if(config.mode!==undefined&&config.mode!=='legacy-grpc'&&config.mode!=='native-sdk-v2')throw new Error('unknown PX4 provider mode');
     if(config.mode!=='native-sdk-v2'&&(!Number.isSafeInteger(config.grpcPort)||config.grpcPort!<1024||config.grpcPort!>65535))throw new Error('configured unprivileged local gRPC port required');
     if(config.mode==='native-sdk-v2'){
+      if(!/^[a-f0-9]{64}$/.test(config.initSha256??''))throw new Error('admitted native init SHA-256 required');
       if(!config.archiveRoot||!isAbsolute(config.archiveRoot))throw new Error('absolute native archive required');
       const part=relative(config.outputRoot,config.archiveRoot);
       if(!part||part==='..'||part.startsWith('../')||isAbsolute(part))throw new Error('native archive must be inside the mounted output root');
@@ -99,6 +102,14 @@ export class Px4Native extends Service {
     await mkdir(join(this.output,'rootfs'),{recursive:true});
     if(this.config.mode==='native-sdk-v2')await mkdir(join(this.archiveRoot!,'parent-facts'),{mode:0o700});
     await this.compose.requireVersion();
+    if(this.config.mode==='native-sdk-v2'){
+      const planned=await this.compose.run(['config','--format','json']);
+      if(!planned.ok)throw new Error('native Compose configuration is unavailable');
+      const services=record(record(JSON.parse(planned.stdout)).services);
+      const environment=record(record(services['px4-native']).environment);
+      if(Object.keys(services).length!==1||Object.keys(environment).length!==1||
+        environment.GZ_PARTITION!==this.output.split('/').at(-1))throw new Error('native Compose environment differs');
+    }
     this.engine=await EngineMetadata.connect({socketPath:this.config.socketPath,operationMinApi:'1.24',operationMaxApi:'1.53'});
     const services=this.config.mode==='native-sdk-v2'?['px4-native']:['px4-native','mavsdk-native'];
     const started=await this.compose.run(['up','--detach',...services]);
@@ -125,6 +136,28 @@ export class Px4Native extends Service {
   }
   private actorFacts(observation:unknown,id:string):Record<string,unknown>{
     const facts=record(observation),container=record(facts.container),state=record(container.State),config=record(container.Config),labels=record(config.Labels),image=record(facts.image),host=record(container.HostConfig);
+    const environment=(input:unknown):Map<string,string>=>{
+      if(!Array.isArray(input))throw new Error('native actor environment differs');
+      const result=new Map<string,string>();
+      for(const value of input){
+        if(typeof value!=='string'||value.indexOf('=')<1)throw new Error('native actor environment differs');
+        const at=value.indexOf('='),key=value.slice(0,at);
+        if(result.has(key))throw new Error('native actor environment differs');
+        result.set(key,value.slice(at+1));
+      }
+      return result;
+    };
+    const baseline=environment(record(image.Config).Env),observed=environment(config.Env);
+    baseline.set('GZ_PARTITION',this.output.split('/').at(-1)!);
+    if(!baseline.has('HOSTNAME')&&observed.has('HOSTNAME')){
+      if(config.Hostname!==id.slice(0,12)||observed.get('HOSTNAME')!==config.Hostname)throw new Error('native actor environment differs');
+      observed.delete('HOSTNAME');
+    }
+    if(!baseline.has('container')&&observed.has('container')){
+      if(observed.get('container')!=='podman')throw new Error('native actor environment differs');
+      observed.delete('container');
+    }
+    if(baseline.size!==observed.size||[...baseline].some(([key,value])=>observed.get(key)!==value))throw new Error('native actor environment differs');
     const dropped=Array.isArray(host.CapDrop)?host.CapDrop.map(value=>typeof value==='string'?value.replace(/^CAP_/,''):'').sort():[];
     const standard=['CHOWN','DAC_OVERRIDE','FOWNER','FSETID','KILL','NET_BIND_SERVICE','SETFCAP','SETGID','SETPCAP','SETUID','SYS_CHROOT'].sort();
     const expectedCommand=['-d','/opt/px4/build/px4_sitl_default/etc','-i','0','-w',
@@ -183,17 +216,51 @@ export class Px4Native extends Service {
     return {owner_id:this.ownerId,container_id:this.primaryId,role,started_unix_ns,finished_unix_ns,invocation:{executable,argv},result};
   }
   async startNativeLogger(signal:AbortSignal):Promise<ArtifactRef[]>{
-    if(this.config.mode!=='native-sdk-v2'||this.loggerStarted||!this.primaryId)throw new Error('native logger start is unavailable');
-    await this.currentActor(signal);
-    const started=await this.loggerCommand('on','before-case',signal);
-    await this.nativeFact('logger-on.json',started);
-    const status=await this.loggerCommand('status','before-case',signal);
-    this.loggerStartRef=await this.nativeFact('logger-start.json',status);
-    const path=/Log file:\s*(\S+)/.exec(status.result.stdout)?.[1];
-    if(!started.result.ok||started.result.exitCode!==0||!status.result.ok||status.result.exitCode!==0||
-      status.result.timedOut||status.result.canceled||!/Full File Logging Running:/.test(status.result.stdout)||!path)throw new Error('full PX4 file logger is not active');
-    this.loggerPath=path;
-    await this.currentActor(signal);
+    if(this.config.mode!=='native-sdk-v2'||this.loggerStarted||this.loggerStartAttempted||!this.primaryId)throw new Error('native logger start is unavailable');
+    this.loggerStartAttempted=true;
+    const deadline=performance.now()+this.deadline;
+    const bounded=AbortSignal.any([signal,AbortSignal.timeout(this.deadline)]);
+    const checkBudget=()=>{
+      bounded.throwIfAborted();
+      if(performance.now()>=deadline)throw new Error('PX4 logger readiness deadline expired');
+    };
+    const waitForStatus=async(requireFile:boolean)=>{
+      checkBudget();
+      let status=await this.loggerCommand('status','before-case',bounded);
+      try{
+        for(;;){
+          checkBudget();
+          const result=status.result;
+          const transportComplete=!result.timedOut&&!result.canceled&&!result.signal&&!result.stderr.trim();
+          const running=transportComplete&&result.ok&&result.exitCode===0&&
+            /^INFO\s+\[logger\]\s+Running in mode: (?:file|all)\s*$/m.test(result.stdout)&&
+            /^INFO\s+\[logger\]\s+Number of subscriptions: \d+ \(\d+ bytes\)\s*$/m.test(result.stdout);
+          const absent=transportComplete&&!result.ok&&result.exitCode===255&&
+            /^INFO\s+\[logger\]\s+not running\s*$/.test(result.stdout);
+          if(running){
+            if(!requireFile)return status;
+            if(/Full File Logging Running:/.test(result.stdout)){
+              if(!/Log file:\s*(\S+)/.test(result.stdout))throw new Error('full PX4 file logger path is unavailable');
+              return status;
+            }
+          }else if(requireFile||!absent)throw new Error('stock logger status is unverified');
+          await pause(Math.min(50,Math.max(0,deadline-performance.now())),undefined,{signal:bounded});
+          checkBudget();
+          status=await this.loggerCommand('status','before-case',bounded);
+        }
+      }finally{
+        const ref=await this.nativeFact(requireFile?'logger-start.json':'logger-available.json',status);
+        if(requireFile)this.loggerStartRef=ref;
+      }
+    };
+    await this.currentActor(bounded);checkBudget();
+    await waitForStatus(false);
+    const started=await this.loggerCommand('on','before-case',bounded);
+    await this.nativeFact('logger-on.json',started);checkBudget();
+    if(!started.result.ok||started.result.exitCode!==0||started.result.timedOut||started.result.canceled||started.result.signal)throw new Error('stock logger on failed');
+    const status=await waitForStatus(true);
+    this.loggerPath=/Log file:\s*(\S+)/.exec(status.result.stdout)![1];
+    await this.currentActor(bounded);checkBudget();
     this.loggerStarted=true;return [...this.refs];
   }
   private async readNativeFact(path:string):Promise<{facts:Record<string,unknown>;ref:ArtifactRef}>{
@@ -297,13 +364,13 @@ export class Px4Native extends Service {
       if(connected.connection_state?.is_connected!==true)throw new Error('native Core reports no connected PX4 vehicle');
       const path=join(this.output,'core-connection.json');await writeFile(path,JSON.stringify(connected));this.refs.push(await reference(path));
     }
-    const facts=await this.probe('ready','gz-readiness.json',1,signal);
+    const facts=await this.probe('ready','gz-readiness.json',this.deadline/1000,signal);
     if(facts.ready!==true||facts.owner_id!==this.ownerId||facts.model!=='x500_0')throw new Error('stock model readiness missing');
-    if(record(facts.oci_init).sha256!=='43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba')throw new Error('actual stock OCI init identity is unqualified');
+    if(record(facts.oci_init).sha256!==(this.config.initSha256??'43e9b836ca7631672f12d0610cd574875b62d236dfd62e3b86751f35862e5eba'))throw new Error('actual stock OCI init identity is unqualified');
     return {ready:true,evidenceRefs:[...this.refs]};
   }
   async probe(mode:'ready'|'observe'|'last-state',name:string,seconds:number,signal:AbortSignal):Promise<Record<string,unknown>>{
-    if(!/^[a-z][a-z0-9-]*\.json$/.test(name)||!Number.isFinite(seconds)||seconds<=0||seconds>60)throw new Error('invalid finite native probe');
+    if(!/^[a-z][a-z0-9-]*\.json$/.test(name)||!Number.isFinite(seconds)||seconds<=0||seconds>(mode==='ready'?300:60))throw new Error('invalid finite native probe');
     const relative='/run/robotics/output/px4/'+this.output.split('/').at(-1)+'/'+name;
     const result=await this.compose.run(['exec','-T','px4-native','/usr/bin/python3','-B','/opt/robotics/px4/probe.py',
       '--mode',mode,'--owner-id',this.ownerId,'--output',relative,'--seconds',String(seconds)],signal);
@@ -346,7 +413,7 @@ export class Px4Native extends Service {
       const stopped=await this.loggerCommand('stop','after-case',signal);
       const status=await this.loggerCommand('status','after-case',signal);
       this.loggerStopRef=await this.nativeFact('logger-stop.json',{...stopped,status_after:status});
-      if(!stopped.result.ok||stopped.result.exitCode!==0||status.result.ok||!Number.isInteger(status.result.exitCode)||status.result.exitCode===0||
+      if(!stopped.result.ok||stopped.result.exitCode!==0||status.result.ok||status.result.exitCode!==255||
         status.result.timedOut||status.result.canceled||status.result.stderr.trim()||
         !/^(?:INFO\s+\[logger\]\s+)?not running\s*$/.test(status.result.stdout)||
         /timeout, forcing stop|server not running|error connecting/i.test(stopped.result.stdout+stopped.result.stderr+status.result.stdout))throw new Error('stock logger shutdown is unverified');

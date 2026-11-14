@@ -134,7 +134,7 @@ test('original native binding points inside the same archive at the retained ULo
   provider.loggerCommand=async(command:string,role:string)=>{
     const result=command==='on'?{ok:true,exitCode:0,stdout:'',stderr:'',timedOut:false,canceled:false}
       :command==='stop'?{ok:true,exitCode:0,stdout:'',stderr:'',timedOut:false,canceled:false}
-      :role==='before-case'?{ok:true,exitCode:0,stdout:'Full File Logging Running:\nLog file: ./log/flight.ulg\n',stderr:'',timedOut:false,canceled:false}
+      :role==='before-case'?{ok:true,exitCode:0,stdout:'INFO  [logger] Running in mode: all\nINFO  [logger] Number of subscriptions: 1 (8 bytes)\nINFO  [logger] Full File Logging Running:\nINFO  [logger] Log file: ./log/flight.ulg\n',stderr:'',timedOut:false,canceled:false}
       :{ok:false,exitCode:255,stdout:'not running\n',stderr:'',timedOut:false,canceled:false};
     return {owner_id:'run-1',container_id:cid,role,started_unix_ns:'1000000',finished_unix_ns:'2000000',
       invocation:{executable:'/opt/px4/build/px4_sitl_default/bin/px4-logger',argv:['--instance','0',command]},result};
@@ -180,7 +180,7 @@ test('native cleanup refuses foreign project ownership without sending down',asy
   const context=new Context();let resource:any;
   context.provide('runResources',{ownerId:'run-1',track:(value:unknown)=>{resource=value}} as any);
   context.provide('jobs',{run:async()=>({ok:true})} as any);
-  const provider:any=new Px4Native(context,{mode:'native-sdk-v2',composeExecutable:'/bin/compose',
+  const provider:any=new Px4Native(context,{mode:'native-sdk-v2',initSha256:'1'.repeat(64),composeExecutable:'/bin/compose',
     socketPath:'/tmp/engine.sock',composeFiles:['/tmp/compose.yaml'],cwd:'/tmp',
     workerImage:'example@sha256:'+'c'.repeat(64),runVolume:'run',outputRoot:'/tmp',
     archiveRoot:'/tmp/archive'});
@@ -198,18 +198,28 @@ test('actor evidence retains user and allowed mounts without environment, reject
   Object.assign(provider,{ownerId:'run-1',project:'rr-px4-'+ 'd'.repeat(24),output:'/tmp/scope',config:{runVolume:'run-volume'}});
   const container={Id:cid,Image:'sha256:'+'c'.repeat(64),RestartCount:0,
     State:{Running:true,OOMKilled:false,StartedAt:'time'},
-    Config:{User:'1000:1000',Env:['SECRET=hidden'],Entrypoint:['/opt/px4/build/px4_sitl_default/bin/px4'],
+    Config:{User:'1000:1000',Env:['SECRET=hidden','GZ_PARTITION=scope'],Entrypoint:['/opt/px4/build/px4_sitl_default/bin/px4'],
       Cmd:['-d','/opt/px4/build/px4_sitl_default/etc','-i','0','-w','/run/robotics/output/px4/scope/rootfs'],
       Labels:{'org.robotics.runtime.run-id':'run-1','com.docker.compose.project':provider.project}},
     HostConfig:{Init:true,ReadonlyRootfs:true,Memory:4294967296,Privileged:false,PidsLimit:256,CapAdd:[] as string[],
       CapDrop:['ALL'],SecurityOpt:['no-new-privileges'],Tmpfs:{'/tmp':'rw,mode=1777,size=512m'}},
     Mounts:[{Type:'volume',Destination:'/run/robotics',Name:'run-volume',RW:true,Source:'/private/path'}]};
-  const observation={status:'complete',container,image:{Id:container.Image}};
+  const observation={status:'complete',container,image:{Id:container.Image,Config:{Env:['SECRET=hidden']}}};
   const safe=provider.actorFacts(observation,cid);
   assert.equal(safe.container.Config.User,'1000:1000');
   assert.deepEqual(safe.container.Mounts,[{Type:'volume',Destination:'/run/robotics',Name:'run-volume',RW:true}]);
   assert.ok(!JSON.stringify(safe).includes('SECRET'));
   assert.ok(!JSON.stringify(safe).includes('/private/path'));
+  container.Config.Env.push('LD_PRELOAD=/secret/preload.so');
+  assert.throws(()=>provider.actorFacts(observation,cid),/^Error: native actor environment differs$/);
+  container.Config.Env.pop();
+  container.Config.Env.push('GZ_PARTITION=foreign');
+  assert.throws(()=>provider.actorFacts(observation,cid),/^Error: native actor environment differs$/);
+  container.Config.Env.pop();
+  container.Config.Env.push('container=podman','HOSTNAME='+cid.slice(0,12));
+  Object.assign(container.Config,{Hostname:cid.slice(0,12)});
+  assert.ok(!JSON.stringify(provider.actorFacts(observation,cid)).includes('SECRET'));
+  container.Config.Env.splice(-2);
   container.HostConfig.CapDrop=['CAP_CHOWN','CAP_DAC_OVERRIDE','CAP_FOWNER','CAP_FSETID','CAP_KILL','CAP_NET_BIND_SERVICE','CAP_SETFCAP','CAP_SETGID','CAP_SETPCAP','CAP_SETUID','CAP_SYS_CHROOT'];
   assert.equal(provider.actorFacts(observation,cid).container.Config.User,'1000:1000');
   container.HostConfig.CapDrop=['ALL'];
@@ -302,7 +312,7 @@ test('native provider snapshots caller config and compose files',()=>{
   const context=new Context();
   context.provide('runResources',{ownerId:'run-1',track:()=>{}} as any);
   context.provide('jobs',{run:async()=>({ok:true})} as any);
-  const config:any={mode:'native-sdk-v2',composeExecutable:'/bin/compose',socketPath:'/tmp/engine.sock',
+  const config:any={mode:'native-sdk-v2',initSha256:'1'.repeat(64),composeExecutable:'/bin/compose',socketPath:'/tmp/engine.sock',
     composeFiles:['/tmp/compose.yaml'],cwd:'/tmp',workerImage:'example@sha256:'+'c'.repeat(64),
     runVolume:'run',outputRoot:'/tmp',archiveRoot:'/tmp/archive'};
   const provider:any=new Px4Native(context,config);
@@ -322,4 +332,139 @@ test('SDK identity input is captured before asynchronous process observation',as
   selected.target_system_id=99;release();await pending;
   const actor=facts.find(item=>item.name==='native-actor-config.json')?.value;
   assert.equal(actor.target_system_id,1);
+});
+
+
+test('native init identity comes from the admitted configuration',async()=>{
+  const provider:any=Object.create(Px4Native.prototype);
+  provider.config={mode:'native-sdk-v2',initSha256:'1'.repeat(64)};provider.deadline=120000;
+  provider.ownerId='run-1';provider.refs=[];
+  provider.probe=async()=>({ready:true,owner_id:'run-1',model:'x500_0',oci_init:{sha256:'2'.repeat(64)}});
+  await assert.rejects(provider.ready(new AbortController().signal),/init identity/);
+  provider.probe=async()=>({ready:true,owner_id:'run-1',model:'x500_0',oci_init:{sha256:'1'.repeat(64)}});
+  assert.equal((await provider.ready(new AbortController().signal)).ready,true);
+});
+
+
+test('Compose-injected loader environment refuses before Engine connection or up',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'px4-compose-env-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const archive=join(root,'archive');await mkdir(archive);
+  const provider:any=Object.create(Px4Native.prototype),calls:string[][]=[];
+  Object.assign(provider,{config:{mode:'native-sdk-v2',outputRoot:root},archiveRoot:archive,output:join(root,'scope'),refs:[],
+    compose:{requireVersion:async()=>{},run:async(args:string[])=>{calls.push(args);return {ok:true,stdout:JSON.stringify({services:{'px4-native':{environment:{GZ_PARTITION:'scope',LD_PRELOAD:'/private/library.so'}}}})}}}});
+  await assert.rejects(provider.launch(),/^Error: native Compose environment differs$/);
+  assert.deepEqual(calls,[['config','--format','json']]);
+  assert.equal(provider.engine,undefined);
+});
+
+
+test('single-service Podman override preserves the stock fixed-worker UID mapping',async()=>{
+  const native=await readFile(new URL('../../../compose.px4-sdk.podman.yaml',import.meta.url),'utf8');
+  const legacy=await readFile(new URL('../../../compose.px4.podman.yaml',import.meta.url),'utf8');
+  const mapping=(text:string)=>[...text.matchAll(/^    userns_mode: (.+)$/gm)].map(match=>match[1]);
+  assert.deepEqual(mapping(native),[mapping(legacy)[0]]);
+  assert.equal(mapping(native)[0],'keep-id:uid=1000,gid=1000');
+  assert.match(native,/^  px4-native:$/m);assert.doesNotMatch(native,/mavsdk-native/);
+});
+
+
+test('ready passes the admitted provider budget and caller cancellation to one native probe',async()=>{
+  const provider:any=Object.create(Px4Native.prototype),calls:any[]=[];
+  provider.config={mode:'native-sdk-v2',initSha256:'1'.repeat(64)};provider.deadline=1001;
+  provider.ownerId='run-1';provider.refs=[];
+  provider.probe=async(...args:any[])=>{calls.push(args);return {ready:true,owner_id:'run-1',model:'x500_0',oci_init:{sha256:'1'.repeat(64)}}};
+  const controller=new AbortController();await provider.ready(controller.signal);
+  assert.deepEqual(calls,[['ready','gz-readiness.json',1.001,controller.signal]]);
+  controller.abort(new Error('caller canceled'));await assert.rejects(provider.ready(controller.signal),/caller canceled/);
+  assert.equal(calls.length,1);
+});
+
+test('only ready accepts the configured extended budget; observation remains bounded to 60 seconds',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'px4-probe-budget-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const provider:any=Object.create(Px4Native.prototype),calls:string[][]=[];
+  Object.assign(provider,{output:root,refs:[],ownerId:'run-1',compose:{run:async(args:string[])=>{
+    calls.push(args);await writeFile(join(root,'ready.json'),'{"ready":false}');return {ok:true};
+  }}});
+  await provider.probe('ready','ready.json',120,new AbortController().signal);
+  assert.equal(calls[0]![calls[0]!.indexOf('--seconds')+1],'120');
+  for(const [mode,seconds] of [['ready',301],['observe',61],['last-state',61]] as const){
+    await assert.rejects(provider.probe(mode,'other.json',seconds,new AbortController().signal),/finite native probe/);
+  }
+  assert.equal(calls.length,1);
+});
+
+
+const loggerRunning='INFO  [logger] Running in mode: all\nINFO  [logger] Number of subscriptions: 1 (8 bytes)\n';
+const loggerInactive=loggerRunning+'INFO  [logger] Not logging\n';
+const loggerActive=loggerRunning+'INFO  [logger] Full File Logging Running:\nINFO  [logger] Log file: ./log/flight.ulg\n';
+const loggerResult=(stdout:string,exitCode=0)=>({ok:exitCode===0,exitCode,stdout,stderr:'',timedOut:false,canceled:false});
+
+async function loggerStartup(t:test.TestContext,statuses:any[],deadline=1000){
+  const {provider,facts}=await setup(t,{ID:eid,ContainerID:cid,Running:false,ExitCode:0});
+  provider.loggerStarted=false;provider.deadline=deadline;
+  const calls:string[]=[];
+  provider.loggerCommand=async(command:string)=>{
+    calls.push(command);
+    return {result:command==='status'?statuses.shift()??loggerResult(loggerActive):loggerResult('')};
+  };
+  return {provider,calls,facts};
+}
+
+test('logger waits for its module then async full file activation with one on',async t=>{
+  const {provider,calls,facts}=await loggerStartup(t,[loggerResult('INFO  [logger] not running',255),
+    loggerResult(loggerInactive),loggerResult(loggerInactive),loggerResult(loggerActive)]);
+  await provider.startNativeLogger(new AbortController().signal);
+  assert.deepEqual(calls,['status','status','on','status','status']);
+  assert.equal(provider.loggerStarted,true);assert.equal(provider.loggerPath,'./log/flight.ulg');
+  assert.ok(facts.some(f=>f.name==='logger-available.json'));assert.ok(facts.some(f=>f.name==='logger-start.json'));
+  await assert.rejects(provider.startNativeLogger(new AbortController().signal),/unavailable/);
+  assert.equal(calls.filter(c=>c==='on').length,1);
+});
+
+test('logger only waits for the exact stock absent-module status before on',async t=>{
+  for(const invalid of [loggerResult('INFO  [logger] not running',1),loggerResult('not running',255),
+    loggerResult('unrecognized status'),{...loggerResult('INFO  [logger] not running',255),timedOut:true},
+    {...loggerResult('INFO  [logger] not running',255),stderr:'transport failed'}]){
+    const {provider,calls}=await loggerStartup(t,[invalid]);
+    await assert.rejects(provider.startNativeLogger(new AbortController().signal),/status is unverified/);
+    assert.deepEqual(calls,['status']);assert.equal(provider.loggerStarted,false);
+  }
+});
+
+test('logger activation refuses missing path or vanished module and never replays on',async t=>{
+  for(const invalid of [loggerResult(loggerRunning+'INFO  [logger] Full File Logging Running:\n'),
+    loggerResult('INFO  [logger] not running',255),loggerResult('unrecognized status')]){
+    const {provider,calls}=await loggerStartup(t,[loggerResult(loggerInactive),invalid]);
+    await assert.rejects(provider.startNativeLogger(new AbortController().signal),/path is unavailable|status is unverified/);
+    assert.equal(provider.loggerStarted,false);assert.equal(calls.filter(c=>c==='on').length,1);
+    await assert.rejects(provider.startNativeLogger(new AbortController().signal),/unavailable/);
+    assert.equal(calls.filter(c=>c==='on').length,1);
+  }
+});
+
+test('logger caller cancellation and the single deadline prevent later on or measurement eligibility',async t=>{
+  const {provider,calls}=await loggerStartup(t,Array(20).fill(loggerResult('INFO  [logger] not running',255)),1000);
+  await assert.rejects(provider.startNativeLogger(AbortSignal.timeout(20)));
+  assert.deepEqual(calls,['status']);assert.equal(provider.loggerStarted,false);
+  const second=await loggerStartup(t,[],20);let on=false;
+  second.provider.loggerCommand=async(command:string)=>{
+    if(command==='on')on=true;
+    else await new Promise(resolve=>setTimeout(resolve,25));
+    return {result:loggerResult(loggerActive)};
+  };
+  await assert.rejects(second.provider.startNativeLogger(new AbortController().signal));
+  assert.equal(on,false);assert.equal(second.provider.loggerStarted,false);
+});
+
+
+test('logger shutdown requires stock absent-module255 rather than another nonzero exit',async t=>{
+  for(const exitCode of [-1,1,2,137]){
+    const {provider}=await setup(t,{ID:eid,ContainerID:cid,Running:false,ExitCode:0});
+    provider.workerState='settled';
+    provider.loggerCommand=async(command:string)=>({result:command==='stop'
+      ? loggerResult('') : loggerResult('INFO  [logger] not running',exitCode)});
+    await assert.rejects(provider.drainRecorders(new AbortController().signal),/shutdown is unverified/);
+    assert.equal(provider.loggerClosed,false);
+  }
 });
