@@ -165,7 +165,7 @@ measurements into a pass.
 ## Native owner bootstrap
 
 ```sh
-npm run flight-native -- land /absolute/operator.json /absolute/case/inputs/run.json
+npm run flight-native -- land /absolute/operator.json /absolute/case/inputs/pre-run-inputs.json
 ```
 
 The operator JSON supplies `archiveRoot`, `sdkIds`, absolute `producerPython`,

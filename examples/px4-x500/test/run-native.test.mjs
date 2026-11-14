@@ -116,7 +116,7 @@ async function launchFixture(t) {
     requiredBindings: [{entryId: 'px4', service: 'px4'}], isolatedServices: ['px4']},
     producerPython: '/usr/bin/python3', producerPath: '/opt/producer.py', harnessExecutable: '/usr/bin/harness',
     evaluatorTrust: {profile: trust, receipts: ['/trust/receipt'], verifications: ['/trust/verification'], dependencies: []}};
-  const inputPath = join(archive, 'inputs', 'run.json');
+  const inputPath = join(archive, 'inputs', 'pre-run-inputs.json');
   await writeFile(inputPath, JSON.stringify({domain_id: 'px4', run_id: 'issued'}));
   const save = () => writeFile(operatorPath, JSON.stringify(operator), {mode: 0o600}); await save();
   return {operator, operatorPath, inputPath, profilePath, compose, save};
