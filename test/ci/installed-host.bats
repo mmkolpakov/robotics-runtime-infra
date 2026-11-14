@@ -197,7 +197,7 @@ offline = [v for v in calls if v[0] == "offline-helper"]
 assert offline == [["offline-helper", "test/qualification/real-cosign.sh", "--offline-consumer",
                     "127.0.0.1:5000/installed-ros/finalizer@sha256:" + "b" * 64,
                     str(fixture / "dependencies/robotics-runtime/.venv/bin/robotics-contracts")]]
-assert sum("--allow" in v for v in builds) == 1
+assert sum("--allow" in v for v in builds) == 2
 auxiliary = {v[-1]: v for v in builds if v[-1] in (
     "foundation-coordinator", "legacy-finalizer", "evidence-source")}
 assert set(auxiliary) == {"foundation-coordinator", "legacy-finalizer", "evidence-source"}
@@ -208,6 +208,9 @@ assert "foundation-coordinator.contexts.foundation-wheels-image=docker-image://"
 assert "foundation-coordinator.contexts.foundation-base-image=docker-image://" + prefix + "simulation-base" + digest in auxiliary["foundation-coordinator"]
 assert "legacy-finalizer.contexts.coordinator-image=docker-image://" + prefix + "coordinator" + digest in auxiliary["legacy-finalizer"]
 assert "legacy-finalizer.contexts.cosign-license=" + marker["preserved_work"] + "/cosign-license" in auxiliary["legacy-finalizer"]
+read_permission = auxiliary["legacy-finalizer"][auxiliary["legacy-finalizer"].index("--allow") + 1]
+assert read_permission == "fs.read=" + marker["preserved_work"] + "/cosign-license"
+assert "*" not in read_permission
 assert "evidence-source.contexts.evidence-base-image=docker-image://" + prefix + "finalizer" + digest in auxiliary["evidence-source"]
 assert "foundation-coordinator.tags=" + prefix + "coordinator:installed-ros-101-1" in auxiliary["foundation-coordinator"]
 assert "legacy-finalizer.tags=" + prefix + "finalizer:installed-ros-101-1" in auxiliary["legacy-finalizer"]

@@ -167,6 +167,7 @@ docker buildx bake --builder "${builder}" --file docker-bake.hcl --allow "fs.wri
   --set "foundation-cosign-license.output=type=local,dest=${work}/cosign-license" foundation-cosign-license
 finalizer_tag="${registry}/installed-ros/finalizer:${scope}"
 docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
+  --allow "fs.read=${work}/cosign-license" \
   --set "legacy-finalizer.contexts.cosign-license=${work}/cosign-license" \
   --set "legacy-finalizer.contexts.coordinator-image=docker-image://${simulation}" \
   --set "legacy-finalizer.tags=${finalizer_tag}" legacy-finalizer
