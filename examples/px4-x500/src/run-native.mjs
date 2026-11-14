@@ -95,8 +95,7 @@ export async function launchNative([caseName, operatorPath, inputPath], loadHost
   const profile = operator.profile;
   const entries = await readOperatorInput(profile.profilePath, {trustedOutside: archiveRoot, readOnly: true});
   if (!Array.isArray(entries) || entries.length !== 1 || entries[0]?.id !== 'px4' ||
-      !isDeepStrictEqual(profile.requiredBindings, [{entryId: 'px4', service: 'px4'}]) ||
-      !profile.isolatedServices?.includes('px4')) throw new Error('one admitted native PX4 binding required');
+      !isDeepStrictEqual(profile.requiredBindings, [{entryId: 'px4', service: 'px4'}])) throw new Error('one admitted native PX4 binding required');
   const entry = entries[0], config = entry.config;
   if (typeof entry.name !== 'string' || !entry.name.startsWith('.') && !isAbsolute(entry.name) ||
       config?.mode !== 'native-sdk-v2' || config.archiveRoot !== archiveRoot ||
@@ -115,7 +114,6 @@ export async function launchNative([caseName, operatorPath, inputPath], loadHost
   try {
     await ctx.plugin(Jobs, {timeoutMs: 300000, maxBufferBytes: 1048576});
     await ctx.plugin(Admission, {profiles: [profile]});
-    await ctx.admission.admit(profile.id);
     await ctx.plugin(RunOwner);
     const signal = AbortSignal.any([cancel.signal, AbortSignal.timeout(300000)]);
     return await runNativeAttempt({

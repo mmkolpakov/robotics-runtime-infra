@@ -178,7 +178,8 @@ The host profile is a read-only JSON Include document with one `px4` entry using
 `native-sdk-v2`. Its config binds `archiveRoot`, `initSha256`, the immutable
 `workerImage`, selected Engine and Compose paths, retained volume and output
 root. `profile.requiredBindings` is `[{"entryId":"px4","service":"px4"}]`, and
-`profile.isolatedServices` includes `px4`. Include the profile, provider module
+`profile.isolatedServices` may be empty: the host isolates required services.
+Include the profile, provider module
 and its dependency files, and every Compose file in `profile.files` with their
 SHA-256 values. The public Admission service checks this closure before startup.
 The bootstrap does not infer trust from files inside the completed archive.

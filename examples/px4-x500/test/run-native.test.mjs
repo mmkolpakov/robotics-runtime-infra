@@ -137,8 +137,8 @@ test('writable or archive-contained bootstrap profile refuses before host effect
   await assert.rejects(launchNative(['land', f.operatorPath, f.inputPath]), /outside the evidence archive/);
 });
 
-test('Context disposal is awaited after plugin, admission and owner failures', async t => {
-  for (const failure of ['jobs', 'admission', 'owner']) {
+test('Context disposal is awaited after plugin and owner failures', async t => {
+  for (const failure of ['jobs', 'owner']) {
     const f = await launchFixture(t); const calls = [];
     const Jobs = Symbol('jobs'), Admission = Symbol('admission'), RunOwner = Symbol('owner');
     class Context {
@@ -149,18 +149,18 @@ test('Context disposal is awaited after plugin, admission and owner failures', a
     }
     await assert.rejects(launchNative(['land', f.operatorPath, f.inputPath], async () => ({Context, Jobs, Admission, RunOwner})), /refused|absolute native/);
     assert.equal(calls.at(-1), 'disposed');
-    if (failure !== 'owner') assert.ok(!calls.includes('owner'));
+    if (failure === 'jobs') assert.ok(!calls.includes('owner'));
   }
 });
 
 
 test('structurally equal reordered binding reaches the owner and awaits Context disposal', async t => {
   const f = await launchFixture(t), calls = [];
-  f.operator.profile.requiredBindings = [{service: 'px4', entryId: 'px4'}]; await f.save();
+  f.operator.profile.requiredBindings = [{service: 'px4', entryId: 'px4'}];
+  f.operator.profile.isolatedServices = []; await f.save();
   const Jobs = Symbol('jobs'), Admission = Symbol('admission'), RunOwner = Symbol('owner');
   class Context {
     fiber = {dispose: async () => {await Promise.resolve(); calls.push('disposed')}};
-    admission = {admit: async id => {assert.equal(id, 'source-sdk'); calls.push('admitted')}};
     runOwner = {start: async () => {calls.push('owner'); return {
       context: {get: () => ({config: {mode: 'native-sdk-v2', archiveRoot: f.operator.archiveRoot},
         startNativeLogger: async () => {throw new Error('software control stops before measurement')}})},
@@ -170,7 +170,7 @@ test('structurally equal reordered binding reaches the owner and awaits Context 
   }
   const result = await launchNative(['land', f.operatorPath, f.inputPath], async () => ({Context, Jobs, Admission, RunOwner}));
   assert.equal(result.completion.status, 'incomplete');
-  assert.deepEqual(calls, ['admitted', 'owner', 'disposed']);
+  assert.deepEqual(calls, ['owner', 'disposed']);
 });
 
 
@@ -184,7 +184,18 @@ test('public Admission rejects changed Compose bytes before importing the provid
   }
   await f.save();
   await chmod(f.compose, 0o644); await writeFile(f.compose, 'services: {foreign: {}}'); await chmod(f.compose, 0o444);
-  await assert.rejects(launchNative(['land', f.operatorPath, f.inputPath]), /hash|digest|SHA/);
+  const host = await import('@robotics-runtime/host'), contexts = [];
+  let disposed = false;
+  class ObservedContext {
+    constructor() {
+      const ctx = new host.Context(), dispose = ctx.fiber.dispose.bind(ctx.fiber);
+      ctx.fiber.dispose = async () => {await dispose(); await Promise.resolve(); disposed = true};
+      contexts.push(ctx); return ctx;
+    }
+  }
+  await assert.rejects(launchNative(['land', f.operatorPath, f.inputPath], async () => ({...host, Context: ObservedContext})), /hash|digest|SHA/);
+  assert.equal(contexts.length, 1);
+  assert.equal(disposed, true);
 });
 
 
