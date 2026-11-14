@@ -2,7 +2,7 @@
   "profile_id": "org.example.px4-x500",
   "executor": {
     "implementation": "px4-x500-controller",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "clock": {
     "kind": "external",
