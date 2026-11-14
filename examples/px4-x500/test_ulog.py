@@ -29,8 +29,8 @@ IDENTITY = {
 
 def positions(values, *, home_alt=0.0):
     baseline = {
-        "timestamp": 5,
-        "timestamp_sample": 4,
+        "timestamp": 3,
+        "timestamp_sample": 2,
         "alt": home_alt,
         "alt_valid": True,
         "alt_reset_counter": 7,
@@ -45,7 +45,10 @@ def positions(values, *, home_alt=0.0):
                 "alt": home_alt + value,
             }
         )
-    home = [{"timestamp": 6, "alt": home_alt, "valid_alt": True, "update_count": 3}]
+    home = [
+        {"timestamp": 4, "alt": home_alt, "valid_alt": False, "update_count": 2},
+        {"timestamp": 6, "alt": home_alt, "valid_alt": True, "update_count": 3},
+    ]
     return result, home
 
 
@@ -77,10 +80,6 @@ class SampledAltitudeControls(unittest.TestCase):
 
     def test_initial_home_and_reset_changes_before_phase_are_allowed(self):
         rows, home = positions([0.0, 0.1, 0.2, 0.0])
-        home.insert(
-            0, {"timestamp": 1, "alt": 50.0, "valid_alt": False, "update_count": 1}
-        )
-        home[1]["timestamp"] = 6
         rows.insert(0, {**rows[0], "timestamp": 1, "alt_reset_counter": 2})
         self.assertEqual(len(altitude_samples(rows, home, 10, 100)), 4)
 
@@ -91,7 +90,7 @@ class SampledAltitudeControls(unittest.TestCase):
                 if kind == "reset":
                     rows[-1]["alt_reset_counter"] = 8
                 else:
-                    home[0]["valid_alt"] = False
+                    home[-1]["valid_alt"] = False
                 with self.assertRaises(Unavailable):
                     altitude_samples(rows, home, 10, 100)
 
@@ -99,8 +98,8 @@ class SampledAltitudeControls(unittest.TestCase):
         estimates, homes = positions([1.5, 2.5, 3.5, 4.5])
         homes.extend(
             [
-                {**homes[0], "timestamp": 25, "alt": 1.0, "update_count": 4},
-                {**homes[0], "timestamp": 45, "alt": 2.0, "update_count": 5},
+                {**homes[-1], "timestamp": 25, "alt": 1.0, "update_count": 4},
+                {**homes[-1], "timestamp": 45, "alt": 2.0, "update_count": 5},
             ]
         )
         self.assertEqual(
@@ -111,14 +110,14 @@ class SampledAltitudeControls(unittest.TestCase):
     def test_home_lookup_uses_publication_not_source_sample_time(self):
         estimates, homes = positions([1.5, 2.5])
         estimates[-1]["timestamp_sample"] = 25
-        homes.append({**homes[0], "timestamp": 26, "alt": 1.0, "update_count": 4})
+        homes.append({**homes[-1], "timestamp": 26, "alt": 1.0, "update_count": 4})
         self.assertEqual(
             altitude_samples(estimates, homes, 10, 100), [(19, (1500,)), (25, (1500,))]
         )
 
     def test_same_publication_tick_reference_change_keeps_both_actual_values(self):
         estimates, homes = positions([1.5, 2.5])
-        homes.append({**homes[0], "timestamp": 30, "alt": 1.0, "update_count": 4})
+        homes.append({**homes[-1], "timestamp": 30, "alt": 1.0, "update_count": 4})
         self.assertEqual(
             altitude_samples(estimates, homes, 10, 100),
             [(19, (1500,)), (29, (2500, 1500))],
@@ -126,21 +125,21 @@ class SampledAltitudeControls(unittest.TestCase):
 
     def test_identical_valid_same_tick_republish_preserves_all_samples(self):
         estimates, homes = positions([1.5, 2.5])
-        homes.append({**homes[0], "timestamp": 30})
+        homes.append({**homes[-1], "timestamp": 30})
         self.assertEqual(
             altitude_samples(estimates, homes, 10, 100), [(19, (1500,)), (29, (2500,))]
         )
 
     def test_same_tick_count_only_update_has_a_unique_height(self):
         estimates, homes = positions([1.5, 2.5])
-        homes.append({**homes[0], "timestamp": 30, "update_count": 4})
+        homes.append({**homes[-1], "timestamp": 30, "update_count": 4})
         self.assertEqual(
             altitude_samples(estimates, homes, 10, 100), [(19, (1500,)), (29, (2500,))]
         )
 
     def test_same_tick_count_only_update_does_not_mask_altitude_reset(self):
         estimates, homes = positions([1.5, 2.5])
-        homes.append({**homes[0], "timestamp": 30, "update_count": 4})
+        homes.append({**homes[-1], "timestamp": 30, "update_count": 4})
         estimates[-1]["alt_reset_counter"] = 8
         with self.assertRaisesRegex(Unavailable, "altitude reset"):
             altitude_samples(estimates, homes, 10, 100)
@@ -152,13 +151,13 @@ class SampledAltitudeControls(unittest.TestCase):
             {"alt": float("inf")},
         ):
             estimates, homes = positions([1.5, 2.5])
-            homes.append({**homes[0], "timestamp": 25, **change})
+            homes.append({**homes[-1], "timestamp": 25, **change})
             with self.subTest(change=change), self.assertRaises(Unavailable):
                 altitude_samples(estimates, homes, 10, 100)
         estimates, homes = positions([1.5])
         with self.assertRaises(Unavailable):
             altitude_samples(estimates, [], 10, 100)
-        homes[0]["timestamp"] = 15
+        homes[-1]["timestamp"] = 15
         with self.assertRaisesRegex(Unavailable, "baseline"):
             altitude_samples(estimates, homes, 10, 100)
 
@@ -166,8 +165,8 @@ class SampledAltitudeControls(unittest.TestCase):
         estimates, homes = positions([1.5, 2.5])
         homes.extend(
             [
-                {**homes[0], "timestamp": 24, "valid_alt": False},
-                {**homes[0], "timestamp": 25, "update_count": 4},
+                {**homes[-1], "timestamp": 24, "valid_alt": False},
+                {**homes[-1], "timestamp": 25, "update_count": 4},
             ]
         )
         with self.assertRaises(Unavailable):
@@ -176,7 +175,7 @@ class SampledAltitudeControls(unittest.TestCase):
     def test_home_updates_do_not_mask_reset_or_source_timestamp_regression(self):
         for kind in ("reset", "regression", "future"):
             estimates, homes = positions([1.5, 2.5, 3.5])
-            homes.append({**homes[0], "timestamp": 25, "alt": 1.0, "update_count": 4})
+            homes.append({**homes[-1], "timestamp": 25, "alt": 1.0, "update_count": 4})
             if kind == "reset":
                 estimates[-1]["alt_reset_counter"] = 8
             elif kind == "regression":
@@ -188,7 +187,7 @@ class SampledAltitudeControls(unittest.TestCase):
 
     def test_out_of_phase_home_updates_do_not_change_selected_reference(self):
         estimates, homes = positions([1.5, 2.5])
-        homes.append({**homes[0], "timestamp": 101, "alt": 100.0, "valid_alt": False})
+        homes.append({**homes[-1], "timestamp": 101, "alt": 100.0, "valid_alt": False})
         self.assertEqual(
             altitude_samples(estimates, homes, 10, 100), [(19, (1500,)), (29, (2500,))]
         )
@@ -199,9 +198,10 @@ class SampledAltitudeControls(unittest.TestCase):
         for row in estimates:
             row["timestamp"] += offset
             row["timestamp_sample"] += offset
-        homes[0]["timestamp"] += offset
+        for home in homes:
+            home["timestamp"] += offset
         homes.append(
-            {**homes[0], "timestamp": offset + 25, "alt": 1.0, "update_count": 4}
+            {**homes[-1], "timestamp": offset + 25, "alt": 1.0, "update_count": 4}
         )
         self.assertEqual(
             altitude_samples(estimates, homes, offset + 10, offset + 100),
@@ -229,7 +229,7 @@ class SampledAltitudeControls(unittest.TestCase):
 
     def test_home_timestamp_refresh_without_value_change_is_allowed(self):
         rows, home = positions([0, 0.1])
-        home.append({**home[0], "timestamp": 25})
+        home.append({**home[-1], "timestamp": 25})
         self.assertEqual(len(altitude_samples(rows, home, 10, 100)), 2)
 
 
@@ -244,6 +244,7 @@ class HomeOriginResetControls(unittest.TestCase):
     def test_missing_global_before_applied_home_is_unavailable(self):
         estimates, homes = positions([1.5])
         homes[0]["timestamp"] = 1
+        homes[-1]["timestamp"] = 4
         with self.assertRaisesRegex(Unavailable, "origin"):
             altitude_samples(estimates, homes, 10, 100)
 
@@ -254,12 +255,25 @@ class HomeOriginResetControls(unittest.TestCase):
         with self.assertRaisesRegex(Unavailable, "home origin"):
             altitude_samples(estimates, homes, 10, 100)
 
-    def test_new_applied_home_after_an_earlier_reset_has_coherent_origin(self):
+    def test_count_only_home_update_does_not_reestablish_vertical_origin(self):
         estimates, homes = positions([1.5])
         estimates.insert(0, {**estimates[0], "timestamp": 1})
         estimates[1]["alt_reset_counter"] = 8
         estimates[-1]["alt_reset_counter"] = 8
-        homes.insert(0, {**homes[0], "timestamp": 2, "update_count": 2})
+        homes = [
+            {**homes[-1], "timestamp": 2, "valid_alt": False},
+            {**homes[-1], "timestamp": 4, "update_count": 2},
+            homes[-1],
+        ]
+        with self.assertRaisesRegex(Unavailable, "home origin"):
+            altitude_samples(estimates, homes, 10, 100)
+
+    def test_changed_home_after_an_earlier_reset_has_coherent_origin(self):
+        estimates, homes = positions([1.5])
+        estimates.insert(0, {**estimates[0], "timestamp": 1})
+        estimates[1]["alt_reset_counter"] = 8
+        estimates[-1]["alt_reset_counter"] = 8
+        homes[0] = {**homes[-1], "timestamp": 4, "alt": 1.0, "update_count": 2}
         self.assertEqual(altitude_samples(estimates, homes, 10, 100), [(19, (1500,))])
 
 
@@ -403,7 +417,7 @@ class SampleRoleControls(unittest.TestCase):
             elif kind == "reset":
                 estimates[1]["alt_reset_counter"] = 8
             else:
-                homes[0]["valid_alt"] = False
+                homes[-1]["valid_alt"] = False
             with self.subTest(kind=kind), self.assertRaises(Unavailable):
                 altitude_samples(estimates, homes, 10, 100)
 

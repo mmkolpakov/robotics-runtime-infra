@@ -200,7 +200,120 @@ def rows(ulog, name, fields):
     return result
 
 
-def altitude_samples(global_rows, home_rows, start, end):
+def home_origin_bound(home_rows, index):
+    # A yaw republish can hide the installation time. Start reset history before
+    # the last different vertical-value publication.
+    home = home_rows[index]
+    while index > 0 and (
+        home_rows[index - 1]["alt"],
+        home_rows[index - 1]["valid_alt"],
+    ) == (home["alt"], home["valid_alt"]):
+        index -= 1
+    need(index > 0, "home origin has no observed vertical-value transition")
+    return home_rows[index - 1]["timestamp"]
+
+
+def vertical_reset_counter(global_rows, origin, end, ulog):
+    predecessors = [g for g in global_rows if g["timestamp"] < origin]
+    if predecessors:
+        predecessor = predecessors[-1]
+        observed = [
+            g for g in global_rows if predecessor["timestamp"] <= g["timestamp"] <= end
+        ]
+        counter = predecessor["alt_reset_counter"]
+    else:
+        need(ulog is not None, "home origin has no preceding global reset observation")
+        need(
+            ulog.msg_info_dict.get("ver_sw") == PX4_SOURCE,
+            "local reset carrier has no pinned EKF2 source alias",
+        )
+        # Pinned EKF2 regular mode publishes both vehicle topics directly; both
+        # counters come from the same _ekf.get_posD_reset, without selector offsets.
+        regular = {
+            "SENS_IMU_MODE": 1,
+            "EKF2_EN": 1,
+            "LPE_EN": 0,
+            "ATT_EN": 0,
+        }
+        need(
+            all(
+                type(ulog.initial_parameters.get(name)) is int
+                and ulog.initial_parameters[name] == value
+                for name, value in regular.items()
+            )
+            and not any(change[1] in regular for change in ulog.changed_parameters),
+            "local reset carrier has no unchanged regular EKF2 startup parameters",
+        )
+        local = rows(
+            ulog,
+            "vehicle_local_position",
+            ("timestamp", "timestamp_sample", "z_reset_counter"),
+        )
+        data = next(
+            d.data for d in ulog.data_list if d.name == "vehicle_local_position"
+        )
+        need(
+            str(data["timestamp"].dtype) == "uint64"
+            and str(data["timestamp_sample"].dtype) == "uint64"
+            and str(data["z_reset_counter"].dtype) == "uint8",
+            "local reset carrier fields differ from stock native types",
+        )
+        before = [r for r in local if r["timestamp"] < origin]
+        need(before, "home origin has no preceding local reset observation")
+        local = [r for r in local if before[-1]["timestamp"] <= r["timestamp"] <= end]
+        observed = [g for g in global_rows if g["timestamp"] <= end]
+        need(
+            observed and local[-1]["timestamp"] >= observed[0]["timestamp"],
+            "local and global reset carrier coverage does not overlap",
+        )
+        need(
+            all(
+                type(r["timestamp_sample"]) is int
+                and 0 < r["timestamp_sample"] <= r["timestamp"]
+                for r in local
+            )
+            and all(
+                a["timestamp_sample"] < b["timestamp_sample"]
+                for a, b in pairwise(local)
+            ),
+            "local reset carrier source samples are invalid or unordered",
+        )
+        need(
+            all(
+                type(g["timestamp_sample"]) is int
+                and 0 < g["timestamp_sample"] <= g["timestamp"]
+                for g in observed
+            )
+            and all(
+                a["timestamp_sample"] < b["timestamp_sample"]
+                for a, b in pairwise(observed)
+            ),
+            "global reset carrier source samples are invalid or unordered",
+        )
+        counter = local[0]["z_reset_counter"]
+        need(
+            all(
+                type(r["z_reset_counter"]) is int
+                and 0 <= r["z_reset_counter"] <= 255
+                and r["z_reset_counter"] == counter
+                for r in local
+            ),
+            "local altitude reset changed since the applied home origin",
+        )
+    need(
+        type(counter) is int
+        and 0 <= counter <= 255
+        and all(
+            type(g["alt_reset_counter"]) is int
+            and 0 <= g["alt_reset_counter"] <= 255
+            and g["alt_reset_counter"] == counter
+            for g in observed
+        ),
+        "altitude reset changed since the applied home origin or carriers disagree",
+    )
+
+
+def altitude_samples(global_rows, home_rows, start, end, *, ulog=None):
     import numpy as np
 
     selected = [r for r in global_rows if start < r["timestamp"] <= end]
@@ -252,18 +365,8 @@ def altitude_samples(global_rows, home_rows, start, end):
     ):
         origin_index -= 1
     need(origin_index >= 0, "no preceding home candidate")
-    origin = home_rows[origin_index]["timestamp"]
-    predecessors = [g for g in global_rows if g["timestamp"] < origin]
-    need(predecessors, "home origin has no preceding global reset observation")
-    predecessor = predecessors[-1]
-    need(
-        all(
-            g["alt_reset_counter"] == predecessor["alt_reset_counter"]
-            for g in global_rows
-            if predecessor["timestamp"] <= g["timestamp"] <= end
-        ),
-        "altitude reset changed since the applied home origin",
-    )
+    origin = home_origin_bound(home_rows, origin_index)
+    vertical_reset_counter(global_rows, origin, end, ulog)
     samples = []
     for row, home_index in zip(selected, home_indices):
         sample = row["timestamp_sample"]
@@ -1233,7 +1336,7 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
         home_rows = rows(
             ulog, "home_position", ("timestamp", "alt", "valid_alt", "update_count")
         )
-        samples = altitude_samples(global_rows, home_rows, lower, upper)
+        samples = altitude_samples(global_rows, home_rows, lower, upper, ulog=ulog)
         condition = post_command_condition(samples, lower, refusal=refusal)
         assessed["postcondition"] = (
             condition,
