@@ -289,11 +289,26 @@ class NativeAdmissionControls(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.module["validate_prepared"](prepared, image_id=image, case=case)
 
+    def test_bare_podman_config_id_preserves_canonical_binding_and_raw_fact(self):
+        bare_id = self.image_id.removeprefix("sha256:")
+        self.fact["image"]["Id"] = bare_id
+        self.preflight.write_text(json.dumps(self.fact))
+        prepared, _manifest = self.prepare()
+        result = self.module["validate_prepared"](
+            prepared, image_id=self.image_id, case="success"
+        )
+        self.assertEqual(result["image_id"], self.image_id)
+        retained = json.loads((prepared / "native-preflight.json").read_bytes())
+        self.assertEqual(retained["image"]["Id"], bare_id)
+
     def test_mismatched_image_sdk_model_recipe_or_launch_cannot_write_native_inputs(
         self,
     ):
         changes = [
             lambda d: d["image"].update(Id="sha256:" + "c" * 64),
+            lambda d: d["image"].update(Id="c" * 64),
+            lambda d: d["image"].update(Id="not-a-config-id"),
+            lambda d: d["image"].update(Id=None),
             lambda d: d["facts"]["sdk_versions"].update(
                 {"robotics-acceptance-harness": "0.19.1"}
             ),
