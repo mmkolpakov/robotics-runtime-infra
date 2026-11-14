@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -15,6 +17,34 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC is not None and SPEC.loader is not None
 FACTORY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(FACTORY)
+
+
+def apt_input_stages():
+    for name, stage in (
+        ("px4-sitl-deps.Dockerfile", "dependency-inputs"),
+        ("px4-sitl-native-source.Dockerfile", "native-source-inputs"),
+        ("px4-sitl-native-source.Dockerfile", "native-source-runtime-inputs"),
+    ):
+        recipe = (ROOT / "docker" / name).read_text()
+        body = recipe.split(" AS " + stage + "\n", 1)[1].split("\nFROM ", 1)[0]
+        runs = []
+        lines = iter(body.splitlines(keepends=True))
+        for line in lines:
+            if not line.startswith("RUN "):
+                continue
+            command = line[4:]
+            while command.rstrip().endswith("\\"):
+                command += next(lines)
+            runs.append(re.sub(r"^(?:--(?:mount|network)=\S+\s+)+", "", command))
+        yield stage, runs
+
+
+def apt_selection(commands):
+    selection = re.search(
+        r"mapfile -t apt_packages.*?\n\s*&& test .*?-gt 0", commands, re.S
+    )
+    assert selection is not None
+    return selection[0]
 
 
 class SourceInputs(unittest.TestCase):
@@ -134,6 +164,137 @@ class SourceInputs(unittest.TestCase):
         self.assertIn("APT_BUILD_CLOSURE_SHA256=" + "b" * 64, argv)
         self.assertIn("--force-rm", argv)
         self.assertEqual(argv[argv.index("--target") + 1], "native-sdk-source")
+
+    def test_apt_bootstrap_selects_only_installed_source_family(self):
+        rows = [
+            "apt\tapt\tinstalled",
+            "libapt-pkg6.0t64:amd64\tapt\tinstalled",
+            "apt-utils\tapt\tinstalled",
+            "apt-transport-https\tapt\tconfig-files",
+            "unrelated\tother\tinstalled",
+        ]
+        for stage, runs in apt_input_stages():
+            with self.subTest(stage=stage):
+                commands = next(run for run in runs if "mapfile -t apt_packages" in run)
+                script = (
+                    "dpkg-query() { printf '%s\\n' "
+                    + shlex.quote("\n".join(rows))
+                    + "; }\n"
+                    + apt_selection(commands)
+                    + "\nprintf '%s\\n' \"\x24{apt_packages[@]}\""
+                )
+                result = subprocess.run(
+                    ["bash", "-eu", "-c", script],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                self.assertEqual(
+                    result.stdout.splitlines(),
+                    ["apt", "libapt-pkg6.0t64:amd64", "apt-utils"],
+                )
+
+    def test_empty_installed_apt_family_fails_before_bootstrap(self):
+        for stage, runs in apt_input_stages():
+            with self.subTest(stage=stage):
+                commands = next(run for run in runs if "mapfile -t apt_packages" in run)
+                script = (
+                    "dpkg-query() { printf '%s\\n' "
+                    "'apt\tapt\tconfig-files' 'unrelated\tother\tinstalled'; }\n"
+                    + apt_selection(commands)
+                    + "\nprintf 'bootstrap-reached\\n'"
+                )
+                result = subprocess.run(
+                    ["bash", "-eu", "-c", script],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("bootstrap-reached", result.stdout)
+
+    def test_security_floor_checks_every_selected_source_version_with_stock_dpkg(self):
+        fixed = "2.8.4ubuntu0.1"
+        packages = ["apt", "libapt-pkg6.0t64:amd64", "apt-utils"]
+        versions = [
+            ([fixed] * 3, True),
+            (["2.8.4ubuntu0.2"] * 3, True),
+            (["2.8.3", fixed, fixed], False),
+            ([fixed, "2.8.3", fixed], False),
+            ([fixed, fixed, "2.8.3"], False),
+            ([fixed, fixed, "2.8.4ubuntu0.1~pre1"], False),
+        ]
+        for stage, runs in apt_input_stages():
+            commands = next(run for run in runs if "mapfile -t apt_packages" in run)
+            guard = re.search(r"for package in .*?\bdone\b", commands, re.S)
+            assert guard is not None
+            self.assertIn("-f='\x24{source:Version}'", guard[0])
+            for values, accepted in versions:
+                with self.subTest(stage=stage, versions=values):
+                    cases = " ".join(
+                        f"{shlex.quote(name)}) printf '%s' {shlex.quote(version)} ;;"
+                        for name, version in zip(packages, values, strict=True)
+                    )
+                    script = (
+                        "apt_packages=(apt libapt-pkg6.0t64:amd64 apt-utils)\n"
+                        'dpkg-query() { case "\x24{@: -1}" in '
+                        + cases
+                        + " esac; }\n"
+                        + guard[0]
+                        + "\nprintf 'floor-passed\\n'"
+                    )
+                    result = subprocess.run(
+                        ["bash", "-eu", "-c", script],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                    self.assertEqual("floor-passed" in result.stdout, accepted)
+
+    def test_dependency_bootstrap_precedes_ordinary_installs_and_capture(self):
+        stage, runs = next(apt_input_stages())
+        self.assertEqual(stage, "dependency-inputs")
+        commands = next(run for run in runs if "mapfile -t apt_packages" in run)
+        calls = re.findall(r"&& apt-get .*", commands)
+        self.assertTrue(calls[0].endswith("update \\"))
+        self.assertIn("-o Acquire::Retries=0", calls[0])
+        self.assertIn("-o Acquire::Retries=0", calls[1])
+        self.assertIn("--only-upgrade --no-remove", calls[1])
+        self.assertIn('"\x24{apt_packages[@]}"', calls[1])
+        self.assertIn("ca-certificates=", calls[2])
+        floor = commands.index("dpkg --compare-versions")
+        self.assertLess(commands.index(calls[0]), commands.index(calls[1]))
+        self.assertLess(commands.index(calls[1]), floor)
+        self.assertLess(floor, commands.index(calls[2]))
+        self.assertLess(commands.index(calls[2]), commands.index("apt-closure.txt"))
+
+    def test_source_apt_bootstrap_preserves_measured_two_stage_inputs(self):
+        for stage, runs in apt_input_stages():
+            for command in runs:
+                subprocess.run(["bash", "-n"], input=command, text=True, check=True)
+            if stage == "dependency-inputs":
+                continue
+            kind = "build" if stage == "native-source-inputs" else "runtime"
+            with self.subTest(stage=stage):
+                commands = next(run for run in runs if "mapfile -t apt_packages" in run)
+                calls = [
+                    line for line in commands.splitlines() if "&& apt-get " in line
+                ]
+                self.assertEqual(len(calls), 4)
+                self.assertTrue(all("-o Acquire::Retries=0" in line for line in calls))
+                self.assertIn("--download-only --only-upgrade --no-remove", calls[1])
+                self.assertIn('"\x24{apt_packages[@]}"', calls[1])
+                self.assertIn("--no-download --no-remove", calls[-1])
+                self.assertIn('"\x24{apt_packages[@]}"', calls[-1])
+                manifest = commands.index(
+                    ": > /usr/share/robotics-px4/sdk-source/" + kind + "-debs.tsv"
+                )
+                self.assertLess(commands.index(calls[2].strip()), manifest)
+                self.assertLess(manifest, commands.index(calls[-1].strip()))
+                floor = commands.index("dpkg --compare-versions")
+                self.assertLess(commands.index(calls[-1].strip()), floor)
+                self.assertLess(floor, commands.index(kind + "-apt-closure.tsv"))
 
     def test_source_options_do_not_change_old_controller_defaults(self):
         tool = ROOT / "host/tools/prepare-px4-image.py"
