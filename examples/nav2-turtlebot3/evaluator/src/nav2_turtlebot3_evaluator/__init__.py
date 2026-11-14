@@ -124,6 +124,22 @@ def _bound_cdr(context, report):
     return link
 
 
+def _stop_assertion(report, config, digest):
+    from .stop import assess_stop
+
+    _window, stopped, reason = assess_stop(report, config)
+    return AssertionEvaluation(
+        assertion_id=NAMESPACE + ".physical-stop",
+        status="skipped" if stopped is None else "passed" if stopped else "failed",
+        observed_value=stopped,
+        unit="1",
+        message=reason,
+        source="product",
+        namespace=NAMESPACE,
+        evidence_sha256=(digest,),
+    )
+
+
 def evaluate(context: EvaluationContext):
     controls = context.assessment_controls
     if controls is not None and controls.data["calibration"]["state"] == "selected":
@@ -163,6 +179,8 @@ def evaluate(context: EvaluationContext):
             "readiness",
         ]
     }
+    if "stop_condition" in config:
+        expected_parameters["stop_condition"] = config["stop_condition"]
     if report.get("parameters") != expected_parameters:
         raise ValueError("worker parameters differ from the declared scenario")
     case = report.get("case")
@@ -201,6 +219,8 @@ def evaluate(context: EvaluationContext):
                 if cdr_link
                 else (digest,),
             )
+        if case == "server-failure" and "stop_condition" in config:
+            yield _stop_assertion(report, config, digest)
         return
     finished = report.get("goal_finished_monotonic_ns", 0)
     latest = report.get("last_observation_monotonic_ns", {})
@@ -361,3 +381,5 @@ def evaluate(context: EvaluationContext):
             namespace=NAMESPACE,
             evidence_sha256=(digest, str(cdr_link["sha256"])),
         )
+    if case != "success" and "stop_condition" in config:
+        yield _stop_assertion(report, config, digest)

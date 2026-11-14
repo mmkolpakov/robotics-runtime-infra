@@ -33,6 +33,7 @@ const command=async(op,args,timeoutMs=15000)=>{
   events.push({op,ok:result.ok,exitCode:result.exitCode,signal:result.signal,timedOut:result.timedOut,canceled:result.canceled,durationMs:result.durationMs});
   await writeFile(output+'/native-'+op+'.stdout',result.stdout);
   await writeFile(output+'/native-'+op+'.stderr',result.stderr);
+  if(op==='recover-created-storage'&&!result.timedOut&&!result.canceled&&!result.signal&&result.exitCode===1)return null;
   if(!result.ok)throw Object.assign(new Error('native operation refused: '+op),{cause:result});
   return result.stdout;
 };

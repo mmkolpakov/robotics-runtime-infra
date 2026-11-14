@@ -314,6 +314,8 @@ def main() -> int:
         "required_tf_edges": args.required_tf_edges,
         "readiness": configuration["readiness"],
     }
+    if "stop_condition" in configuration:
+        actual_parameters["stop_condition"] = configuration["stop_condition"]
     if configuration != {**actual_parameters, "case": args.case}:
         parser.error("consumer parameters differ from the declared scenario")
     expected_graph, graph_budget, graph_stability = readiness_parameters(
@@ -407,6 +409,11 @@ def main() -> int:
             "odometry_frame": args.odometry_frame,
             "required_tf_edges": args.required_tf_edges,
             "readiness": configuration["readiness"],
+            **(
+                {"stop_condition": configuration["stop_condition"]}
+                if "stop_condition" in configuration
+                else {}
+            ),
         },
     }
     rclpy.init(args=["--ros-args", "-p", "use_sim_time:=true"])
@@ -431,6 +438,8 @@ def main() -> int:
     tf_edges = {}
     subscriptions_by_kind = {}
     last_graph_ns = 0
+    stop_observation = None
+    latest_clock_ns = 0
     with raw_path.open("x", encoding="utf-8", buffering=64 * 1024) as raw:
 
         def record(kind: str, payload: dict) -> None:
@@ -450,7 +459,7 @@ def main() -> int:
 
         def message_callback(kind: str):
             def received(message, info):
-                nonlocal last_graph_ns
+                nonlocal last_graph_ns, latest_clock_ns
                 counts[kind] += 1
                 latest_observations[kind] = time.monotonic_ns()
                 if kind == "amcl_pose":
@@ -473,7 +482,27 @@ def main() -> int:
                         + message.header.stamp.nanosec,
                         observed_monotonic_ns=latest_observations[kind],
                         observed_unix_ns=time.time_ns(),
+                        orientation={
+                            name: float(getattr(message.pose.pose.orientation, name))
+                            for name in ("x", "y", "z", "w")
+                        },
+                        vx=float(message.twist.twist.linear.x),
+                        vy=float(message.twist.twist.linear.y),
+                        wz=float(message.twist.twist.angular.z),
                     )
+                    if stop_observation is not None:
+                        source_ns = latest_odometry["ros_stamp_ns"]
+                        if (
+                            latest_observations[kind]
+                            <= stop_observation["deadline_monotonic_ns"]
+                        ):
+                            stop_observation["samples"].append(
+                                {
+                                    **latest_odometry,
+                                    "source_ns": source_ns,
+                                    "receiver_ns": latest_observations[kind],
+                                }
+                            )
                 if kind in {"tf", "tf_static"}:
                     for transform in message.transforms:
                         tf_edges[
@@ -486,6 +515,45 @@ def main() -> int:
                             "observed_monotonic_ns": latest_observations[kind],
                             "source_topic": "/" + kind,
                         }
+                        if stop_observation is not None and kind == "tf":
+                            source_ns = (
+                                transform.header.stamp.sec * 10**9
+                                + transform.header.stamp.nanosec
+                            )
+                            if (
+                                latest_observations[kind]
+                                <= stop_observation["deadline_monotonic_ns"]
+                                and transform.header.frame_id == args.odometry_frame
+                                and transform.child_frame_id == "base_footprint"
+                            ):
+                                stop_observation["transforms"].append(
+                                    {
+                                        "source_ns": source_ns,
+                                        "receiver_ns": latest_observations[kind],
+                                        "parent": transform.header.frame_id,
+                                        "child": transform.child_frame_id,
+                                    }
+                                )
+                if kind == "clock":
+                    latest_clock_ns = message.clock.sec * 10**9 + message.clock.nanosec
+                    if (
+                        stop_observation is not None
+                        and latest_observations[kind]
+                        <= stop_observation["deadline_monotonic_ns"]
+                    ):
+                        stop_observation["clock_samples"].append(
+                            {
+                                "source_ns": latest_clock_ns,
+                                "receiver_ns": latest_observations[kind],
+                            }
+                        )
+                if stop_observation is not None and any(
+                    len(stop_observation[name]) > 4096
+                    for name in ("samples", "clock_samples", "transforms")
+                ):
+                    raise ValueError(
+                        "post-terminal observation exceeds its sample bound"
+                    )
                 # Keep native RMW fields verbatim; absent/unsupported values are not zero measurements.
                 fields = {
                     key: info.get(key)
@@ -834,6 +902,7 @@ def main() -> int:
                         report["server_after_shutdown_monotonic_ns"] = (
                             time.monotonic_ns()
                         )
+                        report["server_after_shutdown_clock_ns"] = latest_clock_ns
                         record(
                             "server-after-shutdown",
                             {
@@ -847,6 +916,7 @@ def main() -> int:
             if result_future.done():
                 result_observed_ns = time.monotonic_ns()
                 report["result_observed_monotonic_ns"] = result_observed_ns
+                report["result_observed_clock_ns"] = latest_clock_ns
                 result = result_future.result()
                 status = int(result.status)
                 report["action_status"] = status
@@ -1055,6 +1125,54 @@ def main() -> int:
             else:
                 report["observation_status"] = "incomplete"
                 report["reason"] = "result did not settle before action deadline"
+            if "stop_condition" in configuration and args.case != "success":
+                anchor_kind = (
+                    "server_unavailable"
+                    if args.case == "server-failure"
+                    else "canceled_result"
+                )
+                anchor_time = (
+                    report.get("server_after_shutdown_monotonic_ns")
+                    if args.case == "server-failure"
+                    else report.get("result_observed_monotonic_ns")
+                )
+                matched_anchor = (
+                    report.get("server_available_after_shutdown") is False
+                    if args.case == "server-failure"
+                    else report.get("action_status") == GoalStatus.STATUS_CANCELED
+                    and report.get("cancel_acknowledged") is True
+                )
+                if matched_anchor and type(anchor_time) is int:
+                    stop_observation = {
+                        "anchor": {
+                            "kind": anchor_kind,
+                            "receiver_monotonic_ns": anchor_time,
+                            "clock_ns": (
+                                report["server_after_shutdown_clock_ns"]
+                                if args.case == "server-failure"
+                                else report["result_observed_clock_ns"]
+                            ),
+                            "goal_id": goal_id,
+                        },
+                        "samples": [],
+                        "clock_samples": [],
+                        "transforms": [],
+                        "samples_omitted": False,
+                    }
+                    capture_deadline = min(
+                        deadline, anchor_time / 1e9 + args.max_observation_age_sec
+                    )
+                    stop_observation["deadline_monotonic_ns"] = int(
+                        capture_deadline * 1e9
+                    )
+                    while time.monotonic() < capture_deadline:
+                        remaining = capture_deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        rclpy.spin_once(navigator, timeout_sec=min(0.05, remaining))
+                    stop_observation["closed_monotonic_ns"] = time.monotonic_ns()
+                    report["stop_observation"] = stop_observation
+                    record("post-terminal-state", stop_observation)
             report["message_counts"] = counts
             report["final_amcl_pose"] = latest_pose
             report["final_odometry"] = latest_odometry

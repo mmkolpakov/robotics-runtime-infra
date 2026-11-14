@@ -291,6 +291,43 @@ def complete_native(prepared: Path, capture: Path) -> dict:
             "value": pose,
             "evidence": evidence,
         }
+    configuration = scenario["extensions"][NAMESPACE]
+    if case != "success" and "stop_condition" in configuration:
+        from nav2_turtlebot3_evaluator.stop import assess_stop
+
+        captured_stop, _stopped, _reason = assess_stop(report, configuration)
+        if captured_stop is not None and (case == "server-failure" or response_bound):
+            observations["condition"] = {
+                "state": "measured",
+                "value": captured_stop,
+                "evidence": evidence,
+            }
+        requested = report.get("goal_started_monotonic_ns")
+        accepted = report.get("goal_accepted_monotonic_ns")
+        triggered = report.get("consumer_trigger_monotonic_ns")
+        unavailable = report.get("server_after_shutdown_monotonic_ns")
+        if (
+            case == "server-failure"
+            and report.get("goal_accepted") is True
+            and report.get("server_available_after_shutdown") is False
+            and all(
+                type(value) is int
+                for value in (requested, accepted, triggered, unavailable)
+            )
+            and requested <= accepted <= triggered <= unavailable
+        ):
+            observations["terminal"] = {
+                "state": "measured",
+                "value": {
+                    "kind": "server_unavailable",
+                    "action": "/navigate_to_pose",
+                    "goal_id": report.get("goal_id"),
+                    "observed_monotonic_ns": report[
+                        "server_after_shutdown_monotonic_ns"
+                    ],
+                },
+                "evidence": evidence,
+            }
     if (
         cleanup.get("remaining") == []
         and cleanup.get("worker_settled") is True

@@ -1,7 +1,7 @@
 # Nav2 TurtleBot3 consumer
 
 This consumer separates immutable inputs, completed native observations, and offline
-assessment. The evaluator 0.3.1 uses public contracts v2, the verified evidence reader, and the
+assessment. The evaluator 0.4.0 uses public contracts v2, the verified evidence reader, and the
 external evaluator admission profile. It uses published contracts 0.22.0 and acceptance harness
 0.24.0. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
 [inputs.lock.json](inputs.lock.json); [requirements.lock](requirements.lock) fixes the SDK and
@@ -86,7 +86,7 @@ cosign trusted-root create --out offline-root.json
 cosign attest-blob --yes --key publisher.key --signing-config offline-signing.json \
   --trusted-root offline-root.json --type urn:nav2-turtlebot3:consumer-evaluator-qualification:v1 \
   --predicate predicate.json --bundle wheel.sigstore.json \
-  dist/nav2_turtlebot3_evaluator-0.3.1-py3-none-any.whl
+  dist/nav2_turtlebot3_evaluator-0.4.0-py3-none-any.whl
 ```
 
 The external operator chooses `kind="cosign_key_no_tlog"`, the exact approved executable,
@@ -102,7 +102,7 @@ the verified installer input and writes the structural receipt/evaluator require
 .venv/bin/python qualify-evaluator.py --trust-profile /operator/nav2-trust.json \
   --output evaluator-inputs --preinstall
 .venv/bin/python -m pip install --no-index --no-deps \
-  evaluator-inputs/nav2_turtlebot3_evaluator-0.3.1-py3-none-any.whl
+  evaluator-inputs/nav2_turtlebot3_evaluator-0.4.0-py3-none-any.whl
 .venv/bin/python -m pip check
 ```
 
@@ -228,6 +228,22 @@ missing required evidence or an error. The source controls exercise passed, fail
 projections plus receipt-only/wrong-key refusal through the installed CLI; their generated records
 are synthetic controls, not observed robot performance.
 
+Negative native cases declare `stop_condition` before execution with
+`max_linear_speed_mps=0.01`, `max_angular_speed_radps=0.01`,
+`stable_for_sec=0.5`, and `max_sample_gap_sec=0.1`. Cancel and timeout capture
+odometry after the matching canceled result. Server failure captures it after
+observed action-server disappearance. The observation retains every received
+sample, its native pose and twist, backend TF, and advancing clock.
+
+The final half-second of native source time must remain within the declared
+speed limits. Cumulative XY travel and wrapped yaw travel must agree with those
+limits. Gaps over 0.1 seconds, stale data, invalid fields and insufficient clock
+progress leave the condition unobserved. A complete moving interval produces a
+failed stop assertion. Capture stays within the original action deadline and
+the existing two-second receiver-time freshness window. These are consumer
+engineering tolerances for sampled wheel odometry. They establish no safety
+guarantee or ground-truth physical stop.
+
 This method checks the configured action outcome and fresh odometry/TF/AMCL pose facts.
 It does not establish a planned-to-loaded native model chain, Gazebo ground truth,
 physics/localization accuracy, cross-clock offset,
@@ -237,8 +253,8 @@ this method. Those claims require their own captured inputs and native compositi
 For `server-failure`, the method scores the issued goal and the captured local
 post-shutdown server availability in its receiver time order/budget. GetResult CDR
 is required when assessing a captured result, and any present CDR remains bound to
-its original bytes and goal. Shutdown without GetResult is not a physical stop or
-arrival witness: missing physical postconditions remain incomplete. Missing local
+its original bytes and goal. The captured backend stop window is assessed independently of GetResult.
+Missing physical postconditions remain incomplete. Missing local
 shutdown timing is skipped; malformed known data is an error and observed continued
 server presence is a failed local assertion. Direct `workload.main()` and command
 entry both refuse execution until native composition admission.

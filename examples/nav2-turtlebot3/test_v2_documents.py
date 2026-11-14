@@ -93,7 +93,7 @@ def inputs(root, binding=None, *, case="success"):
             "namespace": NAMESPACE,
             "entry_point": "nav2_turtlebot3_evaluator:evaluate",
             "distribution": "nav2-turtlebot3-evaluator",
-            "version": "0.3.1",
+            "version": "0.4.0",
             "artifact_sha256": "a" * 64,
             "receipt_sha256": "b" * 64,
         }

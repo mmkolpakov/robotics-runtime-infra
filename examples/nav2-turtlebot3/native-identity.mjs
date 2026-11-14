@@ -26,7 +26,11 @@ export async function recoverCreated(command, expected) {
   if (ids.length > 1 || ids.some(id => !/^[a-f0-9]{64}$/.test(id))) {
     throw new Error('owned acquisition inventory is not one exact native ID');
   }
-  if (!ids.length) return null;
+  if (!ids.length) {
+    const storage = await command('recover-created-storage', ['container', 'exists', '--external', expected.name]);
+    if (storage !== null) throw new Error('native create left an external storage object');
+    return null;
+  }
   const records = JSON.parse(await command('recover-created-inspect', ['inspect', ids[0]]));
   if (!Array.isArray(records) || records.length !== 1) throw new Error('native inspect is not one object');
   return assertOwned(records[0], {...expected, cid: ids[0]});

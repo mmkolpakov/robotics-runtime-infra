@@ -19,7 +19,7 @@ test('missing inputs refuse before loading the optional host package or acquirin
   assert.doesNotMatch(executed.stderr,/ERR_MODULE_NOT_FOUND/);
 });
 
-async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,badEntrypoint=false,local=false,bareImage=false}={}) {
+async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,badEntrypoint=false,local=false,bareImage=false,lostCreate=false,storageExit=1,storageTimeout=false}={}) {
   const directory=await mkdtemp(resolve(tmpdir(),'nav2-driver-'));
   t.after(()=>rm(directory,{recursive:true,force:true}));
   const output=resolve(directory,'run'), requirements=resolve(directory,'requirements.json'), capture=resolve(output,'capture');
@@ -42,6 +42,7 @@ async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=
     if(a[0]==='image') return result(JSON.stringify([packageImage]));
     if(a[0]==='run') return result('{}');
     if(a[0]==='create'){
+      if(lostCreate)return {...result(),ok:false,exitCode:0,timedOut:true};
       const env=[],mounts=[];
       for(let i=0;i<a.length;i++){
         if(a[i]==='--env')env.push(a[i+1]);
@@ -83,6 +84,7 @@ async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=
     if(a[0]==='wait')return result('0\n');
     if(a[0]==='rm'){removed=true;return result(cid);}
     if(a[0]==='ps')return result();
+    if(a[0]==='container')return {...result(),ok:storageExit===0,exitCode:storageExit,timedOut:storageTimeout};
     throw new Error('unexpected operation '+JSON.stringify(a));
   }};
   const promise=runNative({output,root,imageReference:local?image:reference,requirements,python:'/fixture/python',mode},jobs);
@@ -142,4 +144,26 @@ test('an altered acquired entrypoint refuses start and removes only the owned un
   await assert.rejects(f.promise,/entrypoint/);
   assert.equal(f.started,false);
   assert.equal(f.removed,true);
+});
+
+for(const storageExit of [0,1,125]){
+  test('lost create probes exact external storage with exit '+storageExit,async t=>{
+    const f=await fixture(t,{lostCreate:true,storageExit});
+    await assert.rejects(f.promise,/native operation refused: create/);
+    assert.equal(f.started,false);
+    const probe=f.calls.find(c=>c.args[0]==='container');
+    assert.ok(probe);
+    assert.deepEqual(probe.args.slice(0,3),['container','exists','--external']);
+    assert.ok(probe.args[3].startsWith('nav2-'));
+    assert.equal(f.calls.some(c=>c.args[0]==='rm'),false);
+    const quarantine=resolve(f.output,'capture/acquisition-quarantine.json');
+    if(storageExit===1)await assert.rejects(readFile(quarantine),{code:'ENOENT'});
+    else assert.ok((await readFile(quarantine,'utf8')).length>0);
+  });
+}
+test('timed out external storage lookup cannot establish absence',async t=>{
+  const f=await fixture(t,{lostCreate:true,storageExit:1,storageTimeout:true});
+  await assert.rejects(f.promise);
+  assert.equal(f.started,false);
+  assert.ok((await readFile(resolve(f.output,'capture/acquisition-quarantine.json'),'utf8')).length>0);
 });

@@ -173,6 +173,10 @@ def prepare(
         raise ValueError("consumer readiness stability must fit its bounded deadline")
     if native is not None:
         require_active_nav2_lifecycle(requirements["configuration"])
+        if requirements["case"] != "success":
+            from nav2_turtlebot3_evaluator.stop import validate_stop_policy
+
+            validate_stop_policy(requirements["configuration"].get("stop_condition"))
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     configuration = output / "nav2-configuration.json"
     schema_path = Path(__file__).with_name("nav2.schema.json")
