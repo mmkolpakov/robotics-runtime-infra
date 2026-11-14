@@ -135,11 +135,15 @@ def build_image(args, context, dockerfile, source_lock=None):
         "--signal=TERM",
         "--kill-after=120s",
         "6600s",
-        "podman",
+        args.engine,
         "build",
         "--force-rm",
-        "--skip-unused-stages",
-        "--format=docker",
+    ]
+    if args.engine == "podman":
+        build += ["--skip-unused-stages", "--format=docker"]
+    else:
+        build += ["--builder", "default", "--load"]
+    build += [
         "--build-arg",
         "PX4_DEPS_IMAGE=" + args.deps_image,
     ]
@@ -270,6 +274,7 @@ def main():
     )
     parser.add_argument("--mavsdk-server", type=Path)
     parser.add_argument("--deps-image", required=True)
+    parser.add_argument("--engine", choices=("podman", "docker"), default="podman")
     parser.add_argument("--context-name")
     parser.add_argument("--tag")
     parser.add_argument("--sdk-source", type=Path)
@@ -463,11 +468,14 @@ def main():
             source_lock,
         )
     else:
+        build = [args.engine, "build"]
+        if args.engine == "podman":
+            build.append("--format=docker")
+        else:
+            build += ["--builder", "default", "--load"]
         subprocess.run(
-            [
-                "podman",
-                "build",
-                "--format=docker",
+            build
+            + [
                 "--build-arg",
                 "PX4_DEPS_IMAGE=" + args.deps_image,
                 "-f",

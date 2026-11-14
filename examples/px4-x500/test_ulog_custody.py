@@ -322,7 +322,8 @@ def native_case(folder, case="land"):
     for row, stamp in zip(glob, [90, 130, 160, 190, 210], strict=False):
         row["timestamp"] = stamp
         row["timestamp_sample"] = stamp - 1
-    homes[0]["timestamp"] = 95
+    homes[0]["timestamp"] = 94
+    homes[-1]["timestamp"] = 95
     status = [
         {
             "timestamp": 140,
@@ -549,6 +550,102 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
                 with self.subTest(case=case, outcome=outcome):
                     result = self.assess(case, mutate=mutate)
                     self.assertIs(result["postcondition"][0], outcome, result)
+
+    def test_complete_method_uses_native_local_carrier_only_for_missing_global_origin(
+        self,
+    ):
+        for case in ("land", "unarmed-refusal"):
+            for mismatch in (False, True):
+
+                def mutate(_records, _native, decoded):
+                    import numpy as np
+                    from test_reset_carrier import carrier_case
+
+                    source = next(
+                        d
+                        for d in decoded.data_list
+                        if d.name == "vehicle_global_position"
+                    )
+                    source.data["timestamp"][0] = 96
+                    source.data["timestamp_sample"][0] = 95
+                    _, _, carrier = carrier_case()
+                    decoded.initial_parameters.update(carrier.initial_parameters)
+                    local = carrier.data_list[0]
+                    stamps = [89, 94, 96, 130, 160, 190, 210, 260]
+                    local.data = {
+                        "timestamp": np.array(stamps, dtype=np.uint64),
+                        "timestamp_sample": np.array(
+                            [stamp - 1 for stamp in stamps], dtype=np.uint64
+                        ),
+                        "z_reset_counter": np.array(
+                            [8 if mismatch else 7] * len(stamps), dtype=np.uint8
+                        ),
+                    }
+                    decoded.data_list.append(local)
+
+                with self.subTest(case=case, mismatch=mismatch):
+                    result = self.assess(case, mutate=mutate)
+                    self.assertIs(
+                        result["postcondition"][0], None if mismatch else True
+                    )
+                    for fact in ("command", "grounded", "disarmed"):
+                        self.assertIs(result[fact][0], True, result)
+                    if mismatch:
+                        self.assertIn("carriers disagree", result["postcondition"][2])
+
+    def test_complete_method_rejects_missed_home_set_before_reset_and_yaw(self):
+        for case in ("land", "unarmed-refusal"):
+            for carrier in ("global", "local"):
+
+                def mutate(_records, _native, decoded):
+                    import numpy as np
+                    from test_reset_carrier import carrier_case
+
+                    source = next(
+                        d
+                        for d in decoded.data_list
+                        if d.name == "vehicle_global_position"
+                    )
+                    homes = next(
+                        d for d in decoded.data_list if d.name == "home_position"
+                    )
+                    homes.data["timestamp"][-1] = 98
+                    source.data["alt_reset_counter"][1:] = 8
+                    if carrier == "global":
+                        for key, values in source.data.items():
+                            value = values[0].item()
+                            if key == "timestamp":
+                                value = 96
+                            elif key == "timestamp_sample":
+                                value = 95
+                            elif key == "alt_reset_counter":
+                                value = 8
+                            source.data[key] = np.insert(values, 1, value)
+                    else:
+                        source.data["timestamp"][0] = 96
+                        source.data["timestamp_sample"][0] = 95
+                        source.data["alt_reset_counter"][0] = 8
+                        _, _, aliases = carrier_case()
+                        decoded.initial_parameters.update(aliases.initial_parameters)
+                        local = aliases.data_list[0]
+                        stamps = [89, 93, 96, 130, 160, 190, 210, 260]
+                        local.data = {
+                            "timestamp": np.array(stamps, dtype=np.uint64),
+                            "timestamp_sample": np.array(
+                                [stamp - 1 for stamp in stamps], dtype=np.uint64
+                            ),
+                            "z_reset_counter": np.array(
+                                [7, 7, 8, 8, 8, 8, 8, 8], dtype=np.uint8
+                            ),
+                        }
+                        decoded.data_list.append(local)
+
+                with self.subTest(case=case, carrier=carrier):
+                    result = self.assess(case, mutate=mutate)
+                    self.assertIsNone(result["postcondition"][0], result)
+                    self.assertIn("home origin", result["postcondition"][2])
+                    for fact in ("command", "grounded", "disarmed"):
+                        self.assertIs(result[fact][0], True, result)
 
     def test_source_sample_roles_preserve_the_complete_publication_window(self):
         for source_stamp, expected in ((119, False), (120, False), (121, True)):

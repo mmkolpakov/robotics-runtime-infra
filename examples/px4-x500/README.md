@@ -12,11 +12,20 @@ MAVSDK Action methods once per application intent; the SDK owns its protocol
 retries. Cached Telemetry supplies readiness and control hints. It does not supply
 the altitude measurements used by the evaluator.
 
-Before dispatch, the worker checks valid local/global/home position health and
-reads stock listener snapshots. Publication timestamps and printed ages bound the
-native print clock; successive intervals must be ordered and disjoint in the same
-PX4 process. Original listener output is retained and independently parsed using
-the pinned PX4 v1.17 grammar.
+Before the initial observation triplet, the worker checks local/global/home
+position health and waits for finite coordinates and altitudes from MAVSDK's
+position cache. It then reads stock status snapshots until a publication newer
+than the first post-position snapshot's native print-clock upper bound arrives.
+These readiness checks and the initial triplet share a 45-second budget. The
+initial triplet retains its separate one-second freshness limit. Readiness
+snapshots are retained as startup records.
+
+Position readiness establishes upstream publication; recorded baseline and reset
+history are checked independently in the closed ULog.
+
+Publication timestamps and printed ages bound the native print clock. Successive
+intervals must be ordered and disjoint in the same PX4 process. Original listener
+output is retained and independently parsed using the pinned PX4 v1.17 grammar.
 
 The worker persists each action intent before calling the SDK. Application
 invocation IDs identify those intents, not PX4 transactions. The parent retains
@@ -80,9 +89,19 @@ the SDK wire stream's send-time home pairing. A changed home reference sharing a
 global publication timestamp supplies both actual home-relative candidate heights.
 The condition is resolved only when all candidates imply the same verdict; an
 identical valid home republish or count-only update supplies one height. Refusal
-excursion remains relative to the first witness's chosen height. The applied home's
-origin must have a preceding global observation and unchanged altitude reset counter
-through the selected phase. Received DO_SET_HOME commands anywhere in the original
+excursion remains relative to the first witness's chosen height. The reset guard
+starts strictly before the last HOME publication whose altitude or validity differs
+from the applied home's uninterrupted value run. That earlier publication bounds
+the installation from below even when the logger misses the initial assignment and
+retains a later yaw republish or count-only update. A run with no preceding differing
+HOME observation is incomplete. The sampled vertical reset counter must remain
+unchanged through the phase. Global observations supply this guard when they cover
+the bound. Otherwise the pinned regular EKF2 startup parameters (SENS_IMU_MODE=1,
+EKF2_EN=1, LPE_EN=0 and ATT_EN=0, unchanged in the log) must establish that the stock
+local z-reset and global altitude-reset fields carry the same counter. The local
+carrier must precede the bound, overlap the global carrier and agree throughout
+their coverage. Missing, changed or ambiguous startup parameters, carrier
+disagreement and resets leave the guard incomplete. Received DO_SET_HOME commands anywhere in the original
 command window prevent measurement. Invalid home, an altitude reset,
 invalid source timestamps, corruption, dropouts or insufficient coverage prevent an
 unsupported positive result.

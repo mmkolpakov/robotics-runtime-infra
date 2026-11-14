@@ -160,6 +160,16 @@ class ContextControls(unittest.TestCase):
         self.assertNotIn("worker_image_id", record)
         self.assertNotIn("mavsdk_server", record)
 
+    def test_docker_engine_uses_the_same_native_context_without_podman_flags(self):
+        argv = self.run_prepare(["--controller", "native-python", "--engine", "docker"])
+        self.assertEqual(argv[:2], ["docker", "build"])
+        self.assertNotIn("--format=docker", argv)
+        self.assertIn("--load", argv)
+        self.assertEqual(argv[argv.index("--builder") + 1], "default")
+        self.assertEqual(
+            argv[-1], str(self.root / "host/.tools/px4-image-native-context")
+        )
+
     def test_default_legacy_context_preserves_server_and_metadata(self):
         argv = self.run_prepare(["--mavsdk-server", str(self.server)])
         context = self.root / "host/.tools/px4-image-context"

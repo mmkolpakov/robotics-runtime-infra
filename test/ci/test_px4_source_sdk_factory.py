@@ -141,6 +141,7 @@ class SourceInputs(unittest.TestCase):
 
     def test_source_build_uses_bounded_graceful_backend_and_closed_inputs(self):
         args = Namespace(
+            engine="podman",
             deps_image="sha256:" + "a" * 64,
             build_target="native-sdk-source",
             tag="localhost/test:source",
@@ -164,6 +165,22 @@ class SourceInputs(unittest.TestCase):
         self.assertIn("APT_BUILD_CLOSURE_SHA256=" + "b" * 64, argv)
         self.assertIn("--force-rm", argv)
         self.assertEqual(argv[argv.index("--target") + 1], "native-sdk-source")
+
+    def test_docker_source_build_omits_podman_only_flags(self):
+        args = Namespace(
+            engine="docker",
+            deps_image="sha256:" + "a" * 64,
+            build_target="native-sdk-source",
+            tag="local/test:source",
+        )
+        with patch.object(FACTORY.subprocess, "run") as backend:
+            FACTORY.build_image(args, Path("/owned/context"), Path("/owned/Dockerfile"))
+        argv = backend.call_args.args[0]
+        self.assertEqual(argv[4:7], ["docker", "build", "--force-rm"])
+        self.assertNotIn("--format=docker", argv)
+        self.assertNotIn("--skip-unused-stages", argv)
+        self.assertIn("--load", argv)
+        self.assertEqual(argv[argv.index("--builder") + 1], "default")
 
     def test_apt_bootstrap_selects_only_installed_source_family(self):
         rows = [
