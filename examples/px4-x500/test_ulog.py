@@ -11,6 +11,7 @@ from px4_x500_evaluator._ulog import (
     original,
     sampled_facts,
     snapshot,
+    phase,
     serial_actions,
     rows,
 )
@@ -298,7 +299,15 @@ class ListenerGrammarControls(unittest.TestCase):
         }
 
     def test_original_age_is_returned_instead_of_retained_claim(self):
-        parsed = snapshot(self.record(), 1, 1)
+        record = self.record()
+        record["value"]["parsed"]["native_print_clock_us"] = {
+            "lower": "1",
+            "upper": "2",
+        }
+        parsed = snapshot(record, 1, 1)
+        self.assertEqual(
+            parsed["native_print_clock_us"], {"lower": "1249999", "upper": "1250001"}
+        )
         self.assertEqual(parsed["age_s"], 0.25)
         self.assertEqual(parsed["timestamp_us"], "1000000")
 
@@ -340,6 +349,79 @@ class ListenerGrammarControls(unittest.TestCase):
                 record["value"][field] = value
                 with self.assertRaises(Unavailable):
                     snapshot(record, 1, 1)
+
+
+class NativePrintClockControls(unittest.TestCase):
+    def records(self):
+        records = [({"kind": "sdk-identity", "sequence": 0, "value": IDENTITY}, {})]
+        for number, (slot, topic, stamp, age) in enumerate(
+            [
+                ("initial-status-a", "vehicle_status", 100, "0.000010"),
+                ("initial-land", "vehicle_land_detected", 85, "0.000030"),
+                ("initial-status-b", "vehicle_status", 100, "0.000020"),
+                ("final-status", "vehicle_status", 300, "0.000001"),
+            ],
+            1,
+        ):
+            row = ListenerGrammarControls().record(
+                topic=topic,
+                fields="    landed: True\n"
+                if topic == "vehicle_land_detected"
+                else None,
+            )
+            row["kind"], row["sequence"] = "listener-observation", number
+            row["value"]["slot"] = slot
+            row["value"]["stdout"] = row["value"]["stdout"].replace(
+                "1000000 (0.250000", f"{stamp} ({age}"
+            )
+            row["value"]["parsed"]["timestamp_us"] = str(stamp)
+            records.append((row, {}))
+        return records
+
+    def test_cached_publication_with_clock_progress_keeps_exact_publication_window(
+        self,
+    ):
+        records = self.records()
+        _kinds, _identity, _slots, start, end, _snapshots = phase(records)
+        self.assertEqual((start, end), (100, 300))
+        ack = {
+            "timestamp": 102,
+            "command": 22,
+            "result": 0,
+            "target_system": 245,
+            "target_component": 190,
+            "from_external": False,
+        }
+        self.assertEqual(
+            command_phase([command(101)], [ack], IDENTITY, 22, (start, end)),
+            (101, True),
+        )
+
+    def test_native_clock_rollback_and_overlapping_precision_bounds_are_not_progress(
+        self,
+    ):
+        for age in ["0.000005", "0.000026"]:
+            records = self.records()
+            records[2][0]["value"]["stdout"] = records[2][0]["value"]["stdout"].replace(
+                "0.000030", age
+            )
+            with self.assertRaisesRegex(Unavailable, "print clock"):
+                phase(records)
+
+    def test_publication_rollback_and_zero_event_window_stay_unavailable(self):
+        records = self.records()
+        records[3][0]["value"]["stdout"] = records[3][0]["value"]["stdout"].replace(
+            "100 (", "99 ("
+        )
+        records[3][0]["value"]["parsed"]["timestamp_us"] = "99"
+        with self.assertRaisesRegex(Unavailable, "publication timestamp"):
+            phase(records)
+        records = self.records()
+        final = records[-1][0]["value"]
+        final["stdout"] = final["stdout"].replace("300 (0.000001", "100 (0.000100")
+        final["parsed"]["timestamp_us"] = "100"
+        with self.assertRaisesRegex(Unavailable, "publication window is empty"):
+            phase(records)
 
 
 if __name__ == "__main__":
