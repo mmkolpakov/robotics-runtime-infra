@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createServer} from 'node:http';
-import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
+import {appendFile,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Context,Jobs,RunResources,referenceFile} from '@robotics-runtime/host';
+import {Context,Jobs,RunResources,referenceFile,type JobRequest,type JobResult} from '@robotics-runtime/host';
 import Finalization from '../src/plugins/legacy-finalization/index.js';
 import Inputs from '../src/plugins/legacy-finalization/inputs.js';
 import type {LegacyFinalizationPlan} from '../src/plugins/legacy-finalization/inputs.js';
@@ -43,16 +43,34 @@ test('stopped observers retain guarded logs and distinguish process refusal from
   });
   await new Promise<void>(resolve=>api.listen(socketPath,resolve));
   t.after(async()=>{await ctx.fiber.dispose();api.closeAllConnections();await new Promise<void>((resolve,reject)=>api.close(error=>error?reject(error):resolve()));await rm(root,{recursive:true,force:true})});
-  const executable=join(root,'compose.mjs'),foundation='actual finite Compose diagnostic output';
-  await writeFile(executable,'#!'+process.execPath+'\n'+
-   'import {appendFileSync,writeFileSync} from "node:fs";import {spawnSync} from "node:child_process";\n'+
-   'const args=process.argv.slice(2);appendFileSync('+JSON.stringify(effects)+',JSON.stringify(args)+"\\n");\n'+
-   'if(args.includes("version"))console.log("5.3.1");\n'+
-   'else if(args.includes("ps"))console.log('+JSON.stringify(ids)+'[args.at(-1)]);\n'+
-   'else if(args.includes("run")&&args.includes("observer")){const actual=spawnSync(process.execPath,["-e","process.stdout.write(\\"real stopped verifier refusal\\\\n\\");process.exitCode='+exitCode+'"],{encoding:"utf8"});writeFileSync('+JSON.stringify(resultPath)+',JSON.stringify({exitCode:actual.status,stdout:actual.stdout}));console.log('+JSON.stringify(observerId)+')}\n'+
-   'else if(args.includes("logs"))process.stdout.write('+JSON.stringify(foundation)+');\n',
-   {mode:0o700});
+  const executable=join(root,'compose'),foundation='actual finite Compose diagnostic output';
   await ctx.plugin(Jobs,{timeoutMs:3000,maxBufferBytes:1048576}).await();
+  const nativeRun=ctx.jobs.run.bind(ctx.jobs);
+  t.mock.method(ctx.jobs,'run',async(request:JobRequest):Promise<JobResult>=>{
+    assert.equal(request.executable,executable);
+    assert.equal(request.cwd,root);assert.equal(request.extendEnv,false);
+    assert.deepEqual(request.env,{PATH:'/usr/local/bin:/usr/bin:/bin',DOCKER_HOST:'unix://'+socketPath,DOCKER_CONFIG:'/nonexistent'});
+    request.cancelSignal?.throwIfAborted();
+    const args=[...request.args];
+    assert.equal(args[0],'--project-name');assert.ok(['owned-1','owned-post'].includes(args[1]!));
+    assert.deepEqual(args.slice(2,4),['--file',join(root,'compose.yaml')]);
+    await appendFile(effects,JSON.stringify(args)+'\n');
+    const result:JobResult={ok:true,exitCode:0,signal:undefined,timedOut:false,canceled:false,
+      stdout:'',stderr:'',diagnostic:undefined,code:undefined,durationMs:0};
+    if(args.includes('version'))result.stdout='5.3.1\n';
+    else if(args.includes('ps'))result.stdout=ids[args.at(-1) as keyof typeof ids]+'\n';
+    else if(args.includes('run')&&args.includes('observer')){
+      const capture='const {spawnSync}=require("node:child_process");const {writeFileSync}=require("node:fs");'+
+        'const actual=spawnSync(process.execPath,["-e",'+JSON.stringify('process.stdout.write("real stopped verifier refusal\\n");process.exitCode='+exitCode)+'],{encoding:"utf8"});'+
+        'writeFileSync('+JSON.stringify(resultPath)+',JSON.stringify({exitCode:actual.status,stdout:actual.stdout}));'+
+        'process.stdout.write('+JSON.stringify(observerId)+');';
+      const actual=await nativeRun({...request,executable:process.execPath,args:['-e',capture]});
+      assert.equal(actual.ok,true);assert.equal(actual.exitCode,0);
+      assert.equal(actual.timedOut,false);assert.equal(actual.canceled,false);assert.equal(actual.signal,undefined);
+      result.stdout=actual.stdout;
+    }else if(args.includes('logs'))result.stdout=foundation;
+    return result;
+  });
   const readiness=join(root,'ready.json');await writeFile(readiness,'{"ready":true}\n');
   const requirement={runId:'run1',projectName:'owned-1',imageId,user:'1000:1000',mounts:[],hostConfig:{}};
   const options={executable,socketPath,projectName:'owned-1',files:[join(root,'compose.yaml')],cwd:root,timeoutMs:2000};
@@ -68,6 +86,7 @@ test('stopped observers retain guarded logs and distinguish process refusal from
   await ctx.plugin(async scope=>{await scope.plugin(RunResources,'run1').await();await scope.plugin(Inputs).await();scope.get('legacyFinalizationInputs')!.issue(plan);await scope.plugin(Finalization).await();provider=scope.get('legacyFinalization')!}).await();
   await provider.beginMeasurement(AbortSignal.timeout(3000));
   const actual=JSON.parse(await readFile(resultPath,'utf8')) as {exitCode:number;stdout:string};assert.equal(actual.exitCode,exitCode);
+  assert.equal(actual.stdout,'real stopped verifier refusal\n');
   await assert.rejects(provider.hooks.drainRecorders!(AbortSignal.timeout(3000)),(error:unknown)=>{
    assert.ok(error instanceof Error);
    if(exitCode===7){

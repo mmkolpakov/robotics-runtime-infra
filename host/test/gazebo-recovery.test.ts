@@ -3,10 +3,10 @@ import {test} from 'node:test';
 import type {TestContext} from 'node:test';
 import {createServer} from 'node:http';
 import {existsSync} from 'node:fs';
-import {mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {appendFile, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Context, Jobs, RunResources} from '@robotics-runtime/host';
+import {Context, Jobs, RunResources, type JobRequest, type JobResult} from '@robotics-runtime/host';
 import GazeboRosV1 from '../src/plugins/gazebo-ros-v1/index.js';
 import LegacyInputs from '../src/plugins/gazebo-ros-v1/inputs.js';
 import type {LegacyRunInput} from '../src/plugins/gazebo-ros-v1/inputs.js';
@@ -37,16 +37,26 @@ async function fixture(t:TestContext,mode='partial',containers:NativeContainer[]
     response.end(JSON.stringify(value));
   });
   await new Promise<void>(resolve=>api.listen(socketPath,resolve));
-  const executable=join(root,'compose.mjs');
-  await writeFile(executable,'#!'+process.execPath+'\n'+
-    'import {appendFileSync,writeFileSync} from "node:fs";\n'+
-    'const args=process.argv.slice(2);appendFileSync('+JSON.stringify(effects)+',JSON.stringify(args)+"\\n");\n'+
-    'if(args.includes("version"))console.log("5.3.1");\n'+
-    'else if(args.includes("up")&&'+JSON.stringify(mode)+'==="partial"){console.error("fixture interrupted up");process.exit(1)}\n'+
-    'else if(args.includes("ps"))console.log(args.at(-1)==="simulation"?'+JSON.stringify(parentId)+':'+JSON.stringify(childId)+');\n'+
-    'else if(args.includes("exec"))console.log(JSON.stringify({last_ns:"1"}));\n'+
-    'else if(args.includes("down"))writeFileSync('+JSON.stringify(removed)+',"removed");\n',{mode:0o700});
+  const executable=join(root,'compose');
   await ctx.plugin(Jobs,{timeoutMs:2000,maxBufferBytes:1048576}).await();
+  t.mock.method(ctx.jobs,'run',async(request:JobRequest):Promise<JobResult>=>{
+    assert.equal(request.executable,executable);
+    assert.equal(request.cwd,root);assert.equal(request.extendEnv,false);
+    assert.deepEqual(request.env,{PATH:'/usr/local/bin:/usr/bin:/bin',DOCKER_HOST:'unix://'+socketPath,DOCKER_CONFIG:'/nonexistent'});
+    request.cancelSignal?.throwIfAborted();
+    const args=[...request.args];
+    assert.deepEqual(args.slice(0,4),['--project-name','owned-1','--file',join(root,'compose.yaml')]);
+    await appendFile(effects,JSON.stringify(args)+'\n');
+    const result:JobResult={ok:true,exitCode:0,signal:undefined,timedOut:false,canceled:false,
+      stdout:'',stderr:'',diagnostic:undefined,code:undefined,durationMs:0};
+    if(args.includes('version'))result.stdout='5.3.1\n';
+    else if(args.includes('up')&&mode==='partial'){
+      result.ok=false;result.exitCode=1;result.stderr='fixture interrupted up';result.diagnostic=result.stderr;
+    }else if(args.includes('ps'))result.stdout=(args.at(-1)==='simulation'?parentId:childId)+'\n';
+    else if(args.includes('exec'))result.stdout=JSON.stringify({last_ns:'1'})+'\n';
+    else if(args.includes('down'))await writeFile(removed,'removed');
+    return result;
+  });
   const requirement={runId:'run1',projectName:'owned-1',imageId,user:'1000:1000',mounts,hostConfig:{}};
   const input:LegacyRunInput={runId:'run1',compose:{executable,socketPath,projectName:'owned-1',files:[join(root,'compose.yaml')],cwd:root,timeoutMs:1000},
     artifactDirectory:join(root,'retained'),observationServices:[],simulationRequirement:{...requirement,...(health?{healthcheck:health.required}:{})},stepperRequirement:requirement,
