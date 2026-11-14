@@ -64,13 +64,12 @@ Path(sys.argv[1]).write_text(json.dumps({
     },
 }, indent=2) + "\n")
 PY
-"${engine}" run "${engine_options[@]}" --mount "type=bind,source=${asset},target=/asset" \
-  --workdir /asset "${node_image}" npm install --package-lock-only --ignore-scripts --no-fund
 consumer="$(mktemp -d "${root}/host/.tools/installed-pair.XXXXXX")"
 trap 'rm -rf -- "${consumer}"' EXIT
-cp "${asset}/core.tgz" "${asset}/infra.tgz" "${asset}/package.json" "${asset}/package-lock.json" "${consumer}/"
+cp "${asset}/core.tgz" "${asset}/infra.tgz" "${asset}/package.json" "${consumer}/"
 "${engine}" run --interactive "${engine_options[@]}" --mount "type=bind,source=${root},target=/workspace" \
   --workdir "/workspace/${consumer#"${root}/"}" "${node_image}" bash -Eeuo pipefail -s <<'CHECK'
+npm install --package-lock-only --ignore-scripts --no-fund
 npm ci --ignore-scripts --no-audit --no-fund
 npm ls @robotics-runtime/host --all --json
 npm audit --omit=dev --audit-level=high
@@ -91,6 +90,7 @@ writeFileSync('installed-pair.json', JSON.stringify({singleCoreOrigin: origin, p
   scope: 'installed package identity and public API; no native execution'}) + '\n');
 JS
 CHECK
+cp "${consumer}/package-lock.json" "${asset}/package-lock.json"
 cp "${consumer}/installed-pair.json" "${asset}/installed-pair.json"
 rm -rf -- "${consumer}"
 trap - EXIT
