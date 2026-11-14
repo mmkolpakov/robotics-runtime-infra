@@ -235,9 +235,7 @@ def altitude_samples(global_rows, home_rows, start, end):
         "valid finite home altitude was not captured inside the measurement phase",
     )
     home_times = np.asarray([h["timestamp"] for h in home_rows], dtype=np.uint64)
-    publication_times = np.asarray(
-        [r["timestamp"] for r in selected], dtype=np.uint64
-    )
+    publication_times = np.asarray([r["timestamp"] for r in selected], dtype=np.uint64)
     home_indices = np.searchsorted(home_times, publication_times, side="right") - 1
     origin_index = int(home_indices[0])
     if (
@@ -1141,8 +1139,7 @@ def sampled_facts(records, configuration, cleanup, *, evidence=None, native=None
             terminal_lower = start
         need(
             not any(
-                start < r["timestamp"] <= end and r["command"] == 179
-                for r in commands
+                start < r["timestamp"] <= end and r["command"] == 179 for r in commands
             ),
             "received DO_SET_HOME changes the measurement reference",
         )

@@ -473,39 +473,69 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
     def test_set_home_guard_uses_whole_command_window_for_every_case_and_sender(self):
         for case in ("land", "application-deadline", "unarmed-refusal"):
             for foreign in (False, True):
-                for stamp, blocked in ((100, False), (105, True), (230, True), (300, True), (301, False)):
+                for stamp, blocked in (
+                    (100, False),
+                    (105, True),
+                    (230, True),
+                    (300, True),
+                    (301, False),
+                ):
+
                     def mutate(_records, _native, decoded):
                         import numpy as np
 
-                        source = next(d for d in decoded.data_list if d.name == "vehicle_command")
+                        source = next(
+                            d for d in decoded.data_list if d.name == "vehicle_command"
+                        )
                         event = command(stamp, 179)
                         if foreign:
                             event.update(source_system=77, source_component=88)
-                        index = np.searchsorted(source.data["timestamp"], stamp, side="right")
+                        index = np.searchsorted(
+                            source.data["timestamp"], stamp, side="right"
+                        )
                         for key, value in event.items():
                             source.data[key] = np.insert(source.data[key], index, value)
 
                     with self.subTest(case=case, foreign=foreign, stamp=stamp):
                         result = self.assess(case, mutate=mutate)
-                        self.assertIs(result["postcondition"][0], None if blocked else True, result)
+                        self.assertIs(
+                            result["postcondition"][0],
+                            None if blocked else True,
+                            result,
+                        )
                         if blocked:
                             self.assertIn("DO_SET_HOME", result["postcondition"][2])
 
     def test_same_tick_home_candidates_resolve_only_invariant_case_verdicts(self):
         for case in ("land", "unarmed-refusal"):
             for outcome in (True, False, None):
+
                 def mutate(_records, _native, decoded):
                     import numpy as np
 
-                    source = next(d for d in decoded.data_list if d.name == "vehicle_global_position")
-                    homes = next(d for d in decoded.data_list if d.name == "home_position")
+                    source = next(
+                        d
+                        for d in decoded.data_list
+                        if d.name == "vehicle_global_position"
+                    )
+                    homes = next(
+                        d for d in decoded.data_list if d.name == "home_position"
+                    )
                     source.data["alt"][1:] = 0
                     if case == "land":
-                        source.data["alt"][-1] = {True: 1.5, False: 0.5, None: 1.25}[outcome]
+                        source.data["alt"][-1] = {True: 1.5, False: 0.5, None: 1.25}[
+                            outcome
+                        ]
                         new_home = 0.1
                     else:
                         source.data["alt"][-1] = 0.5 if outcome is False else 0
-                        new_home = 0.1 if outcome is False else -0.1 if outcome is True else -0.201
+                        new_home = (
+                            0.1
+                            if outcome is False
+                            else -0.1
+                            if outcome is True
+                            else -0.201
+                        )
                     for key, values in homes.data.items():
                         value = values[-1].item()
                         if key == "timestamp":

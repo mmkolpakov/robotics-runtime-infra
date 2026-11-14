@@ -66,7 +66,8 @@ class SampledAltitudeControls(unittest.TestCase):
     def test_float32_millimetres_and_truncation_match_pinned_px4_assignment(self):
         rows, home = positions([1.199, 1.2, -0.2009])
         self.assertEqual(
-            [heights[0] for _t, heights in altitude_samples(rows, home, 10, 100)], [1199, 1200, -200]
+            [heights[0] for _t, heights in altitude_samples(rows, home, 10, 100)],
+            [1199, 1200, -200],
         )
 
     def test_amsl_float32_cancellation_is_not_decimal_rounding(self):
@@ -144,7 +145,11 @@ class SampledAltitudeControls(unittest.TestCase):
             altitude_samples(estimates, homes, 10, 100)
 
     def test_invalid_or_missing_home_never_falls_back_to_older_valid_home(self):
-        for change in ({"valid_alt": False}, {"alt": float("nan")}, {"alt": float("inf")}):
+        for change in (
+            {"valid_alt": False},
+            {"alt": float("nan")},
+            {"alt": float("inf")},
+        ):
             estimates, homes = positions([1.5, 2.5])
             homes.append({**homes[0], "timestamp": 25, **change})
             with self.subTest(change=change), self.assertRaises(Unavailable):
@@ -269,7 +274,9 @@ class CandidateConditionControls(unittest.TestCase):
             ([(1199,), (1200,)], True),
         ]:
             with self.subTest(values=values):
-                self.assertIs(altitude_condition(self.samples(values), refusal=False), expected)
+                self.assertIs(
+                    altitude_condition(self.samples(values), refusal=False), expected
+                )
 
     def test_refusal_ambiguity_invariance_and_incomplete(self):
         for values, expected in [
@@ -283,11 +290,15 @@ class CandidateConditionControls(unittest.TestCase):
             ([(0,), (201,)], False),
         ]:
             with self.subTest(values=values):
-                self.assertIs(altitude_condition(self.samples(values), refusal=True), expected)
+                self.assertIs(
+                    altitude_condition(self.samples(values), refusal=True), expected
+                )
 
     def test_first_anchor_is_correlated_with_its_own_candidate_choice(self):
         self.assertIs(
-            altitude_condition(self.samples([(0, 400), (200,), (200,), (200,)]), refusal=True),
+            altitude_condition(
+                self.samples([(0, 400), (200,), (200,), (200,)]), refusal=True
+            ),
             True,
         )
 
@@ -300,7 +311,9 @@ class CandidateConditionControls(unittest.TestCase):
                 results = set()
                 for world in product(*values):
                     excursion = max(abs(mm - world[0]) for mm in world)
-                    results.add(False if excursion > 200 else True if count >= 4 else None)
+                    results.add(
+                        False if excursion > 200 else True if count >= 4 else None
+                    )
                 expected = next(iter(results)) if len(results) == 1 else None
                 self.assertIs(
                     altitude_condition(self.samples(values), refusal=True),
