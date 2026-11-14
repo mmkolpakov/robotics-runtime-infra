@@ -272,6 +272,48 @@ class StockBooleanControls(unittest.TestCase):
                     rows(ulog, "home_position", ("timestamp", "valid_alt"))
 
 
+class EventTimestampControls(unittest.TestCase):
+    def dataset(self, name, times):
+        import numpy as np
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            data_list=[
+                SimpleNamespace(
+                    name=name,
+                    multi_id=0,
+                    data={
+                        "timestamp": np.array(times),
+                        "command": np.array([511, 512, 400][: len(times)]),
+                    },
+                )
+            ]
+        )
+
+    def test_distinct_same_tick_event_rows_keep_original_order_and_count(self):
+        for name in ("vehicle_command", "vehicle_command_ack"):
+            decoded = rows(
+                self.dataset(name, [100, 100, 101]), name, ("timestamp", "command")
+            )
+            self.assertEqual(
+                [(r["timestamp"], r["command"]) for r in decoded],
+                [(100, 511), (100, 512), (101, 400)],
+            )
+
+    def test_event_regression_nonpositive_and_state_ties_stay_unavailable(self):
+        for name, times in [
+            ("vehicle_command", [100, 99]),
+            ("vehicle_command_ack", [0, 100]),
+            ("vehicle_status", [100, 100]),
+            ("vehicle_global_position", [100, 100]),
+        ]:
+            with (
+                self.subTest(name=name, times=times),
+                self.assertRaisesRegex(Unavailable, "not ordered"),
+            ):
+                rows(self.dataset(name, times), name, ("timestamp", "command"))
+
+
 class ListenerGrammarControls(unittest.TestCase):
     def record(self, *, topic="vehicle_status", fields=None):
         if fields is None:

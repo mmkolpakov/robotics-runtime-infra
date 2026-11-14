@@ -440,6 +440,62 @@ class CompleteMethodSoftwareControls(unittest.TestCase):
         self.assertIs(result["command"][0], True, result)
         self.assertIs(result["postcondition"][0], True, result)
 
+    def test_unrelated_same_tick_command_and_ack_events_do_not_erase_measurements(self):
+        def mutate(_records, _native, decoded):
+            import numpy as np
+
+            source = next(d for d in decoded.data_list if d.name == "vehicle_command")
+            for cmd in [1000, 1001]:
+                event = {
+                    **command(220, cmd),
+                    "source_system": 1,
+                    "source_component": 1,
+                    "from_external": False,
+                }
+                for key, value in event.items():
+                    source.data[key] = np.append(source.data[key], value).astype(
+                        source.data[key].dtype
+                    )
+            ack = next(d for d in decoded.data_list if d.name == "vehicle_command_ack")
+            for cmd in [511, 512]:
+                event = {key: values[-1].item() for key, values in ack.data.items()}
+                event.update(command=cmd, timestamp=290)
+                for key, value in event.items():
+                    ack.data[key] = np.append(ack.data[key], value).astype(
+                        ack.data[key].dtype
+                    )
+
+        result = self.assess(mutate=mutate)
+        for name in ("completion", "command", "grounded", "disarmed", "postcondition"):
+            self.assertIs(result[name][0], True, (name, result))
+
+    def test_same_tick_conflicting_attributable_acks_remain_ambiguous(self):
+        def mutate(_records, _native, decoded):
+            import numpy as np
+
+            ack = next(d for d in decoded.data_list if d.name == "vehicle_command_ack")
+            event = {key: values[0].item() for key, values in ack.data.items()}
+            event["result"] = 2
+            for key, value in event.items():
+                ack.data[key] = np.insert(ack.data[key], 1, value)
+
+        result = self.assess(mutate=mutate)
+        self.assertIsNone(result["command"][0], result)
+        self.assertIn("ambiguous", result["command"][2])
+
+    def test_same_tick_foreign_takeoff_is_not_hidden_by_owned_retry(self):
+        def mutate(_records, _native, decoded):
+            import numpy as np
+
+            source = next(d for d in decoded.data_list if d.name == "vehicle_command")
+            event = {**command(125), "source_system": 1}
+            for key, value in event.items():
+                source.data[key] = np.insert(source.data[key], 2, value)
+
+        result = self.assess(mutate=mutate)
+        self.assertIsNone(result["command"][0], result)
+        self.assertIn("attribution", result["command"][2])
+
     def test_takeoff_at_publication_window_edge_is_not_trimmed_by_print_precision(self):
         def mutate(_records, _native, decoded):
             source = next(d for d in decoded.data_list if d.name == "vehicle_command")
