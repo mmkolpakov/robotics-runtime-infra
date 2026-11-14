@@ -3,7 +3,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 COPY inputs.lock.json Dockerfile /opt/sdk-policy/
 COPY --from=apt-snapshot /use-package-snapshots /opt/sdk-policy/use-package-snapshots
 COPY --from=apt-snapshot /ros-snapshot-key.gpg /usr/share/keyrings/ros-snapshot-key.gpg
-RUN python3 -c '\
+RUN --mount=type=cache,id=robotics-nav2-jazzy-amd64-apt-archives,target=/var/cache/apt/archives,sharing=locked,mode=0755 \
+    python3 -c '\
 import hashlib,json,os,subprocess; \
 from pathlib import Path; \
 p=json.loads(Path("/opt/sdk-policy/inputs.lock.json").read_bytes()); s=p["apt_snapshots"]; \
@@ -24,7 +25,7 @@ subprocess.run(["bash",str(helper)],check=True,env=dict(os.environ,UBUNTU_SNAPSH
        $(dpkg-query -W '-f=${db:Status-Status} ${Package}\n' 'ros-jazzy-*' | awk '$1 == "installed" {print $2}') \
     && apt-get install -y --reinstall --only-upgrade --no-download --no-install-recommends \
        $(dpkg-query -W '-f=${db:Status-Status} ${Package}\n' 'ros-jazzy-*' | awk '$1 == "installed" {print $2}') \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=sdk-wheels / /opt/sdk-cohort/wheels/
 COPY inputs.lock.json requirements.lock check-sdk-wheels.py native_simulation.launch.py /opt/sdk-policy/
 RUN python3 /opt/sdk-policy/check-sdk-wheels.py /opt/sdk-cohort/wheels \
