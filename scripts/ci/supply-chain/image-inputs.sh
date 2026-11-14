@@ -170,6 +170,21 @@ derive() {
     # Foundation qualification runs against these consumer projects.
     'examples/minimal-consumer/*'
     'examples/neutral-robot/*'
+    # The installed consumer factory exports these source-controlled inputs.
+    'host/test/fixtures/installed-legacy/*'
+    host/test/fixtures/installed-webots/init-storage.mjs
+    'host/test/fixtures/legacy-live/*'
+    'host/workers/legacy/*'
+    'host/workers/legacy-live/*'
+    host/tools/qualify-legacy-live.mjs
+    compose.legacy-retained.yaml
+    compose.legacy-finalization.podman.yaml
+    compose.simulation-health.yaml
+    config/fastdds/udp-only.xml
+    config/recording/qos-overrides.yaml
+    config/qualification/simulation-interfaces.json
+    docker/runtime/admit-robot-description
+    scripts/ci/foundation/create-simulation-provider.py
   )
   printf '%s\n' "${fixed[@]}"
 
@@ -191,6 +206,7 @@ derive() {
       printf 'missing bake dockerfile: %s\n' "${dockerfile}" >&2
       return 1
     fi
+    printf '%s\n' "${dockerfile}"
     stages="$(dockerfile_stages "${dockerfile}")"
     while IFS=$'\t' read -r kind path; do
       if test "${kind}" = CTX; then

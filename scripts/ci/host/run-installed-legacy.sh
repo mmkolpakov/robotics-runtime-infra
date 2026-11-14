@@ -153,28 +153,30 @@ share_image() {
 base="$(share_image "${SIMULATION_IMAGE:?foundation simulation image required}" simulation-base)"
 wheels_tag="${registry}/installed-ros/foundation-wheels:${scope}"
 docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
-  --set 'simulation.platform=linux/amd64' --set 'simulation.target=foundation-wheels' \
-  --set "simulation.tags=${wheels_tag}" simulation
+  --set "foundation-wheels.tags=${wheels_tag}" foundation-wheels
 wheels="$(share_image "${wheels_tag}" foundation-wheels)"
 coordinator_tag="${registry}/installed-ros/coordinator:${scope}"
-docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/foundation-coordinator.Dockerfile \
-  --build-arg "FOUNDATION_WHEELS_IMAGE=${wheels}" --build-arg "LEGACY_BASE_IMAGE=${base}" \
-  --tag "${coordinator_tag}" .
+docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
+  --set "foundation-coordinator.contexts.foundation-wheels-image=docker-image://${wheels}" \
+  --set "foundation-coordinator.contexts.foundation-base-image=docker-image://${base}" \
+  --set "foundation-coordinator.tags=${coordinator_tag}" foundation-coordinator
 simulation="$(share_image "${coordinator_tag}" coordinator)"
 # This target carries the central Cosign version argument into the license stage.
 docker buildx bake --builder "${builder}" --file docker-bake.hcl --allow "fs.write=${work}" \
-  --set 'evidence-sink.platform=linux/amd64' --set 'evidence-sink.target=cosign-license' \
-  --set "evidence-sink.output=type=local,dest=${work}/cosign-license" evidence-sink
+  --set 'foundation-cosign-license.platform=linux/amd64' \
+  --set "foundation-cosign-license.output=type=local,dest=${work}/cosign-license" foundation-cosign-license
 finalizer_tag="${registry}/installed-ros/finalizer:${scope}"
-docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/legacy-finalizer.Dockerfile \
-  --build-context "cosign-license=${work}/cosign-license" --build-arg "COORDINATOR_IMAGE=${simulation}" \
-  --tag "${finalizer_tag}" .
+docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
+  --set "legacy-finalizer.contexts.cosign-license=${work}/cosign-license" \
+  --set "legacy-finalizer.contexts.coordinator-image=docker-image://${simulation}" \
+  --set "legacy-finalizer.tags=${finalizer_tag}" legacy-finalizer
 finalizer="$(share_image "${finalizer_tag}" finalizer)"
 ROBOTICS_CONTRACTS_CLI="${root}/dependencies/robotics-runtime/.venv/bin/robotics-contracts" \
   bash test/qualification/real-cosign.sh --offline-consumer "${finalizer}"
 evidence_tag="${registry}/installed-ros/evidence:${scope}"
-docker buildx build --builder "${builder}" --platform linux/amd64 --load --file docker/evidence-source.Dockerfile \
-  --build-arg "EVIDENCE_BASE_IMAGE=${finalizer}" --tag "${evidence_tag}" .
+docker buildx bake --builder "${builder}" --file docker-bake.hcl --load \
+  --set "evidence-source.contexts.evidence-base-image=docker-image://${finalizer}" \
+  --set "evidence-source.tags=${evidence_tag}" evidence-source
 evidence="$(share_image "${evidence_tag}" evidence)"
 simulation_id="$(docker image inspect --format '{{.Id}}' "${simulation}")"
 consumer="${work}/consumer"
