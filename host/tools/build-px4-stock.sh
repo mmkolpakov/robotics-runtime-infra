@@ -7,6 +7,7 @@ case "${source_root}" in "${project_root}/host/.tools/"*) ;; *) exit 65 ;; esac
 owner="${PX4_BUILD_OWNER:-px4-build-${UID}-$$}"
 [[ "${owner}" =~ ^[a-z0-9][a-z0-9_.-]{1,63}$ ]] || exit 64
 container_name="${owner}-firmware"
+read -r invocation </proc/sys/kernel/random/uuid
 : "${PX4_DEPS_IMAGE:?immutable project dependency image required}"
 engine="${PX4_CONTAINER_ENGINE:-podman}"
 case "${engine}" in
@@ -36,10 +37,10 @@ cleanup_build() {
     exit "${status}"
   fi
   for candidate in ${ids}; do
-    if ! actual="$("${engine}" inspect --format '{{index .Config.Labels "org.robotics.build.owner"}}' "${candidate}")"; then
+    if ! actual="$("${engine}" inspect --format '{{index .Config.Labels "org.robotics.build.invocation"}}' "${candidate}")"; then
       printf 'firmware container cleanup state unknown: %s\n' "${candidate}" >&2
       cleanup_status=1
-    elif [[ "${actual}" != "${owner}" || ( -n "${container_id}" && "${candidate}" != "${container_id}" ) ]]; then
+    elif [[ "${actual}" != "${invocation}" || ( -n "${container_id}" && "${candidate}" != "${container_id}" ) ]]; then
       printf 'refusing foreign build container cleanup: %s\n' "${container_name}" >&2
       cleanup_status=65
     elif ! "${engine}" stop --time 10 "${candidate}" > /dev/null ||
@@ -73,7 +74,8 @@ git -C "${source_root}" -c http.version=HTTP/1.1 submodule update --init --recur
   src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client src/lib/cdrstream/cyclonedds \
   src/lib/cdrstream/rosidl src/lib/heatshrink/heatshrink Tools/simulation/gz
 container_id="$("${engine}" create --init --name "${container_name}" \
-  --label "org.robotics.build.owner=${owner}" "${engine_options[@]}" \
+  --label "org.robotics.build.owner=${owner}" --label "org.robotics.build.invocation=${invocation}" \
+  "${engine_options[@]}" \
   --user "$(id -u):$(id -g)" --env HOME=/tmp/px4-build --env GZ_DISTRO=jetty \
   --volume "${source_root}:/opt/px4:rw" --workdir /opt/px4 \
   "${PX4_DEPS_IMAGE}" make -j4 px4_sitl_default)"

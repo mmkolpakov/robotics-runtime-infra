@@ -34,7 +34,11 @@ case "$1" in
     ;;
   inspect)
     if [[ "${MOCK_INSPECT_DOWN:-}" == 1 ]]; then exit 1; fi
-    printf '%s\n' "${MOCK_OWNER:-px4-source-10-1}"
+    if [[ "${MOCK_OWNER:-}" == foreign ]]; then
+      printf '%s\n' different-invocation
+    else
+      sed -n 's/^org.robotics.build.invocation=//p' "${CALLS}.create"
+    fi
     ;;
   rm) printf '%s\n' "$*" >>"${CALLS}"; rm -f "${CALLS}.created" ;;
   *) printf '%s\n' "$*" >>"${CALLS}" ;;
@@ -355,4 +359,66 @@ claim_fixture() {
   ! grep -Fq -- "ps --all --no-trunc --format {{json .}}" "${CALLS}"
   grep -Fq -- 'image ls --no-trunc --filter reference=local/robotics-px4-deps:px4-source-10-1' "${CALLS}"
   grep -Fq -- '--filter reference=local/robotics-px4-worker:px4-source-10-1' "${CALLS}"
+}
+
+@test "PX4 firmware callers with the same owner preserve the concurrent winner and sentinel" {
+  prepare_firmware_fixture
+  export STATE="${BATS_TEST_TMPDIR}/engine"
+  mkdir "${STATE}"
+  printf retained >"${STATE}/sentinel"
+  cat >"${mock_bin}/docker" <<'SH'
+#!/usr/bin/env bash
+set -eu
+case "$1" in
+  ps)
+    if [[ ! -e "${STATE}/preflight-${CALLER}" ]]; then
+      touch "${STATE}/preflight-${CALLER}"
+      while [[ ! -e "${STATE}/preflight-a" || ! -e "${STATE}/preflight-b" ]]; do sleep .01; done
+    elif [[ -d "${STATE}/container" ]]; then printf '1234567890abcdef\n'
+    fi
+    ;;
+  create)
+    if mkdir "${STATE}/container" 2>/dev/null; then
+      printf '%s\n' "$@" | sed -n 's/^org.robotics.build.invocation=//p' >"${STATE}/invocation"
+      printf '%s\n' "${CALLER}" >"${STATE}/winner"
+      printf '1234567890abcdef\n'
+    else
+      while [[ ! -e "${STATE}/started" ]]; do sleep .01; done
+      printf '%s\n' "${CALLER}" >"${STATE}/loser"
+      exit 125
+    fi
+    ;;
+  start)
+    touch "${STATE}/started"
+    while [[ ! -s "${STATE}/loser" ]]; do sleep .01; done
+    while [[ ! -s "${STATE}/exit-$(cat "${STATE}/loser")" ]]; do sleep .01; done
+    ;;
+  inspect) cat "${STATE}/invocation" ;;
+  stop|rm)
+    printf '%s %s\n' "${CALLER}" "$*" >>"${STATE}/mutations"
+    [[ "${CALLER}" == "$(cat "${STATE}/winner")" && "${*: -1}" == 1234567890abcdef ]]
+    if [[ "$1" == rm ]]; then rmdir "${STATE}/container"; fi
+    ;;
+esac
+SH
+  for caller in a b; do
+    (
+      attempt_status=0
+      timeout 10s env PATH="${mock_bin}:${PATH}" CALLER="${caller}" PX4_CONTAINER_ENGINE=docker \
+        PX4_BUILD_OWNER=px4-source-10-1 PX4_DEPS_IMAGE="sha256:$(printf '%064d' 1)" \
+        bash "${fixture}/host/tools/build-px4-stock.sh" || attempt_status=$?
+      printf '%s\n' "${attempt_status}" >"${STATE}/exit-${caller}"
+    ) >"${STATE}/output-${caller}" 2>&1 &
+  done
+  wait
+  winner="$(cat "${STATE}/winner")"
+  loser="$(cat "${STATE}/loser")"
+  [ "$(cat "${STATE}/exit-${winner}")" -eq 0 ]
+  [ "$(cat "${STATE}/exit-${loser}")" -eq 125 ]
+  grep -Fq 'refusing foreign' "${STATE}/output-${loser}"
+  [ "$(cat "${STATE}/sentinel")" = retained ]
+  [ ! -d "${STATE}/container" ]
+  [ "$(wc -l <"${STATE}/mutations")" -eq 2 ]
+  grep -Fxq "${winner} stop --time 10 1234567890abcdef" "${STATE}/mutations"
+  grep -Fxq "${winner} rm 1234567890abcdef" "${STATE}/mutations"
 }
