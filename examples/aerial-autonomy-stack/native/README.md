@@ -62,9 +62,10 @@ systemd-run --user --wait --pipe --unit "rr-attempt-$RUN_ID" \
 ## Read the result
 
 `completion.json` records the attempt, any flight error and the run owner’s completion. Native
-snapshots capture ascent and touchdown. `closed-files.json` records file identities and the finite
-copy request used before Compose cleanup. The output includes `metadata.yaml`, `flight_0.mcap`, and
-`px4.ulg` after a complete export.
+snapshots capture ascent and touchdown. The example succeeds when `measurementError` is absent and
+the owner lifecycle reports `completion.status` as `passed`. `closed-files.json` records file
+identities and the finite copy request used before Compose cleanup. The output includes
+`metadata.yaml`, `flight_0.mcap`, and `px4.ulg` after a complete export.
 
 Inspect the MCAP with stock `ros2 bag info "$OUTPUT"` and the ULog with `ulog_info
 "$OUTPUT/px4.ulg"`. Decode the four action channels with the exact ROS types from the admitted
