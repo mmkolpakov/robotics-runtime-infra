@@ -90,8 +90,8 @@ def _readiness():
     return json.loads(READINESS_CONTROL.read_bytes())
 
 
-def sdk_versions():
-    """Read the exact cohort from the committed lock, never hardcode it."""
+def sdk_versions(binding):
+    """Record the locked SDK cohort and the admitted evaluator."""
     lock = (EXAMPLE / "requirements.lock").read_text()
     versions = {}
     for name in ("robotics-acceptance-harness", "robotics-runtime-contracts"):
@@ -103,9 +103,10 @@ def sdk_versions():
         if not match:
             raise ValueError(f"{name} is absent from requirements.lock")
         versions[name] = {"version": match.group(1), "wheel_sha256": match.group(2)}
-    pyproject = (EXAMPLE / "evaluator" / "pyproject.toml").read_text()
-    evaluator = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
-    versions["nav2-turtlebot3-evaluator"] = {"version": evaluator.group(1)}
+    versions[binding["distribution"]] = {
+        "version": binding["version"],
+        "wheel_sha256": binding["artifact_sha256"],
+    }
     return versions
 
 
@@ -593,15 +594,15 @@ def build_report(cases, versions):
     add("Nav2 qualification demo - verdict report")
     add("=" * 72)
     add("")
-    add("One recorded NavigateToPose success, assessed through the published")
-    add(
-        f"acceptance SDK (harness {versions['robotics-acceptance-harness']['version']} / "
-        f"contracts {versions['robotics-runtime-contracts']['version']}) and the native"
-    )
-    add(
-        f"Nav2 evaluator {versions['nav2-turtlebot3-evaluator']['version']} via the public"
-    )
+    add("One recorded NavigateToPose success, assessed through the public")
     add("robotics-acceptance evaluate path with Cosign key-only admission.")
+    add(
+        f"SDK lock                  : harness {versions['robotics-acceptance-harness']['version']} / "
+        f"contracts {versions['robotics-runtime-contracts']['version']}"
+    )
+    add(
+        f"Admitted Nav2 evaluator   : {versions['nav2-turtlebot3-evaluator']['version']}"
+    )
     add("")
     add(f"Recorded final-pose error : {base['pose_error_m']:.4f} m")
     add(f"NavigateToPose action     : status={base['action_status']} (SUCCEEDED)")
@@ -784,7 +785,6 @@ def main(argv=None):
     parser.add_argument("--sensitivity-tolerance", type=float, default=0.10)
     args = parser.parse_args(argv)
     args.work_dir.mkdir(parents=True, exist_ok=True)
-    versions = sdk_versions()
     wheel = args.wheel or next(
         (DEMO / "dist").glob("nav2_turtlebot3_evaluator-*-py3-none-any.whl")
     )
@@ -806,6 +806,7 @@ def main(argv=None):
             wheel, args.work_dir / "admission", tool
         )
 
+    versions = sdk_versions(binding)
     cases = {}
     cases["baseline"] = assess_case(
         "baseline",

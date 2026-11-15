@@ -27,7 +27,8 @@ from robotics_runtime_contracts.writers import (
 
 NAMESPACE = "org.example.nav2-turtlebot3"
 DISTRIBUTION = "nav2-turtlebot3-evaluator"
-VERSION = "0.4.1"
+VERSION = "0.4.2"
+SUPPORTED_VERSIONS = ("0.4.1", VERSION)
 
 
 def write(path: Path, value: object) -> Path:
@@ -38,8 +39,23 @@ def digest(path: Path) -> str:
     return sha256(read_once(path, 16 * 1024 * 1024)).hexdigest()
 
 
-def qualify(profile_path: Path, output: Path, *, installed: bool = True) -> dict:
+def evaluator_wheel_name(version: str) -> str:
+    if version not in SUPPORTED_VERSIONS:
+        raise ValueError("the selected Nav2 evaluator version is unsupported")
+    return f"nav2_turtlebot3_evaluator-{version}-py3-none-any.whl"
+
+
+def qualify(
+    profile_path: Path,
+    output: Path,
+    *,
+    installed: bool = True,
+    version: str | None = None,
+) -> dict:
     """The external operator input, never the bundle, chooses the approved key/tool."""
+    if version is None:
+        version = distribution(DISTRIBUTION).version if installed else VERSION
+    expected_filename = evaluator_wheel_name(version)
     if profile_path.stat().st_mode & 0o022:
         raise ValueError("operator trust profile must not be group/other writable")
     values = loads_mapping(
@@ -75,13 +91,13 @@ def qualify(profile_path: Path, output: Path, *, installed: bool = True) -> dict
     if sha256(bundle_raw).hexdigest() != authenticated.bundle_sha256:
         raise ValueError("signature bundle changed during verification")
     validate_evaluator_wheel(authenticated)
-    if authenticated.filename != "nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl":
+    if authenticated.filename != expected_filename:
         raise ValueError(
             "authenticated wheel filename is not the selected Nav2 release"
         )
     if installed:
         binding = verify_installed_wheel(authenticated, distribution(DISTRIBUTION))
-        if binding.version != VERSION or binding.entry_points != (
+        if binding.version != version or binding.entry_points != (
             (
                 "robotics_acceptance.evaluators",
                 NAMESPACE,
@@ -146,7 +162,7 @@ def qualify(profile_path: Path, output: Path, *, installed: bool = True) -> dict
         "namespace": NAMESPACE,
         "entry_point": "nav2_turtlebot3_evaluator:evaluate",
         "distribution": DISTRIBUTION,
-        "version": VERSION,
+        "version": version,
         "artifact_sha256": authenticated.sha256,
         "receipt_sha256": digest(receipt),
     }
@@ -158,6 +174,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trust-profile", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--evaluator-version", choices=SUPPORTED_VERSIONS)
     parser.add_argument(
         "--preinstall",
         action="store_true",
@@ -166,7 +183,12 @@ def main() -> None:
     args = parser.parse_args()
     print(
         json.dumps(
-            qualify(args.trust_profile, args.output, installed=not args.preinstall),
+            qualify(
+                args.trust_profile,
+                args.output,
+                installed=not args.preinstall,
+                version=args.evaluator_version,
+            ),
             sort_keys=True,
         )
     )

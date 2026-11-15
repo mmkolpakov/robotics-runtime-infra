@@ -1,7 +1,7 @@
 # Nav2 TurtleBot3 consumer
 
 This consumer separates immutable inputs, completed native observations, and offline
-assessment. The evaluator 0.4.1 uses public contracts v2, the verified evidence reader, and the
+assessment. The evaluator 0.4.2 uses public contracts v2, the verified evidence reader, and the
 external evaluator admission profile. It uses published contracts 0.22.0 and acceptance harness
 0.24.0. The exact release tags, source revisions, wheel sizes and SHA-256 values are in
 [inputs.lock.json](inputs.lock.json); [requirements.lock](requirements.lock) fixes the SDK and
@@ -55,7 +55,7 @@ the same build context. The expected evaluator wheel and installed source hashes
 are in [inputs.lock.json](inputs.lock.json).
 
 ```sh
-cp evaluator-inputs/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl sdk-wheels/
+cp evaluator-inputs/nav2_turtlebot3_evaluator-0.4.2-py3-none-any.whl sdk-wheels/
 podman build --pull=never --platform linux/amd64 \
   --build-context apt-snapshot=../../docker/apt \
   --build-context sdk-wheels=sdk-wheels -t localhost/nav2-turtlebot3 .
@@ -102,7 +102,7 @@ cosign trusted-root create --out offline-root.json
 cosign attest-blob --yes --key publisher.key --signing-config offline-signing.json \
   --trusted-root offline-root.json --type urn:nav2-turtlebot3:consumer-evaluator-qualification:v1 \
   --predicate predicate.json --bundle wheel.sigstore.json \
-  dist/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl
+  dist/nav2_turtlebot3_evaluator-0.4.2-py3-none-any.whl
 ```
 
 The external operator chooses `kind="cosign_key_no_tlog"`, the exact approved executable,
@@ -118,9 +118,17 @@ the verified installer input and writes the structural receipt/evaluator require
 .venv/bin/python qualify-evaluator.py --trust-profile /operator/nav2-trust.json \
   --output evaluator-inputs --preinstall
 .venv/bin/python -m pip install --no-index --no-deps \
-  evaluator-inputs/nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl
+  evaluator-inputs/nav2_turtlebot3_evaluator-0.4.2-py3-none-any.whl
 .venv/bin/python -m pip check
 ```
+
+Preinstall verification defaults to evaluator 0.4.2. Use
+`--evaluator-version 0.4.1` to select that earlier wheel before installation.
+Installed verification defaults to the installed evaluator's version.
+Evaluator 0.4.2 permits Harness 0.25
+for offline archive assessment. Existing native results retain their recorded
+evaluator and image bindings. The native image recipe selects the evaluator
+wheel declared in its own lock.
 
 The preinstall phase invokes the public authentication and wheel-shape guard. Installed verification
 also uses the public installation binder and captured original entry points. Both select the exact
