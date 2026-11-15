@@ -202,7 +202,7 @@ The source-foundation cohort in
 [`config/foundation-lock.json`](../../config/foundation-lock.json) remains
 contracts **0.21.1** / harness **0.22.2** at its pinned workspace revision.
 The published-example cohort used by this demo is contracts **0.22.0** /
-harness **0.23.1**, as pinned in the Nav2 `requirements.lock`. These are
+harness **0.24.0**, as pinned in the Nav2 `requirements.lock`. These are
 separate compositions; running this demo does not upgrade the source foundation.
 
 ## Compliance

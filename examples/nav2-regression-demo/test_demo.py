@@ -130,7 +130,7 @@ class DemoQualification(unittest.TestCase):
             self.assertNotEqual(prov[key], "a" * 64)
             self.assertNotEqual(prov[key], "b" * 64)
         self.assertEqual(
-            prov["sdk"]["robotics-acceptance-harness"]["version"], "0.23.1"
+            prov["sdk"]["robotics-acceptance-harness"]["version"], "0.24.0"
         )
         self.assertEqual(prov["sdk"]["robotics-runtime-contracts"]["version"], "0.22.0")
 

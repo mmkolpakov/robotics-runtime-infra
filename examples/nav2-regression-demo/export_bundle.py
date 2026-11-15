@@ -141,7 +141,7 @@ def inventory(work, case, qualification):
         ("attestation", "statement.json"),
         ("policy", "publisher.json"),
         ("verification", "verified-report.txt"),
-        ("package", "nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl"),
+        ("package", "nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl"),
     ):
         arguments += ["--artifact", f"{kind}:evaluator/{name}={qualification / name}"]
     arguments += [

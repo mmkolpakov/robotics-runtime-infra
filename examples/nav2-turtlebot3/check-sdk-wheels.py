@@ -12,8 +12,12 @@ from pathlib import Path
 POLICY = Path(__file__).with_name("inputs.lock.json")
 
 
-def check(wheels: Path) -> None:
-    expected = json.loads(POLICY.read_bytes())["sdk_cohort"]["wheels"]
+def check(wheels: Path, *, include_native_evaluator=False) -> None:
+    policy = json.loads(POLICY.read_bytes())
+    expected = policy["sdk_cohort"]["wheels"]
+    if include_native_evaluator:
+        evaluator = policy["native_evaluator"]
+        expected[evaluator["filename"]] = evaluator
     if not all(hasattr(os, flag) for flag in ("O_NOFOLLOW", "O_NONBLOCK")):
         raise ValueError("SDK policy check requires POSIX no-follow/nonblocking opens")
     for name, identity in expected.items():
@@ -40,8 +44,9 @@ def check(wheels: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("wheels", type=Path)
+    parser.add_argument("--include-native-evaluator", action="store_true")
     arguments = parser.parse_args()
-    check(arguments.wheels)
+    check(arguments.wheels, include_native_evaluator=arguments.include_native_evaluator)
 
 
 if __name__ == "__main__":

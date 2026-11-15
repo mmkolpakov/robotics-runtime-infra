@@ -27,7 +27,7 @@ from robotics_runtime_contracts.writers import (
 
 NAMESPACE = "org.example.nav2-turtlebot3"
 DISTRIBUTION = "nav2-turtlebot3-evaluator"
-VERSION = "0.3.0"
+VERSION = "0.4.1"
 
 
 def write(path: Path, value: object) -> Path:
@@ -75,7 +75,7 @@ def qualify(profile_path: Path, output: Path, *, installed: bool = True) -> dict
     if sha256(bundle_raw).hexdigest() != authenticated.bundle_sha256:
         raise ValueError("signature bundle changed during verification")
     validate_evaluator_wheel(authenticated)
-    if authenticated.filename != "nav2_turtlebot3_evaluator-0.3.0-py3-none-any.whl":
+    if authenticated.filename != "nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl":
         raise ValueError(
             "authenticated wheel filename is not the selected Nav2 release"
         )

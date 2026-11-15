@@ -46,6 +46,29 @@ class SdkPolicyControls(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "committed cohort"):
                 POLICY.check(folder)
 
+    def test_image_check_requires_the_locked_evaluator_bytes(self):
+        wheels = os.environ.get("NAV2_SDK_WHEELS")
+        evaluator_wheel = os.environ.get("NAV2_EVALUATOR_WHEEL")
+        if not wheels or not evaluator_wheel:
+            self.skipTest("exact SDK and consumer wheel storage required")
+        identity = json.loads(POLICY.POLICY.read_bytes())["native_evaluator"]
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            for name in COHORT:
+                shutil.copyfile(Path(wheels) / name, folder / name)
+            POLICY.check(folder)
+            with self.assertRaises(FileNotFoundError):
+                POLICY.check(folder, include_native_evaluator=True)
+            selected = folder / identity["filename"]
+            shutil.copyfile(evaluator_wheel, selected)
+            POLICY.check(folder, include_native_evaluator=True)
+            with selected.open("r+b") as stream:
+                first = stream.read(1)
+                stream.seek(0)
+                stream.write(bytes([first[0] ^ 1]))
+            with self.assertRaisesRegex(ValueError, "committed cohort"):
+                POLICY.check(folder, include_native_evaluator=True)
+
     def test_symlink_is_not_an_admitted_stored_wheel(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)

@@ -57,12 +57,15 @@ def load_ros():
         Clock, \
         message_to_ordereddict, \
         Empty, \
-        TFMessage
+        TFMessage, \
+        MAX_STOP_SAMPLES, \
+        assess_stop
     import rclpy
     from action_msgs.msg import GoalStatus
     from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
     from nav2_msgs.action import NavigateToPose
     from nav2_simple_commander.robot_navigator import BasicNavigator
+    from nav2_turtlebot3_evaluator.stop import MAX_STOP_SAMPLES, assess_stop
     from nav_msgs.msg import Odometry
     from rclpy.action import ActionClient
     from rclpy.parameter import Parameter
@@ -119,6 +122,34 @@ def readiness_parameters(scenario):
             "declared graph readiness must fit the existing ten-second budget"
         )
     return settings["graph"], budget, stability
+
+
+def wait_for_action_server(client, ready_deadline, report):
+    diagnostic = {
+        "deadline_monotonic_ns": int(ready_deadline * 1e9),
+        "server_ready": False,
+        "call_started_monotonic_ns": time.monotonic_ns(),
+        "call_started_unix_ns": time.time_ns(),
+    }
+    report["action_server_bootstrap"] = diagnostic
+    try:
+        while True:
+            remaining = ready_deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("NavigateToPose action server is unavailable")
+            diagnostic["server_ready"] = client.wait_for_server(
+                timeout_sec=min(0.1, remaining)
+            )
+            if time.monotonic() >= ready_deadline:
+                raise TimeoutError(
+                    "NavigateToPose action discovery exceeded readiness deadline"
+                )
+            if diagnostic["server_ready"]:
+                return
+    finally:
+        diagnostic["call_finished_monotonic_ns"] = time.monotonic_ns()
+        diagnostic["call_finished_unix_ns"] = time.time_ns()
+        diagnostic["remaining_budget_sec"] = max(0.0, ready_deadline - time.monotonic())
 
 
 def wait_for_graph_readiness(
@@ -227,6 +258,40 @@ def finite_future(node, future, deadline: float):
     return future.result()
 
 
+def append_stop_sample(window, stream, sample):
+    if sample["receiver_ns"] > window["deadline_monotonic_ns"]:
+        return
+    if len(window[stream]) >= MAX_STOP_SAMPLES:
+        window["samples_omitted"] = True
+    else:
+        window[stream].append(sample)
+
+
+def wait_for_sampled_stop(navigator, report, configuration):
+    """Close the captured prefix at the first measured stop or the action deadline."""
+    window = report["stop_observation"]
+    deadline = window["deadline_monotonic_ns"]
+    next_check = 0
+    while True:
+        now = time.monotonic_ns()
+        if now >= deadline or window["samples_omitted"]:
+            window["observation_cutoff_monotonic_ns"] = min(now, deadline)
+            window["closed_monotonic_ns"] = now
+            return
+        if now >= next_check:
+            window["observation_cutoff_monotonic_ns"] = now
+            window["closed_monotonic_ns"] = now
+            _window, stopped, _reason = assess_stop(report, configuration)
+            checked_at = time.monotonic_ns()
+            if stopped is True and checked_at < deadline:
+                window["closed_monotonic_ns"] = checked_at
+                return
+            next_check = now + 100_000_000
+        remaining = (deadline - time.monotonic_ns()) / 1e9
+        if remaining > 0:
+            rclpy.spin_once(navigator, timeout_sec=min(0.05, remaining))
+
+
 def pose(node, x: float, y: float) -> PoseStamped:
     result = PoseStamped()
     result.header.frame_id = "map"
@@ -314,6 +379,8 @@ def main() -> int:
         "required_tf_edges": args.required_tf_edges,
         "readiness": configuration["readiness"],
     }
+    if "stop_condition" in configuration:
+        actual_parameters["stop_condition"] = configuration["stop_condition"]
     if configuration != {**actual_parameters, "case": args.case}:
         parser.error("consumer parameters differ from the declared scenario")
     expected_graph, graph_budget, graph_stability = readiness_parameters(
@@ -407,6 +474,11 @@ def main() -> int:
             "odometry_frame": args.odometry_frame,
             "required_tf_edges": args.required_tf_edges,
             "readiness": configuration["readiness"],
+            **(
+                {"stop_condition": configuration["stop_condition"]}
+                if "stop_condition" in configuration
+                else {}
+            ),
         },
     }
     rclpy.init(args=["--ros-args", "-p", "use_sim_time:=true"])
@@ -431,6 +503,8 @@ def main() -> int:
     tf_edges = {}
     subscriptions_by_kind = {}
     last_graph_ns = 0
+    stop_observation = None
+    latest_clock_ns = 0
     with raw_path.open("x", encoding="utf-8", buffering=64 * 1024) as raw:
 
         def record(kind: str, payload: dict) -> None:
@@ -450,7 +524,7 @@ def main() -> int:
 
         def message_callback(kind: str):
             def received(message, info):
-                nonlocal last_graph_ns
+                nonlocal last_graph_ns, latest_clock_ns
                 counts[kind] += 1
                 latest_observations[kind] = time.monotonic_ns()
                 if kind == "amcl_pose":
@@ -473,7 +547,24 @@ def main() -> int:
                         + message.header.stamp.nanosec,
                         observed_monotonic_ns=latest_observations[kind],
                         observed_unix_ns=time.time_ns(),
+                        orientation={
+                            name: float(getattr(message.pose.pose.orientation, name))
+                            for name in ("x", "y", "z", "w")
+                        },
+                        vx=float(message.twist.twist.linear.x),
+                        vy=float(message.twist.twist.linear.y),
+                        wz=float(message.twist.twist.angular.z),
                     )
+                    if stop_observation is not None:
+                        append_stop_sample(
+                            stop_observation,
+                            "samples",
+                            {
+                                **latest_odometry,
+                                "source_ns": latest_odometry["ros_stamp_ns"],
+                                "receiver_ns": latest_observations[kind],
+                            },
+                        )
                 if kind in {"tf", "tf_static"}:
                     for transform in message.transforms:
                         tf_edges[
@@ -486,6 +577,34 @@ def main() -> int:
                             "observed_monotonic_ns": latest_observations[kind],
                             "source_topic": "/" + kind,
                         }
+                        if (
+                            stop_observation is not None
+                            and kind == "tf"
+                            and transform.header.frame_id == args.odometry_frame
+                            and transform.child_frame_id == "base_footprint"
+                        ):
+                            append_stop_sample(
+                                stop_observation,
+                                "transforms",
+                                {
+                                    "source_ns": transform.header.stamp.sec * 10**9
+                                    + transform.header.stamp.nanosec,
+                                    "receiver_ns": latest_observations[kind],
+                                    "parent": transform.header.frame_id,
+                                    "child": transform.child_frame_id,
+                                },
+                            )
+                if kind == "clock":
+                    latest_clock_ns = message.clock.sec * 10**9 + message.clock.nanosec
+                    if stop_observation is not None:
+                        append_stop_sample(
+                            stop_observation,
+                            "clock_samples",
+                            {
+                                "source_ns": latest_clock_ns,
+                                "receiver_ns": latest_observations[kind],
+                            },
+                        )
                 # Keep native RMW fields verbatim; absent/unsupported values are not zero measurements.
                 fields = {
                     key: info.get(key)
@@ -598,22 +717,31 @@ def main() -> int:
             )
             initialize_navigator(navigator, args.already_initialized)
             ready_deadline = time.monotonic() + graph_budget
+            client = ActionClient(navigator, NavigateToPose, "navigate_to_pose")
+            wait_for_action_server(client, ready_deadline, report)
+            record("action-server-bootstrap", report["action_server_bootstrap"])
             construction_started_ns = time.monotonic_ns()
             try:
                 observer = RosGraphObserver(
                     expected_graph,
                     observe_clock=True,
                     node_name="nav2_public_graph_observer",
+                    context=navigator.context,
                 )
             finally:
                 report["graph_observer"] = {
                     "construction_started_monotonic_ns": construction_started_ns,
                     "construction_finished_monotonic_ns": time.monotonic_ns(),
                 }
+            remaining = ready_deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    "graph observer construction exceeded readiness deadline"
+                )
             graph_ready = wait_for_graph_readiness(
                 expected_graph,
                 observer,
-                timeout_sec=max(0.001, ready_deadline - time.monotonic()),
+                timeout_sec=remaining,
                 stable_for_sec=graph_stability,
                 ready_deadline=ready_deadline,
                 report=report,
@@ -662,7 +790,6 @@ def main() -> int:
                     strict=True,
                 )
             )
-            client = ActionClient(navigator, NavigateToPose, "navigate_to_pose")
             record(
                 "measurement-start",
                 {
@@ -698,10 +825,6 @@ def main() -> int:
                     "graph_readiness": report["graph_readiness"],
                 },
             )
-            while not client.wait_for_server(timeout_sec=0.1):
-                if time.monotonic() >= ready_deadline:
-                    raise TimeoutError("NavigateToPose action server is unavailable")
-            observation_deadline = time.monotonic() + 10
             while any(
                 counts[key] < minimum
                 for key, minimum in {
@@ -711,11 +834,12 @@ def main() -> int:
                     "amcl_pose": 1,
                 }.items()
             ):
-                if time.monotonic() >= observation_deadline:
+                remaining = ready_deadline - time.monotonic()
+                if remaining <= 0:
                     raise TimeoutError(
                         "required native odom/TF/Clock observations are missing"
                     )
-                rclpy.spin_once(navigator, timeout_sec=0.1)
+                rclpy.spin_once(navigator, timeout_sec=min(0.1, remaining))
             if time.monotonic() >= ready_deadline:
                 raise TimeoutError(
                     "native observation readiness exceeded its declared deadline"
@@ -756,7 +880,8 @@ def main() -> int:
             goal_started_ns = time.monotonic_ns()
             report["goal_requested"] = {"x": args.goal_x, "y": args.goal_y}
             report["goal_started_monotonic_ns"] = goal_started_ns
-            deadline = time.monotonic() + args.action_budget_sec
+            deadline_ns = goal_started_ns + int(args.action_budget_sec * 1e9)
+            deadline = deadline_ns / 1e9
             handle = finite_future(
                 navigator,
                 client.send_goal_async(goal, feedback_callback=feedback),
@@ -833,6 +958,7 @@ def main() -> int:
                         report["server_after_shutdown_monotonic_ns"] = (
                             time.monotonic_ns()
                         )
+                        report["server_after_shutdown_clock_ns"] = latest_clock_ns
                         record(
                             "server-after-shutdown",
                             {
@@ -846,6 +972,7 @@ def main() -> int:
             if result_future.done():
                 result_observed_ns = time.monotonic_ns()
                 report["result_observed_monotonic_ns"] = result_observed_ns
+                report["result_observed_clock_ns"] = latest_clock_ns
                 result = result_future.result()
                 status = int(result.status)
                 report["action_status"] = status
@@ -1054,6 +1181,44 @@ def main() -> int:
             else:
                 report["observation_status"] = "incomplete"
                 report["reason"] = "result did not settle before action deadline"
+            if "stop_condition" in configuration and args.case != "success":
+                anchor_kind = (
+                    "server_unavailable"
+                    if args.case == "server-failure"
+                    else "canceled_result"
+                )
+                anchor_time = (
+                    report.get("server_after_shutdown_monotonic_ns")
+                    if args.case == "server-failure"
+                    else report.get("result_observed_monotonic_ns")
+                )
+                matched_anchor = (
+                    report.get("server_available_after_shutdown") is False
+                    if args.case == "server-failure"
+                    else report.get("action_status") == GoalStatus.STATUS_CANCELED
+                    and report.get("cancel_acknowledged") is True
+                )
+                if matched_anchor and type(anchor_time) is int:
+                    stop_observation = {
+                        "anchor": {
+                            "kind": anchor_kind,
+                            "receiver_monotonic_ns": anchor_time,
+                            "clock_ns": (
+                                report["server_after_shutdown_clock_ns"]
+                                if args.case == "server-failure"
+                                else report["result_observed_clock_ns"]
+                            ),
+                            "goal_id": goal_id,
+                        },
+                        "deadline_monotonic_ns": deadline_ns,
+                        "samples": [],
+                        "clock_samples": [],
+                        "transforms": [],
+                        "samples_omitted": False,
+                    }
+                    report["stop_observation"] = stop_observation
+                    wait_for_sampled_stop(navigator, report, configuration)
+                    record("post-terminal-state", stop_observation)
             report["message_counts"] = counts
             report["final_amcl_pose"] = latest_pose
             report["final_odometry"] = latest_odometry
@@ -1073,7 +1238,11 @@ def main() -> int:
                     "message": str(error),
                     **{
                         name: report[name]
-                        for name in ("graph_observer", "graph_readiness")
+                        for name in (
+                            "action_server_bootstrap",
+                            "graph_observer",
+                            "graph_readiness",
+                        )
                         if name in report
                     },
                 },
