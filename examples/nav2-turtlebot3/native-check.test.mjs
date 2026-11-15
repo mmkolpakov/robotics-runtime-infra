@@ -19,15 +19,16 @@ test('missing inputs refuse before loading the optional host package or acquirin
   assert.doesNotMatch(executed.stderr,/ERR_MODULE_NOT_FOUND/);
 });
 
-async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,badEntrypoint=false,local=false,bareImage=false,lostCreate=false,storageExit=1,storageTimeout=false}={}) {
+async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=false,badEntrypoint=false,local=false,bareImage=false,lostCreate=false,storageExit=1,storageTimeout=false,workerBeforeReady=false,recorderBeforeReady=false,foreignRecorder=false,malformedRecorder=false,workerAfterReady=false,unsettledWorker=false}={}) {
   const directory=await mkdtemp(resolve(tmpdir(),'nav2-driver-'));
   t.after(()=>rm(directory,{recursive:true,force:true}));
   const output=resolve(directory,'run'), requirements=resolve(directory,'requirements.json'), capture=resolve(output,'capture');
   await writeFile(requirements,'{}');
   const calls=[];
-  let actor,started=false,removed=false,finishRecorder;
+  let actor,started=false,removed=false,releaseWorker;
+  const recorderReady=new Promise(resolve=>{releaseWorker=resolve;});
   const packageImage={Id:bareImage?image.slice(7):image,RepoDigests:badImage?[]:[reference],Config:{Entrypoint:['/ros_entrypoint.sh'],Env:['PATH=/usr/bin:/bin'],StopSignal:'SIGINT'}};
-  const jobs={async run(request){
+  const jobs={timeoutMs:240000,async run(request){
     const a=request.args;
     calls.push({executable:request.executable,args:a});
     if(request.executable==='/fixture/python'){
@@ -62,21 +63,55 @@ async function fixture(t,{mode='success',badInput=false,badImage=false,badActor=
     if(a[0]==='start'){started=true;actor.State={Running:true,Pid:100,Status:'running',ExitCode:0,OOMKilled:false};return result(cid);}
     if(a[0]==='exec'){
       if(a.includes('/usr/bin/python3'))return result('False\n');
+      const {createHash}=await import('node:crypto');
       if(a.includes('/consumer/source/record-topics.py')){
         await mkdir(resolve(capture,'recorder-facts'),{recursive:true});
-        await writeFile(resolve(capture,'recorder-facts/ready.json'),JSON.stringify({run_id:'run-fixture',domain_id:'nav2'}));
-        return new Promise(done=>{finishRecorder=done;});
+        if(!recorderBeforeReady){
+          const recorder=await readFile(resolve(output,'source/record-topics.py'));
+          await writeFile(resolve(capture,'recorder-facts/ready.json'),malformedRecorder?'[]':JSON.stringify({
+            run_id:foreignRecorder?'run-foreign':'run-fixture',domain_id:'nav2',pid:201,
+            source_sha256:createHash('sha256').update(recorder).digest('hex'),ready_monotonic_ns:2,
+          }));
+        }
+        if(!unsettledWorker)releaseWorker(!recorderBeforeReady&&!foreignRecorder&&!malformedRecorder);
+        if(recorderBeforeReady){
+          await writeFile(resolve(capture,'recorder-facts/capture-state.json'),JSON.stringify({
+            run_id:'run-fixture',domain_id:'nav2',pid:201,finished_monotonic_ns:10,
+            capture_status:'incomplete',closure_confirmed:false,
+          }));
+          return {...result(),ok:false,exitCode:1,stderr:'recorder failed before readiness'};
+        }
+        const requestPath=resolve(capture,'recorder-facts/stop.json');
+        const deadline=performance.now()+2000;
+        while(true){
+          try{await readFile(requestPath);break;}
+          catch(error){if(error.code!=='ENOENT'||performance.now()>=deadline)throw error;}
+          await new Promise(resolve=>setTimeout(resolve,5));
+        }
+        await writeFile(resolve(capture,'recorder-facts/capture-state.json'),JSON.stringify({
+          run_id:'run-fixture',domain_id:'nav2',pid:201,finished_monotonic_ns:10,
+          capture_status:'complete',closure_confirmed:true,
+        }));
+        return result();
       }
-      const phase=a.includes('--prepare-only')?'prepare':mode;
-      await mkdir(resolve(capture,phase),{recursive:true});
+      assert.ok(a.includes('--wait-for-recorder'));
+      await mkdir(resolve(capture,mode),{recursive:true});
       const worker=await readFile(resolve(output,'source/workload.py'));
-      const {createHash}=await import('node:crypto');
-      await writeFile(resolve(capture,phase,'worker-process.json'),JSON.stringify({run_id:'run-fixture',domain_id:'nav2',pid:200,source_sha256:createHash('sha256').update(worker).digest('hex')}));
-      if(phase!=='prepare'){
-        await writeFile(resolve(capture,phase,'workload.json'),JSON.stringify({run_id:'run-fixture',case:mode}));
-        await writeFile(resolve(capture,'recorder-facts/capture-state.json'),JSON.stringify({run_id:'run-fixture',domain_id:'nav2',pid:201,finished_monotonic_ns:10,capture_status:'complete',closure_confirmed:true}));
-        finishRecorder(result());
+      const workerFact={run_id:'run-fixture',domain_id:'nav2',pid:200,
+        source_sha256:createHash('sha256').update(worker).digest('hex')};
+      await writeFile(resolve(capture,mode,'worker-process.json'),JSON.stringify(workerFact));
+      if(workerBeforeReady)return {...result(),ok:false,exitCode:1,stderr:'worker failed before readiness'};
+      await writeFile(resolve(capture,mode,'native-ready.json'),JSON.stringify({
+        ...workerFact,ready_monotonic_ns:1,
+      }));
+      if(unsettledWorker){
+        if(!request.cancelSignal.aborted)
+          await new Promise(resolve=>request.cancelSignal.addEventListener('abort',resolve,{once:true}));
+        return {...result(),ok:false,exitCode:undefined,canceled:true,signal:'SIGTERM'};
       }
+      const recording=await recorderReady;
+      await writeFile(resolve(capture,mode,'workload.json'),JSON.stringify({run_id:'run-fixture',case:mode,goal_issued:recording}));
+      if(!recording||workerAfterReady)return {...result(),ok:false,exitCode:1,stderr:'worker refused'};
       return result();
     }
     if(a[0]==='logs')return result();
@@ -97,12 +132,42 @@ for(const mode of ['success','cancel','timeout','server-failure']){
     await f.promise;
     assert.equal(f.calls.filter(c=>c.args[0]==='create').length,1);
     assert.equal(f.calls.filter(c=>c.args[0]==='start').length,1);
+    const workers=f.calls.filter(c=>c.args.includes('/consumer/source/workload.py'));
+    assert.equal(workers.length,1);
+    assert.ok(workers[0].args.includes('--wait-for-recorder'));
+    const workerIndex=f.calls.indexOf(workers[0]);
+    const recorderIndex=f.calls.findIndex(c=>c.args.includes('/consumer/source/record-topics.py'));
+    assert.ok(workerIndex>=0&&recorderIndex>workerIndex);
     assert.equal(f.started,true);
     assert.equal(f.removed,true);
     assert.ok(f.calls.some(c=>c.args.includes('--from-native')));
     assert.ok(f.calls.some(c=>c.args.some(a=>a.endsWith('/finalize.py'))));
   });
 }
+for(const fault of ['workerBeforeReady','recorderBeforeReady','foreignRecorder','malformedRecorder','workerAfterReady']){
+  test(fault+' settles the one owned worker before removing the actor',async t=>{
+    const f=await fixture(t,{[fault]:true});
+    await assert.rejects(f.promise);
+    assert.equal(f.calls.filter(c=>c.args.includes('/consumer/source/workload.py')).length,1);
+    if(fault==='workerBeforeReady')assert.ok(!f.calls.some(c=>c.args.includes('/consumer/source/record-topics.py')));
+    assert.ok(f.calls.some(c=>c.args.includes('/usr/bin/python3')&&c.args.at(-1)==='200'));
+    assert.equal(f.removed,true);
+    if(['recorderBeforeReady','foreignRecorder','malformedRecorder'].includes(fault)){
+      const report=JSON.parse(await readFile(resolve(f.output,'capture/success/workload.json'),'utf8'));
+      assert.equal(report.goal_issued,false);
+    }
+  });
+}
+
+test('recorder failure cancels the worker and retains the actor when settlement is unproven',async t=>{
+  const f=await fixture(t,{recorderBeforeReady:true,unsettledWorker:true});
+  await assert.rejects(f.promise,/recorder exited before readiness/);
+  assert.equal(f.removed,false);
+  const detail=JSON.parse(await readFile(resolve(f.output,'capture/native-quarantine.json'),'utf8'));
+  assert.equal(detail.workerSettled,false);
+  assert.equal(detail.recorderSettled,true);
+});
+
 test('Podman bare image Config ID preserves the exact image binding and raw preflight',async t=>{
   const f=await fixture(t,{bareImage:true});
   await f.promise;

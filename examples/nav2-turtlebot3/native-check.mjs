@@ -1,8 +1,29 @@
 import {createHash, randomUUID} from 'node:crypto';
-import {chmod, mkdir, readFile, writeFile, copyFile, access} from 'node:fs/promises';
+import {chmod, mkdir, readFile, writeFile, copyFile, access, lstat} from 'node:fs/promises';
 import {resolve, isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assertOwned, recoverCreated, createdId, nativeWaitExit, admitAndStart, removeUnstartedOwned, canonicalConfigId} from './native-identity.mjs';
+
+
+async function waitForReadiness(path, label, deadline, finished) {
+  while (performance.now() < deadline) {
+    if (finished()) throw new Error(label + ' exited before readiness');
+    try {
+      // Both producers publish these small markers atomically in the owned capture.
+      const info = await lstat(path);
+      if (!info.isFile() || info.size > 1048576) throw new Error(label + ' readiness marker differs');
+      const ready = JSON.parse(await readFile(path, 'utf8'));
+      if (!ready || typeof ready !== 'object' || Array.isArray(ready))
+        throw new Error(label + ' readiness marker differs');
+      if (performance.now() < deadline && !finished()) return ready;
+      break;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(label + ' readiness deadline');
+}
 
 
 export async function runNative(options, jobs) {
@@ -20,8 +41,8 @@ for (const file of ['workload.py','make-scenario.py','record-topics.py','fastdds
 }
 await copyFile(requirements,resolve(snapshot,'requirements.json'));
 await chmod(resolve(snapshot,'requirements.json'),0o444);
-const worker=await readFile(snapshot+'/workload.py');
-const workerSha=createHash('sha256').update(worker).digest('hex');
+const workerSha=createHash('sha256').update(await readFile(snapshot+'/workload.py')).digest('hex');
+const recorderSha=createHash('sha256').update(await readFile(snapshot+'/record-topics.py')).digest('hex');
 const owner='nav2-'+randomUUID(), name=owner;
 let image, admitted, composition;
 const startedAt=new Date().toISOString();
@@ -62,7 +83,25 @@ let acquisitionAttempted=false;
 let failure;
 let recorder;
 let recorderSettled=false;
+let worker;
+let workerResult;
+let workerError;
 let workerSettled=true;
+const workerCancel=new AbortController();
+const settleWorker=async()=>{
+  await worker;
+  worker=undefined;
+  if(workerError)throw workerError;
+  const result=workerResult;
+  workerSettled=await proveWorkerAbsent(mode,result);
+  events.push({op:'actual-'+mode+'-worker',ok:result.ok,exitCode:result.exitCode,signal:result.signal,
+    timedOut:result.timedOut,canceled:result.canceled,durationMs:result.durationMs});
+  await writeFile(output+'/worker.log',result.stdout+result.stderr);
+  const after=createHash('sha256').update(await readFile(snapshot+'/workload.py')).digest('hex');
+  await writeFile(output+'/worker-source-after.json',JSON.stringify({sha256:after}));
+  if(after!==workerSha)throw new Error('immutable native workload snapshot changed');
+  if(!result.ok||!workerSettled)throw new Error('actual Nav2 case worker or settlement refused');
+};
 try{
 
   const inspection=JSON.parse(await command('image-inspect',['image','inspect',imageReference]));
@@ -112,50 +151,57 @@ try{
   // BasicNavigator sets the initial AMCL pose before waiting for full activation.
   // Waiting for the navigation stack here could depend on that initialization.
   await writeFile(output+'/native-before.json',await command('inspect-before',['inspect',cid]));
+  const workerArgs=['exec',cid,'/ros_entrypoint.sh','/opt/consumer/bin/python','/consumer/source/workload.py',
+    '--scenario','/consumer/inputs/scenario.json','--prepared','/consumer/inputs','--image-id',image,'--case',mode,
+    ...workerConfiguration(admitted.configuration),'--run-id',runId,'--domain-id','nav2','--output','/evidence/'+mode,
+    '--wait-for-recorder'];
+  await writeFile(output+'/worker-source-before.json',JSON.stringify({sha256:workerSha,argv:workerArgs}));
   workerSettled=false;
-  const preparation=await jobs.run({executable:'/usr/bin/podman',
-    args:['exec',cid,'/ros_entrypoint.sh','/opt/consumer/bin/python','/consumer/source/workload.py',
-      '--scenario','/consumer/inputs/scenario.json','--prepared','/consumer/inputs','--image-id',image,'--case',mode,...workerConfiguration(admitted.configuration),'--run-id',runId,'--domain-id','nav2','--output','/evidence/prepare','--prepare-only'],
-    timeoutMs:180000,maxBufferBytes:1048576,env:{PATH:'/usr/bin:/bin',HOME:process.env.HOME},extendEnv:false});
-  events.push({op:'actual-prepare-worker',ok:preparation.ok,exitCode:preparation.exitCode,signal:preparation.signal,
-    timedOut:preparation.timedOut,canceled:preparation.canceled,durationMs:preparation.durationMs});
-  await writeFile(output+'/prepare-job.json',JSON.stringify({ok:preparation.ok,exitCode:preparation.exitCode,signal:preparation.signal,
-    timedOut:preparation.timedOut,canceled:preparation.canceled,durationMs:preparation.durationMs}));
-  await writeFile(output+'/prepare.log',preparation.stdout+preparation.stderr);
-  workerSettled=await proveWorkerAbsent('prepare',preparation);
-  if(!preparation.ok||!workerSettled)throw new Error('actual Nav2 preparation or settlement refused');
+  worker=jobs.run({
+    executable:'/usr/bin/podman',args:workerArgs,timeoutMs:Math.min(jobs.timeoutMs??240000,385000),
+    cancelSignal:workerCancel.signal,maxBufferBytes:1048576,env:{PATH:'/usr/bin:/bin',HOME:process.env.HOME},extendEnv:false,
+  }).then(result=>{workerResult=result;},error=>{workerError=error;});
+  const workerReadinessDeadline=performance.now()+180000;
+  let ready;
+  try{
+    ready=await waitForReadiness(output+'/'+mode+'/native-ready.json','worker',workerReadinessDeadline,
+      ()=>workerResult||workerError);
+  }catch(error){
+    if(performance.now()>=workerReadinessDeadline)workerCancel.abort();
+    throw error;
+  }
+  const processFact=JSON.parse(await readFile(output+'/'+mode+'/worker-process.json','utf8'));
+  if(ready.run_id!==runId||ready.domain_id!=='nav2'||ready.source_sha256!==workerSha||
+     !Number.isSafeInteger(ready.pid)||ready.pid<=0||!Number.isSafeInteger(ready.ready_monotonic_ns)||
+     ready.ready_monotonic_ns<=0||processFact.pid!==ready.pid||processFact.run_id!==ready.run_id||
+     processFact.domain_id!==ready.domain_id||processFact.source_sha256!==ready.source_sha256)
+    throw new Error('foreign worker readiness');
   recorder=jobs.run({executable:'/usr/bin/podman',
     args:['exec',cid,'/ros_entrypoint.sh','/opt/consumer/bin/python','/consumer/source/record-topics.py',
       '--output','/evidence/bag','--facts-dir','/evidence/recorder-facts','--run-id',runId,
       '--domain-id','nav2','--startup-timeout-sec','20','--max-lifetime-sec','180'],
     timeoutMs:210000,maxBufferBytes:1048576,env:{PATH:'/usr/bin:/bin',HOME:process.env.HOME},extendEnv:false});
-  let earlyResult;
-  recorder.then(result=>{earlyResult=result;});
-  const readyDeadline=performance.now()+25000;
-  while(true){
-    if(performance.now()>=readyDeadline)throw new Error('recorder readiness deadline');
-    if(earlyResult)throw new Error('recorder exited before readiness');
-    try{
-      const ready=JSON.parse(await readFile(output+'/recorder-facts/ready.json','utf8'));
-      if(ready.run_id!==runId||ready.domain_id!=='nav2')throw new Error('foreign recorder readiness');
-      break;
-    }catch(error){if(error.code!=='ENOENT')throw error;}
-    await new Promise(resolve=>setTimeout(resolve,100));
-  }
-  const workerArgs=['exec',cid,'/ros_entrypoint.sh','/opt/consumer/bin/python','/consumer/source/workload.py',
-    '--scenario','/consumer/inputs/scenario.json','--prepared','/consumer/inputs','--image-id',image,'--case',mode,...workerConfiguration(admitted.configuration),'--run-id',runId,'--domain-id','nav2','--output','/evidence/'+mode,'--already-initialized'];
-  await writeFile(output+'/worker-source-before.json',JSON.stringify({sha256:workerSha,argv:workerArgs}));
-  workerSettled=false;
-  const result=await jobs.run({executable:'/usr/bin/podman',args:workerArgs,timeoutMs:180000,maxBufferBytes:1048576,env:{PATH:'/usr/bin:/bin',HOME:process.env.HOME},extendEnv:false});
-  events.push({op:'actual-'+mode+'-worker',ok:result.ok,exitCode:result.exitCode,signal:result.signal,timedOut:result.timedOut,canceled:result.canceled,durationMs:result.durationMs});
-  await writeFile(output+'/worker.log',result.stdout+result.stderr);
-  workerSettled=await proveWorkerAbsent(mode,result);
-  const after=createHash('sha256').update(await readFile(snapshot+'/workload.py')).digest('hex');
-  await writeFile(output+'/worker-source-after.json',JSON.stringify({sha256:after}));
-  if(after!==workerSha)throw new Error('immutable native workload snapshot changed');
-  if(!result.ok||!workerSettled)throw new Error('actual Nav2 case worker or settlement refused');
-}catch(error){failure=error;await writeFile(output+'/failure.json',JSON.stringify({name:error.name,message:error.message}));}
+  let earlyRecorder;
+  recorder.then(result=>{earlyRecorder=result;},error=>{earlyRecorder=error;});
+  const recorded=await waitForReadiness(output+'/recorder-facts/ready.json','recorder',
+    performance.now()+25000,()=>earlyRecorder);
+  if(recorded.run_id!==runId||recorded.domain_id!=='nav2'||recorded.source_sha256!==recorderSha||
+     !Number.isSafeInteger(recorded.pid)||recorded.pid<=0||!Number.isSafeInteger(recorded.ready_monotonic_ns)||
+     recorded.ready_monotonic_ns<=ready.ready_monotonic_ns)
+    throw new Error('foreign recorder readiness');
+  const exerciseTimer=setTimeout(()=>workerCancel.abort(),180000);
+  try{await settleWorker();}
+  finally{clearTimeout(exerciseTimer);}
+}catch(error){
+  failure=error;
+  if(worker&&!workerResult&&!workerError)workerCancel.abort();
+  await writeFile(output+'/failure.json',JSON.stringify({name:error.name,message:error.message}));
+}
 finally{
+  if(worker){
+    try{await settleWorker();}
+    catch(error){failure??=error;await writeFile(output+'/worker-settlement-refusal.json',JSON.stringify({name:error.name,message:error.message}));}
+  }
   // A lost create response cannot establish absence of native effects.
   if(!cid&&acquisitionAttempted){
     try{

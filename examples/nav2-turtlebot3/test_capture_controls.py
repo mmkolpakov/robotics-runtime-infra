@@ -99,6 +99,163 @@ class CommandGuardControls(unittest.TestCase):
             self.fail("the native launch does not include the command guard")
 
 
+class NativeRecordingHandoff(unittest.TestCase):
+    def test_worker_spins_until_the_matching_recorder_is_ready(self):
+        import tempfile
+        from unittest.mock import patch
+
+        function = runpy.run_path(str(SOURCE))["wait_for_recorder"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ready.json"
+            navigator = object()
+            started = 100_000_000
+            now = started
+
+            def spin(node, *, timeout_sec):
+                nonlocal now
+                self.assertIs(node, navigator)
+                now += round(timeout_sec * 1e9)
+                path.write_text(
+                    json.dumps(
+                        {
+                            "run_id": "run-fixture",
+                            "domain_id": "nav2",
+                            "source_sha256": "a" * 64,
+                            "pid": 201,
+                            "ready_monotonic_ns": now,
+                        }
+                    )
+                )
+
+            with (
+                patch.dict(
+                    function.__globals__,
+                    {"rclpy": types.SimpleNamespace(spin_once=spin)},
+                ),
+                patch.object(
+                    function.__globals__["time"],
+                    "monotonic_ns",
+                    side_effect=lambda: now,
+                ),
+            ):
+                result = function(
+                    navigator,
+                    path,
+                    run_id="run-fixture",
+                    domain_id="nav2",
+                    source_sha256="a" * 64,
+                    ready_ns=started,
+                )
+
+        self.assertEqual(result["recorder_pid"], 201)
+        self.assertEqual(result["worker_ready_monotonic_ns"], started)
+        self.assertGreater(result["recorder_ready_monotonic_ns"], started)
+
+    def test_other_run_source_or_stale_recorder_cannot_arm_goal(self):
+        import tempfile
+        from unittest.mock import patch
+
+        function = runpy.run_path(str(SOURCE))["wait_for_recorder"]
+        expected = {
+            "run_id": "run-fixture",
+            "domain_id": "nav2",
+            "source_sha256": "a" * 64,
+            "pid": 201,
+            "ready_monotonic_ns": 200,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ready.json"
+            for key, value in (
+                ("run_id", "run-foreign"),
+                ("source_sha256", "f" * 64),
+                ("pid", True),
+                ("ready_monotonic_ns", 100),
+                ("ready_monotonic_ns", 301),
+            ):
+                with self.subTest(key=key, value=value):
+                    path.write_text(json.dumps({**expected, key: value}))
+                    with (
+                        patch.object(
+                            function.__globals__["time"],
+                            "monotonic_ns",
+                            return_value=300,
+                        ),
+                        self.assertRaisesRegex(ValueError, "armed native run"),
+                    ):
+                        function(
+                            object(),
+                            path,
+                            run_id="run-fixture",
+                            domain_id="nav2",
+                            source_sha256="a" * 64,
+                            ready_ns=100,
+                        )
+
+    def test_existing_observation_age_applies_when_the_recorder_arms(self):
+        clause = next(
+            node
+            for node in ast.walk(TREE)
+            if isinstance(node, ast.If)
+            and any(
+                isinstance(child, ast.Constant)
+                and child.value
+                == "native observations became stale before the recorded goal"
+                for child in ast.walk(node.body[0])
+            )
+        )
+        body = compile(
+            ast.fix_missing_locations(ast.Module(body=[clause], type_ignores=[])),
+            str(SOURCE),
+            "exec",
+        )
+        namespace = {
+            "handoff": {"observed_monotonic_ns": 3_000_000_000},
+            "latest_observations": {
+                "odom": 1_500_000_000,
+                "tf": 1_500_000_000,
+                "clock": 500_000_000,
+            },
+            "args": types.SimpleNamespace(max_observation_age_sec=2),
+        }
+        with self.assertRaisesRegex(TimeoutError, "became stale"):
+            exec(body, namespace)  # noqa: S102 - Exact repository AST under controlled inputs.
+        namespace["latest_observations"]["clock"] = 1_500_000_000
+        exec(body, namespace)  # noqa: S102 - Exact repository AST under controlled inputs.
+
+    def test_missing_recorder_marker_keeps_the_original_handoff_deadline(self):
+        import tempfile
+        from unittest.mock import patch
+
+        function = runpy.run_path(str(SOURCE))["wait_for_recorder"]
+        started = 100
+        now = started
+
+        def spin(_node, *, timeout_sec):
+            nonlocal now
+            now += round(timeout_sec * 1e9)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                function.__globals__, {"rclpy": types.SimpleNamespace(spin_once=spin)}
+            ),
+            patch.object(
+                function.__globals__["time"], "monotonic_ns", side_effect=lambda: now
+            ),
+            self.assertRaisesRegex(TimeoutError, "handoff deadline"),
+        ):
+            function(
+                object(),
+                Path(directory) / "ready.json",
+                run_id="run-fixture",
+                domain_id="nav2",
+                source_sha256="a" * 64,
+                ready_ns=started,
+            )
+
+        self.assertEqual(now - started, 25_000_000_000)
+
+
 class CaptureControls(unittest.TestCase):
     def test_buffered_journal_and_compact_callback_keep_native_metadata(self):
         record = next(

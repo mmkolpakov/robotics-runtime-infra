@@ -229,6 +229,43 @@ def wait_for_graph_readiness(
             ]
 
 
+def wait_for_recorder(navigator, path, *, run_id, domain_id, source_sha256, ready_ns):
+    from robotics_acceptance_harness.evaluator_trust import read_once
+    from robotics_runtime_contracts import loads_mapping
+
+    deadline = ready_ns + 25_000_000_000
+    while (remaining_ns := deadline - time.monotonic_ns()) > 0:
+        try:
+            marker = loads_mapping(read_once(path, 1024 * 1024), source_name=str(path))
+        except FileNotFoundError:
+            rclpy.spin_once(navigator, timeout_sec=min(0.1, remaining_ns / 1e9))
+            continue
+        now = time.monotonic_ns()
+        if now >= deadline:
+            break
+        recorder_ready_ns = marker.get("ready_monotonic_ns")
+        if (
+            marker.get("run_id") != run_id
+            or marker.get("domain_id") != domain_id
+            or marker.get("source_sha256") != source_sha256
+            or type(marker.get("pid")) is not int
+            or marker["pid"] <= 0
+            or type(recorder_ready_ns) is not int
+            or not ready_ns < recorder_ready_ns <= now
+        ):
+            raise ValueError("recorder readiness differs from the armed native run")
+        return {
+            "recorder_pid": marker["pid"],
+            "recorder_source_sha256": source_sha256,
+            "worker_ready_monotonic_ns": ready_ns,
+            "recorder_ready_monotonic_ns": recorder_ready_ns,
+            "observed_monotonic_ns": now,
+        }
+    raise TimeoutError(
+        "native recorder did not become ready within its handoff deadline"
+    )
+
+
 def native_octets(values, size: int) -> list[int]:
     """Project native uint8 fields to JSON integers without accepting lossy types."""
     result = [operator.index(value) for value in values]
@@ -337,6 +374,7 @@ def main() -> int:
     phase = parser.add_mutually_exclusive_group()
     phase.add_argument("--prepare-only", action="store_true")
     phase.add_argument("--already-initialized", action="store_true")
+    phase.add_argument("--wait-for-recorder", action="store_true")
     parser.add_argument("--odometry-frame", default="odom")
     parser.add_argument("--required-tf-edge", nargs=2, action="append")
     args = parser.parse_args()
@@ -457,6 +495,7 @@ def main() -> int:
         "scenario_sha256": admitted["scenario_sha256"],
     }
     args.output.mkdir(mode=0o700, parents=True, exist_ok=True)
+    worker_source_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     atomic_json(
         args.output / "worker-process.json",
         {
@@ -464,7 +503,7 @@ def main() -> int:
             "bootstrap_before_ros_init": bootstrap_facts,
             "domain_id": args.domain_id,
             "pid": os.getpid(),
-            "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "source_sha256": worker_source_sha256,
             "argv": list(os.sys.argv),
         },
     )
@@ -870,6 +909,39 @@ def main() -> int:
                 report["initial_amcl_pose"] = dict(latest_pose)
                 report["initial_odometry"] = dict(latest_odometry)
                 return 0
+            if args.wait_for_recorder:
+                ready_ns = time.monotonic_ns()
+                atomic_json(
+                    args.output / "native-ready.json",
+                    {
+                        "run_id": args.run_id,
+                        "domain_id": args.domain_id,
+                        "pid": os.getpid(),
+                        "source_sha256": worker_source_sha256,
+                        "ready_monotonic_ns": ready_ns,
+                    },
+                )
+                recorder_source = Path(__file__).with_name("record-topics.py")
+                handoff = wait_for_recorder(
+                    navigator,
+                    args.output.parent / "recorder-facts/ready.json",
+                    run_id=args.run_id,
+                    domain_id=args.domain_id,
+                    source_sha256=hashlib.sha256(
+                        recorder_source.read_bytes()
+                    ).hexdigest(),
+                    ready_ns=ready_ns,
+                )
+                if any(
+                    handoff["observed_monotonic_ns"] - latest_observations.get(kind, 0)
+                    > int(args.max_observation_age_sec * 1e9)
+                    for kind in ("odom", "tf", "clock")
+                ):
+                    raise TimeoutError(
+                        "native observations became stale before the recorded goal"
+                    )
+                report["recording_handoff"] = handoff
+                record("recorder-ready", handoff)
             goal = NavigateToPose.Goal()
             goal.pose = pose(navigator, args.goal_x, args.goal_y)
 

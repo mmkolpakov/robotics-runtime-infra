@@ -146,8 +146,12 @@ and closes before the navigator's context is shut down. It uses the declared
 graph topics and its explicit clock subscription.
 Native attempts require `/amcl`, `/bt_navigator` and `/cmd_vel_deadman`
 declared `active`, with lifecycle timeout and stability fields.
-The startup worker initializes the pose;
-the exercise worker observes the existing lifecycle and preserves localization.
+The native launcher keeps the worker that initializes the pose alive through
+recorder startup. The worker retains its ROS context and subscriptions while
+waiting for the recorder's run-bound readiness marker. It issues the goal only
+after that marker and checks that odometry, TF and clock observations are still
+fresh. The direct worker's prepare-only and already-initialized modes remain
+available.
 The worker first discovers the action server through its native `ActionClient`,
 then constructs the graph observer. Action discovery, observer construction,
 graph checks and initial native observations share one deadline of at most ten
@@ -155,7 +159,10 @@ seconds, with a shorter non-negative stability window. The graph's first-message
 timeout starts when `wait_for_readiness` begins and includes discovery still
 pending at that point. Action discovery does not establish topic delivery.
 The worker records the action-discovery and graph-check timings and the remaining
-shared budget. The v2 scenario carries this consumer
+shared budget. The recorder handoff has a 25-second limit after initial
+readiness. The launcher keeps the 180-second preparation and exercise limits
+and applies the caller's job ceiling to the whole worker. The default launcher
+uses a 240-second ceiling. The v2 scenario carries this consumer
 configuration in its extension and does not require legacy root graph/timeout fields.
 The extension's v1 schema names its consumer configuration format; the execution documents are v2.
 
