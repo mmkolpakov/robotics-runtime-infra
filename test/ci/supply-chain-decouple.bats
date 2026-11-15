@@ -71,6 +71,26 @@ scripts/ci/foundation/build-workspace-wheels.py
 test/provider-conformance/test_provider.py
 examples/minimal-consumer/compose.yaml
 examples/neutral-robot/verify-foundation.sh
+docker/foundation-coordinator.Dockerfile
+docker/legacy-finalizer.Dockerfile
+docker/evidence-source.Dockerfile
+host/workers/legacy-finalization/finalize.py
+scripts/qualification/create-statement
+host/test/fixtures/installed-legacy/prepare.py
+host/test/fixtures/installed-legacy/Node.Dockerfile
+host/test/fixtures/installed-webots/init-storage.mjs
+host/test/fixtures/legacy-live/compose.yaml
+host/workers/legacy/observe-clock-owner.py
+host/workers/legacy-live/prepare-runtime.py
+host/tools/qualify-legacy-live.mjs
+compose.legacy-retained.yaml
+compose.legacy-finalization.podman.yaml
+compose.simulation-health.yaml
+config/fastdds/udp-only.xml
+config/recording/qos-overrides.yaml
+config/qualification/simulation-interfaces.json
+docker/runtime/admit-robot-description
+scripts/ci/foundation/create-simulation-provider.py
 PATHS
 }
 

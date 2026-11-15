@@ -186,7 +186,7 @@ assert any(v == "image=moby/buildkit:v0.31.1@sha256:6b59b7df63a8cb9902736f9ddf7f
 builds = [v for v in calls if v[:2] in (["buildx", "bake"], ["buildx", "build"])]
 assert len(builds) == 6
 assert all(v[v.index("--builder") + 1] == name for v in builds)
-exports = [v for v in builds if "evidence-sink.target=cosign-license" in v]
+exports = [v for v in builds if v[-1] == "foundation-cosign-license"]
 assert len(exports) == 1
 marker = json.loads((root / "failure-snapshot.json").read_bytes())
 allowed = exports[0][exports[0].index("--allow") + 1]
@@ -197,10 +197,26 @@ offline = [v for v in calls if v[0] == "offline-helper"]
 assert offline == [["offline-helper", "test/qualification/real-cosign.sh", "--offline-consumer",
                     "127.0.0.1:5000/installed-ros/finalizer@sha256:" + "b" * 64,
                     str(fixture / "dependencies/robotics-runtime/.venv/bin/robotics-contracts")]]
-assert sum("--allow" in v for v in builds) == 1
-evidence_build = [v for v in builds if "docker/evidence-source.Dockerfile" in v]
-assert len(evidence_build) == 1
-assert "EVIDENCE_BASE_IMAGE=127.0.0.1:5000/installed-ros/finalizer@sha256:" + "b" * 64 in evidence_build[0]
+assert sum("--allow" in v for v in builds) == 2
+auxiliary = {v[-1]: v for v in builds if v[-1] in (
+    "foundation-coordinator", "legacy-finalizer", "evidence-source")}
+assert set(auxiliary) == {"foundation-coordinator", "legacy-finalizer", "evidence-source"}
+assert all(v[:2] == ["buildx", "bake"] and "--load" in v for v in auxiliary.values())
+prefix = "127.0.0.1:5000/installed-ros/"
+digest = "@sha256:" + "b" * 64
+assert "foundation-coordinator.contexts.foundation-wheels-image=docker-image://" + prefix + "foundation-wheels" + digest in auxiliary["foundation-coordinator"]
+assert "foundation-coordinator.contexts.foundation-base-image=docker-image://" + prefix + "simulation-base" + digest in auxiliary["foundation-coordinator"]
+assert "legacy-finalizer.contexts.coordinator-image=docker-image://" + prefix + "coordinator" + digest in auxiliary["legacy-finalizer"]
+assert "legacy-finalizer.contexts.cosign-license=" + marker["preserved_work"] + "/cosign-license" in auxiliary["legacy-finalizer"]
+read_permission = auxiliary["legacy-finalizer"][auxiliary["legacy-finalizer"].index("--allow") + 1]
+assert read_permission == "fs.read=" + marker["preserved_work"] + "/cosign-license"
+assert "*" not in read_permission
+assert "evidence-source.contexts.evidence-base-image=docker-image://" + prefix + "finalizer" + digest in auxiliary["evidence-source"]
+assert "foundation-coordinator.tags=" + prefix + "coordinator:installed-ros-101-1" in auxiliary["foundation-coordinator"]
+assert "legacy-finalizer.tags=" + prefix + "finalizer:installed-ros-101-1" in auxiliary["legacy-finalizer"]
+assert "evidence-source.tags=" + prefix + "evidence:installed-ros-101-1" in auxiliary["evidence-source"]
+assert all(v[-1] != "." for v in auxiliary.values())
+assert len([v for v in builds if v[:2] == ["buildx", "build"]]) == 1
 config = (root / "buildkitd.toml").read_text()
 assert config == '[registry."127.0.0.1:5000"]\n  http = true\n'
 assert not re.search(r'\[registry\."(?!127\.0\.0\.1:)', config)
@@ -245,4 +261,60 @@ PY
 @test "registry readiness preserves reset diagnostics and finite HTTP refusal" {
   run "${REAL_PYTHON}" "${REPOSITORY_ROOT}/test/ci/test_registry_startup_readiness.py"
   [ "${status}" -eq 0 ]
+}
+
+
+@test "auxiliary foundation Bake targets preserve the source graph and resolved overrides" {
+  bats_require_minimum_version 1.5.0
+  cd "${REPOSITORY_ROOT}" || return
+  run --separate-stderr docker buildx bake --file docker-bake.hcl --print \
+    foundation-coordinator legacy-finalizer evidence-source
+  [ "${status}" -eq 0 ]
+  printf '%s\n' "${output}" | "${REAL_PYTHON}" -c '
+import json, sys
+targets = json.load(sys.stdin)["target"]
+for name, dockerfile in (
+    ("foundation-coordinator", "docker/foundation-coordinator.Dockerfile"),
+    ("legacy-finalizer", "docker/legacy-finalizer.Dockerfile"),
+    ("evidence-source", "docker/evidence-source.Dockerfile"),
+):
+    target = targets[name]
+    assert target["context"] == "."
+    assert target["dockerfile"] == dockerfile
+    assert target["platforms"] == ["linux/amd64"]
+assert targets["foundation-coordinator"]["contexts"] == {
+    "foundation-base-image": "target:simulation",
+    "foundation-wheels-image": "target:foundation-wheels",
+}
+assert targets["foundation-coordinator"]["args"] == {
+    "FOUNDATION_WHEELS_IMAGE": "foundation-wheels-image",
+    "LEGACY_BASE_IMAGE": "foundation-base-image",
+}
+assert targets["legacy-finalizer"]["contexts"] == {
+    "coordinator-image": "target:foundation-coordinator",
+    "cosign-license": "target:foundation-cosign-license",
+}
+assert targets["legacy-finalizer"]["args"] == {"COORDINATOR_IMAGE": "coordinator-image"}
+assert targets["evidence-source"]["contexts"] == {"evidence-base-image": "target:legacy-finalizer"}
+assert targets["evidence-source"]["args"] == {"EVIDENCE_BASE_IMAGE": "evidence-base-image"}
+assert targets["foundation-wheels"]["target"] == "foundation-wheels"
+assert targets["foundation-wheels"]["platforms"] == ["linux/amd64"]
+assert targets["foundation-cosign-license"]["target"] == "cosign-license"
+'
+  local image="docker-image://registry.example/image@sha256:$(printf '%064d' 7)"
+  run --separate-stderr docker buildx bake --file docker-bake.hcl --print \
+    --set "foundation-coordinator.contexts.foundation-wheels-image=${image}" \
+    --set "foundation-coordinator.contexts.foundation-base-image=${image}" \
+    --set "legacy-finalizer.contexts.coordinator-image=${image}" \
+    --set "legacy-finalizer.contexts.cosign-license=${BATS_TEST_TMPDIR}/cosign-license" \
+    --set "evidence-source.contexts.evidence-base-image=${image}" \
+    foundation-coordinator legacy-finalizer evidence-source
+  [ "${status}" -eq 0 ]
+  printf '%s\n' "${output}" | "${REAL_PYTHON}" -c '
+import json, sys
+targets = json.load(sys.stdin)["target"]
+assert set(targets) == {"foundation-coordinator", "legacy-finalizer", "evidence-source"}
+assert all(not value.startswith("target:") for target in targets.values()
+           for value in target.get("contexts", {}).values())
+'
 }

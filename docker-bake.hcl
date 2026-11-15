@@ -207,6 +207,57 @@ target "simulation" {
   tags      = ["${REGISTRY}/robotics-runtime-infra/simulation:${VERSION}"]
 }
 
+target "foundation-wheels" {
+  inherits = ["simulation"]
+  target = "foundation-wheels"
+  platforms = ["linux/amd64"]
+}
+
+target "foundation-cosign-license" {
+  inherits = ["evidence-sink"]
+  target = "cosign-license"
+  platforms = ["linux/amd64"]
+}
+
+target "foundation-coordinator" {
+  context = "."
+  dockerfile = "docker/foundation-coordinator.Dockerfile"
+  platforms = ["linux/amd64"]
+  contexts = {
+    "foundation-wheels-image" = "target:foundation-wheels"
+    "foundation-base-image" = "target:simulation"
+  }
+  args = {
+    FOUNDATION_WHEELS_IMAGE = "foundation-wheels-image"
+    LEGACY_BASE_IMAGE = "foundation-base-image"
+  }
+}
+
+target "legacy-finalizer" {
+  context = "."
+  dockerfile = "docker/legacy-finalizer.Dockerfile"
+  platforms = ["linux/amd64"]
+  contexts = {
+    "coordinator-image" = "target:foundation-coordinator"
+    "cosign-license" = "target:foundation-cosign-license"
+  }
+  args = {
+    COORDINATOR_IMAGE = "coordinator-image"
+  }
+}
+
+target "evidence-source" {
+  context = "."
+  dockerfile = "docker/evidence-source.Dockerfile"
+  platforms = ["linux/amd64"]
+  contexts = {
+    "evidence-base-image" = "target:legacy-finalizer"
+  }
+  args = {
+    EVIDENCE_BASE_IMAGE = "evidence-base-image"
+  }
+}
+
 target "edge-runtime" {
   inherits  = ["_common"]
   target    = "edge-runtime"
