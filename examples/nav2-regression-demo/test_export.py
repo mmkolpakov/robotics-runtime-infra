@@ -119,6 +119,27 @@ class ExportQualification(unittest.TestCase):
             <= kinds
         )
         self.assertNotIn("recording_summary", kinds)
+        result = json.loads(
+            (self.work / "run/baseline/assessment/acceptance-result.json").read_bytes()
+        )
+        binding = result["evaluators"][0]
+        provenance = json.loads((self.work / "provenance.json").read_bytes())
+        self.assertEqual(
+            provenance["sdk"][binding["distribution"]],
+            {
+                "version": binding["version"],
+                "wheel_sha256": binding["artifact_sha256"],
+            },
+        )
+        self.assertIn(
+            f"Admitted Nav2 evaluator   : {binding['version']}\n",
+            (self.work / "report.txt").read_text(),
+        )
+        wheel_name = driver.QUALIFY.evaluator_wheel_name(binding["version"])
+        self.assertEqual(
+            driver._sha256(self.package / "subjects" / "evaluator" / wheel_name),
+            binding["artifact_sha256"],
+        )
         self.assertFalse(list(self.package.rglob("*.key")))
         self.assertFalse(list(self.package.rglob("*.pub")))
 

@@ -135,13 +135,17 @@ def inventory(work, case, qualification):
             "--artifact",
             f"other_evidence:assessment/{name}.json={reference_path(reference)}",
         ]
+    binding = json.loads(read_once(qualification / "binding.json", 1024 * 1024))
+    if result["evaluators"] != [binding]:
+        raise ValueError("export evaluator binding differs from the completed result")
+    wheel_name = driver.QUALIFY.evaluator_wheel_name(binding["version"])
     for kind, name in (
         ("artifact_receipt", "receipt.json"),
         ("artifact_verification", "verification.json"),
         ("attestation", "statement.json"),
         ("policy", "publisher.json"),
         ("verification", "verified-report.txt"),
-        ("package", "nav2_turtlebot3_evaluator-0.4.1-py3-none-any.whl"),
+        ("package", wheel_name),
     ):
         arguments += ["--artifact", f"{kind}:evaluator/{name}={qualification / name}"]
     arguments += [

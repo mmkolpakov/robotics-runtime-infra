@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import asdict
 from pathlib import Path
 
+from packaging.utils import parse_wheel_filename
 from robotics_acceptance_harness.evaluator_trust import CosignKeyWheelPolicy
 
 ROOT = Path(__file__).parent
@@ -39,6 +40,20 @@ def dump(path, value):
     return path
 
 
+class QualificationVersionControls(unittest.TestCase):
+    def test_unsupported_version_refuses_before_authentication(self):
+        from unittest.mock import patch
+
+        with patch.object(
+            QUALIFY, "authenticate_wheel_with_cosign_key"
+        ) as authenticate:
+            with self.assertRaisesRegex(ValueError, "version is unsupported"):
+                QUALIFY.qualify(
+                    Path("unread-profile.json"), Path("unwritten"), version="9.9.9"
+                )
+        authenticate.assert_not_called()
+
+
 class InstalledCliControls(unittest.TestCase):
     @classmethod
     def setUpClass(cls, preinstall_only=False):
@@ -59,6 +74,7 @@ class InstalledCliControls(unittest.TestCase):
         ):
             raise ValueError("Cosign differs from the approved executable SHA-256")
         cls.wheel = Path(wheel_path).resolve()
+        evaluator_version = str(parse_wheel_filename(cls.wheel.name)[1])
         cls.environment = {
             "HOME": str(cls.root),
             "XDG_CONFIG_HOME": str(cls.root / "config"),
@@ -144,12 +160,16 @@ class InstalledCliControls(unittest.TestCase):
         cls.profile.chmod(0o400)
         cls.qualification = cls.root / "qualification"
         preinstall = cls.root / "preinstall"
-        captured_binding = QUALIFY.qualify(cls.profile, preinstall, installed=False)
+        captured_binding = QUALIFY.qualify(
+            cls.profile, preinstall, installed=False, version=evaluator_version
+        )
         if (preinstall / cls.wheel.name).read_bytes() != cls.wheel.read_bytes():
             raise ValueError("preinstall input differs from authenticated bytes")
         if preinstall_only:
             return
-        cls.binding = QUALIFY.qualify(cls.profile, cls.qualification)
+        cls.binding = QUALIFY.qualify(
+            cls.profile, cls.qualification, version=evaluator_version
+        )
         if captured_binding["artifact_sha256"] != cls.binding["artifact_sha256"]:
             raise ValueError("preinstall and installed subjects differ")
 
