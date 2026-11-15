@@ -14,6 +14,9 @@ async function loadInput(path) {
   const ref = await referenceFile(path, { maxBytes: 65_536 });
   const input = JSON.parse(await readFile(path, 'utf8'));
   await verifyAttemptInputs([ref]);
+  if (input.case === undefined) input.case = 'takeoff-land';
+  if (!['takeoff-land', 'takeoff-reposition-land'].includes(input.case))
+    throw new Error('case must be takeoff-land or takeoff-reposition-land');
   if (!runIdPattern.test(input.runId) || !/^10\.\d{1,3}$/.test(input.subnetPrefix) || Number(input.subnetPrefix.split('.')[1]) > 255)
     throw new Error('runId must be a UUIDv4 and subnetPrefix a private two-octet prefix');
   for (const role of ['simulation', 'aircraft']) {

@@ -59,6 +59,17 @@ systemd-run --user --wait --pipe --unit "rr-attempt-$RUN_ID" \
   flock --no-fork --nonblock "$SLOT_LOCK" node "$EXAMPLE/run.mjs" "$INPUT"
 ```
 
+## Add the fixed waypoint case
+
+The default `case` is `takeoff-land`. Set `case` to `takeoff-reposition-land` for the x500
+to move 10 m east at the same commanded height before landing. The example calls the stock
+AAS reposition service and retains its reply and the matching PX4 command.
+
+The live position check uses fresh valid PX4 estimates. It requires observed movement and
+six consecutive half-second intervals inside the 2.0 m horizontal and 0.8 m vertical limits.
+`waypoint-dwell.json` identifies the selected samples. The MCAP adds the command channel for
+review alongside the position stream and firmware ACKs.
+
 ## Read the result
 
 `completion.json` records the attempt, any flight error and the run owner’s completion. Native

@@ -7,8 +7,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { AasRun, recorderArgs, recorderBootstrap, settleRecorder, stableReadiness, verifyClosedCapture } from './provider.mjs';
 
-function scenario() {
+function scenario(caseName) {
   return new AasRun({ jobs: {}, runResources: {} }, {
+    case: caseName,
     compose: '/usr/bin/true', socket: '/tmp/fixture.sock', composeFile: '/tmp/compose.yaml',
     output: '/tmp/example-output', projectName: 'rr-aas-fixture', runId: 'fixture',
     subnetPrefix: '10.43', images: { simulation: {}, aircraft: {} },
@@ -143,4 +144,52 @@ test('a healthy Compose client has time to settle after its recorder exits', asy
   const refs = await run.drain(new AbortController().signal);
   assert.equal(run.recorderClient.signal.aborted, false);
   assert.equal(JSON.parse(refs[0].data).composeClient.exitCode, 0);
+});
+
+test('only the explicit waypoint case adds the command channel', () => {
+  assert.deepEqual(scenario().recorderArgs, recorderArgs);
+  assert.deepEqual(scenario('takeoff-land').recorderArgs, recorderArgs);
+  assert.deepEqual(scenario('takeoff-reposition-land').recorderArgs,
+    [...recorderArgs, '/Drone1/fmu/in/vehicle_command']);
+});
+
+test('waypoint settlement requires observed progress and consecutive fresh position samples', () => {
+  const check = [
+    'import math,sys',
+    'from types import SimpleNamespace',
+    'scope = {"__name__": "test"}',
+    'exec(sys.argv[1], scope)',
+    'class FixtureGeodesic:',
+    '    @staticmethod',
+    '    def Inverse(a,b,c,d):',
+    '        return {"s12": math.hypot(c-a,d-b), "azi1": math.degrees(math.atan2(d-b,c-a))}',
+    'command = {"target":[0,0,10], "timestamp":1_000_000}',
+    'def make():',
+    '    return scope["WaypointWindow"](command, {"lat":0,"lon":-10}, FixtureGeodesic())',
+    'def sample(window, time, east, valid=True, resets=0):',
+    '    return window.observe(SimpleNamespace(timestamp=time, timestamp_sample=time, lat=0, lon=east, alt=10,',
+    '        lat_lon_valid=valid, alt_valid=valid, dead_reckoning=False, lat_lon_reset_counter=resets, alt_reset_counter=resets))',
+    'stationary = make()',
+    'for i in range(10):',
+    '    assert sample(stationary,1_250_000+i*500_000,0) is None',
+    'stale = make()',
+    'assert sample(stale,1_250_000,-4) is None',
+    'assert sample(stale,1_500_000,0) is None',
+    'assert sample(stale,1_500_000,0) is None',
+    'for i in range(1,9):',
+    '    assert sample(stale,1_500_000+i*500_000,0) is None',
+    'reset = make()',
+    'assert sample(reset,1_250_000,-4) is None',
+    'for i in range(8):',
+    '    assert sample(reset,1_500_000+i*500_000,0,resets=1) is None',
+    'good = make()',
+    'assert sample(good,1_250_000,-4) is None',
+    'for i in range(6):',
+    '    assert sample(good,1_500_000+i*500_000,0) is None',
+    'result = sample(good,4_500_000,0)',
+    'assert len(result["ticks"]) == 7 and result["sample_count"] == 7 and result["east_progress_m"] == 4',
+    'assert result["ticks"][-1]["timestamp_us"]-result["ticks"][0]["timestamp_us"] == 3_000_000',
+  ].join('\n');
+  const result = spawnSync('python3', ['-B', '-c', check, stableReadiness], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
 });

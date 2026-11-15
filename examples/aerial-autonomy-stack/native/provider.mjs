@@ -7,15 +7,16 @@ import { ComposeExecution, EngineMetadata } from '@robotics-runtime/infra-host';
 
 const ulogPath = '/aas/github_apps/PX4-Autopilot/build/px4_sitl_default/rootfs/0/log';
 const statusTopic = '/Drone1/fmu/out/vehicle_status_v1';
+const globalPositionTopic = '/Drone1/fmu/out/vehicle_global_position';
+const commandTopic = '/Drone1/fmu/in/vehicle_command';
 const topics = [
   '/clock', statusTopic, '/Drone1/fmu/out/vehicle_local_position_v1',
-  '/Drone1/fmu/out/vehicle_global_position', '/Drone1/fmu/out/vehicle_command_ack',
+  globalPositionTopic, '/Drone1/fmu/out/vehicle_command_ack',
   ...['takeoff', 'land'].flatMap(action => ['status', 'feedback'].map(kind => '/Drone1/' + action + '_action/_action/' + kind)),
 ];
 const recorderIdentity = '/evidence/recorder-identity.json';
-export const recorderArgs = [
-  'bag', 'record', '-s', 'mcap', '-o', '/evidence/flight', '--use-sim-time', '--include-hidden-topics', ...topics,
-];
+const recordingOptions = ['bag', 'record', '-s', 'mcap', '-o', '/evidence/flight', '--use-sim-time', '--include-hidden-topics'];
+export const recorderArgs = [...recordingOptions, ...topics];
 export const recorderBootstrap = `
 import json, os, sys
 from pathlib import Path
@@ -111,30 +112,121 @@ class ReadyWindow:
                     "disarmed": True, "preflight": True, "gcs_connected": True}
         return None
 
-def main():
-    import json
+class WaypointWindow:
+    def __init__(self, command, origin, geodesic):
+        self.target = command["target"]
+        self.marker = command["timestamp"]
+        self.geodesic = geodesic
+        if self.distance((origin["lat"], origin["lon"]), self.target[:2]) <= 2.0:
+            raise ValueError("pre-request position was already inside the target radius")
+        self.reset_segment()
+
+    def distance(self, first, second):
+        return self.geodesic.Inverse(*first, *second)["s12"]
+
+    def reset_dwell(self):
+        self.ticks = []
+        self.samples = 0
+        self.max_horizontal = self.max_vertical = 0.0
+
+    def reset_segment(self):
+        self.previous = None
+        self.origin = None
+        self.east_progress = None
+        self.reset_dwell()
+
+    def observe(self, message):
+        import math
+
+        stamp, sample = message.timestamp, message.timestamp_sample
+        coordinates = (message.lat, message.lon)
+        if (stamp <= self.marker or sample <= self.marker or not message.lat_lon_valid
+                or not message.alt_valid or message.dead_reckoning
+                or not all(math.isfinite(v) for v in (*coordinates, message.alt))):
+            self.reset_segment()
+            return None
+        epoch = (message.lat_lon_reset_counter, message.alt_reset_counter)
+        if self.previous:
+            prior, prior_sample, prior_epoch = self.previous
+            if not (0 < stamp - prior <= 500_000 and 0 < sample - prior_sample <= 500_000
+                    and epoch == prior_epoch):
+                self.reset_segment()
+        self.previous = stamp, sample, epoch
+        horizontal = self.distance(coordinates, self.target[:2])
+        vertical = abs(message.alt - self.target[2])
+        if self.origin is None:
+            if horizontal > 2.0:
+                self.origin = coordinates, horizontal
+            return None
+        if self.east_progress is None:
+            point, prior_radius = self.origin
+            moved = self.geodesic.Inverse(*point, *coordinates)
+            east = moved["s12"] * math.sin(math.radians(moved["azi1"]))
+            if east > 0.5 and horizontal < prior_radius:
+                self.east_progress = east
+        if self.east_progress is None or horizontal > 2.0 or vertical > 0.8:
+            self.reset_dwell()
+            return None
+
+        tick = {"timestamp_us": stamp, "timestamp_sample_us": sample, "lat": message.lat,
+                "lon": message.lon, "alt_m": message.alt}
+        self.samples += 1
+        self.max_horizontal = max(self.max_horizontal, horizontal)
+        self.max_vertical = max(self.max_vertical, vertical)
+        if not self.ticks:
+            self.ticks.append(tick)
+            return None
+        previous = self.ticks[-1]
+        if stamp - previous["timestamp_us"] < 500_000:
+            return None
+        if self.distance((previous["lat"], previous["lon"]), coordinates) >= 0.2:
+            self.reset_dwell()
+            self.samples, self.max_horizontal, self.max_vertical = 1, horizontal, vertical
+        self.ticks.append(tick)
+        if len(self.ticks) < 7:
+            return None
+        return {
+            "target": self.target, "command_us": self.marker, "east_progress_m": self.east_progress,
+            "sample_count": self.samples, "max_horizontal_error_m": self.max_horizontal,
+            "max_vertical_error_m": self.max_vertical, "reset_counters": epoch, "ticks": self.ticks,
+        }
+
+def listen(message_type, topic, window):
     import rclpy
-    from px4_msgs.msg import VehicleStatus
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
     rclpy.init()
-    node = rclpy.create_node("aas_px4_readiness")
+    node = rclpy.create_node("aas_px4_observation")
     qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE)
-    window = ReadyWindow()
     result = None
 
     def observe(message):
         nonlocal result
         result = window.observe(message)
 
-    node.create_subscription(VehicleStatus, "/Drone1/fmu/out/vehicle_status_v1", observe, qos)
+    subscription = node.create_subscription(message_type, topic, observe, qos)
     try:
         while result is None:
             rclpy.spin_once(node, timeout_sec=0.5)
-        print(json.dumps(result))
+        return result
     finally:
+        node.destroy_subscription(subscription)
         node.destroy_node()
         rclpy.try_shutdown()
+
+def main():
+    import json, sys
+
+    if len(sys.argv) == 1:
+        from px4_msgs.msg import VehicleStatus
+        result = listen(VehicleStatus, "/Drone1/fmu/out/vehicle_status_v1", ReadyWindow())
+    else:
+        from geographiclib.geodesic import Geodesic
+        from px4_msgs.msg import VehicleGlobalPosition
+        inputs = json.loads(sys.argv[1])
+        result = listen(VehicleGlobalPosition, "/Drone1/fmu/out/vehicle_global_position",
+                        WaypointWindow(inputs["command"], inputs["origin"], Geodesic.WGS84))
+    print(json.dumps(result))
 
 if __name__ == "__main__":
     main()
@@ -171,6 +263,8 @@ export class AasRun {
     this.compose = new ComposeExecution(this.jobs, this.options);
     this.owner = { runId, projectName };
     this.measurementRefs = [];
+    this.recordingTopics = input.case === 'takeoff-reposition-land' ? [...topics, commandTopic] : topics;
+    this.recorderArgs = [...recordingOptions, ...this.recordingTopics];
   }
 
   async command(args, signal) {
@@ -287,7 +381,7 @@ export class AasRun {
     const script = ros + 'exec python3 -B -c "$@" >/evidence/recorder.log 2>&1';
     this.recorderClient = new AbortController();
     this.recording = recorder.run(['exec', '-T', 'aircraft', '/bin/bash', '-c', script, 'record',
-      recorderBootstrap, recorderIdentity, ...recorderArgs], this.recorderClient.signal)
+      recorderBootstrap, recorderIdentity, ...this.recorderArgs], this.recorderClient.signal)
       .catch(error => ({ ok: false, diagnostic: String(error) }));
     this.recording.then(result => { this.recorderClientResult = result; });
     const deadline = performance.now() + 20_000;
@@ -295,7 +389,7 @@ export class AasRun {
       signal.throwIfAborted();
       const result = await this.compose.run(['exec', '-T', 'aircraft', 'cat', '/evidence/recorder.log'], signal);
       const subscribed = new Set([...result.stdout.matchAll(/Subscribed to topic '([^']+)'/g)].map(match => match[1]));
-      if (result.ok && topics.every(topic => subscribed.has(topic))) return;
+      if (result.ok && this.recordingTopics.every(topic => subscribed.has(topic))) return;
       await pause(400, undefined, { signal });
     }
     throw new Error('recorder did not subscribe to all selected channels');
@@ -312,6 +406,41 @@ export class AasRun {
     if (!/Goal accepted with ID:\s*[a-f0-9]{32}/i.test(output) || !/^Goal finished with status:\s*SUCCEEDED$/mi.test(output)
       || !/^\s*success:\s*true\s*$/mi.test(result)) throw new Error(name + ' did not succeed');
     return true;
+  }
+
+
+  async waypoint(signal) {
+    const initial = await this.aircraft(['ros2', 'topic', 'echo', '--once', '--filter',
+      'm.lat_lon_valid and m.alt_valid and not m.dead_reckoning',
+      '--qos-reliability', 'best_effort', '--qos-durability', 'volatile',
+      globalPositionTopic, 'px4_msgs/msg/VehicleGlobalPosition'], signal);
+    this.measurementRefs.push(await this.save('waypoint-before.txt', initial));
+    const origin = Object.fromEntries(['lat', 'lon', 'alt', 'timestamp', 'timestamp_sample']
+      .map(name => [name, Number(field(initial, name))]));
+    if (!Object.values(origin).every(Number.isFinite) || !Number.isSafeInteger(origin.timestamp)
+      || !Number.isSafeInteger(origin.timestamp_sample) || origin.timestamp <= 0 || origin.timestamp_sample <= 0)
+      throw new Error('invalid pre-request PX4 position');
+
+    const request = await this.aircraft(['ros2', 'service', 'call', '/Drone1/set_reposition',
+      'autopilot_interface_msgs/srv/SetReposition', '{north: 0.0, east: 10.0, altitude: 10.0}'], signal, '12s');
+    this.measurementRefs.push(await this.save('waypoint-service.txt', request));
+    if (!/SetReposition_Response\(success=True(?:,|\))/.test(request)) throw new Error('SetReposition did not accept the waypoint');
+
+    const filter = 'm.command == 192 and m.source_system == 255 and m.source_component == 0'
+      + ' and m.target_system == 1 and m.target_component == 1 and m.timestamp > ' + origin.timestamp;
+    const marker = await this.aircraft(['ros2', 'topic', 'echo', '--once', '--filter', filter,
+      '--qos-reliability', 'best_effort', '--qos-durability', 'transient_local',
+      commandTopic, 'px4_msgs/msg/VehicleCommand'], signal);
+    this.measurementRefs.push(await this.save('waypoint-command.txt', marker));
+    const command = { timestamp: Number(field(marker, 'timestamp')),
+      target: ['param5', 'param6', 'param7'].map(name => Number(field(marker, name))) };
+    if (!Number.isSafeInteger(command.timestamp) || command.timestamp <= origin.timestamp
+      || !command.target.every(Number.isFinite) || Math.abs(command.target[0]) > 90 || Math.abs(command.target[1]) > 180)
+      throw new Error('invalid waypoint command observation');
+
+    const dwell = await this.aircraft(['python3', '-B', '-c', stableReadiness,
+      JSON.stringify({ origin, command })], signal, '35s');
+    this.measurementRefs.push(await this.save('waypoint-dwell.json', dwell));
   }
 
   async measure(signal) {
@@ -338,6 +467,7 @@ export class AasRun {
       const [height] = heights;
       if (heights.size !== 1 || !(airborne.altitude - height > 9)) throw new Error('native altitude did not pass the stock 90% takeoff criterion');
       this.measurementRefs.push(await this.save('ascent.json', JSON.stringify({ homeAltitude: height, ...airborne })));
+      if (this.input.case === 'takeoff-reposition-land') await this.waypoint(signal);
     } catch (error) {
       ascentError = error;
       this.measurementRefs.push(await this.save('ascent-error.txt', String(error)));
@@ -357,7 +487,7 @@ export class AasRun {
   async drain(signal) {
     if (!this.recording) throw new Error('the recorder never started; the owned project is retained');
     const producer = JSON.parse(await this.command(['exec', '-T', 'aircraft', 'python3', '-B', '-c',
-      settleRecorder, recorderIdentity, ...recorderArgs], signal));
+      settleRecorder, recorderIdentity, ...this.recorderArgs], signal));
     const native = await this.compose.run(['exec', '-T', 'simulation', 'tmux', 'display-message', '-p',
       '-t', pane, '#{pane_current_command}'], signal);
     if (native.ok && native.stdout.trim() === 'px4') await this.simulator(['tmux', 'send-keys', '-t', pane, 'C-c'], signal);
@@ -379,7 +509,7 @@ export class AasRun {
     const counts = new Map([...bag.matchAll(/Topic:\s*(\S+)\s*\|[^\n]*?Count:\s*(\d+)/g)].map(match => [match[1], Number(match[2])]));
     const errors = [];
     if (!ok && !detachedAfterClosure) errors.push('recorder Compose client did not complete');
-    if (!topics.every(topic => counts.get(topic) > 0)) errors.push('selected MCAP channels are incomplete');
+    if (!this.recordingTopics.every(topic => counts.get(topic) > 0)) errors.push('selected MCAP channels are incomplete');
     if (errors.length) throw new Error(errors.join('\n'));
     return this.drainRefs.splice(0);
   }
