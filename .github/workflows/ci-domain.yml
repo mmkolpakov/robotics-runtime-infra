@@ -126,6 +126,11 @@ jobs:
           test "$#" -eq 1
           examples/nav2-turtlebot3/.venv/bin/python -m unittest discover \
             -s examples/nav2-regression-demo -p 'test*.py' -v
+      - name: Test the AAS benchmark archive consumer
+        working-directory: .
+        run: |
+          examples/nav2-turtlebot3/.venv/bin/python -I -B -m unittest discover \
+            -s examples/aerial-autonomy-stack -p 'test_*.py' -v
       - name: Test portable X500 consumer interfaces without simulation
         working-directory: examples/px4-x500
         run: |
