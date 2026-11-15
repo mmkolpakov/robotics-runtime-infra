@@ -258,9 +258,21 @@ def finite_future(node, future, deadline: float):
     return future.result()
 
 
-def append_stop_sample(window, stream, sample):
+def observe_action_server(navigator, client, deadline):
+    while (remaining := deadline - time.monotonic()) > 0:
+        rclpy.spin_once(navigator, timeout_sec=min(0.05, remaining))
+    return client.server_is_ready()
+
+
+def append_stop_sample(window, stream, sample, *, received_unix_ns=None):
     if sample["receiver_ns"] > window["deadline_monotonic_ns"]:
         return
+    # Fast DDS uses the local Unix clock for reception timestamps.
+    cutoff = window["anchor"].get("rmw_receive_after_unix_ns")
+    if cutoff is not None:
+        if type(received_unix_ns) is not int or received_unix_ns <= cutoff:
+            return
+        sample["rmw_received_unix_ns"] = received_unix_ns
     if len(window[stream]) >= MAX_STOP_SAMPLES:
         window["samples_omitted"] = True
     else:
@@ -564,6 +576,7 @@ def main() -> int:
                                 "source_ns": latest_odometry["ros_stamp_ns"],
                                 "receiver_ns": latest_observations[kind],
                             },
+                            received_unix_ns=info.get("received_timestamp"),
                         )
                 if kind in {"tf", "tf_static"}:
                     for transform in message.transforms:
@@ -593,6 +606,7 @@ def main() -> int:
                                     "parent": transform.header.frame_id,
                                     "child": transform.child_frame_id,
                                 },
+                                received_unix_ns=info.get("received_timestamp"),
                             )
                 if kind == "clock":
                     latest_clock_ns = message.clock.sec * 10**9 + message.clock.nanosec
@@ -604,6 +618,7 @@ def main() -> int:
                                 "source_ns": latest_clock_ns,
                                 "receiver_ns": latest_observations[kind],
                             },
+                            received_unix_ns=info.get("received_timestamp"),
                         )
                 # Keep native RMW fields verbatim; absent/unsupported values are not zero measurements.
                 fields = {
@@ -954,15 +969,24 @@ def main() -> int:
                         )
                         # Genuine upstream lifecycle shutdown removes the action server; it is not a fabricated result.
                         navigator.lifecycleShutdown()
-                        present = client.wait_for_server(timeout_sec=1.0)
+                        present = observe_action_server(
+                            navigator, client, min(deadline, time.monotonic() + 1.0)
+                        )
                         report["server_after_shutdown_monotonic_ns"] = (
                             time.monotonic_ns()
                         )
+                        report["server_after_shutdown_unix_ns"] = time.time_ns()
                         report["server_after_shutdown_clock_ns"] = latest_clock_ns
                         record(
                             "server-after-shutdown",
                             {
                                 "action_server_present": present,
+                                "observed_unix_ns": report[
+                                    "server_after_shutdown_unix_ns"
+                                ],
+                                "observed_monotonic_ns": report[
+                                    "server_after_shutdown_monotonic_ns"
+                                ],
                                 "node_names": navigator.get_node_names(),
                             },
                         )
@@ -1209,6 +1233,15 @@ def main() -> int:
                                 else report["result_observed_clock_ns"]
                             ),
                             "goal_id": goal_id,
+                            **(
+                                {
+                                    "rmw_receive_after_unix_ns": report[
+                                        "server_after_shutdown_unix_ns"
+                                    ]
+                                }
+                                if args.case == "server-failure"
+                                else {}
+                            ),
                         },
                         "deadline_monotonic_ns": deadline_ns,
                         "samples": [],
