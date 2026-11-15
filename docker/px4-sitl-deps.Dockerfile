@@ -12,7 +12,13 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean \
 RUN --mount=type=cache,id=robotics-px4-jetty-noble-20261113-archives,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=robotics-px4-jetty-noble-20261113-lists,target=/var/lib/apt/lists,sharing=locked \
     UBUNTU_SNAPSHOT="$UBUNTU_SNAPSHOT" /usr/local/sbin/use-package-snapshots \
-    && apt-get update \
+    && mapfile -t apt_packages < <(dpkg-query -W -f='${binary:Package}\t${source:Package}\t${db:Status-Status}\n' | awk '$2 == "apt" && $3 == "installed" {print $1}') \
+    && test "${#apt_packages[@]}" -gt 0 \
+    && apt-get -o Acquire::Retries=0 update \
+    && apt-get -o Acquire::Retries=0 install -y --only-upgrade --no-remove --no-install-recommends "${apt_packages[@]}" \
+    && for package in "${apt_packages[@]}"; do \
+         dpkg --compare-versions "$(dpkg-query -W -f='${source:Version}' "$package")" ge 2.8.4ubuntu0.1 || exit 1; \
+       done \
     && apt-get install -y --no-install-recommends ca-certificates=20260816ubuntu0.24.04.2 wget=1.21.4-1ubuntu4.5 gnupg=2.4.4-2ubuntu17.6 \
     && wget -q https://packages.osrfoundation.org/gazebo.gpg -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
     && printf '%s  %s\n' 15d0300460e0c9c0efb21fa9770c0bf228988a07d71c4fac985c2161954a25a4 /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg | sha256sum --check \

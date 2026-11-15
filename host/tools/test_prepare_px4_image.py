@@ -160,6 +160,45 @@ class ContextControls(unittest.TestCase):
         self.assertNotIn("worker_image_id", record)
         self.assertNotIn("mavsdk_server", record)
 
+    def test_docker_engine_uses_the_same_native_context_without_podman_flags(self):
+        argv = self.run_prepare(["--controller", "native-python", "--engine", "docker"])
+        self.assertEqual(argv[:2], ["docker", "build"])
+        self.assertNotIn("--format=docker", argv)
+        self.assertIn("--load", argv)
+        self.assertEqual(argv[argv.index("--builder") + 1], "default")
+        self.assertEqual(
+            argv[-1], str(self.root / "host/.tools/px4-image-native-context")
+        )
+
+    def test_run_owned_parent_contains_generated_context(self):
+        parent = self.root / "host/.tools/run-10-1"
+        parent.mkdir()
+        argv = self.run_prepare(
+            ["--controller", "native-python", "--context-parent", str(parent)]
+        )
+        self.assertEqual(argv[-1], str(parent / "px4-image-native-context"))
+        self.assertTrue(
+            (parent / "px4-image-native-context/metadata/source.json").is_file()
+        )
+
+    def test_context_parent_cannot_resolve_outside_project_tools(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        alias = self.root / "host/.tools/aliased"
+        alias.symlink_to(outside, target_is_directory=True)
+        for parent in (outside, alias):
+            with self.subTest(parent=parent):
+                with self.assertRaisesRegex(ValueError, "context parent"):
+                    self.run_prepare(
+                        [
+                            "--controller",
+                            "native-python",
+                            "--context-parent",
+                            str(parent),
+                        ]
+                    )
+        self.assertFalse((outside / "px4-image-native-context").exists())
+
     def test_default_legacy_context_preserves_server_and_metadata(self):
         argv = self.run_prepare(["--mavsdk-server", str(self.server)])
         context = self.root / "host/.tools/px4-image-context"

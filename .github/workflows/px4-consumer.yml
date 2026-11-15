@@ -10,7 +10,21 @@ on:
       - host/tools/build-px4-stock.sh
       - host/workers/px4/probe.py
       - host/test/test_px4_probe_identity.py
-      - docker/px4-sitl-native.Dockerfile
+      - docker/px4-sitl*.Dockerfile
+      - docker/apt/px4-jetty-closure.lock
+      - docker/apt/use-package-snapshots
+      - docker/python/px4-sitl.lock
+      - docker/python/px4-sdk-build.lock
+      - host/workers/px4/mavsdk-source-lock.json
+      - host/workers/legacy-finalization/export_retained.py
+      - scripts/ci/build-px4-source-images.sh
+      - scripts/ci/security/**
+      - test/ci/test_px4_source_sdk_factory.py
+      - test/ci/px4-source-images.bats
+      - .github/actions/setup-buildx/**
+      - .trivyignore
+      - trivy.yaml
+      - security/vex/**
       - docker/python/px4-native-sdk.lock
       - compose.px4-sdk.yaml
       - .github/workflows/px4-consumer.yml
@@ -23,7 +37,21 @@ on:
       - host/tools/build-px4-stock.sh
       - host/workers/px4/probe.py
       - host/test/test_px4_probe_identity.py
-      - docker/px4-sitl-native.Dockerfile
+      - docker/px4-sitl*.Dockerfile
+      - docker/apt/px4-jetty-closure.lock
+      - docker/apt/use-package-snapshots
+      - docker/python/px4-sitl.lock
+      - docker/python/px4-sdk-build.lock
+      - host/workers/px4/mavsdk-source-lock.json
+      - host/workers/legacy-finalization/export_retained.py
+      - scripts/ci/build-px4-source-images.sh
+      - scripts/ci/security/**
+      - test/ci/test_px4_source_sdk_factory.py
+      - test/ci/px4-source-images.bats
+      - .github/actions/setup-buildx/**
+      - .trivyignore
+      - trivy.yaml
+      - security/vex/**
       - docker/python/px4-native-sdk.lock
       - compose.px4-sdk.yaml
       - .github/workflows/px4-consumer.yml
@@ -123,3 +151,52 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-fund
           npm test
+
+  source-images:
+    runs-on: >-
+      ${{ fromJSON('{"hosted":"ubuntu-24.04","home":["self-hosted","linux","x64","robotics-ci-home"]}')
+          [vars.ROBOTICS_CI_EXECUTOR || 'hosted'] }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: .
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+    steps:
+      - name: Check CI executor and source context
+        id: ci-profile
+        uses: mmkolpakov/robotics-runtime-infra/.github/actions/ci-profile@b6a8138e988bfd55c513c3f6fc770adb4546dcda
+        with:
+          executor: ${{ vars.ROBOTICS_CI_EXECUTOR || 'hosted' }}
+          architecture: x64
+          runner-environment: ${{ runner.environment }}
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-buildx
+      - name: Build the locked PX4 dependency image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          file: docker/px4-sitl-deps.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: local/robotics-px4-deps:px4-source-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: org.robotics.build.owner=px4-source-${{ github.run_id }}-${{ github.run_attempt }}
+          cache-from: type=gha,scope=px4-deps-amd64
+          cache-to: type=gha,mode=max,scope=px4-deps-amd64
+      - name: Build the locked PX4 firmware, SDK and complete source worker
+        run: scripts/ci/build-px4-source-images.sh
+      - name: Upload source image identities, inventories and security results
+        if: always() && steps.ci-profile.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: px4-source-images-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            artifacts/px4-source-*/
+            artifacts/security/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove run-owned PX4 build resources
+        if: always() && steps.ci-profile.outcome == 'success'
+        run: scripts/ci/build-px4-source-images.sh --cleanup

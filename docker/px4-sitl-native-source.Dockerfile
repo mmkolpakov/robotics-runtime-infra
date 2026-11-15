@@ -10,10 +10,13 @@ COPY --chmod=0555 use-package-snapshots /usr/local/sbin/use-package-snapshots
 RUN set -eu; \
     UBUNTU_SNAPSHOT="$UBUNTU_SNAPSHOT" /usr/local/sbin/use-package-snapshots \
     && mkdir -p /opt/sdk-apt-lists/partial \
-    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists update \
+    && mapfile -t apt_packages < <(dpkg-query -W -f='${binary:Package}\t${source:Package}\t${db:Status-Status}\n' | awk '$2 == "apt" && $3 == "installed" {print $1}') \
+    && test "${#apt_packages[@]}" -gt 0 \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists update \
     && install -d /usr/share/robotics-px4/sdk-source/build-apt-indexes \
     && cp /opt/sdk-apt-lists/*InRelease /opt/sdk-apt-lists/*Packages* /usr/share/robotics-px4/sdk-source/build-apt-indexes/ \
-    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --download-only --no-install-recommends build-essential cmake ninja-build pkg-config git ca-certificates python3 python3-venv python3-pip binutils pax-utils libcurl4-openssl-dev libssl-dev liblzma-dev libasio-dev libfmt-dev libtinyxml2-dev nlohmann-json3-dev \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --download-only --only-upgrade --no-remove --no-install-recommends "${apt_packages[@]}" \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --download-only --no-install-recommends build-essential cmake ninja-build pkg-config git ca-certificates python3 python3-venv python3-pip binutils pax-utils libcurl4-openssl-dev libssl-dev liblzma-dev libasio-dev libfmt-dev libtinyxml2-dev nlohmann-json3-dev \
     && : > /usr/share/robotics-px4/sdk-source/build-debs.tsv \
     && for file in /var/cache/apt/archives/*.deb; do \
          test -e "$file" || continue; \
@@ -24,7 +27,10 @@ RUN set -eu; \
            >> /usr/share/robotics-px4/sdk-source/build-debs.tsv; \
        done \
     && LC_ALL=C sort -o /usr/share/robotics-px4/sdk-source/build-debs.tsv /usr/share/robotics-px4/sdk-source/build-debs.tsv \
-    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --no-download --no-install-recommends build-essential cmake ninja-build pkg-config git ca-certificates python3 python3-venv python3-pip binutils pax-utils libcurl4-openssl-dev libssl-dev liblzma-dev libasio-dev libfmt-dev libtinyxml2-dev nlohmann-json3-dev \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --no-download --no-remove --no-install-recommends "${apt_packages[@]}" build-essential cmake ninja-build pkg-config git ca-certificates python3 python3-venv python3-pip binutils pax-utils libcurl4-openssl-dev libssl-dev liblzma-dev libasio-dev libfmt-dev libtinyxml2-dev nlohmann-json3-dev \
+    && for package in "${apt_packages[@]}"; do \
+         dpkg --compare-versions "$(dpkg-query -W -f='${source:Version}' "$package")" ge 2.8.4ubuntu0.1 || exit 1; \
+       done \
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort \
        > /usr/share/robotics-px4/sdk-source/build-apt-closure.tsv \
     && rm -rf /opt/sdk-apt-lists
@@ -58,10 +64,13 @@ COPY --chmod=0555 use-package-snapshots /usr/local/sbin/use-package-snapshots
 RUN set -eu; \
     UBUNTU_SNAPSHOT="$UBUNTU_SNAPSHOT" /usr/local/sbin/use-package-snapshots \
     && mkdir -p /opt/sdk-apt-lists/partial \
-    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists update \
+    && mapfile -t apt_packages < <(dpkg-query -W -f='${binary:Package}\t${source:Package}\t${db:Status-Status}\n' | awk '$2 == "apt" && $3 == "installed" {print $1}') \
+    && test "${#apt_packages[@]}" -gt 0 \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists update \
     && install -d /usr/share/robotics-px4/sdk-source/runtime-apt-indexes \
     && cp /opt/sdk-apt-lists/*InRelease /opt/sdk-apt-lists/*Packages* /usr/share/robotics-px4/sdk-source/runtime-apt-indexes/ \
-    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --download-only --no-install-recommends libcurl4t64 libssl3t64 liblzma5 libfmt9 libtinyxml2-10 libstdc++6 libgcc-s1 pax-utils \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --download-only --only-upgrade --no-remove --no-install-recommends "${apt_packages[@]}" \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --download-only --no-install-recommends libcurl4t64 libssl3t64 liblzma5 libfmt9 libtinyxml2-10 libstdc++6 libgcc-s1 pax-utils \
     && : > /usr/share/robotics-px4/sdk-source/runtime-debs.tsv \
     && for file in /var/cache/apt/archives/*.deb; do \
          test -e "$file" || continue; \
@@ -72,7 +81,10 @@ RUN set -eu; \
            >> /usr/share/robotics-px4/sdk-source/runtime-debs.tsv; \
        done \
     && LC_ALL=C sort -o /usr/share/robotics-px4/sdk-source/runtime-debs.tsv /usr/share/robotics-px4/sdk-source/runtime-debs.tsv \
-    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --no-download --no-install-recommends libcurl4t64 libssl3t64 liblzma5 libfmt9 libtinyxml2-10 libstdc++6 libgcc-s1 pax-utils \
+    && apt-get -o Acquire::Retries=0 -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Dir::State::lists=/opt/sdk-apt-lists install -y --no-download --no-remove --no-install-recommends "${apt_packages[@]}" libcurl4t64 libssl3t64 liblzma5 libfmt9 libtinyxml2-10 libstdc++6 libgcc-s1 pax-utils \
+    && for package in "${apt_packages[@]}"; do \
+         dpkg --compare-versions "$(dpkg-query -W -f='${source:Version}' "$package")" ge 2.8.4ubuntu0.1 || exit 1; \
+       done \
     && dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort \
        > /usr/share/robotics-px4/sdk-source/runtime-apt-closure.tsv \
     && rm -rf /opt/sdk-apt-lists

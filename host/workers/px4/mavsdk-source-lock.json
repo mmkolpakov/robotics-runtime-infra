@@ -52,11 +52,11 @@
   "origin": "project-source-build",
   "apt_closure": {
     "build": {
-      "inventory_sha256": "0207e92cad213394f67d1f20deb9f8eab0c95c3a8a150f07dcae4bdf6bfbd031",
-      "deb_manifest_sha256": "51a7fcdd8d093a40b0237bf055a4b8aeaee5f911ae5a02390dc6f45d08f71729",
+      "inventory_sha256": "c8b7a1504f0adee0544654730e48faad61b00f83202724ce464edb37fdb4e4d2",
+      "deb_manifest_sha256": "08177fde18b39e449197ce671282b749e7eda57cf5b7ae396f06017cb40e4993",
       "packages": {
         "apt": {
-          "version": "2.8.3",
+          "version": "2.8.4ubuntu0.1",
           "architecture": "amd64"
         },
         "base-files": {
@@ -232,7 +232,7 @@
           "architecture": "amd64"
         },
         "libapt-pkg6.0t64:amd64": {
-          "version": "2.8.3",
+          "version": "2.8.4ubuntu0.1",
           "architecture": "amd64"
         },
         "libarchive13t64:amd64": {
@@ -909,6 +909,13 @@
         }
       },
       "downloaded_debs": {
+        "apt_2.8.4ubuntu0.1_amd64.deb": {
+          "package": "apt",
+          "version": "2.8.4ubuntu0.1",
+          "architecture": "amd64",
+          "size_bytes": 1396574,
+          "sha256": "ad2ea7f107f250ba88b0bfdba31812a341e3247589647aa2b03b9dc4e8abf8ed"
+        },
         "binutils_2.42-4ubuntu2.10_amd64.deb": {
           "package": "binutils",
           "version": "2.42-4ubuntu2.10",
@@ -1076,6 +1083,13 @@
           "architecture": "all",
           "size_bytes": 1100786,
           "sha256": "77f57651734edc24b5a9e7863bc261bf302060ac3c12bbb08a459966ea4d30a6"
+        },
+        "libapt-pkg6.0t64_2.8.4ubuntu0.1_amd64.deb": {
+          "package": "libapt-pkg6.0t64",
+          "version": "2.8.4ubuntu0.1",
+          "architecture": "amd64",
+          "size_bytes": 985236,
+          "sha256": "a50f3e68a793f90b05f44a4b5f2f59f3ec7687e39b5d8bbd1da44c84671fa3d6"
         },
         "libarchive13t64_3.7.2-2ubuntu0.9_amd64.deb": {
           "package": "libarchive13t64",
@@ -1801,7 +1815,7 @@
       }
     },
     "runtime": {
-      "inventory_sha256": "ac7f5dc45d2650fdb403c01ec0778f51d1a0ae1ec1753d162a43927428ead800",
+      "inventory_sha256": "032f68d339635292d3f553cd9b2c05d410c237bd30c2264f380227fb07938efe",
       "deb_manifest_sha256": "0caa7f64dbc73cd3dfcd7ce7ec3061cde2565eba4bf81e3c1e2d9bf7365ad9e7",
       "packages": {
         "adduser": {
@@ -1813,7 +1827,7 @@
           "architecture": "all"
         },
         "apt": {
-          "version": "2.8.3",
+          "version": "2.8.4ubuntu0.1",
           "architecture": "amd64"
         },
         "at-spi2-common": {
@@ -2253,7 +2267,7 @@
           "architecture": "amd64"
         },
         "libapt-pkg6.0t64:amd64": {
-          "version": "2.8.3",
+          "version": "2.8.4ubuntu0.1",
           "architecture": "amd64"
         },
         "libarchive13t64:amd64": {

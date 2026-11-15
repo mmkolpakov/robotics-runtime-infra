@@ -135,11 +135,15 @@ def build_image(args, context, dockerfile, source_lock=None):
         "--signal=TERM",
         "--kill-after=120s",
         "6600s",
-        "podman",
+        args.engine,
         "build",
         "--force-rm",
-        "--skip-unused-stages",
-        "--format=docker",
+    ]
+    if args.engine == "podman":
+        build += ["--skip-unused-stages", "--format=docker"]
+    else:
+        build += ["--builder", "default", "--load"]
+    build += [
         "--build-arg",
         "PX4_DEPS_IMAGE=" + args.deps_image,
     ]
@@ -270,7 +274,9 @@ def main():
     )
     parser.add_argument("--mavsdk-server", type=Path)
     parser.add_argument("--deps-image", required=True)
+    parser.add_argument("--engine", choices=("podman", "docker"), default="podman")
     parser.add_argument("--context-name")
+    parser.add_argument("--context-parent", type=Path, default=ROOT / "host/.tools")
     parser.add_argument("--tag")
     parser.add_argument("--sdk-source", type=Path)
     parser.add_argument(
@@ -318,12 +324,15 @@ def main():
         if native
         else "localhost/rr-c13-px4:source"
     )
+    context_parent = args.context_parent.resolve()
+    if not context_parent.is_relative_to(ROOT / "host/.tools"):
+        raise ValueError("context parent must stay in project tool directory")
     if source_mode and args.build_target != "worker":
         if not re.fullmatch(r"(?:sha256:|.+@sha256:)[a-f0-9]{64}", args.deps_image):
             raise ValueError("immutable dependency image required")
         if not re.fullmatch(r"px4-image-[a-z0-9-]+", args.context_name):
             raise ValueError("owned context name required")
-        context = ROOT / "host/.tools" / args.context_name
+        context = context_parent / args.context_name
         context.mkdir()
         stage_source_sdk(context, sdk_source, source_lock, lock_path)
         build_image(
@@ -355,7 +364,7 @@ def main():
         raise ValueError("MAVSDK server bytes differ")
     if not re.fullmatch(r"px4-image-[a-z0-9-]+", args.context_name):
         raise ValueError("owned context name required")
-    context = ROOT / "host/.tools" / args.context_name
+    context = context_parent / args.context_name
     if context.exists():
         raise FileExistsError(
             "use a new project image context after preserving previous build evidence"
@@ -463,11 +472,14 @@ def main():
             source_lock,
         )
     else:
+        build = [args.engine, "build"]
+        if args.engine == "podman":
+            build.append("--format=docker")
+        else:
+            build += ["--builder", "default", "--load"]
         subprocess.run(
-            [
-                "podman",
-                "build",
-                "--format=docker",
+            build
+            + [
                 "--build-arg",
                 "PX4_DEPS_IMAGE=" + args.deps_image,
                 "-f",
