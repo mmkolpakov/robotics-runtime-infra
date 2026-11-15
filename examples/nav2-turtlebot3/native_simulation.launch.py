@@ -7,11 +7,12 @@ from launch import LaunchDescription
 from launch.actions import (
     AppendEnvironmentVariable,
     DeclareLaunchArgument,
+    GroupAction,
     IncludeLaunchDescription,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 
 
 def generate_launch_description():
@@ -51,22 +52,51 @@ def generate_launch_description():
                 ],
                 remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
             ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    str(simulation / "launch/spawn_tb3.launch.py")
-                ),
-                launch_arguments={
-                    "namespace": "",
-                    "use_sim_time": "True",
-                    "robot_name": "turtlebot3_waffle",
-                    "robot_sdf": LaunchConfiguration("robot_sdf"),
-                    "x_pose": "-2.00",
-                    "y_pose": "-0.50",
-                    "z_pose": "0.01",
-                    "roll": "0.00",
-                    "pitch": "0.00",
-                    "yaw": "0.00",
-                }.items(),
+            GroupAction(
+                [
+                    SetRemap(src="cmd_vel", dst="cmd_vel_guarded"),
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource(
+                            str(simulation / "launch/spawn_tb3.launch.py")
+                        ),
+                        launch_arguments={
+                            "namespace": "",
+                            "use_sim_time": "True",
+                            "robot_name": "turtlebot3_waffle",
+                            "robot_sdf": LaunchConfiguration("robot_sdf"),
+                            "x_pose": "-2.00",
+                            "y_pose": "-0.50",
+                            "z_pose": "0.01",
+                            "roll": "0.00",
+                            "pitch": "0.00",
+                            "yaw": "0.00",
+                        }.items(),
+                    ),
+                ],
+                scoped=True,
+            ),
+            Node(
+                package="nav2_velocity_smoother",
+                executable="velocity_smoother",
+                name="cmd_vel_deadman",
+                output="screen",
+                remappings=[("cmd_vel_smoothed", "cmd_vel_guarded")],
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "autostart_node": True,
+                        "bond_heartbeat_period": 0.0,
+                        "smoothing_frequency": 50.0,
+                        "feedback": "OPEN_LOOP",
+                        "scale_velocities": False,
+                        "max_velocity": [0.46, 0.0, 1.9],
+                        "min_velocity": [-0.46, 0.0, -1.9],
+                        "max_accel": [1000.0, 0.0, 1000.0],
+                        "max_decel": [-1000.0, 0.0, -1000.0],
+                        "deadband_velocity": [0.0, 0.0, 0.0],
+                        "velocity_timeout": 0.5,
+                    }
+                ],
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(

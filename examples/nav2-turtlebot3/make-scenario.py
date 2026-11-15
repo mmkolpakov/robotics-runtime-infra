@@ -110,7 +110,7 @@ def require_active_nav2_lifecycle(configuration):
         ).validate(graph)
     except ValidationError as error:
         raise ValueError("invalid native startup graph: " + error.json_path) from error
-    for name in ("/amcl", "/bt_navigator"):
+    for name in ("/amcl", "/bt_navigator", "/cmd_vel_deadman"):
         selected = [row for row in graph["lifecycle_nodes"] if row["name"] == name]
         if len(selected) != 1 or selected[0]["required_state"] != "active":
             raise ValueError(
@@ -378,6 +378,8 @@ NATIVE_TOPICS = {
     "/tf": "tf2_msgs/msg/TFMessage",
     "/tf_static": "tf2_msgs/msg/TFMessage",
     "/clock": "rosgraph_msgs/msg/Clock",
+    "/cmd_vel": "geometry_msgs/msg/Twist",
+    "/cmd_vel_guarded": "geometry_msgs/msg/Twist",
     "/amcl_pose": "geometry_msgs/msg/PoseWithCovarianceStamped",
     "/navigate_to_pose/_action/feedback": "nav2_msgs/action/NavigateToPose_FeedbackMessage",
     "/navigate_to_pose/_action/status": "action_msgs/msg/GoalStatusArray",

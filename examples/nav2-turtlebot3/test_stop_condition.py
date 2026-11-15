@@ -414,6 +414,79 @@ class SampledStop(unittest.TestCase):
         self.assertTrue(assess_stop(report, config)[1])
 
 
+class ServerFailureObservation(unittest.TestCase):
+    def test_absence_poll_services_callbacks_within_the_existing_deadline(self):
+        from pathlib import Path
+        import runpy
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+
+        function = runpy.run_path(str(Path(__file__).with_name("workload.py")))[
+            "observe_action_server"
+        ]
+        client = Mock()
+        navigator = object()
+        now_ns = 0
+        client.server_is_ready.side_effect = lambda: now_ns < 950_000_000
+        polls = []
+
+        def spin(node, *, timeout_sec):
+            nonlocal now_ns
+            self.assertIs(node, navigator)
+            polls.append(timeout_sec)
+            now_ns += round(timeout_sec * 1e9)
+
+        with (
+            patch.dict(
+                function.__globals__, {"rclpy": SimpleNamespace(spin_once=spin)}
+            ),
+            patch.object(
+                function.__globals__["time"],
+                "monotonic",
+                side_effect=lambda: now_ns / 1e9,
+            ),
+        ):
+            self.assertFalse(function(navigator, client, 0.975))
+
+        client.server_is_ready.assert_called_once()
+        self.assertEqual(now_ns, 975_000_000)
+        self.assertEqual(len(polls), 20)
+        self.assertAlmostEqual(polls[-1], 0.025)
+
+    def test_queued_and_unsupported_dds_receipts_do_not_enter_server_stop_window(self):
+        from pathlib import Path
+        import runpy
+
+        from unittest.mock import patch
+
+        append = runpy.run_path(str(Path(__file__).with_name("workload.py")))[
+            "append_stop_sample"
+        ]
+        anchor = {"rmw_receive_after_unix_ns": 1_790_000_000_000_000_000}
+        cutoff = anchor["rmw_receive_after_unix_ns"]
+        window = {
+            "anchor": anchor,
+            "deadline_monotonic_ns": 10,
+            "samples": [],
+            "samples_omitted": False,
+        }
+        with patch.dict(append.__globals__, {"MAX_STOP_SAMPLES": 1}):
+            for timestamp in (None, 0, cutoff - 1, cutoff, float(cutoff)):
+                append(
+                    window, "samples", {"receiver_ns": 5}, received_unix_ns=timestamp
+                )
+            self.assertEqual(window["samples"], [])
+            append(window, "samples", {"receiver_ns": 6}, received_unix_ns=cutoff + 1)
+            self.assertEqual(
+                window["samples"],
+                [{"receiver_ns": 6, "rmw_received_unix_ns": cutoff + 1}],
+            )
+            self.assertFalse(window["samples_omitted"])
+            canceled = {**window, "anchor": {"kind": "canceled_result"}, "samples": []}
+            append(canceled, "samples", {"receiver_ns": 7})
+            self.assertEqual(canceled["samples"], [{"receiver_ns": 7}])
+
+
 class StopSettlement(unittest.TestCase):
     def run_capture(self, report, config, *, assessment_cost_ns=0):
         from pathlib import Path
