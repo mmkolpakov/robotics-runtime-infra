@@ -110,6 +110,11 @@ installation. Its native C++ controller/simulator and ROS binding have separate
 integration scopes; [Agilicious integration](docs/agilicious-integration.md)
 defines the execution boundary and qualification requirements.
 
+Aerial Autonomy Stack is a planned external consumer covering its simulation,
+mission, perception and deployment workflows. The
+[AAS integration programme](docs/aerial-autonomy-stack.md) defines the consumer
+boundary and acceptance scope.
+
 ## Platforms and development
 
 [Compatibility](docs/compatibility.md) records software and hardware boundaries.
