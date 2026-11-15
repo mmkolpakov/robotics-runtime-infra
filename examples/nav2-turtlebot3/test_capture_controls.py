@@ -3,6 +3,7 @@
 import ast
 import io
 import json
+import runpy
 import types
 import unittest
 from pathlib import Path
@@ -11,6 +12,91 @@ from robotics_acceptance_harness.readiness import GraphSnapshot, wait_for_readin
 
 SOURCE = Path(__file__).with_name("workload.py")
 TREE = ast.parse(SOURCE.read_text())
+
+
+class CommandGuardControls(unittest.TestCase):
+    def test_only_the_guarded_topic_reaches_the_bridge(self):
+        recorder = runpy.run_path(str(SOURCE.with_name("record-topics.py")))
+        twist = "geometry_msgs/msg/Twist"
+
+        def endpoint(name):
+            return types.SimpleNamespace(
+                node_namespace="/", node_name=name, topic_type=twist
+            )
+
+        endpoints = {
+            "/cmd_vel": [endpoint("cmd_vel_deadman")],
+            "/cmd_vel_guarded": [endpoint("ros_gz_bridge")],
+        }
+        indexed = {
+            "/cmd_vel": [endpoint("collision_monitor")],
+            "/cmd_vel_guarded": [endpoint("cmd_vel_deadman")],
+        }
+        observer = types.SimpleNamespace(
+            get_publishers_info_by_topic=indexed.__getitem__,
+            get_subscriptions_info_by_topic=endpoints.__getitem__,
+        )
+        self.assertTrue(
+            recorder["has_command_guard"](recorder["command_path"](observer))
+        )
+        endpoints["/cmd_vel"].append(endpoint("ros_gz_bridge"))
+        self.assertFalse(
+            recorder["has_command_guard"](recorder["command_path"](observer))
+        )
+        endpoints["/cmd_vel"].pop()
+        indexed["/cmd_vel_guarded"].append(endpoint("foreign"))
+        self.assertFalse(
+            recorder["has_command_guard"](recorder["command_path"](observer))
+        )
+
+    def test_bridge_remap_is_scoped_to_the_stock_spawn_launch(self):
+        path = SOURCE.with_name("native_simulation.launch.py")
+        tree = ast.parse(path.read_text())
+        groups = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "GroupAction"
+        ]
+        self.assertEqual(len(groups), 1)
+        group = groups[0]
+        self.assertEqual(
+            {kw.arg: ast.literal_eval(kw.value) for kw in group.keywords},
+            {"scoped": True},
+        )
+        remap, spawn = group.args[0].elts
+        self.assertEqual(
+            {kw.arg: ast.literal_eval(kw.value) for kw in remap.keywords},
+            {"src": "cmd_vel", "dst": "cmd_vel_guarded"},
+        )
+        self.assertIn("launch/spawn_tb3.launch.py", ast.unparse(spawn))
+        self.assertNotIn("bringup_launch.py", ast.unparse(group))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "Node"
+            ):
+                continue
+            kwargs = {kw.arg: kw.value for kw in node.keywords}
+            if ast.literal_eval(kwargs["name"]) != "cmd_vel_deadman":
+                continue
+            self.assertEqual(
+                ast.literal_eval(kwargs["package"]), "nav2_velocity_smoother"
+            )
+            self.assertEqual(
+                ast.literal_eval(kwargs["remappings"]),
+                [("cmd_vel_smoothed", "cmd_vel_guarded")],
+            )
+            params = ast.literal_eval(kwargs["parameters"])[0]
+            self.assertIs(params["autostart_node"], True)
+            self.assertEqual(params["bond_heartbeat_period"], 0.0)
+            self.assertEqual(params["velocity_timeout"], 0.5)
+            self.assertEqual(params["max_velocity"], [0.46, 0.0, 1.9])
+            break
+        else:
+            self.fail("the native launch does not include the command guard")
 
 
 class CaptureControls(unittest.TestCase):

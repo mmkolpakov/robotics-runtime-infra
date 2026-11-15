@@ -309,7 +309,7 @@ class NativeAdmissionControls(unittest.TestCase):
                 "timeout_sec": readiness["timeout_sec"],
                 "stable_for_sec": readiness["stable_for_sec"],
             }
-            for name in ("/amcl", "/bt_navigator")
+            for name in ("/amcl", "/bt_navigator", "/cmd_vel_deadman")
         ]
         self.evaluator = json.loads((ROOT / "inputs.lock.json").read_bytes())[
             "native_evaluator"
@@ -516,6 +516,7 @@ class NativeAdmissionControls(unittest.TestCase):
         changes = [
             lambda graph: graph.update(lifecycle_nodes=[]),
             lambda graph: graph["lifecycle_nodes"][0].update(name="/foreign/amcl"),
+            lambda graph: graph["lifecycle_nodes"].pop(),
             lambda graph: graph["lifecycle_nodes"][1].update(required_state="inactive"),
             lambda graph: graph["lifecycle_nodes"][0].update(timeout_sec=0),
         ]

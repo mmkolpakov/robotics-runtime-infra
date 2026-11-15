@@ -75,6 +75,16 @@ It retains the Waffle sensors, spawn/bridge, localization, and navigation nodes.
 The upstream package files are unchanged. Select the resulting immutable image
 Config ID for native composition admission before starting an attempt.
 
+The launch places a stock Nav2 velocity smoother between the collision monitor's
+`/cmd_vel` output and the bridge's ROS subscription on `/cmd_vel_guarded`.
+The Gazebo side still publishes to the Waffle model's original command topic.
+The guard activates itself outside Nav2's managed node lists. It checks for
+command loss at 50 Hz and sends zero after 0.5 seconds of simulation time without
+new input. Its velocity bounds match the stock Waffle, and the plant still
+controls acceleration. The condition depends on the guard process and delivery
+of its output. The recorder checks the command path before the goal and
+retains both ROS command topics and the model's native wheel odometry.
+
 ## Admit the evaluator
 
 Use the public SDK's external GitHub or explicit Cosign key-only verifier profile. The
@@ -134,8 +144,9 @@ The graph is passed unchanged to `RosGraphObserver` and `wait_for_readiness`.
 The observer borrows `navigator.context`, owns its separate node and executor,
 and closes before the navigator's context is shut down. It uses the declared
 graph topics and its explicit clock subscription.
-Native attempts require `/amcl` and `/bt_navigator` declared `active`, with
-lifecycle timeout and stability fields. The startup worker initializes the pose;
+Native attempts require `/amcl`, `/bt_navigator` and `/cmd_vel_deadman`
+declared `active`, with lifecycle timeout and stability fields.
+The startup worker initializes the pose;
 the exercise worker observes the existing lifecycle and preserves localization.
 The worker first discovers the action server through its native `ActionClient`,
 then constructs the graph observer. Action discovery, observer construction,

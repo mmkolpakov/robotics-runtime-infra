@@ -18,6 +18,8 @@ TOPICS = {
     "/tf": "tf2_msgs/msg/TFMessage",
     "/tf_static": "tf2_msgs/msg/TFMessage",
     "/clock": "rosgraph_msgs/msg/Clock",
+    "/cmd_vel": "geometry_msgs/msg/Twist",
+    "/cmd_vel_guarded": "geometry_msgs/msg/Twist",
     "/amcl_pose": "geometry_msgs/msg/PoseWithCovarianceStamped",
     "/navigate_to_pose/_action/feedback": "nav2_msgs/action/NavigateToPose_FeedbackMessage",
     "/navigate_to_pose/_action/status": "action_msgs/msg/GoalStatusArray",
@@ -177,6 +179,36 @@ def storage_observation(
     }
 
 
+def command_path(observer):
+    def nodes(topic, query):
+        return sorted(
+            {
+                endpoint.node_namespace.rstrip("/") + "/" + endpoint.node_name
+                for endpoint in query(topic)
+                if endpoint.topic_type == TOPICS[topic]
+            }
+        )
+
+    return {
+        topic: {
+            "publishers": nodes(topic, observer.get_publishers_info_by_topic),
+            "subscriptions": nodes(topic, observer.get_subscriptions_info_by_topic),
+        }
+        for topic in ("/cmd_vel", "/cmd_vel_guarded")
+    }
+
+
+def has_command_guard(graph):
+    incoming, guarded = graph["/cmd_vel"], graph["/cmd_vel_guarded"]
+    return (
+        "/collision_monitor" in incoming["publishers"]
+        and "/cmd_vel_deadman" in incoming["subscriptions"]
+        and "/ros_gz_bridge" not in incoming["subscriptions"]
+        and guarded["publishers"] == ["/cmd_vel_deadman"]
+        and "/ros_gz_bridge" in guarded["subscriptions"]
+    )
+
+
 def main() -> int:
     args = arguments()
     args.facts_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -211,17 +243,20 @@ def main() -> int:
 
     recorder = None
     observer = None
+    guard_client = None
     ros_initialized = False
     failed = False
     try:
         import rclpy
         import rosbag2_py
+        from lifecycle_msgs.srv import GetState
 
         rclpy.init(args=[])
         ros_initialized = True
         observer = rclpy.create_node(
             "nav2_record_watch_" + node_name.removeprefix("nav2_recorder_")
         )
+        guard_client = observer.create_client(GetState, "/cmd_vel_deadman/get_state")
         storage = rosbag2_py.StorageOptions(
             uri=str(args.output),
             storage_id="mcap",
@@ -254,14 +289,21 @@ def main() -> int:
                 subscriptions = dict(
                     observer.get_subscriber_names_and_types_by_node(node_name, "/")
                 )
+                path = command_path(observer)
             except Exception:  # noqa: BLE001 - Unknown SDK graph errors keep readiness incomplete.
                 subscriptions = {}
+                path = None
             before_deadline(startup_deadline, "recorder readiness")
-            if all(
-                expected_type in subscriptions.get(topic, [])
-                for topic, expected_type in TOPICS.items()
+            if (
+                path is not None
+                and has_command_guard(path)
+                and all(
+                    expected_type in subscriptions.get(topic, [])
+                    for topic, expected_type in TOPICS.items()
+                )
             ):
                 state["subscriptions"] = subscriptions
+                state["command_path"] = path
                 state["ready_monotonic_ns"] = time.monotonic_ns()
                 write_json(args.facts_dir / "ready.json", state)
                 break
@@ -298,6 +340,29 @@ def main() -> int:
                 recorder.stop()
                 recorder.stop_spin()
                 before_deadline(close_deadline, "native recorder close")
+                if guard_client is not None and not requested_signal:
+                    state["command_guard_at_close"] = {
+                        "state": "unobserved",
+                        "reason": "no completed native GetState response",
+                    }
+                    try:
+                        state["command_path_at_close"] = command_path(observer)
+                        if guard_client.service_is_ready():
+                            pending = guard_client.call_async(GetState.Request())
+                            remaining = max(0.0, close_deadline - time.monotonic())
+                            rclpy.spin_until_future_complete(
+                                observer, pending, timeout_sec=min(1.0, remaining)
+                            )
+                            if pending.done() and not pending.cancelled():
+                                state["command_guard_at_close"] = {
+                                    "state": "measured",
+                                    "value": pending.result().current_state.label,
+                                    "received_unix_ns": time.time_ns(),
+                                }
+                            else:
+                                pending.cancel()
+                    except Exception as error:  # noqa: BLE001 - Optional diagnostics do not replace captured motion.
+                        state["command_guard_at_close"]["error"] = str(error)
                 import rosbag2_py
 
                 metadata = rosbag2_py.Info().read_metadata(str(args.output), "mcap")
