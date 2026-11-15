@@ -12,6 +12,81 @@ const topics = [
   '/Drone1/fmu/out/vehicle_global_position', '/Drone1/fmu/out/vehicle_command_ack',
   ...['takeoff', 'land'].flatMap(action => ['status', 'feedback'].map(kind => '/Drone1/' + action + '_action/_action/' + kind)),
 ];
+const recorderIdentity = '/evidence/recorder-identity.json';
+export const recorderArgs = [
+  'bag', 'record', '-s', 'mcap', '-o', '/evidence/flight', '--use-sim-time', '--include-hidden-topics', ...topics,
+];
+export const recorderBootstrap = `
+import json, os, sys
+from pathlib import Path
+
+pid = os.getpid()
+start_ticks = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+with Path(sys.argv[1]).open('x') as identity:
+    json.dump({'pid': pid, 'start_ticks': start_ticks}, identity)
+os.execvp('ros2', ['ros2', *sys.argv[2:]])
+`;
+export const settleRecorder = `
+import json, os, select, signal, sys
+from pathlib import Path
+
+def settle(path, expected_argv):
+    identity = json.loads(Path(path).read_text())
+    pid = identity["pid"]
+    if type(pid) is not int or pid <= 1 or not identity["start_ticks"].isdigit():
+        raise ValueError("invalid recorder process identity")
+    status = {**identity, "settlement": "already exited"}
+    try:
+        fd = os.pidfd_open(pid)
+    except ProcessLookupError:
+        return status
+    try:
+        poll = select.poll()
+        poll.register(fd, select.POLLIN)
+        try:
+            ticks = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+            argv = [os.fsdecode(arg) for arg in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\\0") if arg]
+        except FileNotFoundError:
+            if poll.poll(0):
+                return status
+            raise
+        if ticks != identity["start_ticks"]:
+            raise RuntimeError("recorder PID was reused")
+        if poll.poll(0):
+            return status
+        indexes = [i for i, arg in enumerate(argv) if Path(arg).name == "ros2"]
+        if len(indexes) != 1 or argv[indexes[0]+1:] != expected_argv:
+            raise RuntimeError("recorder argv differs from its launch")
+        try:
+            signal.pidfd_send_signal(fd, signal.SIGINT)
+        except ProcessLookupError:
+            return status
+        if not poll.poll(10_000):
+            raise TimeoutError("recorder process did not exit after SIGINT")
+        return {**identity, "settlement": "exited after SIGINT"}
+    finally:
+        os.close(fd)
+
+print(json.dumps(settle(sys.argv[1], sys.argv[2:])))
+`;
+export const verifyClosedCapture = `
+import os, sys
+from pathlib import Path
+
+directory = Path(sys.argv[1])
+metadata = directory / "metadata.yaml"
+if not metadata.is_file() or metadata.stat().st_size == 0:
+    raise ValueError("recorder metadata is missing or empty")
+magic = b"\\x89MCAP0\\r\\n"
+with (directory / "flight_0.mcap").open("rb") as data:
+    if data.seek(0, os.SEEK_END) < 2 * len(magic):
+        raise ValueError("MCAP is too short")
+    data.seek(0)
+    start = data.read(len(magic))
+    data.seek(-len(magic), os.SEEK_END)
+    if start != magic or data.read(len(magic)) != magic:
+        raise ValueError("MCAP header or footer marker is missing")
+`;
 const ros = [
   'set -e', '. /opt/ros/jazzy/setup.bash', '. /aas/github_ws/install/setup.bash',
   '. /aas/aircraft_ws/install/setup.bash', 'export ROS_DOMAIN_ID=1 PYTHONUNBUFFERED=1',
@@ -209,9 +284,12 @@ export class AasRun {
 
   async startRecorder(signal) {
     const recorder = new ComposeExecution(this.jobs, { ...this.options, timeoutMs: 250_000 });
-    const script = ros + 'printf "%s\\n" "$$" > /evidence/recorder.pid\nexec ros2 "$@" >/evidence/recorder.log 2>&1';
+    const script = ros + 'exec python3 -B -c "$@" >/evidence/recorder.log 2>&1';
+    this.recorderClient = new AbortController();
     this.recording = recorder.run(['exec', '-T', 'aircraft', '/bin/bash', '-c', script, 'record',
-      'bag', 'record', '-s', 'mcap', '-o', '/evidence/flight', '--use-sim-time', '--include-hidden-topics', ...topics]);
+      recorderBootstrap, recorderIdentity, ...recorderArgs], this.recorderClient.signal)
+      .catch(error => ({ ok: false, diagnostic: String(error) }));
+    this.recording.then(result => { this.recorderClientResult = result; });
     const deadline = performance.now() + 20_000;
     while (performance.now() < deadline) {
       signal.throwIfAborted();
@@ -278,24 +356,32 @@ export class AasRun {
 
   async drain(signal) {
     if (!this.recording) throw new Error('the recorder never started; the owned project is retained');
-    const exactSignal = [
-      'from pathlib import Path',
-      'import os,signal',
-      'pid=int(Path("/evidence/recorder.pid").read_text())',
-      'argv=Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\\0")',
-      'assert pid>1 and b"ros2" in b"".join(argv) and b"record" in argv and b"/evidence/flight" in argv',
-      'os.kill(pid,signal.SIGINT)',
-    ].join('\n');
-    await this.command(['exec', '-T', 'aircraft', 'python3', '-c', exactSignal], signal);
-    checked(await this.recording);
-    await this.simulator(['tmux', 'send-keys', '-t', pane, 'C-c'], signal);
-    await this.simulator(['/bin/sh', '-ec', 'for attempt in 1 2 3 4 5 6 7 8; do if ! pgrep -x px4 >/dev/null; then exit 0; fi; sleep 1; done; exit 1'], signal);
-    this.drained = true;
+    const producer = JSON.parse(await this.command(['exec', '-T', 'aircraft', 'python3', '-B', '-c',
+      settleRecorder, recorderIdentity, ...recorderArgs], signal));
+    const native = await this.compose.run(['exec', '-T', 'simulation', 'tmux', 'display-message', '-p',
+      '-t', pane, '#{pane_current_command}'], signal);
+    if (native.ok && native.stdout.trim() === 'px4') await this.simulator(['tmux', 'send-keys', '-t', pane, 'C-c'], signal);
+    const wait = 'for attempt in 1 2 3 4 5 6 7 8; do if pgrep -x px4 >/dev/null; then sleep 1; else test "$?" -eq 1; exit; fi; done; exit 1';
+    await this.simulator(['/bin/sh', '-ec', wait], signal);
+    if (!this.recorderClientResult && this.recorderClient && !this.recorderClient.signal.aborted)
+      await Promise.race([this.recording, pause(1_000, undefined, { signal, ref: false })]);
+    const detachedAfterClosure = Boolean(!this.recorderClientResult && this.recorderClient && !this.recorderClient.signal.aborted);
+    if (detachedAfterClosure) this.recorderClient.abort();
+    const { ok, exitCode, canceled, timedOut, code, diagnostic, signal: clientSignal } = await this.recording;
+    this.drainRefs = [await this.save('recorder-settlement.json', JSON.stringify({
+      producer, composeClient: { ok, exitCode, canceled, timedOut, code, diagnostic, signal: clientSignal, detachedAfterClosure },
+    }, null, 2))];
     const bag = await this.aircraft(['ros2', 'bag', 'info', '/evidence/flight'], signal);
-    this.bagInfoRef = await this.save('bag-info.txt', bag);
+    if (!/^Storage id:\s*mcap\s*$/mi.test(bag)) throw new Error('closed MCAP metadata was not verified');
+    await this.command(['exec', '-T', 'aircraft', 'python3', '-IB', '-c', verifyClosedCapture, '/evidence/flight'], signal);
+    this.drained = true;
+    this.drainRefs.push(await this.save('bag-info.txt', bag));
     const counts = new Map([...bag.matchAll(/Topic:\s*(\S+)\s*\|[^\n]*?Count:\s*(\d+)/g)].map(match => [match[1], Number(match[2])]));
-    if (!topics.every(topic => counts.get(topic) > 0)) throw new Error('selected MCAP channels are incomplete');
-    return [this.bagInfoRef];
+    const errors = [];
+    if (!ok && !detachedAfterClosure) errors.push('recorder Compose client did not complete');
+    if (!topics.every(topic => counts.get(topic) > 0)) errors.push('selected MCAP channels are incomplete');
+    if (errors.length) throw new Error(errors.join('\n'));
+    return this.drainRefs.splice(0);
   }
 
   async exportPlan(signal) {
@@ -338,7 +424,7 @@ export class AasRun {
       const expected = plan.refs[index];
       if (ref.sha256 !== expected.sha256 || ref.size_bytes !== expected.size_bytes) throw new Error('copied evidence differs from closed bytes');
     }
-    return [planRef, ...copied, ...(this.bagInfoRef ? [this.bagInfoRef] : [])];
+    return [planRef, ...copied, ...(this.drainRefs ?? [])];
   }
 
   completion() {

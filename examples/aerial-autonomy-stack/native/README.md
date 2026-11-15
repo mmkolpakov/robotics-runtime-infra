@@ -70,9 +70,44 @@ Inspect the MCAP with stock `ros2 bag info "$OUTPUT"` and the ULog with `ulog_in
 "$OUTPUT/px4.ulg"`. Decode the four action channels with the exact ROS types from the admitted
 aircraft image. The [Gym archive example](../README.md) covers the separate step benchmark.
 
-For an incomplete acquisition or export, retain the recorded attempt and owned Compose project. A
-recovery request uses the recorded namespace parent and exact closed file identities. Loss before
-recorder drain requires inspection of the retained data.
+## Cancel or inspect a retained attempt
 
-A startup failure before admission has no acquired resources. If startup fails after acquisition,
-use the completion and attempt records to assess the retained project before invoking recovery.
+Send SIGINT to the coordinator for an orderly run interruption.
+
+```sh
+systemctl --user kill --kill-whom=main --signal=SIGINT "rr-attempt-$RUN_ID.service"
+```
+
+This stops the measurement and lets the coordinator settle the recorders. The result remains
+interrupted. A ROS action may continue inside the simulation until the owned project stops.
+A unit-wide stop or runtime limit can leave the project retained.
+
+To inspect a retained attempt, wait for the coordinator to exit and acquire the same slot lock.
+Set the Compose executable, input variables and Unix socket from the admitted inputs. Select the
+recorded `projectName` from `attempt.json`. Inspect each actor, network and volume for that Compose
+project and its `org.robotics.runtime.run-id` label. Verify the GCS container's namespace against
+`namespace-parent.json` when that record exists.
+
+```bash
+export DOCKER_HOST="unix://$SOCKET" DOCKER_CONFIG=/nonexistent
+compose=( "$COMPOSE" --project-name "$PROJECT" --file "$EXAMPLE/compose.yaml" )
+"${compose[@]}" ps --all
+"${compose[@]}" logs --no-color > "$OUTPUT/retained-compose.log"
+```
+
+After confirming ownership, stop the project and copy the available evidence to a fresh directory.
+
+```bash
+"${compose[@]}" stop --timeout 5
+"${compose[@]}" cp aircraft:/evidence/flight "$RECOVERED/flight"
+"${compose[@]}" cp simulation:/aas/github_apps/PX4-Autopilot/build/px4_sitl_default/rootfs/0/log \
+  "$RECOVERED/ulog"
+```
+
+Verify readability and the SHA-256 values in `closed-files.json` when it exists. Keep incomplete
+recordings as diagnostics. After the evidence copy is verified and the ownership check still
+matches, remove the retained project with `compose down` through the same client.
+
+```bash
+"${compose[@]}" down --timeout 5 --volumes --remove-orphans
+```
