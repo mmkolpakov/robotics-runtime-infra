@@ -2,5 +2,6 @@
 !Dockerfile
 !inputs.lock.json
 !requirements.lock
+!native-evaluator.lock
 !check-sdk-wheels.py
 !native_simulation.launch.py

@@ -219,8 +219,15 @@ def complete_native(prepared: Path, capture: Path) -> dict:
     """Bind closed records without turning action acknowledgements into physical facts."""
     from shutil import copyfile
 
-    def reference(path):
-        raw = read_once(path, DOCUMENT_LIMIT)
+    from nav2_turtlebot3_evaluator.stop import (
+        STOP_WORKLOAD_BYTES,
+        assess_stop,
+        summarize_stop,
+    )
+
+    def reference(path, raw=None):
+        if raw is None:
+            raw = read_once(path, DOCUMENT_LIMIT)
         return {
             "uri": path.resolve().as_uri(),
             "sha256": sha256(raw).hexdigest(),
@@ -234,7 +241,8 @@ def complete_native(prepared: Path, capture: Path) -> dict:
     scenario = loads_mapping(read_once(prepared / "scenario.json", DOCUMENT_LIMIT))
     case = scenario["extensions"][NAMESPACE]["case"]
     workload_path = capture / case / "workload.json"
-    report = loads_mapping(read_once(workload_path, DOCUMENT_LIMIT))
+    workload_raw = read_once(workload_path, STOP_WORKLOAD_BYTES)
+    report = loads_mapping(workload_raw)
     if (report["run_id"], report["domain_id"], report["case"]) != (
         manifest["run_id"],
         "nav2",
@@ -256,7 +264,7 @@ def complete_native(prepared: Path, capture: Path) -> dict:
     observations = {
         name: dict(unknown) for name in ("command", "terminal", "condition", "cleanup")
     }
-    evidence = reference(workload_path)
+    evidence = reference(workload_path, workload_raw)
     if type(report.get("goal_accepted")) is bool:
         observations["command"] = {
             "state": "measured",
@@ -291,6 +299,41 @@ def complete_native(prepared: Path, capture: Path) -> dict:
             "value": pose,
             "evidence": evidence,
         }
+    configuration = scenario["extensions"][NAMESPACE]
+    if case != "success" and "stop_condition" in configuration:
+        captured_stop, _stopped, _reason = assess_stop(report, configuration)
+        if captured_stop is not None and (case == "server-failure" or response_bound):
+            observations["condition"] = {
+                "state": "measured",
+                "value": summarize_stop(captured_stop),
+                "evidence": evidence,
+            }
+        requested = report.get("goal_started_monotonic_ns")
+        accepted = report.get("goal_accepted_monotonic_ns")
+        triggered = report.get("consumer_trigger_monotonic_ns")
+        unavailable = report.get("server_after_shutdown_monotonic_ns")
+        if (
+            case == "server-failure"
+            and report.get("goal_accepted") is True
+            and report.get("server_available_after_shutdown") is False
+            and all(
+                type(value) is int
+                for value in (requested, accepted, triggered, unavailable)
+            )
+            and requested <= accepted <= triggered <= unavailable
+        ):
+            observations["terminal"] = {
+                "state": "measured",
+                "value": {
+                    "kind": "server_unavailable",
+                    "action": "/navigate_to_pose",
+                    "goal_id": report.get("goal_id"),
+                    "observed_monotonic_ns": report[
+                        "server_after_shutdown_monotonic_ns"
+                    ],
+                },
+                "evidence": evidence,
+            }
     if (
         cleanup.get("remaining") == []
         and cleanup.get("worker_settled") is True

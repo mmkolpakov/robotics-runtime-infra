@@ -111,6 +111,30 @@
           "maximum": 10
         }
       }
+    },
+    "stop_condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_linear_speed_mps",
+        "max_angular_speed_radps",
+        "stable_for_sec",
+        "max_sample_gap_sec"
+      ],
+      "properties": {
+        "max_linear_speed_mps": {
+          "const": 0.01
+        },
+        "max_angular_speed_radps": {
+          "const": 0.01
+        },
+        "stable_for_sec": {
+          "const": 0.5
+        },
+        "max_sample_gap_sec": {
+          "const": 0.1
+        }
+      }
     }
   },
   "$defs": {
@@ -266,5 +290,23 @@
       "type": "number",
       "exclusiveMinimum": 0
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "case": {
+            "const": "success"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "stop_condition"
+          ]
+        }
+      }
+    }
+  ]
 }

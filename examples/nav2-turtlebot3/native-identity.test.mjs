@@ -46,7 +46,12 @@ test('unavailable inventory remains a refusal, not an empty success',async()=>{
   await assert.rejects(recoverCreated(async()=>{throw new Error('transport unavailable')},expected),/transport unavailable/);
 });
 test('an actual empty successful inventory has no owned object',async()=>{
-  assert.equal(await recoverCreated(async()=>'',expected),null);
+  const calls=[];
+  assert.equal(await recoverCreated(async(op,args)=>{
+    calls.push(args);
+    return op==='recover-created-storage'?null:'';
+  },expected),null);
+  assert.deepEqual(calls[1],['container','exists','--external',expected.name]);
 });
 test('malformed create response never installs an unvalidated CID, so recovery remains required',()=>{
   assert.equal(createdId(expected.cid+'\n'),expected.cid);
@@ -109,4 +114,18 @@ test('every acquired composition mismatch refuses before native start',async()=>
     await assert.rejects(admitAndStart(async(op,args)=>{calls.push(args[0]);return JSON.stringify([actual]);},expected));
     assert.deepEqual(calls,['inspect']);
   }
+});
+
+test('external-only storage object refuses absence and is not removed',async()=>{
+  const calls=[];
+  await assert.rejects(recoverCreated(async(op,args)=>{
+    calls.push(args[0]);return '';
+  },expected),/external storage object/);
+  assert.deepEqual(calls,['ps','container']);
+});
+test('unavailable external storage inventory remains unknown',async()=>{
+  await assert.rejects(recoverCreated(async(op)=>{
+    if(op==='recover-created-storage')throw new Error('storage query failed');
+    return '';
+  },expected),/storage query failed/);
 });
