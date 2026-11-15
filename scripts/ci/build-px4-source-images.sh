@@ -48,9 +48,13 @@ if ${has_claim}; then
 fi
 # shellcheck disable=SC2329
 cleanup() {
-  local status=$? cleanup_status=0 container tag observed image_id owner_label
+  local status=$? cleanup_status=0 container tag observed image_id owner_label registry_tag
+  local image_filters=(--filter "reference=${deps_tag}")
+  local container_format='{"ID":{{json .ID}},"Names":{{json .Names}},"Owned":{{eq (.Label "org.robotics.build.owner") "'"${scope}"'"}}}'
   trap - EXIT
-  if ! docker ps --all --no-trunc --format '{{json .}}' >"${output}/cleanup-containers.jsonl"; then
+  if ! docker ps --all --no-trunc --filter "name=^/?${scope}-(firmware|inspection|registry)$" \
+    --format "${container_format}" \
+    >"${output}/cleanup-containers.jsonl"; then
     printf 'container engine unavailable; build resources retained\n' >&2
     printf 'unknown\n' >"${output}/cleanup.exit"
     ((status != 0)) || status=1
@@ -66,8 +70,7 @@ for line in Path(sys.argv[1]).read_text().splitlines():
     row = json.loads(line)
     if row["Names"] not in names:
         continue
-    labels = dict(item.split("=", 1) for item in row["Labels"].split(",") if "=" in item)
-    if labels.get("org.robotics.build.owner") != scope:
+    if not row["Owned"]:
         print("refusing foreign container cleanup: " + row["Names"], file=sys.stderr)
         sys.exit(65)
     print(row["ID"])
@@ -105,22 +108,34 @@ PY
       if ((cleanup_status == 0)); then rm -rf -- "${tool_root}" || cleanup_status=1; fi
     fi
   fi
-  if ! docker image ls --no-trunc --format '{{json .}}' >"${output}/cleanup-images.jsonl"; then
+  if ${has_claim}; then
+    image_filters+=(--filter "reference=${worker_tag}")
+    if [[ -f "${output}/dependency-registry-tag.txt" ]]; then
+      registry_tag="$(cat "${output}/dependency-registry-tag.txt")"
+      if [[ "${registry_tag}" =~ ^127\.0\.0\.1:[0-9]+/px4-deps:${scope}$ ]]; then
+        image_filters+=(--filter "reference=${registry_tag}")
+      else
+        printf 'refusing unexpected dependency registry tag\n' >&2
+        cleanup_status=65
+      fi
+    fi
+  fi
+  if ! docker image ls --no-trunc "${image_filters[@]}" --format '{{json .}}' >"${output}/cleanup-images.jsonl"; then
     cleanup_status=1
-  elif python3 - "${output}" "${deps_tag}" "${worker_tag}" >"${output}/cleanup-image-tags" <<'PY'
+  elif python3 - "${output}" "${deps_tag}" "${worker_tag}" "${has_claim}" >"${output}/cleanup-image-tags" <<'PY'
 import json
 import sys
 from pathlib import Path
 output = Path(sys.argv[1])
 expected = {sys.argv[2]: None}
 deps = output / "dependency-image.json"
-if deps.is_file():
+if sys.argv[4] == "true" and deps.is_file():
     expected[sys.argv[2]] = json.loads(deps.read_text())[0]["Id"]
     registry = output / "dependency-registry-tag.txt"
     if registry.is_file():
         expected[registry.read_text().strip()] = expected[sys.argv[2]]
 worker = output / "images.json"
-if worker.is_file():
+if sys.argv[4] == "true" and worker.is_file():
     expected[sys.argv[3]] = json.loads(worker.read_text())[1]["Id"]
 for line in (output / "cleanup-images.jsonl").read_text().splitlines():
     row = json.loads(line)
@@ -153,7 +168,7 @@ PY
           continue
         fi
       fi
-      docker image rm "${tag}" > /dev/null || cleanup_status=1
+      docker image rm --no-prune "${tag}" > /dev/null || cleanup_status=1
     done <"${output}/cleanup-image-tags"
   else
     cleanup_status=$?

@@ -59,7 +59,7 @@ printf '%s\n' "$*" >>"${CALLS}"
 case "$1 $2" in
   "ps --all")
     if [[ "${MOCK_ENGINE_DOWN:-}" == 1 ]]; then exit 1; fi
-    if [[ "$*" == *--filter* ]]; then
+    if [[ "$*" == *'--filter label='* ]]; then
       if [[ -n "${MOCK_REMAINING:-}" ]]; then printf '%s\n' "${MOCK_REMAINING}"; fi
     elif [[ -n "${MOCK_CONTAINERS:-}" ]]; then cat "${MOCK_CONTAINERS}"; fi
     ;;
@@ -179,7 +179,7 @@ claim_fixture() {
   prepare_cleanup_fixture
   claim_fixture
   export MOCK_CONTAINERS="${BATS_TEST_TMPDIR}/containers.jsonl"
-  printf '%s\n' '{"ID":"foreign","Names":"px4-source-10-1-registry","Labels":"org.robotics.build.owner=foreign"}' >"${MOCK_CONTAINERS}"
+  printf '%s\n' '{"ID":"foreign","Names":"px4-source-10-1-registry","Owned":false}' >"${MOCK_CONTAINERS}"
   run env PATH="${mock_bin}:${PATH}" GITHUB_RUN_ID=10 GITHUB_RUN_ATTEMPT=1 \
     bash "${fixture}/scripts/ci/build-px4-source-images.sh" --cleanup
   [ "${status}" -eq 65 ]
@@ -228,11 +228,11 @@ claim_fixture() {
   run env PATH="${mock_bin}:${PATH}" GITHUB_RUN_ID=10 GITHUB_RUN_ATTEMPT=1 \
     bash "${fixture}/scripts/ci/build-px4-source-images.sh" --cleanup
   [ "${status}" -eq 0 ]
-  grep -Fxq 'image rm local/robotics-px4-deps:px4-source-10-1' "${CALLS}"
-  grep -Fxq 'image rm local/robotics-px4-worker:px4-source-10-1' "${CALLS}"
-  grep -Fxq 'image rm 127.0.0.1:5000/px4-deps:px4-source-10-1' "${CALLS}"
-  ! grep -Fq 'image rm shared/worker' "${CALLS}"
-  ! grep -Eq 'image rm .*sha256:|image rm .*--force' "${CALLS}"
+  grep -Fxq 'image rm --no-prune local/robotics-px4-deps:px4-source-10-1' "${CALLS}"
+  grep -Fxq 'image rm --no-prune local/robotics-px4-worker:px4-source-10-1' "${CALLS}"
+  grep -Fxq 'image rm --no-prune 127.0.0.1:5000/px4-deps:px4-source-10-1' "${CALLS}"
+  ! grep -Fq 'image rm --no-prune shared/worker' "${CALLS}"
+  ! grep -Eq 'image rm --no-prune .*sha256:|image rm .*--force' "${CALLS}"
 }
 
 @test "PX4 cleanup removes partial owned contexts and preserves metadata and other runs" {
@@ -245,8 +245,8 @@ claim_fixture() {
   printf 'retained\n' >"${output_dir}/receipt.json"
   export MOCK_CONTAINERS="${BATS_TEST_TMPDIR}/containers.jsonl"
   printf '%s\n' \
-    '{"ID":"owned","Names":"px4-source-10-1-registry","Labels":"org.robotics.build.owner=px4-source-10-1"}' \
-    '{"ID":"other","Names":"px4-source-11-1-registry","Labels":"org.robotics.build.owner=px4-source-11-1"}' >"${MOCK_CONTAINERS}"
+    '{"ID":"owned","Names":"px4-source-10-1-registry","Owned":true}' \
+    '{"ID":"other","Names":"px4-source-11-1-registry","Owned":false}' >"${MOCK_CONTAINERS}"
   run env PATH="${mock_bin}:${PATH}" GITHUB_RUN_ID=10 GITHUB_RUN_ATTEMPT=1 \
     bash "${fixture}/scripts/ci/build-px4-source-images.sh" --cleanup
   [ "${status}" -eq 0 ]
@@ -336,10 +336,23 @@ claim_fixture() {
   run env PATH="${mock_bin}:${PATH}" GITHUB_RUN_ID=10 GITHUB_RUN_ATTEMPT=1 \
     bash "${fixture}/scripts/ci/build-px4-source-images.sh" --cleanup
   [ "${status}" -eq 0 ]
-  grep -Fxq 'image rm local/robotics-px4-deps:px4-source-10-1' "${CALLS}"
+  grep -Fxq 'image rm --no-prune local/robotics-px4-deps:px4-source-10-1' "${CALLS}"
   rm "${CALLS}"
   run env PATH="${mock_bin}:${PATH}" GITHUB_RUN_ID=10 GITHUB_RUN_ATTEMPT=1 MOCK_IMAGE_OWNER=foreign \
     bash "${fixture}/scripts/ci/build-px4-source-images.sh" --cleanup
   [ "${status}" -eq 65 ]
-  ! grep -Fq 'image rm ' "${CALLS}"
+  ! grep -Fq 'image rm --no-prune ' "${CALLS}"
+}
+
+@test "PX4 cleanup requests only scoped identity fields from the Docker inventory" {
+  prepare_cleanup_fixture
+  claim_fixture
+  run env PATH="${mock_bin}:${PATH}" GITHUB_RUN_ID=10 GITHUB_RUN_ATTEMPT=1 \
+    bash "${fixture}/scripts/ci/build-px4-source-images.sh" --cleanup
+  [ "${status}" -eq 0 ]
+  grep -Fq -- 'ps --all --no-trunc --filter name=^/?px4-source-10-1-(firmware|inspection|registry)$' "${CALLS}"
+  grep -Fq -- '"Owned":{{eq (.Label "org.robotics.build.owner") "px4-source-10-1"}}' "${CALLS}"
+  ! grep -Fq -- "ps --all --no-trunc --format {{json .}}" "${CALLS}"
+  grep -Fq -- 'image ls --no-trunc --filter reference=local/robotics-px4-deps:px4-source-10-1' "${CALLS}"
+  grep -Fq -- '--filter reference=local/robotics-px4-worker:px4-source-10-1' "${CALLS}"
 }
