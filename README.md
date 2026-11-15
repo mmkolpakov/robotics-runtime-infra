@@ -110,10 +110,11 @@ installation. Its native C++ controller/simulator and ROS binding have separate
 integration scopes; [Agilicious integration](docs/agilicious-integration.md)
 defines the execution boundary and qualification requirements.
 
-Aerial Autonomy Stack is a planned external consumer covering its simulation,
-mission, perception and deployment workflows. The
-[AAS integration programme](docs/aerial-autonomy-stack.md) defines the consumer
-boundary and acceptance scope.
+The Aerial Autonomy Stack archive example assesses recorded PX4 and ArduPilot
+Gymnasium speed benchmarks with the published Contracts and Harness. The planned
+native integration covers simulation, missions, perception and deployment.
+[AAS benchmark archive](examples/aerial-autonomy-stack/README.md) ·
+[AAS integration programme](docs/aerial-autonomy-stack.md)
 
 ## Platforms and development
 

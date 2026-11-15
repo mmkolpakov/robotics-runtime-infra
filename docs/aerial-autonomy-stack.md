@@ -5,14 +5,17 @@ simulation, development and deployment workflows. AAS supplies the aircraft,
 worlds, autopilot integration and application logic. Robotics supplies attempt
 ownership, retained evidence and independent assessment. The acceptance scope
 is tracked in [issue 146](https://github.com/mmkolpakov/robotics-runtime-infra/issues/146).
-A runnable robotics consumer is planned.
+
+The archive consumer imports retained headless PX4 and ArduPilot Gymnasium
+benchmarks as V2 software runs and writes JSON and JUnit assessments.
+[Gym benchmark archive](../examples/aerial-autonomy-stack/README.md)
 
 ## Integration boundary
 
-The consumer belongs in `examples/aerial-autonomy-stack`. It invokes AAS through
-its existing shell entry points, Gymnasium API and ROS actions, services and
-topics. Its evaluator interprets the selected native observations. AAS-specific
-commands, message types and flight criteria stay in the consumer.
+The planned native consumer uses AAS through its existing shell entry points,
+Gymnasium API and ROS actions, services and topics. Its evaluator interprets the
+selected native observations. AAS-specific commands, message types and flight
+criteria stay in `examples/aerial-autonomy-stack`.
 
 The host runs a finite attempt through public `Jobs` and resource ownership.
 The consumer retains logs before disposing its own processes, containers and
