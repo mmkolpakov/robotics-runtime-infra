@@ -110,9 +110,9 @@ installation. Its native C++ controller/simulator and ROS binding have separate
 integration scopes; [Agilicious integration](docs/agilicious-integration.md)
 defines the execution boundary and qualification requirements.
 
-The Aerial Autonomy Stack archive example assesses recorded PX4 and ArduPilot
-Gymnasium speed benchmarks with the published Contracts and Harness. The planned
-native integration covers simulation, missions, perception and deployment.
+The Aerial Autonomy Stack examples run a headless PX4 takeoff and landing and
+assess recorded PX4 and ArduPilot Gymnasium speed benchmarks.
+[PX4 SITL example](examples/aerial-autonomy-stack/native/README.md) ·
 [AAS benchmark archive](examples/aerial-autonomy-stack/README.md) ·
 [AAS integration programme](docs/aerial-autonomy-stack.md)
 

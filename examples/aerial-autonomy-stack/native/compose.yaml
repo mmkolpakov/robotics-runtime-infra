@@ -1,0 +1,103 @@
+x-owner: &owner
+  org.robotics.runtime.run-id: "${ROBOTICS_RUN_ID:?run owner required}"
+
+x-environment: &environment
+  AUTOPILOT: px4
+  HEADLESS: "true"
+  CAMERA: "false"
+  LIDAR: "false"
+  DISPLAY: ""
+  SIMULATED_TIME: "true"
+  GND_CONTAINER: "false"
+  GYMNASIUM: "false"
+  SIM_SUBNET: "${AAS_SUBNET:?subnet prefix required}"
+  GROUND_ID: "101"
+
+x-actor: &actor
+  labels: *owner
+  user: "0:0"
+  privileged: true
+  tty: true
+  stdin_open: true
+  stop_signal: SIGINT
+  stop_grace_period: 8s
+  pull_policy: never
+
+services:
+  simulation:
+    <<: *actor
+    image: "${AAS_SIMULATION_IMAGE:?admitted image required}"
+    environment:
+      <<: *environment
+      NUM_QUADS: "1"
+      NUM_VTOLS: "0"
+      NUM_TAILS: "0"
+      WORLD: impalpable_greyness
+      ROS_DOMAIN_ID: "100"
+      RTF: "1.0"
+      START_AS_PAUSED: "false"
+    networks:
+      sitl:
+        ipv4_address: "${AAS_SUBNET}.90.100"
+    volumes:
+      - ulog:/aas/github_apps/PX4-Autopilot/build/px4_sitl_default/rootfs/0/log
+
+  aircraft:
+    <<: *actor
+    image: "${AAS_AIRCRAFT_IMAGE:?admitted image required}"
+    environment:
+      <<: *environment
+      DRONE_ID: "1"
+      DRONE_TYPE: quad
+      ROS_DOMAIN_ID: "1"
+      SIM_ID: "100"
+      ODOM: none
+      PX4_ROS2_LIB: "false"
+      RECORD_ROSBAG: "false"
+    networks:
+      sitl:
+        ipv4_address: "${AAS_SUBNET}.90.1"
+    volumes:
+      - recordings:/evidence
+
+  gcs:
+    image: "${AAS_SIMULATION_IMAGE:?admitted image required}"
+    labels: *owner
+    pull_policy: never
+    user: "1001:1002"
+    working_dir: /home/arduuser
+    environment:
+      HOME: /home/arduuser
+    cap_drop: [ALL]
+    network_mode: service:simulation
+    entrypoint: [/bin/bash, -eu, -c]
+    command:
+      - |
+        for script in "$$HOME/.mavinit.scr" "$$HOME/.mavproxy/mavinit.scr"; do
+          if [ -e "$$script" ] || [ -L "$$script" ]; then exit 2; fi
+        done
+        exec "$$@"
+      - mavproxy
+      - /usr/local/bin/mavproxy.py
+      - --master=udpin:127.0.0.1:14550
+      - --non-interactive
+      - --nowait
+      - --default-modules=
+      - --streamrate=-1
+      - --heartbeat-rate=1
+      - --source-system=255
+      - --source-component=230
+      - --no-state
+
+networks:
+  sitl:
+    labels: *owner
+    ipam:
+      config:
+        - subnet: "${AAS_SUBNET}.0.0/16"
+
+volumes:
+  recordings:
+    labels: *owner
+  ulog:
+    labels: *owner
