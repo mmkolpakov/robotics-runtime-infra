@@ -12,17 +12,16 @@ benchmarks as V2 software runs and writes JSON and JUnit assessments.
 
 ## Integration boundary
 
-The planned native consumer uses AAS through its existing shell entry points,
-Gymnasium API and ROS actions, services and topics. Its evaluator interprets the
-selected native observations. AAS-specific commands, message types and flight
-criteria stay in `examples/aerial-autonomy-stack`.
+The native source example starts stock AAS in headless PX4 x500 SITL and runs
+its ROS 2 takeoff and landing actions. The example checks native ascent and
+touchdown, settles the recorders, exports closed MCAP and ULog, and verifies
+the release of its Compose project.
+[Run the PX4 SITL example](../examples/aerial-autonomy-stack/native/README.md)
 
-The host runs a finite attempt through public `Jobs` and resource ownership.
-The consumer retains logs before disposing its own processes, containers and
-networks. Dagu can schedule the local campaign. An agent can invoke the same
-published CLI through its configured execution tools and inspect retained
-results through the robotics MCP server. Native execution through the robotics
-MCP itself remains a planned interface.
+The host runs each attempt through public `Jobs` and resource ownership. AAS
+commands, ROS types and flight criteria live in the consumer example. Local
+schedulers can call the same source entry point. The robotics MCP server
+reads indexed documents and artifact references.
 
 ## Workflows to verify
 

@@ -89,6 +89,21 @@ jobs:
         run: bash scripts/ci/foundation/verify-image-lock.sh
       - name: Qualify the positive installed ROS host consumer on Docker
         run: bash scripts/ci/host/run-installed-legacy.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with:
+          node-version: "24.21.0"
+      - name: Test the installed AAS source controls
+        run: |
+          set -euo pipefail
+          stage="$(mktemp -d "${RUNNER_TEMP}/aas-source-controls.XXXXXXXX")"
+          trap 'rm -rf -- "${stage}"' EXIT
+          asset="${HOST_ASSET_CONTEXT:?installed host assets required}"
+          cp -- "${asset}/core.tgz" "${asset}/infra.tgz" \
+            "${asset}/package.json" "${asset}/package-lock.json" "${stage}/"
+          cp -- examples/aerial-autonomy-stack/native/provider.mjs \
+            examples/aerial-autonomy-stack/native/test.mjs "${stage}/"
+          npm ci --prefix "${stage}" --ignore-scripts --no-audit --no-fund
+          node --test "${stage}/test.mjs"
       - name: Verify versioned S3 evidence with the installed harness
         run: bash scripts/ci/integration/verify-versioned-s3-evidence.sh
       - name: Run scenario against the real ROS graph

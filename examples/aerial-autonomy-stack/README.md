@@ -7,6 +7,8 @@ and the consistency of the four rounded summary lines. The result covers
 the recorded benchmark text for PX4 or ArduPilot. Flight, sensor and
 physical clock quality require their own observations.
 
+For an executable takeoff and landing case, use the [PX4 SITL example](native/README.md).
+
 ## Inputs
 
 The importer accepts a closed capture handoff with these files. The
