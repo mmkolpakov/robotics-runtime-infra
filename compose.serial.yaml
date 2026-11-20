@@ -4,7 +4,7 @@ services:
     profiles: [simulation]
 
   serial-device-preflight:
-    image: busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
+    image: busybox:1.37.0-musl@sha256:f6a95d611e0a8780fabdb2aec43e31275b2720dfefa3e41b16835bfc42454478
     profiles: [serial-preflight]
     init: true
     network_mode: none
