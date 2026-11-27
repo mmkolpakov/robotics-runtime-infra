@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.14
 ARG PX4_DEPS_IMAGE
 FROM ros:jazzy-ros-base@sha256:31daab66eef9139933379fb67159449944f4e2dcf2e22c2d12cc715f29873e0f AS ca-source
-FROM ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90 AS native-source-inputs
+FROM ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b AS native-source-inputs
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG UBUNTU_SNAPSHOT
 ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1
