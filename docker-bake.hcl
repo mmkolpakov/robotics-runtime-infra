@@ -60,7 +60,7 @@ variable "RKNN_SOURCE" {
 }
 
 variable "COSIGN_IMAGE" {
-  default = "cgr.dev/chainguard/cosign:latest@sha256:051861c8b45247c755acfb8ff05bb6741c8cedf2e67d1101faebbf98ec9b9fe0"
+  default = "cgr.dev/chainguard/cosign:latest@sha256:dd6c9e8dfbeef781649d465bb88e4151653f2012f80779a3c8d0f9a6cb8c7edb"
   validation {
     condition = COSIGN_IMAGE == regex("^cgr\\.dev/chainguard/cosign:latest@sha256:[a-f0-9]{64}$", COSIGN_IMAGE)
     error_message = "COSIGN_IMAGE must pin the publisher-verified Chainguard image."
